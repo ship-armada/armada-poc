@@ -21,6 +21,7 @@ import { WalletLockedError } from "./wallet-manager";
 import type { FeeCalculator } from "./fee-calculator";
 import type { VerifierContext } from "./broadcaster-fee-verifier";
 import { verifyBroadcasterFee } from "./broadcaster-fee-verifier";
+import { verifyRedeemFee } from "./redeem-fee-verifier";
 import type { GaslessVerifierContext } from "./gasless-fee-verifier";
 import {
   GASLESS_SHIELD_SELECTOR,
@@ -176,7 +177,7 @@ export class PrivacyRelay {
   async handleRelayRequest(
     request: RelayRequest,
   ): Promise<{ txHash: string }> {
-    const { chainId, to, data, feesCacheId } = request;
+    const { chainId, to, data, feesCacheId, feeShieldRandom } = request;
 
     // 1. Validate chain ID — must be one of the configured chains
     const feeCalculator = this.feeCalculators.get(chainId);
@@ -239,6 +240,11 @@ export class PrivacyRelay {
           { chainId, to, data },
           advertisedFee,
         );
+      } else if (selector === REDEEM_AND_SHIELD_SELECTOR) {
+        // Redeem's fee is shielded to the relayer contract-side (issue #312), not embedded as a
+        // broadcaster output in the proof. Verify the fee note is ours via the frontend-supplied
+        // shield random. See redeem-fee-verifier.
+        verifyRedeemFee(this.verifierContext, { data }, advertisedFee, feeShieldRandom);
       } else {
         await verifyBroadcasterFee(this.verifierContext, { to, data }, advertisedFee);
       }

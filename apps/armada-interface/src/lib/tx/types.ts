@@ -437,6 +437,12 @@ export interface ArtifactsYield extends ArtifactsCommon {
     data: `0x${string}`
     value: string
   }
+  /**
+   * Withdraw-only (#312): the fee note's 16-byte hex `random`, captured at build-proof and sent on
+   * the /relay request so the relayer can verify the fee is shielded to itself. Absent on deposit /
+   * wallet-override / fee-less redeem.
+   */
+  feeShieldRandom?: string
 }
 
 /**

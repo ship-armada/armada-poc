@@ -58,6 +58,12 @@ export interface RelayRequest {
    * it falls back to the in-memory calldata dedup in wallet-manager.
    */
   idempotencyKey?: string;
+  /**
+   * Redeem-only (issue #312): the 16-byte hex `random` of the fee note the yield-withdraw shields to
+   * the relayer. Lets the relayer recompute the fee note's `npk` and confirm it's addressed to itself
+   * before paying gas (see `redeem-fee-verifier.ts`). Ignored for every other selector.
+   */
+  feeShieldRandom?: string;
 }
 
 export interface RelayResponse {

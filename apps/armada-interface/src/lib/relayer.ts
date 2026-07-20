@@ -306,6 +306,12 @@ export interface RelayRequest {
    * `reports/relayer-idempotency-key-plan.md`.
    */
   idempotencyKey: string
+  /**
+   * Redeem (yield-withdraw) only (#312): the 16-byte hex `random` of the fee note shielded to the
+   * relayer. The relayer recomputes the fee note's `npk` from this + its own master key to confirm the
+   * fee is addressed to it before paying gas. Omitted for every other kind.
+   */
+  feeShieldRandom?: string
 }
 
 export interface RelayResponse {

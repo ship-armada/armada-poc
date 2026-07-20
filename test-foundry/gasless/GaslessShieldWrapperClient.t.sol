@@ -1,58 +1,52 @@
 // SPDX-License-Identifier: MIT
-// ABOUTME: Foundry fuzz/property tests for GaslessShieldWrapperClient — same property set as
-// ABOUTME: the hub wrapper plus maxFee bound interaction with the cross-chain shield path.
+// ABOUTME: Foundry tests for the permissionless GaslessShieldWrapperClient — EIP-712 intent binding
+// ABOUTME: of both notes + CCTP params, two-note cross-chain shield, replay, and front-run resistance.
 pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
 
 import {GaslessShieldWrapperClient} from "../../contracts/GaslessShieldWrapperClient.sol";
 import {MockUSDCV2} from "../../contracts/cctp/MockUSDCV2.sol";
-import {IPrivacyPoolClient} from "../../contracts/privacy-pool/interfaces/IPrivacyPoolClient.sol";
+import {ShieldData} from "../../contracts/privacy-pool/types/CCTPTypes.sol";
 
-/// @dev Minimal PrivacyPoolClient stub. Records crossChainShield args and pulls the burn amount
-/// from the caller (the wrapper) via transferFrom — same as the real client's path. Returns a
+/// @dev Minimal PrivacyPoolClient stub. Records crossChainShieldWithFee args and pulls the summed
+/// burn amount from the caller (the wrapper) via transferFrom — mirroring the real client. Returns a
 /// deterministic CCTP nonce so the test can assert flow-through.
 contract MockPrivacyPoolClient {
     address public usdc;
     uint64 public stubNonce = 42;
 
-    uint256 public lastAmount;
+    uint256 public lastTotal;
     uint256 public lastMaxFee;
     uint32 public lastMinFinalityThreshold;
-    bytes32 public lastNpk;
-    bytes32 public lastShieldKey;
-    address public lastIntegrator;
+    bytes32 public lastUserNpk;
+    uint256 public lastUserValue;
+    bytes32 public lastFeeNpk;
+    uint256 public lastFeeValue;
     uint256 public callCount;
 
     constructor(address _usdc) {
         usdc = _usdc;
     }
 
-    function crossChainShield(
-        uint256 amount,
+    function crossChainShieldWithFee(
         uint256 maxFee,
         uint32 minFinalityThreshold,
-        bytes32 npk,
-        bytes32[3] calldata /* encryptedBundle */,
-        bytes32 shieldKey,
-        address integrator
+        ShieldData calldata userNote,
+        ShieldData calldata feeNote
     ) external returns (uint64) {
-        // Mirror the real client: pull amount from msg.sender (the wrapper).
+        uint256 total = uint256(userNote.value) + uint256(feeNote.value);
         (bool ok, ) = usdc.call(
-            abi.encodeWithSignature(
-                "transferFrom(address,address,uint256)",
-                msg.sender,
-                address(this),
-                amount
-            )
+            abi.encodeWithSignature("transferFrom(address,address,uint256)", msg.sender, address(this), total)
         );
         require(ok, "MockClient: transferFrom failed");
-        lastAmount = amount;
+        lastTotal = total;
         lastMaxFee = maxFee;
         lastMinFinalityThreshold = minFinalityThreshold;
-        lastNpk = npk;
-        lastShieldKey = shieldKey;
-        lastIntegrator = integrator;
+        lastUserNpk = userNote.npk;
+        lastUserValue = userNote.value;
+        lastFeeNpk = feeNote.npk;
+        lastFeeValue = feeNote.value;
         callCount++;
         return stubNonce;
     }
@@ -62,17 +56,16 @@ contract GaslessShieldWrapperClientTest is Test {
     // Mirror of the wrapper's event — see GaslessShieldWrapper.t.sol for the 0.8.17 rationale.
     event GaslessShield(
         address indexed user,
-        uint256 shieldAmount,
-        uint256 fee,
+        uint256 totalAmount,
+        uint256 feeValue,
         uint64 cctpNonce,
-        bytes32 destHash
+        bytes32 notesHash
     );
 
     MockUSDCV2 internal usdc;
     MockPrivacyPoolClient internal client;
     GaslessShieldWrapperClient internal wrapper;
 
-    address internal owner = address(this);
     address internal relayer = makeAddr("relayer");
     address internal frontrunner = makeAddr("frontrunner");
     address internal integrator = makeAddr("integrator");
@@ -80,64 +73,105 @@ contract GaslessShieldWrapperClientTest is Test {
     uint256 internal userPk = 0xBEEF;
     address internal user;
 
+    bytes32 internal constant USER_NPK = bytes32(uint256(0xBEEF));
+    bytes32 internal constant RELAYER_NPK = bytes32(uint256(0xF33));
+
     uint256 internal constant ONE_USDC = 1_000_000;
+    uint256 internal constant MAX_FEE = 1000;
+    uint32 internal constant FINALITY = 1000;
+
+    bytes32 internal constant EIP712_DOMAIN_TYPEHASH =
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 
     function setUp() public {
         usdc = new MockUSDCV2("USD Coin", "USDC");
         client = new MockPrivacyPoolClient(address(usdc));
-        wrapper = new GaslessShieldWrapperClient(address(usdc), address(client), relayer);
+        wrapper = new GaslessShieldWrapperClient(address(usdc), address(client));
         user = vm.addr(userPk);
         usdc.mint(user, 100 * ONE_USDC);
     }
 
-    function _permitDigest(uint256 value, uint256 deadline, uint256 nonce)
-        internal
-        view
-        returns (bytes32)
-    {
-        bytes32 domainSeparator = usdc.DOMAIN_SEPARATOR();
-        bytes32 PERMIT_TYPEHASH =
-            keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
-        bytes32 structHash =
-            keccak256(abi.encode(PERMIT_TYPEHASH, user, address(wrapper), value, nonce, deadline));
-        return keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
-    }
+    // ══════════════════════════════════════════════════════════════════════════
+    // Signing helpers
+    // ══════════════════════════════════════════════════════════════════════════
 
     function _signPermit(uint256 value, uint256 deadline)
         internal
         view
         returns (uint8 v, bytes32 r, bytes32 s)
     {
-        uint256 nonce = usdc.nonces(user);
-        bytes32 digest = _permitDigest(value, deadline, nonce);
+        bytes32 domainSeparator = usdc.DOMAIN_SEPARATOR();
+        bytes32 PERMIT_TYPEHASH =
+            keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
+        bytes32 structHash = keccak256(
+            abi.encode(PERMIT_TYPEHASH, user, address(wrapper), value, usdc.nonces(user), deadline)
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", domainSeparator, structHash));
         (v, r, s) = vm.sign(userPk, digest);
     }
 
-    function _permitInput(uint256 totalAmount, uint256 fee, uint256 deadline)
+    function _wrapperDomainSeparator() internal view returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                EIP712_DOMAIN_TYPEHASH,
+                keccak256(bytes("ArmadaGaslessCrossChainShield")),
+                keccak256(bytes("1")),
+                block.chainid,
+                address(wrapper)
+            )
+        );
+    }
+
+    function _signIntent(
+        ShieldData memory userNote,
+        ShieldData memory feeNote,
+        uint256 maxFee,
+        uint32 minFinality,
+        uint256 deadline,
+        uint256 nonce
+    ) internal view returns (bytes memory) {
+        bytes32 structHash = keccak256(
+            abi.encode(
+                wrapper.CROSS_CHAIN_SHIELD_INTENT_TYPEHASH(),
+                user,
+                keccak256(abi.encode(userNote)),
+                keccak256(abi.encode(feeNote)),
+                maxFee,
+                minFinality,
+                deadline,
+                nonce
+            )
+        );
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _wrapperDomainSeparator(), structHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(userPk, digest);
+        return abi.encodePacked(r, s, v);
+    }
+
+    function _params(uint256 deadline, uint256 nonce, uint256 maxFee, uint32 minFinality, uint256 total)
         internal
         view
-        returns (GaslessShieldWrapperClient.PermitInput memory)
+        returns (GaslessShieldWrapperClient.CrossChainIntentParams memory)
     {
-        (uint8 v, bytes32 r, bytes32 s) = _signPermit(totalAmount, deadline);
-        return GaslessShieldWrapperClient.PermitInput({
+        (uint8 v, bytes32 r, bytes32 s) = _signPermit(total, deadline);
+        return GaslessShieldWrapperClient.CrossChainIntentParams({
             user: user,
-            totalAmount: totalAmount,
-            fee: fee,
             deadline: deadline,
-            v: v,
-            r: r,
-            s: s
+            nonce: nonce,
+            maxFee: maxFee,
+            minFinalityThreshold: minFinality,
+            permitV: v,
+            permitR: r,
+            permitS: s
         });
     }
 
-    function _destDefaults() internal view returns (GaslessShieldWrapperClient.CrossChainParams memory) {
-        return GaslessShieldWrapperClient.CrossChainParams({
-            maxFee: 1000,
-            minFinalityThreshold: 1000,
-            npk: bytes32(uint256(0xBEEF)),
+    function _note(bytes32 npk, uint256 value) internal pure returns (ShieldData memory) {
+        return ShieldData({
+            npk: npk,
+            value: uint120(value),
             encryptedBundle: [bytes32(0), bytes32(0), bytes32(0)],
             shieldKey: bytes32(0),
-            integrator: integrator
+            integrator: address(0)
         });
     }
 
@@ -146,195 +180,201 @@ contract GaslessShieldWrapperClientTest is Test {
     // ══════════════════════════════════════════════════════════════════════════
 
     function test_gaslessCrossChainShield_happyPath() public {
-        // WHY: pin the load-bearing happy path — relayer's call splits funds correctly, the
-        // mock client gets the right burn amount and forwarded CCTP args, and the wrapper
-        // returns the client's nonce.
-        uint256 totalAmount = 10 * ONE_USDC;
+        // WHY: pin the load-bearing path — a valid permit + intent burns the summed amount and passes
+        // BOTH notes (user + relayer fee) through to the client, returns the client's nonce, and
+        // leaves no dust. Submitted by an arbitrary caller (permissionless).
+        uint256 shieldAmount = 9 * ONE_USDC + ONE_USDC / 2;
         uint256 fee = ONE_USDC / 2;
+        uint256 total = shieldAmount + fee;
         uint256 deadline = block.timestamp + 1 hours;
-        // Compute permit args BEFORE the prank — `_permitInput` reads USDC.nonces() which is an
-        // external call that would consume vm.prank's one-shot effect, leaving msg.sender as
-        // address(this) when the wrapper call lands.
-        GaslessShieldWrapperClient.PermitInput memory p = _permitInput(totalAmount, fee, deadline);
-        GaslessShieldWrapperClient.CrossChainParams memory d = _destDefaults();
 
-        vm.prank(relayer);
-        uint64 nonce = wrapper.gaslessCrossChainShield(p, d);
+        ShieldData memory userNote = _note(USER_NPK, shieldAmount);
+        ShieldData memory feeNote = _note(RELAYER_NPK, fee);
+        bytes memory intentSig = _signIntent(userNote, feeNote, MAX_FEE, FINALITY, deadline, 0);
+        GaslessShieldWrapperClient.CrossChainIntentParams memory p =
+            _params(deadline, 0, MAX_FEE, FINALITY, total);
+
+        vm.prank(frontrunner);
+        uint64 nonce = wrapper.gaslessCrossChainShield(p, intentSig, userNote, feeNote);
 
         assertEq(nonce, 42, "returned client nonce");
-        assertEq(usdc.balanceOf(relayer), fee);
-        assertEq(usdc.balanceOf(address(client)), totalAmount - fee);
-        assertEq(usdc.balanceOf(user), 100 * ONE_USDC - totalAmount);
+        assertEq(usdc.balanceOf(address(client)), total, "client got full burn amount");
+        assertEq(usdc.balanceOf(user), 100 * ONE_USDC - total, "user debited total");
+        assertEq(usdc.balanceOf(address(wrapper)), 0, "no dust in wrapper");
         assertEq(client.callCount(), 1);
-        assertEq(client.lastAmount(), totalAmount - fee);
-        assertEq(client.lastMaxFee(), 1000);
-        assertEq(client.lastIntegrator(), integrator);
+        assertEq(client.lastUserValue(), shieldAmount, "user note value");
+        assertEq(client.lastFeeValue(), fee, "fee note value");
+        assertEq(client.lastFeeNpk(), RELAYER_NPK, "fee note to relayer npk");
+        assertEq(client.lastMaxFee(), MAX_FEE);
+        assertEq(wrapper.nonces(user), 1, "nonce consumed");
     }
 
-    function test_gaslessCrossChainShield_eventEmitsDestDigest() public {
-        // WHY: symmetric with the hub wrapper's shieldRequestHash test. The event surfaces
-        // keccak256(abi.encode(dest)) so the user can verify off-chain that the relayer honoured
-        // the cross-chain destination they signed against (npk, ciphertext, finality, maxFee,
-        // integrator, …). A refactor that changed the hash shape (e.g.
-        // hashed individual fields, used encodePacked) would silently break that primitive.
-        // Pin the exact digest shape.
-        uint256 totalAmount = 6 * ONE_USDC;
+    function test_gaslessCrossChainShield_eventEmitsNotesHash() public {
+        // WHY: symmetric with the hub wrapper. The event surfaces keccak256(abi.encode(userNote,
+        // feeNote)) so a watcher can verify the burn honored the signed cross-chain intent.
+        uint256 shieldAmount = 6 * ONE_USDC;
         uint256 fee = ONE_USDC / 2;
+        uint256 total = shieldAmount + fee;
         uint256 deadline = block.timestamp + 1 hours;
-        GaslessShieldWrapperClient.PermitInput memory p = _permitInput(totalAmount, fee, deadline);
-        GaslessShieldWrapperClient.CrossChainParams memory d = _destDefaults();
-        bytes32 expectedHash = keccak256(abi.encode(d));
+
+        ShieldData memory userNote = _note(USER_NPK, shieldAmount);
+        ShieldData memory feeNote = _note(RELAYER_NPK, fee);
+        bytes memory intentSig = _signIntent(userNote, feeNote, MAX_FEE, FINALITY, deadline, 0);
+        GaslessShieldWrapperClient.CrossChainIntentParams memory p =
+            _params(deadline, 0, MAX_FEE, FINALITY, total);
+        bytes32 expectedHash = keccak256(abi.encode(userNote, feeNote));
 
         vm.expectEmit(true, false, false, true, address(wrapper));
-        emit GaslessShield(user, totalAmount - fee, fee, client.stubNonce(), expectedHash);
+        emit GaslessShield(user, total, fee, client.stubNonce(), expectedHash);
 
         vm.prank(relayer);
-        wrapper.gaslessCrossChainShield(p, d);
+        wrapper.gaslessCrossChainShield(p, intentSig, userNote, feeNote);
     }
 
     // ══════════════════════════════════════════════════════════════════════════
-    // Permit replay / deadline / onlyRelayer — symmetric coverage with hub wrapper
+    // Front-run resistance
     // ══════════════════════════════════════════════════════════════════════════
 
-    function test_gaslessCrossChainShield_permitReplayReverts() public {
-        uint256 totalAmount = 3 * ONE_USDC;
+    function test_gaslessCrossChainShield_substitutedUserNpkReverts() public {
+        // WHY: a front-runner swapping the user note's npk for their own must be rejected — the
+        // intent binds keccak256(abi.encode(userNote)). This is the cross-chain analog of the hub
+        // wrapper's core theft-resistance test.
+        uint256 shieldAmount = 4 * ONE_USDC;
+        uint256 fee = ONE_USDC;
+        uint256 total = shieldAmount + fee;
         uint256 deadline = block.timestamp + 1 hours;
-        GaslessShieldWrapperClient.PermitInput memory p = _permitInput(totalAmount, 0, deadline);
+
+        ShieldData memory userNote = _note(USER_NPK, shieldAmount);
+        ShieldData memory feeNote = _note(RELAYER_NPK, fee);
+        bytes memory intentSig = _signIntent(userNote, feeNote, MAX_FEE, FINALITY, deadline, 0);
+        GaslessShieldWrapperClient.CrossChainIntentParams memory p =
+            _params(deadline, 0, MAX_FEE, FINALITY, total);
+
+        ShieldData memory tampered = _note(bytes32(uint256(0xA77ACC)), shieldAmount);
+
+        vm.prank(frontrunner);
+        vm.expectRevert("GaslessShieldWrapperClient: bad intent sig");
+        wrapper.gaslessCrossChainShield(p, intentSig, tampered, feeNote);
+    }
+
+    function test_gaslessCrossChainShield_substitutedMaxFeeReverts() public {
+        // WHY: the CCTP maxFee is bound in the intent (it's deducted from the user's bridged amount).
+        // A submitter inflating maxFee to grief the user must be rejected by the signature check.
+        uint256 shieldAmount = 4 * ONE_USDC;
+        uint256 fee = ONE_USDC;
+        uint256 total = shieldAmount + fee;
+        uint256 deadline = block.timestamp + 1 hours;
+
+        ShieldData memory userNote = _note(USER_NPK, shieldAmount);
+        ShieldData memory feeNote = _note(RELAYER_NPK, fee);
+        bytes memory intentSig = _signIntent(userNote, feeNote, MAX_FEE, FINALITY, deadline, 0);
+        // Submitter tries a larger maxFee than signed.
+        GaslessShieldWrapperClient.CrossChainIntentParams memory p =
+            _params(deadline, 0, MAX_FEE * 100, FINALITY, total);
+
+        vm.prank(frontrunner);
+        vm.expectRevert("GaslessShieldWrapperClient: bad intent sig");
+        wrapper.gaslessCrossChainShield(p, intentSig, userNote, feeNote);
+    }
+
+    function test_gaslessCrossChainShield_permissionlessResubmitSucceeds() public {
+        // WHY: anyone MAY submit the unmodified signed bundle; the fee still lands to the relayer npk.
+        uint256 shieldAmount = 4 * ONE_USDC;
+        uint256 fee = ONE_USDC;
+        uint256 total = shieldAmount + fee;
+        uint256 deadline = block.timestamp + 1 hours;
+
+        ShieldData memory userNote = _note(USER_NPK, shieldAmount);
+        ShieldData memory feeNote = _note(RELAYER_NPK, fee);
+        bytes memory intentSig = _signIntent(userNote, feeNote, MAX_FEE, FINALITY, deadline, 0);
+        GaslessShieldWrapperClient.CrossChainIntentParams memory p =
+            _params(deadline, 0, MAX_FEE, FINALITY, total);
+
+        vm.prank(makeAddr("randomSubmitter"));
+        wrapper.gaslessCrossChainShield(p, intentSig, userNote, feeNote);
+
+        assertEq(client.lastFeeNpk(), RELAYER_NPK);
+        assertEq(usdc.balanceOf(address(client)), total);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // Replay / deadline / validation
+    // ══════════════════════════════════════════════════════════════════════════
+
+    function test_gaslessCrossChainShield_nonceReplayReverts() public {
+        uint256 total = 3 * ONE_USDC + ONE_USDC / 2;
+        uint256 deadline = block.timestamp + 1 hours;
+        ShieldData memory userNote = _note(USER_NPK, 3 * ONE_USDC);
+        ShieldData memory feeNote = _note(RELAYER_NPK, ONE_USDC / 2);
+        bytes memory intentSig = _signIntent(userNote, feeNote, MAX_FEE, FINALITY, deadline, 0);
+
+        // Precompute both params structs — `_params` makes an external usdc.nonces() call that would
+        // otherwise be captured by vm.expectRevert on the second invocation.
+        GaslessShieldWrapperClient.CrossChainIntentParams memory p1 =
+            _params(deadline, 0, MAX_FEE, FINALITY, total);
 
         vm.prank(relayer);
-        wrapper.gaslessCrossChainShield(p, _destDefaults());
+        wrapper.gaslessCrossChainShield(p1, intentSig, userNote, feeNote);
+
+        GaslessShieldWrapperClient.CrossChainIntentParams memory p2 =
+            _params(deadline, 0, MAX_FEE, FINALITY, total);
 
         vm.prank(relayer);
-        vm.expectRevert();
-        wrapper.gaslessCrossChainShield(p, _destDefaults());
+        vm.expectRevert("GaslessShieldWrapperClient: bad nonce");
+        wrapper.gaslessCrossChainShield(p2, intentSig, userNote, feeNote);
     }
 
     function test_gaslessCrossChainShield_expiredDeadlineReverts() public {
-        uint256 totalAmount = 2 * ONE_USDC;
+        uint256 total = 2 * ONE_USDC + ONE_USDC / 4;
         uint256 deadline = block.timestamp + 1 hours;
-        GaslessShieldWrapperClient.PermitInput memory p = _permitInput(totalAmount, 0, deadline);
+        ShieldData memory userNote = _note(USER_NPK, 2 * ONE_USDC);
+        ShieldData memory feeNote = _note(RELAYER_NPK, ONE_USDC / 4);
+        bytes memory intentSig = _signIntent(userNote, feeNote, MAX_FEE, FINALITY, deadline, 0);
+        GaslessShieldWrapperClient.CrossChainIntentParams memory p =
+            _params(deadline, 0, MAX_FEE, FINALITY, total);
 
         vm.warp(deadline + 1);
         vm.prank(relayer);
-        vm.expectRevert();
-        wrapper.gaslessCrossChainShield(p, _destDefaults());
+        vm.expectRevert("GaslessShieldWrapperClient: expired");
+        wrapper.gaslessCrossChainShield(p, intentSig, userNote, feeNote);
     }
 
-    function test_gaslessCrossChainShield_frontrunnerCannotCall() public {
-        uint256 totalAmount = 4 * ONE_USDC;
+    function test_gaslessCrossChainShield_zeroFeeNoteReverts() public {
+        uint256 total = 3 * ONE_USDC;
         uint256 deadline = block.timestamp + 1 hours;
-        GaslessShieldWrapperClient.PermitInput memory p = _permitInput(totalAmount, 0, deadline);
-
-        vm.prank(frontrunner);
-        vm.expectRevert("GaslessShieldWrapperClient: not relayer");
-        wrapper.gaslessCrossChainShield(p, _destDefaults());
-    }
-
-    function test_gaslessCrossChainShield_thirdPartyPermitDoesNotEnableFreeShield() public {
-        uint256 totalAmount = 3 * ONE_USDC;
-        uint256 deadline = block.timestamp + 1 hours;
-        GaslessShieldWrapperClient.PermitInput memory p = _permitInput(totalAmount, 0, deadline);
-
-        vm.prank(frontrunner);
-        usdc.permit(user, address(wrapper), totalAmount, deadline, p.v, p.r, p.s);
-
-        vm.prank(frontrunner);
-        vm.expectRevert("GaslessShieldWrapperClient: not relayer");
-        wrapper.gaslessCrossChainShield(p, _destDefaults());
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // Fee bounds
-    // ══════════════════════════════════════════════════════════════════════════
-
-    function test_gaslessCrossChainShield_feeEqualsTotalReverts() public {
-        uint256 totalAmount = 2 * ONE_USDC;
-        uint256 deadline = block.timestamp + 1 hours;
-        GaslessShieldWrapperClient.PermitInput memory p =
-            _permitInput(totalAmount, totalAmount, deadline);
+        ShieldData memory userNote = _note(USER_NPK, 3 * ONE_USDC);
+        ShieldData memory feeNote = _note(RELAYER_NPK, 0);
+        bytes memory intentSig = _signIntent(userNote, feeNote, MAX_FEE, FINALITY, deadline, 0);
+        GaslessShieldWrapperClient.CrossChainIntentParams memory p =
+            _params(deadline, 0, MAX_FEE, FINALITY, total);
 
         vm.prank(relayer);
-        vm.expectRevert("GaslessShieldWrapperClient: fee >= amount");
-        wrapper.gaslessCrossChainShield(p, _destDefaults());
+        vm.expectRevert("GaslessShieldWrapperClient: zero fee note");
+        wrapper.gaslessCrossChainShield(p, intentSig, userNote, feeNote);
     }
 
-    function test_gaslessCrossChainShield_zeroTotalReverts() public {
-        uint256 deadline = block.timestamp + 1 hours;
-        GaslessShieldWrapperClient.PermitInput memory p = _permitInput(0, 0, deadline);
-
-        vm.prank(relayer);
-        vm.expectRevert("GaslessShieldWrapperClient: zero amount");
-        wrapper.gaslessCrossChainShield(p, _destDefaults());
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // maxFee bound interaction with the burn amount
-    // ══════════════════════════════════════════════════════════════════════════
-
-    function test_gaslessCrossChainShield_maxFeeExceedsShieldAmountReverts() public {
-        // WHY: PrivacyPoolClient enforces `maxFee < amount`. The wrapper pre-checks against the
-        // POST-fee burn amount (totalAmount - fee), not the pre-fee total — otherwise a $5 burn
-        // with a $4 maxFee plus a $0.50 broadcaster fee would silently slip through here and
-        // revert downstream in the client, costing the relayer gas on a doomed tx. Pin the early
-        // rejection so misbehaving fee inputs fail fast at this contract.
-        uint256 totalAmount = 5 * ONE_USDC;
-        uint256 fee = ONE_USDC; // shieldAmount = 4 USDC
-        uint256 deadline = block.timestamp + 1 hours;
-        GaslessShieldWrapperClient.PermitInput memory p = _permitInput(totalAmount, fee, deadline);
-
-        GaslessShieldWrapperClient.CrossChainParams memory dest = _destDefaults();
-        dest.maxFee = 4 * ONE_USDC; // == shieldAmount, must revert
-
-        vm.prank(relayer);
-        vm.expectRevert("GaslessShieldWrapperClient: maxFee >= shieldAmount");
-        wrapper.gaslessCrossChainShield(p, dest);
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // Admin
-    // ══════════════════════════════════════════════════════════════════════════
-
-    function test_setRelayer_byOwner() public {
-        address newRelayer = makeAddr("newRelayer");
-        wrapper.setRelayer(newRelayer);
-        assertEq(wrapper.relayer(), newRelayer);
-    }
-
-    function test_setRelayer_nonOwnerReverts() public {
-        vm.prank(frontrunner);
-        vm.expectRevert("GaslessShieldWrapperClient: not owner");
-        wrapper.setRelayer(frontrunner);
-    }
-
-    function test_transferOwnership() public {
-        address newOwner = makeAddr("newOwner");
-        wrapper.transferOwnership(newOwner);
-        assertEq(wrapper.owner(), newOwner);
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // Fuzz — value-split invariant across the allowed (fee, total) plane
-    // ══════════════════════════════════════════════════════════════════════════
-
-    function testFuzz_gaslessCrossChainShield_feeWithinBounds(uint96 fee_, uint96 total_) public {
-        uint256 total = uint256(total_);
+    function testFuzz_gaslessCrossChainShield_noDust(uint96 shield_, uint96 fee_) public {
+        uint256 shieldAmount = uint256(shield_);
         uint256 fee = uint256(fee_);
-        vm.assume(total > 0 && total <= 100 * ONE_USDC);
-        vm.assume(fee < total);
-        uint256 shieldAmount = total - fee;
-        vm.assume(shieldAmount > 1000); // keep maxFee=1000 valid
-
+        vm.assume(shieldAmount > 0 && fee > 0);
+        uint256 total = shieldAmount + fee;
+        vm.assume(total <= 100 * ONE_USDC);
+        vm.assume(total > MAX_FEE);
         uint256 deadline = block.timestamp + 1 hours;
+
+        ShieldData memory userNote = _note(USER_NPK, shieldAmount);
+        ShieldData memory feeNote = _note(RELAYER_NPK, fee);
+        bytes memory intentSig = _signIntent(userNote, feeNote, MAX_FEE, FINALITY, deadline, 0);
+        GaslessShieldWrapperClient.CrossChainIntentParams memory p =
+            _params(deadline, 0, MAX_FEE, FINALITY, total);
+
         uint256 userBefore = usdc.balanceOf(user);
-        GaslessShieldWrapperClient.PermitInput memory p = _permitInput(total, fee, deadline);
-        GaslessShieldWrapperClient.CrossChainParams memory d = _destDefaults();
 
         vm.prank(relayer);
-        wrapper.gaslessCrossChainShield(p, d);
+        wrapper.gaslessCrossChainShield(p, intentSig, userNote, feeNote);
 
-        assertEq(usdc.balanceOf(relayer), fee, "relayer fee");
-        assertEq(usdc.balanceOf(address(client)), shieldAmount, "client burn amount");
-        assertEq(usdc.balanceOf(user), userBefore - total, "user remainder");
-        assertEq(usdc.balanceOf(address(wrapper)), 0, "no dust in wrapper");
+        assertEq(usdc.balanceOf(address(client)), total, "client total");
+        assertEq(usdc.balanceOf(user), userBefore - total, "user debited");
+        assertEq(usdc.balanceOf(address(wrapper)), 0, "no dust");
     }
 }

@@ -153,18 +153,53 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         require(hubPool != bytes32(0), "PrivacyPoolClient: Hub not configured");
         require(hubHookRouter != bytes32(0), "PrivacyPoolClient: Hook router not configured");
 
-        // Transfer USDC from user to this contract
-        IERC20(usdc).safeTransferFrom(msg.sender, address(this), amount);
+        // Single recipient note (no relayer fee note on the direct path).
+        ShieldData[] memory notes = new ShieldData[](1);
+        notes[0] = ShieldData({
+            npk: npk,
+            value: uint120(amount),
+            encryptedBundle: encryptedBundle,
+            shieldKey: shieldKey,
+            integrator: integrator
+        });
 
-        // Approve TokenMessenger to spend USDC
-        IERC20(usdc).safeApprove(tokenMessenger, 0);
-        IERC20(usdc).safeApprove(tokenMessenger, amount);
-
-        // Encode shield payload and execute CCTP burn in helper (avoids stack-too-deep)
-        _executeCCTPShield(amount, maxFee, minFinalityThreshold, npk, encryptedBundle, shieldKey, integrator);
+        _pullAndBurn(amount, maxFee, minFinalityThreshold, notes);
 
         emit CrossChainShieldInitiated(amount, npk, 0);
+        return 0;
+    }
 
+    /**
+     * @notice Cross-chain shield with a relayer fee note (gasless path). Burns
+     *         `userNote.value + feeNote.value`; the Hub mints the user's note net of the CCTP fee and
+     *         the relayer's fee note at its full declared value. Called by GaslessShieldWrapperClient.
+     * @dev The CCTP destinationCaller is pinned to hubHookRouter (see `crossChainShield`), so delivery
+     *      can only occur via the Hub's CCTPHookRouter regardless of who submits.
+     * @param maxFee Maximum CCTP relayer fee (deducted at protocol level, 0 = no fee)
+     * @param minFinalityThreshold Finality level (FAST/STANDARD, 0 = contract default)
+     * @param userNote Recipient note (index 0 on the Hub; absorbs the CCTP fee)
+     * @param feeNote Relayer fee note (minted at full value on the Hub)
+     * @return nonce CCTP message nonce
+     */
+    function crossChainShieldWithFee(
+        uint256 maxFee,
+        uint32 minFinalityThreshold,
+        ShieldData calldata userNote,
+        ShieldData calldata feeNote
+    ) external override returns (uint64) {
+        require(hubPool != bytes32(0), "PrivacyPoolClient: Hub not configured");
+        require(hubHookRouter != bytes32(0), "PrivacyPoolClient: Hook router not configured");
+        uint256 total = uint256(userNote.value) + uint256(feeNote.value);
+        require(total > 0, "PrivacyPoolClient: Amount must be > 0");
+        require(maxFee < total, "PrivacyPoolClient: Fee exceeds amount");
+
+        ShieldData[] memory notes = new ShieldData[](2);
+        notes[0] = userNote; // recipient note — absorbs the CCTP fee on the Hub
+        notes[1] = feeNote; // relayer fee note — minted at full value
+
+        _pullAndBurn(total, maxFee, minFinalityThreshold, notes);
+
+        emit CrossChainShieldInitiated(total, userNote.npk, 0);
         return 0;
     }
 
@@ -278,29 +313,26 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
     }
 
     /**
-     * @notice Encode shield data and execute CCTP burn (extracted to avoid stack-too-deep)
+     * @notice Pull `total` USDC from the caller, approve the TokenMessenger, and burn it via CCTP with
+     *         the encoded shield-note payload (extracted to share the direct + gasless paths and to
+     *         avoid stack-too-deep).
+     * @dev destinationCaller is pinned to the Hub's hook router (validated non-zero by the callers) so
+     *      the message can only be delivered via the Hub's CCTPHookRouter.
      */
-    function _executeCCTPShield(
-        uint256 amount,
+    function _pullAndBurn(
+        uint256 total,
         uint256 maxFee,
         uint32 minFinalityThreshold,
-        bytes32 npk,
-        bytes32[3] calldata encryptedBundle,
-        bytes32 shieldKey,
-        address integrator
+        ShieldData[] memory notes
     ) internal {
-        bytes memory hookData = CCTPPayloadLib.encodeShield(ShieldData({
-            npk: npk,
-            value: uint120(amount),
-            encryptedBundle: encryptedBundle,
-            shieldKey: shieldKey,
-            integrator: integrator
-        }));
+        // Transfer USDC from the caller to this contract and approve the TokenMessenger.
+        IERC20(usdc).safeTransferFrom(msg.sender, address(this), total);
+        IERC20(usdc).safeApprove(tokenMessenger, 0);
+        IERC20(usdc).safeApprove(tokenMessenger, total);
 
-        // destinationCaller is pinned to the Hub's hook router (validated non-zero in crossChainShield)
-        // so the message can only be delivered via the Hub's CCTPHookRouter.
+        bytes memory hookData = CCTPPayloadLib.encodeShield(notes);
         ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(
-            amount,
+            total,
             hubDomain,
             hubPool,
             usdc,

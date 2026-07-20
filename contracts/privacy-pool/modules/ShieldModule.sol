@@ -83,43 +83,64 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
      *      USDC has already been minted to the PrivacyPool by CCTP.
      *      This function creates a commitment and inserts it into the merkle tree.
      *
-     * @param amount Amount of USDC received (from CCTP)
-     * @param data Shield data from the CCTP payload
+     * @param amount Amount of USDC received (from CCTP) = grossAmount - feeExecuted
+     * @param datas Shield note array from the CCTP payload. Index 0 is the recipient note (which
+     *        absorbs the CCTP protocol fee); any further notes (e.g. a relayer fee note) are minted
+     *        at their full declared value.
      */
-    function processIncomingShield(uint256 amount, ShieldData calldata data) external override onlyDelegatecall {
+    function processIncomingShield(uint256 amount, ShieldData[] calldata datas) external override onlyDelegatecall {
         _requireShieldsNotPaused();
         // Verify caller is the router (self, since we're called via delegatecall)
         // This is implicitly enforced by the router only calling this on valid CCTP messages
 
-        // Verify amount doesn't exceed declared value
-        // amount = grossAmount - feeExecuted (CCTP deducts fee at protocol level)
-        // data.value = gross amount the user burned on the client chain
-        require(amount <= uint256(data.value), "ShieldModule: Amount exceeds declared value");
+        uint256 n = datas.length;
+        require(n > 0, "ShieldModule: no shield notes");
 
-        uint256 commitmentAmount = amount;
+        // Fee notes (index >= 1) are minted at their full declared value; the recipient note (index 0)
+        // absorbs the CCTP protocol fee. `amount = grossAmount - feeExecuted` (CCTP deducts the fee at
+        // protocol level), so the recipient is credited `amount - feeSum`.
+        uint256 feeSum = 0;
+        for (uint256 i = 1; i < n; i++) {
+            feeSum += uint256(datas[i].value);
+        }
+        require(amount > feeSum, "ShieldModule: fee notes exceed received amount");
 
-        // Construct shield request from CCTP data
-        // Token is always USDC on Hub
-        ShieldRequest[] memory requests = new ShieldRequest[](1);
-        requests[0] = ShieldRequest({
+        // Sanity: never credit the recipient more than the total declared (gross) burn on the source.
+        require(amount <= _sumDeclared(datas), "ShieldModule: Amount exceeds declared value");
+
+        // Mint the recipient note first (value net of the fee notes and the CCTP fee), then each fee
+        // note at its full declared value. Each note keeps its own integrator. Tokens are already in
+        // the contract from the CCTP mint, so we use _processInternalShield (no pull).
+        _processInternalShield(_shieldRequestFromData(datas[0], amount - feeSum), datas[0].integrator);
+        for (uint256 i = 1; i < n; i++) {
+            _processInternalShield(_shieldRequestFromData(datas[i], uint256(datas[i].value)), datas[i].integrator);
+        }
+    }
+
+    /// @dev Sum the declared (gross) values across all incoming shield notes.
+    function _sumDeclared(ShieldData[] calldata datas) internal pure returns (uint256 total) {
+        for (uint256 i = 0; i < datas.length; i++) {
+            total += uint256(datas[i].value);
+        }
+    }
+
+    /// @dev Build a USDC ShieldRequest from a CCTP ShieldData with an explicit (fee/CCTP-adjusted) value.
+    function _shieldRequestFromData(ShieldData calldata data, uint256 value)
+        internal
+        view
+        returns (ShieldRequest memory)
+    {
+        return ShieldRequest({
             preimage: CommitmentPreimage({
                 npk: data.npk,
-                token: TokenData({
-                    tokenType: TokenType.ERC20,
-                    tokenAddress: usdc,
-                    tokenSubID: 0
-                }),
-                value: uint120(commitmentAmount)
+                token: TokenData({tokenType: TokenType.ERC20, tokenAddress: usdc, tokenSubID: 0}),
+                value: uint120(value)
             }),
             ciphertext: ShieldCiphertext({
                 encryptedBundle: data.encryptedBundle,
                 shieldKey: data.shieldKey
             })
         });
-
-        // Process as internal shield
-        // Note: Tokens already in contract from CCTP mint, so we use _processInternalShield
-        _processInternalShield(requests[0], data.integrator);
     }
 
     /**

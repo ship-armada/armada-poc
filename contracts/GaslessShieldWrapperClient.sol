@@ -1,25 +1,32 @@
 // SPDX-License-Identifier: MIT
+// ABOUTME: Client-chain permissionless gasless cross-chain shield. User signs an EIP-2612 permit +
+// ABOUTME: EIP-712 intent; any relayer submits and is paid via a shielded fee note on the Hub.
 pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
+import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 import {IPrivacyPoolClient} from "./privacy-pool/interfaces/IPrivacyPoolClient.sol";
+import {ShieldData} from "./privacy-pool/types/CCTPTypes.sol";
 
 /**
  * @title GaslessShieldWrapperClient
- * @notice Client-chain gasless cross-chain shield via EIP-2612 permit. Symmetric with
- *         `GaslessShieldWrapper` (hub) but routes through `PrivacyPoolClient.crossChainShield`
- *         instead of `PrivacyPool.shield` — the underlying CCTP burn happens here, the shielded
- *         commitment is created on the hub when the message is received + minted.
+ * @notice Client-chain permissionless gasless cross-chain shield via EIP-2612 permit. Symmetric with
+ *         `GaslessShieldWrapper` (hub) but routes through `PrivacyPoolClient.crossChainShieldWithFee`
+ *         — the CCTP burn happens here; both the user's commitment and the relayer's fee note are
+ *         created on the Hub when the message is received + minted. The relayer is therefore paid an
+ *         in-pool shielded note on the Hub (net of the Hub's shield fee), only once leg-2 delivery
+ *         completes, rather than public USDC on the client.
  *
- * Phase B1 of the relayer-mediation plan (see `.claude/RELAYER_MEDIATION_PLAN.md`).
- *
- * Trust model + admin pattern: identical to the hub wrapper. See `GaslessShieldWrapper.sol` for
- * the full rationale.
+ * Trust model + rationale: identical to the hub wrapper (`GaslessShieldWrapper.sol`). The user signs
+ * an EIP-712 `CrossChainShieldIntent` binding both notes (user + relayer fee), the CCTP `maxFee` and
+ * finality, the `deadline`, and a per-user `nonce`, scoped to this wrapper + chainId. Submission is
+ * permissionless; there is no `onlyRelayer` gate or privileged relayer address on this contract.
  */
-contract GaslessShieldWrapperClient {
+contract GaslessShieldWrapperClient is EIP712 {
     using SafeERC20 for IERC20;
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -29,104 +36,57 @@ contract GaslessShieldWrapperClient {
     address public immutable usdc;
     address public immutable privacyPoolClient;
 
-    address public relayer;
-    address public owner;
+    /// @notice Per-user replay nonce for the EIP-712 intent. Independent of the ERC20Permit nonce.
+    mapping(address => uint256) public nonces;
+
+    /// @notice EIP-712 typehash for the cross-chain intent the user signs alongside the permit.
+    bytes32 public constant CROSS_CHAIN_SHIELD_INTENT_TYPEHASH = keccak256(
+        "CrossChainShieldIntent(address user,bytes32 userNoteHash,bytes32 feeNoteHash,uint256 maxFee,uint32 minFinalityThreshold,uint256 deadline,uint256 nonce)"
+    );
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // STRUCTS
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// @dev Scalar params grouped to keep the entry point's stack shallow (stack-too-deep without
+    ///      via-ir). The user note + fee note stay as separate calldata args.
+    struct CrossChainIntentParams {
+        address user; // permit signer + intent signer + USDC source
+        uint256 deadline; // shared permit + intent deadline
+        uint256 nonce; // must equal nonces[user]
+        uint256 maxFee; // CCTP protocol fee ceiling
+        uint32 minFinalityThreshold; // CCTP finality (FAST/STANDARD, 0 = client default)
+        uint8 permitV; // EIP-2612 permit signature component
+        bytes32 permitR; // EIP-2612 permit signature component
+        bytes32 permitS; // EIP-2612 permit signature component
+    }
 
     // ══════════════════════════════════════════════════════════════════════════
     // EVENTS
     // ══════════════════════════════════════════════════════════════════════════
 
     /**
-     * @dev `destHash` is `keccak256(abi.encode(dest))` — the digest of the `CrossChainParams`
-     *      the wrapper executed. Lets the user verify off-chain that the relayer honored the
-     *      cross-chain destination they signed against (npk, ciphertext, finality, maxFee,
-     *      integrator, …). Symmetric with the hub wrapper's
-     *      `shieldRequestHash`.
+     * @dev `notesHash` is `keccak256(abi.encode(userNote, feeNote))` — the digest the user signed in
+     *      the intent. `feeValue` is the relayer fee note's declared value (gross of the Hub shield
+     *      fee). Lets a watcher confirm off-chain that the burn honored the signed cross-chain intent.
      */
     event GaslessShield(
         address indexed user,
-        uint256 shieldAmount,
-        uint256 fee,
+        uint256 totalAmount,
+        uint256 feeValue,
         uint64 cctpNonce,
-        bytes32 destHash
+        bytes32 notesHash
     );
-    event RelayerUpdated(address indexed oldRelayer, address indexed newRelayer);
-    event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // MODIFIERS
-    // ══════════════════════════════════════════════════════════════════════════
-
-    modifier onlyOwner() {
-        require(msg.sender == owner, "GaslessShieldWrapperClient: not owner");
-        _;
-    }
-
-    modifier onlyRelayer() {
-        require(msg.sender == relayer, "GaslessShieldWrapperClient: not relayer");
-        _;
-    }
 
     // ══════════════════════════════════════════════════════════════════════════
     // CONSTRUCTOR
     // ══════════════════════════════════════════════════════════════════════════
 
-    constructor(address _usdc, address _privacyPoolClient, address _relayer) {
+    constructor(address _usdc, address _privacyPoolClient) EIP712("ArmadaGaslessCrossChainShield", "1") {
         require(_usdc != address(0), "GaslessShieldWrapperClient: zero usdc");
-        require(
-            _privacyPoolClient != address(0),
-            "GaslessShieldWrapperClient: zero privacyPoolClient"
-        );
-        require(_relayer != address(0), "GaslessShieldWrapperClient: zero relayer");
+        require(_privacyPoolClient != address(0), "GaslessShieldWrapperClient: zero privacyPoolClient");
         usdc = _usdc;
         privacyPoolClient = _privacyPoolClient;
-        relayer = _relayer;
-        owner = msg.sender;
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // ADMIN
-    // ══════════════════════════════════════════════════════════════════════════
-
-    function setRelayer(address newRelayer) external onlyOwner {
-        require(newRelayer != address(0), "GaslessShieldWrapperClient: zero relayer");
-        address old = relayer;
-        relayer = newRelayer;
-        emit RelayerUpdated(old, newRelayer);
-    }
-
-    function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "GaslessShieldWrapperClient: zero owner");
-        address old = owner;
-        owner = newOwner;
-        emit OwnershipTransferred(old, newOwner);
-    }
-
-    // ══════════════════════════════════════════════════════════════════════════
-    // STRUCTS
-    // ══════════════════════════════════════════════════════════════════════════
-
-    /// @dev EIP-2612 permit components grouped to keep the entry point's stack shallow.
-    struct PermitInput {
-        address user;
-        uint256 totalAmount;
-        uint256 fee;
-        uint256 deadline;
-        uint8 v;
-        bytes32 r;
-        bytes32 s;
-    }
-
-    /// @dev CCTP V2 cross-chain shield destination args, grouped for stack-shallow reasons.
-    /// @dev The CCTP destinationCaller is not included: PrivacyPoolClient pins it to its configured
-    ///      hubHookRouter at the contract level, so it is neither caller- nor signer-supplied.
-    struct CrossChainParams {
-        uint256 maxFee;
-        uint32 minFinalityThreshold;
-        bytes32 npk;
-        bytes32[3] encryptedBundle;
-        bytes32 shieldKey;
-        address integrator;
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -134,73 +94,85 @@ contract GaslessShieldWrapperClient {
     // ══════════════════════════════════════════════════════════════════════════
 
     /**
-     * @notice Atomically permit + fee transfer + cross-chain shield. Returns the CCTP nonce.
-     * @dev Permit + CCTP args grouped into structs to dodge stack-too-deep with the 14-arg
-     *      flat signature. ABI-shape: the relayer encodes a `PermitInput` and `CrossChainParams`
-     *      and forwards both — single calldata, same ergonomics as the hub wrapper from the
-     *      relayer's POV.
-     * @param permitInput Permit signer, totals, deadline, signature.
-     * @param dest CCTP V2 burn args + hub recipient (npk + ciphertext + shieldKey).
+     * @notice Atomically verify intent + permit + cross-chain shield. Returns the CCTP nonce.
+     * @param params Scalar intent + permit-signature params (see `CrossChainIntentParams`).
+     * @param intentSig EIP-712 CrossChainShieldIntent signature (EOA or EIP-1271).
+     * @param userNote The user's recipient note (npk + ciphertext + value). Minted on the Hub net of
+     *        the CCTP fee.
+     * @param feeNote The relayer's fee note (to the relayer's npk). Minted on the Hub at full value.
      */
     function gaslessCrossChainShield(
-        PermitInput calldata permitInput,
-        CrossChainParams calldata dest
-    ) external onlyRelayer returns (uint64 cctpNonce) {
-        // ATOMIC: every step below must succeed together or the whole tx reverts. The wrapper
-        // holds no inter-call state, so do not introduce intermediate storage writes between
-        // permit / transfers / approve / crossChainShield — doing so would break the "no fee
-        // paid without burn" guarantee documented in the contract header.
-        require(permitInput.totalAmount > 0, "GaslessShieldWrapperClient: zero amount");
-        require(
-            permitInput.fee < permitInput.totalAmount,
-            "GaslessShieldWrapperClient: fee >= amount"
-        );
-        uint256 shieldAmount = permitInput.totalAmount - permitInput.fee;
-        // PrivacyPoolClient enforces `maxFee < amount`; pre-check so we don't burn gas on a
-        // doomed-to-revert downstream call when the inputs are obviously inconsistent.
-        require(dest.maxFee < shieldAmount, "GaslessShieldWrapperClient: maxFee >= shieldAmount");
+        CrossChainIntentParams calldata params,
+        bytes calldata intentSig,
+        ShieldData calldata userNote,
+        ShieldData calldata feeNote
+    ) external returns (uint64 cctpNonce) {
+        require(block.timestamp <= params.deadline, "GaslessShieldWrapperClient: expired");
+        require(params.nonce == nonces[params.user], "GaslessShieldWrapperClient: bad nonce");
 
-        // 1. Permit. See GaslessShieldWrapper for the deadline + nonce rationale.
-        IERC20Permit(usdc).permit(
-            permitInput.user,
-            address(this),
-            permitInput.totalAmount,
-            permitInput.deadline,
-            permitInput.v,
-            permitInput.r,
-            permitInput.s
-        );
+        // Verify the intent binds both notes + CCTP params + deadline + nonce for this user.
+        _verifyIntent(params, keccak256(abi.encode(userNote)), keccak256(abi.encode(feeNote)), intentSig);
 
-        // 2. Relayer fee (skipped when zero, defensive).
-        if (permitInput.fee > 0) {
-            IERC20(usdc).safeTransferFrom(permitInput.user, relayer, permitInput.fee);
-        }
+        // Effects: consume the nonce before any external call (checks-effects-interactions).
+        nonces[params.user] = params.nonce + 1;
 
-        // 3. Pull burn amount into wrapper.
-        IERC20(usdc).safeTransferFrom(permitInput.user, address(this), shieldAmount);
+        require(userNote.value > 0, "GaslessShieldWrapperClient: zero user note");
+        require(feeNote.value > 0, "GaslessShieldWrapperClient: zero fee note");
+        uint256 total = uint256(userNote.value) + uint256(feeNote.value);
 
-        // 4. Approve client to pull from wrapper (it will then approve TokenMessenger
-        //    internally — same pattern PrivacyPoolClient uses for direct callers).
-        IERC20(usdc).safeApprove(privacyPoolClient, 0);
-        IERC20(usdc).safeApprove(privacyPoolClient, shieldAmount);
-
-        // 5. Cross-chain shield. The client burns USDC via CCTP V2 and emits MessageSent.
-        cctpNonce = IPrivacyPoolClient(privacyPoolClient).crossChainShield(
-            shieldAmount,
-            dest.maxFee,
-            dest.minFinalityThreshold,
-            dest.npk,
-            dest.encryptedBundle,
-            dest.shieldKey,
-            dest.integrator
-        );
+        cctpNonce = _permitPullApproveShield(params, total, userNote, feeNote);
 
         emit GaslessShield(
-            permitInput.user,
-            shieldAmount,
-            permitInput.fee,
-            cctpNonce,
-            keccak256(abi.encode(dest))
+            params.user, total, uint256(feeNote.value), cctpNonce, keccak256(abi.encode(userNote, feeNote))
+        );
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // INTERNAL HELPERS
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// @dev Recompute the EIP-712 digest and require a valid EOA/EIP-1271 signature from `user`.
+    function _verifyIntent(
+        CrossChainIntentParams calldata params,
+        bytes32 userNoteHash,
+        bytes32 feeNoteHash,
+        bytes calldata intentSig
+    ) internal view {
+        bytes32 structHash = keccak256(
+            abi.encode(
+                CROSS_CHAIN_SHIELD_INTENT_TYPEHASH,
+                params.user,
+                userNoteHash,
+                feeNoteHash,
+                params.maxFee,
+                params.minFinalityThreshold,
+                params.deadline,
+                params.nonce
+            )
+        );
+        bytes32 digest = _hashTypedDataV4(structHash);
+        require(
+            SignatureChecker.isValidSignatureNow(params.user, digest, intentSig),
+            "GaslessShieldWrapperClient: bad intent sig"
+        );
+    }
+
+    /// @dev The atomic money-movement leg. No inter-call state — do not add intermediate storage
+    ///      writes here (preserves the "no funds pulled without burn" guarantee).
+    function _permitPullApproveShield(
+        CrossChainIntentParams calldata params,
+        uint256 total,
+        ShieldData calldata userNote,
+        ShieldData calldata feeNote
+    ) internal returns (uint64) {
+        IERC20Permit(usdc).permit(
+            params.user, address(this), total, params.deadline, params.permitV, params.permitR, params.permitS
+        );
+        IERC20(usdc).safeTransferFrom(params.user, address(this), total);
+        IERC20(usdc).safeApprove(privacyPoolClient, 0);
+        IERC20(usdc).safeApprove(privacyPoolClient, total);
+        return IPrivacyPoolClient(privacyPoolClient).crossChainShieldWithFee(
+            params.maxFee, params.minFinalityThreshold, userNote, feeNote
         );
     }
 }

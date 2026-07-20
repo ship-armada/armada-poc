@@ -269,12 +269,13 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
                 "PrivacyPool: untrusted source pool"
             );
 
-            // Cross-chain shield from Client
-            ShieldData memory shieldData = CCTPPayloadLib.decodeShieldData(payload.data);
+            // Cross-chain shield from Client. The payload carries one or more notes: index 0 is the
+            // recipient note; any further notes (e.g. a relayer fee note) are minted at full value.
+            ShieldData[] memory shieldNotes = CCTPPayloadLib.decodeShieldData(payload.data);
 
             _delegatecall(
                 shieldModule,
-                abi.encodeCall(IShieldModule.processIncomingShield, (actualAmount, shieldData))
+                abi.encodeCall(IShieldModule.processIncomingShield, (actualAmount, shieldNotes))
             );
         } else {
             // Hub should not receive UNSHIELD messages (only Clients receive those)

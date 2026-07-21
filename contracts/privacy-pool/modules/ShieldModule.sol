@@ -108,13 +108,33 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
         // Sanity: never credit the recipient more than the total declared (gross) burn on the source.
         require(amount <= _sumDeclared(datas), "ShieldModule: Amount exceeds declared value");
 
-        // Mint the recipient note first (value net of the fee notes and the CCTP fee), then each fee
-        // note at its full declared value. Each note keeps its own integrator. Tokens are already in
-        // the contract from the CCTP mint, so we use _processInternalShield (no pull).
-        _processInternalShield(_shieldRequestFromData(datas[0], amount - feeSum), datas[0].integrator);
-        for (uint256 i = 1; i < n; i++) {
-            _processInternalShield(_shieldRequestFromData(datas[i], uint256(datas[i].value)), datas[i].integrator);
+        // Build every note, apply its (per-note integrator) shield fee, then insert ALL leaves in one
+        // batch with a SINGLE Shield event — matching the same-chain shield() event shape (one event
+        // with N commitments) rather than emitting one event per note. Tokens are already in the
+        // contract from the CCTP mint, so the fee helper transfers out but never pulls.
+        bytes32[] memory insertionLeaves = new bytes32[](n);
+        CommitmentPreimage[] memory commitments = new CommitmentPreimage[](n);
+        ShieldCiphertext[] memory shieldCiphertext = new ShieldCiphertext[](n);
+        uint256[] memory fees = new uint256[](n);
+
+        for (uint256 i = 0; i < n; i++) {
+            // Recipient (index 0) is credited net of the fee notes + the CCTP fee; fee notes at full value.
+            uint256 noteValue = i == 0 ? amount - feeSum : uint256(datas[i].value);
+            ShieldRequest memory request = _shieldRequestFromData(datas[i], noteValue);
+            _validateCommitmentPreimageMemory(request.preimage);
+            (CommitmentPreimage memory adjustedPreimage, uint256 fee) =
+                _applyShieldFee(request.preimage, datas[i].integrator);
+            commitments[i] = adjustedPreimage;
+            shieldCiphertext[i] = request.ciphertext;
+            fees[i] = fee;
+            insertionLeaves[i] = _hashCommitment(adjustedPreimage);
         }
+
+        (uint256 insertionTreeNumber, uint256 insertionStartIndex) =
+            IMerkleModule(address(this)).getInsertionTreeNumberAndStartingIndex(n);
+        emit Shield(insertionTreeNumber, insertionStartIndex, commitments, shieldCiphertext, fees);
+        IMerkleModule(address(this)).insertLeaves(insertionLeaves);
+        lastEventBlock = block.number;
     }
 
     /// @dev Sum the declared (gross) values across all incoming shield notes.
@@ -144,23 +164,26 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
     }
 
     /**
-     * @notice Process a shield where tokens are already in the contract
-     * @dev Used for cross-chain shields where CCTP has already minted tokens to us
-     * @param _request The shield request to process
-     * @param integrator Integrator address for fee split (address(0) for no integrator)
+     * @notice Apply the shield fee to a note whose tokens are ALREADY in the contract (cross-chain
+     *         CCTP mint — no pull). Transfers the fee out (armada take → treasury, integrator fee →
+     *         integrator), records it, and returns the fee-adjusted preimage + total fee. Does NOT
+     *         hash, insert, or emit — `processIncomingShield` batches those across all notes so a
+     *         multi-note cross-chain shield produces a single Shield event.
+     * @param preimage The commitment preimage (with its gross value) to fee-adjust.
+     * @param integrator Integrator address for fee split (address(0) for no integrator).
      */
-    function _processInternalShield(ShieldRequest memory _request, address integrator) internal {
-        // Validate the commitment preimage
-        _validateCommitmentPreimageMemory(_request.preimage);
+    function _applyShieldFee(CommitmentPreimage memory preimage, address integrator)
+        internal
+        returns (CommitmentPreimage memory adjustedPreimage, uint256 fee)
+    {
+        adjustedPreimage = preimage;
+        fee = 0;
 
-        // Calculate fee (if any). Privileged callers bypass fee.
-        uint256 fee = 0;
-        CommitmentPreimage memory adjustedPreimage = _request.preimage;
-
+        // Privileged callers (registered adapters) bypass the fee.
         if (!_isPrivilegedShieldCaller(msg.sender)) {
             if (feeModule != address(0)) {
                 // Fee module path: centralized fee calculation with integrator support
-                uint256 amount = uint256(_request.preimage.value);
+                uint256 amount = uint256(preimage.value);
                 (uint256 armadaTake, uint256 integratorFee, uint256 totalFee) =
                     IArmadaFeeModule(feeModule).calculateShieldFee(integrator, amount);
 
@@ -179,7 +202,7 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
 
                 // Record fee in fee module
                 IArmadaFeeModule(feeModule).recordShieldFee(
-                    _request.preimage.token.tokenAddress,
+                    preimage.token.tokenAddress,
                     integrator,
                     amount,
                     armadaTake,
@@ -187,7 +210,7 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
                 );
             } else if (shieldFee > 0) {
                 // Flat fee fallback path (used when feeModule == address(0))
-                (uint120 base, uint120 feeAmount) = _getFee(_request.preimage.value, true, shieldFee);
+                (uint120 base, uint120 feeAmount) = _getFee(preimage.value, true, shieldFee);
                 adjustedPreimage.value = base;
                 fee = feeAmount;
 
@@ -197,30 +220,6 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
                 }
             }
         }
-
-        // Prepare arrays for merkle insertion and events
-        bytes32[] memory insertionLeaves = new bytes32[](1);
-        CommitmentPreimage[] memory commitments = new CommitmentPreimage[](1);
-        ShieldCiphertext[] memory shieldCiphertext = new ShieldCiphertext[](1);
-        uint256[] memory fees = new uint256[](1);
-
-        commitments[0] = adjustedPreimage;
-        shieldCiphertext[0] = _request.ciphertext;
-        fees[0] = fee;
-        insertionLeaves[0] = _hashCommitment(adjustedPreimage);
-
-        // Get insertion position
-        (uint256 insertionTreeNumber, uint256 insertionStartIndex) = IMerkleModule(address(this))
-            .getInsertionTreeNumberAndStartingIndex(1);
-
-        // Emit Shield event
-        emit Shield(insertionTreeNumber, insertionStartIndex, commitments, shieldCiphertext, fees);
-
-        // Insert into merkle tree
-        IMerkleModule(address(this)).insertLeaves(insertionLeaves);
-
-        // Update last event block
-        lastEventBlock = block.number;
     }
 
     // ══════════════════════════════════════════════════════════════════════════

@@ -1,13 +1,21 @@
 // ABOUTME: GaslessShieldWrapperClient.gaslessCrossChainShield(...) calldata builder — encodes the
-// ABOUTME: client wrapper ABI for relayer POST. Permit signature comes from signUsdcPermit().
+// ABOUTME: client wrapper ABI for relayer POST. Permit + intent signatures come from the caller.
 
 import { encodeFunctionData } from 'viem'
-import type { ShieldRequestData } from '@/lib/railgun/shield'
+import type { ShieldDataStruct } from '@/lib/wallet/shield-intent'
+
+const SHIELD_DATA_COMPONENTS = [
+  { name: 'npk', type: 'bytes32' },
+  { name: 'value', type: 'uint120' },
+  { name: 'encryptedBundle', type: 'bytes32[3]' },
+  { name: 'shieldKey', type: 'bytes32' },
+  { name: 'integrator', type: 'address' },
+] as const
 
 /**
  * Wrapper ABI fragment. The selector must match the relayer's `gasless-fee-verifier.ts`
- * `GASLESS_CROSS_CHAIN_SHIELD_SELECTOR`. The two struct args mirror the on-chain wrapper's
- * `PermitInput` and `CrossChainParams` shapes verbatim — viem encodes them as tuples.
+ * `GASLESS_CROSS_CHAIN_SHIELD_SELECTOR`. The `CrossChainIntentParams` tuple + two `ShieldData`
+ * args mirror the on-chain wrapper verbatim — viem encodes them as tuples.
  */
 export const GASLESS_CROSS_CHAIN_SHIELD_WRAPPER_ABI = [
   {
@@ -16,64 +24,56 @@ export const GASLESS_CROSS_CHAIN_SHIELD_WRAPPER_ABI = [
     stateMutability: 'nonpayable',
     inputs: [
       {
-        name: 'permitInput',
+        name: 'params',
         type: 'tuple',
         components: [
           { name: 'user', type: 'address' },
-          { name: 'totalAmount', type: 'uint256' },
-          { name: 'fee', type: 'uint256' },
           { name: 'deadline', type: 'uint256' },
-          { name: 'v', type: 'uint8' },
-          { name: 'r', type: 'bytes32' },
-          { name: 's', type: 'bytes32' },
-        ],
-      },
-      {
-        name: 'dest',
-        type: 'tuple',
-        components: [
+          { name: 'nonce', type: 'uint256' },
           { name: 'maxFee', type: 'uint256' },
           { name: 'minFinalityThreshold', type: 'uint32' },
-          { name: 'npk', type: 'bytes32' },
-          { name: 'encryptedBundle', type: 'bytes32[3]' },
-          { name: 'shieldKey', type: 'bytes32' },
-          { name: 'integrator', type: 'address' },
+          { name: 'permitV', type: 'uint8' },
+          { name: 'permitR', type: 'bytes32' },
+          { name: 'permitS', type: 'bytes32' },
         ],
       },
+      { name: 'intentSig', type: 'bytes' },
+      { name: 'userNote', type: 'tuple', components: SHIELD_DATA_COMPONENTS },
+      { name: 'feeNote', type: 'tuple', components: SHIELD_DATA_COMPONENTS },
     ],
     outputs: [{ name: 'cctpNonce', type: 'uint64' }],
   },
 ] as const
 
 export interface BuildGaslessCrossChainShieldCalldataInput {
-  /** Permit signer + USDC source — the connected EVM wallet that signed the permit. */
+  /** Permit + intent signer / USDC source — the connected EVM wallet. */
   user: `0x${string}`
-  /** Total USDC the wrapper is authorised to pull = shieldAmount + fee. Must match the permit. */
-  totalAmount: bigint
-  /** USDC paid to the relayer; the wrapper transfers it via transferFrom(user, relayer, fee). */
-  fee: bigint
-  /** Unix seconds; must match the permit signature's deadline. */
+  /** Shared permit + intent deadline (unix seconds). */
   deadline: bigint
-  /** Permit signature components from signUsdcPermit(). */
-  v: number
-  r: `0x${string}`
-  s: `0x${string}`
-  /** CCTP V2 fast-fee cap in USDC raw units — wrapper requires `maxFee < shieldAmount`. */
+  /** The user's intent nonce this call consumes (must equal wrapper.nonces(user)). */
+  nonce: bigint
+  /** CCTP V2 fast-fee cap in USDC raw units — bound in the intent. */
   maxFee: bigint
-  /** 1000 (FAST) or 0 / 2000 (STANDARD) — passed through to TokenMessenger.depositForBurn. */
+  /** 1000 (FAST) or 0 / 2000 (STANDARD) — bound in the intent. */
   minFinalityThreshold: number
-  /** Built-by-`createShieldRequest()` against the HUB usdc address (commitment lives on hub). */
-  shieldRequest: ShieldRequestData
-  /** Integrator address for the pool's fee split; address(0) for none. */
-  integrator: `0x${string}`
+  /** EIP-2612 permit signature components from signUsdcPermit(). */
+  permitV: number
+  permitR: `0x${string}`
+  permitS: `0x${string}`
+  /** 65-byte EIP-712 CrossChainShieldIntent signature. */
+  intentSig: `0x${string}`
+  /** The user's recipient note (built against the HUB usdc address; minted on the hub). */
+  userNote: ShieldDataStruct
+  /** The relayer's fee note (to the relayer's 0zk npk); minted on the hub at full value. */
+  feeNote: ShieldDataStruct
 }
 
 /**
  * Build the `data` field of a `submitRelay()` request targeting `GaslessShieldWrapperClient`.
  *
- * Returns raw calldata hex. Caller supplies the wrapper `to` address (looked up from the
- * client-chain deployment manifest) and posts `{chainId: clientChainId, to, data, feesCacheId}`
- * to the relayer's `/relay`.
+ * Returns raw calldata hex. Caller supplies the wrapper `to` address (from the client-chain
+ * manifest) and posts `{chainId: clientChainId, to, data, feesCacheId, feeShieldRandom}` to
+ * `/relay`.
  *
  * Pure function — no RPC, no signing.
  */
@@ -86,25 +86,17 @@ export function buildGaslessCrossChainShieldCalldata(
     args: [
       {
         user: input.user,
-        totalAmount: input.totalAmount,
-        fee: input.fee,
         deadline: input.deadline,
-        v: input.v,
-        r: input.r,
-        s: input.s,
-      },
-      {
+        nonce: input.nonce,
         maxFee: input.maxFee,
         minFinalityThreshold: input.minFinalityThreshold,
-        npk: input.shieldRequest.npk,
-        encryptedBundle: input.shieldRequest.encryptedBundle as readonly [
-          `0x${string}`,
-          `0x${string}`,
-          `0x${string}`,
-        ],
-        shieldKey: input.shieldRequest.shieldKey,
-        integrator: input.integrator,
+        permitV: input.permitV,
+        permitR: input.permitR,
+        permitS: input.permitS,
       },
+      input.intentSig,
+      input.userNote,
+      input.feeNote,
     ],
   })
 }

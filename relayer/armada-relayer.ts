@@ -272,7 +272,7 @@ async function main() {
       hubChainId: netConfig.hub.chainId,
       usdcAddress: hubAddresses.usdc,
     },
-    { wrappersByChain },
+    { wrappersByChain, wallet: railgunWallet.getWallet() },
     counters,
   );
 

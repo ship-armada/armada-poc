@@ -231,7 +231,10 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
             UnshieldData({ recipient: finalRecipient, uniqueNonce: uniqueNonce })
         );
 
-        // Burn via CCTP
+        // Burn via CCTP. Reset the allowance to zero before setting it — OZ 4.9 safeApprove reverts
+        // on a non-zero→non-zero change, so a residual TokenMessenger allowance would otherwise brick
+        // later burns. Matches the defensive pattern in PrivacyPoolClient and the gasless-shield wrappers.
+        IERC20(usdc).safeApprove(tokenMessenger, 0);
         IERC20(usdc).safeApprove(tokenMessenger, base);
 
         // destinationCaller is pinned to the destination chain's hook router (validated non-zero in
@@ -324,7 +327,9 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
             }
         }
 
-        // Verify SNARK proof (via delegatecall to VerifierModule)
+        // Verify SNARK proof. During this module's delegatecall, address(this) is the PrivacyPool
+        // router, so this external staticcall dispatches to the router's own verify() — the
+        // authoritative implementation — not to the VerifierModule contract.
         if (!IVerifierModule(address(this)).verify(_transaction)) {
             return (false, "Invalid Proof");
         }

@@ -66,9 +66,13 @@ contract GaslessShieldWrapperClient is EIP712 {
     // ══════════════════════════════════════════════════════════════════════════
 
     /**
-     * @dev `notesHash` is `keccak256(abi.encode(userNote, feeNote))` — the digest the user signed in
-     *      the intent. `feeValue` is the relayer fee note's declared value (gross of the Hub shield
-     *      fee). Lets a watcher confirm off-chain that the burn honored the signed cross-chain intent.
+     * @dev `notesHash` is `keccak256(abi.encode(userNote, feeNote))` — a convenience digest binding the
+     *      two note payloads carried in this burn. It is NOT the digest the user signed: the intent is an
+     *      EIP-712 `CrossChainShieldIntent` over `keccak256(abi.encode(userNote))`,
+     *      `keccak256(abi.encode(feeNote))` and the CCTP params (maxFee, finality, deadline, nonce) —
+     *      see `_verifyIntent`. To confirm a burn honored the signed intent, recompute that EIP-712
+     *      digest, not this hash. `feeValue` is the relayer fee note's declared value (gross of the Hub
+     *      shield fee).
      */
     event GaslessShield(
         address indexed user,
@@ -94,7 +98,10 @@ contract GaslessShieldWrapperClient is EIP712 {
     // ══════════════════════════════════════════════════════════════════════════
 
     /**
-     * @notice Atomically verify intent + permit + cross-chain shield. Returns the CCTP nonce.
+     * @notice Atomically verify intent + permit + cross-chain shield.
+     * @dev The returned `cctpNonce` (and the value in `GaslessShield`) is always 0: CCTP V2
+     *      `depositForBurnWithHook` does not surface a nonce. Correlate deliveries via the CCTP
+     *      message hash / Iris APIs, not this value.
      * @param params Scalar intent + permit-signature params (see `CrossChainIntentParams`).
      * @param intentSig EIP-712 CrossChainShieldIntent signature (EOA or EIP-1271).
      * @param userNote The user's recipient note (npk + ciphertext + value). Minted on the Hub net of
@@ -118,6 +125,14 @@ contract GaslessShieldWrapperClient is EIP712 {
 
         require(userNote.value > 0, "GaslessShieldWrapperClient: zero user note");
         require(feeNote.value > 0, "GaslessShieldWrapperClient: zero fee note");
+        // The recipient note absorbs the CCTP fee on the Hub, which requires userNote.value >
+        // feeExecuted. PrivacyPoolClient enforces `maxFee < userNote.value`; pre-check here so an
+        // over-large maxFee (which would strand the burn on the Hub) is rejected before we permit,
+        // pull, and burn rather than reverting downstream.
+        require(
+            params.maxFee < uint256(userNote.value),
+            "GaslessShieldWrapperClient: maxFee >= user note"
+        );
         uint256 total = uint256(userNote.value) + uint256(feeNote.value);
 
         cctpNonce = _permitPullApproveShield(params, total, userNote, feeNote);

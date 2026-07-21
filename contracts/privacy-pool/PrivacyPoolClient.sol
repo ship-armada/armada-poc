@@ -134,7 +134,8 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
      * @param encryptedBundle Encrypted note data [3 x bytes32]
      * @param shieldKey Shield key for decryption by recipient
      * @param integrator Integrator address for fee split (address(0) for no integrator)
-     * @return nonce CCTP message nonce
+     * @return nonce Always 0 — CCTP V2 depositForBurnWithHook returns no nonce; correlate via
+     *         message hash / Iris, not this value.
      * @dev The CCTP destinationCaller is pinned to hubHookRouter (not caller-supplied), so the burn can
      *      only be delivered through the Hub's CCTPHookRouter — a caller cannot leave it bytes32(0) and
      *      let a third party call receiveMessage directly and strand the funds.
@@ -179,7 +180,8 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
      * @param minFinalityThreshold Finality level (FAST/STANDARD, 0 = contract default)
      * @param userNote Recipient note (index 0 on the Hub; absorbs the CCTP fee)
      * @param feeNote Relayer fee note (minted at full value on the Hub)
-     * @return nonce CCTP message nonce
+     * @return nonce Always 0 — CCTP V2 depositForBurnWithHook returns no nonce; correlate via
+     *         message hash / Iris, not this value.
      */
     function crossChainShieldWithFee(
         uint256 maxFee,
@@ -191,7 +193,13 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         require(hubHookRouter != bytes32(0), "PrivacyPoolClient: Hook router not configured");
         uint256 total = uint256(userNote.value) + uint256(feeNote.value);
         require(total > 0, "PrivacyPoolClient: Amount must be > 0");
-        require(maxFee < total, "PrivacyPoolClient: Fee exceeds amount");
+        // The CCTP fee is absorbed by the recipient note (index 0) on the Hub, which is credited
+        // `received - feeSum` with feeSum = feeNote.value. The Hub enforces `received > feeSum`, i.e.
+        // userNote.value > feeExecuted. Since feeExecuted <= maxFee, bounding maxFee below
+        // userNote.value guarantees the executed fee can never consume the recipient tranche and
+        // strand the (already burned) message on the Hub. Bounding only against `total` is
+        // insufficient: it permits maxFee >= userNote.value, an undeliverable configuration.
+        require(maxFee < uint256(userNote.value), "PrivacyPoolClient: Fee exceeds user note");
 
         ShieldData[] memory notes = new ShieldData[](2);
         notes[0] = userNote; // recipient note — absorbs the CCTP fee on the Hub

@@ -277,6 +277,31 @@ contract GaslessShieldWrapperClientTest is Test {
         wrapper.gaslessCrossChainShield(p, intentSig, userNote, feeNote);
     }
 
+    function test_gaslessCrossChainShield_maxFeeExceedingUserNoteReverts() public {
+        // WHY (C-1): the recipient note (index 0) absorbs the CCTP fee on the Hub, which enforces
+        // userNote.value > feeExecuted. Because feeExecuted <= maxFee, a maxFee >= userNote.value is
+        // an undeliverable configuration — the Hub reverts `received > feeSum` after the Client burn
+        // already completed, permanently stranding the funds. The wrapper must reject it before
+        // permit/pull/burn. maxFee (2 USDC) is >= userNote.value (1 USDC) but < total (4 USDC): the
+        // exact gap the old `maxFee < total` bound permitted. Signed with the same over-large maxFee
+        // so the intent check passes and the dedicated bound is what trips.
+        uint256 shieldAmount = ONE_USDC;
+        uint256 fee = 3 * ONE_USDC;
+        uint256 total = shieldAmount + fee;
+        uint256 maxFee = 2 * ONE_USDC;
+        uint256 deadline = block.timestamp + 1 hours;
+
+        ShieldData memory userNote = _note(USER_NPK, shieldAmount);
+        ShieldData memory feeNote = _note(RELAYER_NPK, fee);
+        bytes memory intentSig = _signIntent(userNote, feeNote, maxFee, FINALITY, deadline, 0);
+        GaslessShieldWrapperClient.CrossChainIntentParams memory p =
+            _params(deadline, 0, maxFee, FINALITY, total);
+
+        vm.prank(frontrunner);
+        vm.expectRevert("GaslessShieldWrapperClient: maxFee >= user note");
+        wrapper.gaslessCrossChainShield(p, intentSig, userNote, feeNote);
+    }
+
     function test_gaslessCrossChainShield_permissionlessResubmitSucceeds() public {
         // WHY: anyone MAY submit the unmodified signed bundle; the fee still lands to the relayer npk.
         uint256 shieldAmount = 4 * ONE_USDC;
@@ -359,7 +384,10 @@ contract GaslessShieldWrapperClientTest is Test {
         vm.assume(shieldAmount > 0 && fee > 0);
         uint256 total = shieldAmount + fee;
         vm.assume(total <= 100 * ONE_USDC);
-        vm.assume(total > MAX_FEE);
+        // C-1: the Client requires maxFee (= MAX_FEE here) < userNote.value, so the recipient note must
+        // exceed the fee ceiling for a deliverable burn. Keep the fuzzed inputs in that valid domain
+        // (this subsumes total > MAX_FEE, since shieldAmount is part of total).
+        vm.assume(shieldAmount > MAX_FEE);
         uint256 deadline = block.timestamp + 1 hours;
 
         ShieldData memory userNote = _note(USER_NPK, shieldAmount);

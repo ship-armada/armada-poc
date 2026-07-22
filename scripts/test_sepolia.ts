@@ -48,7 +48,7 @@ const PRIVACY_POOL_ABI = [
   "function localDomain() view returns (uint32)",
   "function remotePools(uint32) view returns (bytes32)",
   "function getVerificationKey(uint256 nullifiers, uint256 commitments) view returns (tuple(string artifactsIPFSHash, tuple(uint256 x, uint256 y) alpha1, tuple(uint256[2] x, uint256[2] y) beta2, tuple(uint256[2] x, uint256[2] y) gamma2, tuple(uint256[2] x, uint256[2] y) delta2, tuple(uint256 x, uint256 y)[] ic))",
-  "function shield(tuple(tuple(bytes32 npk, tuple(uint8 tokenType, address tokenAddress, uint256 tokenSubID) token, uint120 value) preimage, tuple(bytes32[3] encryptedBundle, bytes32 shieldKey) ciphertext)[] _shieldRequests) external",
+  "function shield(tuple(tuple(bytes32 npk, tuple(uint8 tokenType, address tokenAddress, uint256 tokenSubID) token, uint120 value) preimage, tuple(bytes32[3] encryptedBundle, bytes32 shieldKey) ciphertext)[] _shieldRequests, address integrator) external",
 ];
 
 const PRIVACY_POOL_CLIENT_ABI = [
@@ -350,7 +350,8 @@ async function testHubShield(config: ReturnType<typeof getNetworkConfig>, amount
   };
 
   const fees2 = await getFeeOverrides(hubProvider, 2000000); // shield needs ~1.5M gas (Poseidon + Merkle tree)
-  const shieldTx = await privacyPool.shield([shieldRequest], fees2);
+  // integrator = address(0): no integrator-fee split (the smoke test isn't testing integrator fees)
+  const shieldTx = await privacyPool.shield([shieldRequest], ethers.ZeroAddress, fees2);
   info(`Tx: ${shieldTx.hash}`);
   const receipt = await waitForTx(shieldTx);
   passed(`Shield confirmed in block ${receipt.blockNumber}`);

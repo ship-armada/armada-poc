@@ -106,25 +106,29 @@ const config: HardhatUserConfig = {
     // ========== Sepolia Testnet Networks ==========
 
     // Hub: Ethereum Sepolia
+    // gasMultiplier 2.0 (not 1.2): public testnet RPCs underestimate eth_estimateGas for
+    // refund-heavy SSTOREs (clearing a slot to zero), leaving < 2300 gas at the EIP-2200
+    // sentry and OOG-reverting admin calls like governor.clearDeployer() / renounceRole().
+    // The extra headroom is unused on success (only actual gasUsed is charged), so it's safe.
     sepoliaHub: {
       url: process.env.HUB_RPC || "https://ethereum-sepolia-rpc.publicnode.com",
       chainId: 11155111,
       accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
-      gasMultiplier: 1.2,
+      gasMultiplier: 2.0,
     },
     // Client A: Base Sepolia
     sepoliaClientA: {
       url: process.env.CLIENT_A_RPC || "https://sepolia.base.org",
       chainId: 84532,
       accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
-      gasMultiplier: 1.2,
+      gasMultiplier: 2.0,
     },
     // Client B: Arbitrum Sepolia
     sepoliaClientB: {
       url: process.env.CLIENT_B_RPC || "https://sepolia-rollup.arbitrum.io/rpc",
       chainId: 421614,
       accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
-      gasMultiplier: 1.2,
+      gasMultiplier: 2.0,
     },
 
     // ========== Mainnet Networks ==========

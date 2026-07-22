@@ -1,26 +1,26 @@
 {
   "chainId": 11155111,
   "deployer": "0x98b1CBa0908C98c95c9C87D94e4fCdddc87C933d",
-  "deployBlock": 10892674,
+  "deployBlock": 11323291,
   "contracts": {
-    "timelockController": "0xB70D1DcD7E63E0eF7b4c7B83cAb35f5863462889",
-    "armToken": "0x21EEA6EE528e966c3A54f912837CdA384BFA537d",
-    "treasury": "0x91cFA0c37Df43661DE90A3aa7CBE89ae7920871C",
-    "governor": "0x36B167ee7cd1717576f445AC7a76500899691Da5",
-    "governorImpl": "0x9524151a4f1Ad88FFE00cEc339813dC38d53E511",
-    "steward": "0xB68EE7dF8c268C0e53b3D7a67980E5e584f3a250",
-    "adapterRegistry": "0xbA5D04B538864593a0eEc2995aCE6502CC93aCb5",
-    "revenueCounter": "0x94F81936cDb66352D3Dd23dDDcB1ad1c034C692c",
-    "revenueCounterImpl": "0xF874d11F14D53597ee224F8A46BEF3A912c6b3dB",
-    "revenueLock": "0xDfee98948B27B6FD09c49042068DC83f8890ef26",
-    "shieldPauseController": "0xE1DF99eb19Af0d8c25e8EE01a519C176E3E5B35d",
-    "redemption": "0x0748bF61369f20976Fc92A8c541B3E0D197f640c",
-    "windDown": "0x7a90F7A802751ec1164B2fEE8690D33Ba60fA8E5"
+    "timelockController": "0xeE7FB07EDDCf2d886a58135a5700C6582C89C034",
+    "armToken": "0x991036C5a59cCa18Fc64E267B8a68Ae582C2e032",
+    "treasury": "0x2BEB5AF24350acD4C5F69453938B1edf73e3340b",
+    "governor": "0x9346fbb21fE0B3c39f15B570721b0C06194B54Dd",
+    "governorImpl": "0xF35E2aFff5F56E2fD8eddE856Cd313f5c5EF5151",
+    "steward": "0xB121AeA62080e443D8c897842598a13C46f9c643",
+    "adapterRegistry": "0x507f3e7585B02ac4ab959d6e476D59DB793C3F26",
+    "revenueCounter": "0x2AF5e822be30C51F2F0CDc0fb73dbc6B16625342",
+    "revenueCounterImpl": "0x4f50E98C518E6da023783EE2c69AC59543dB88C4",
+    "revenueLock": "0xde1755A8567232b4a6cC573df148fd4135C3bF33",
+    "shieldPauseController": "0x9ACEc39c505Fbd141F32A28abF02b533fe231Bc3",
+    "redemption": "0xB3a0cE099b8122456b46864D8fE2090a258C00Ab",
+    "windDown": "0x1e05ed2dAa2878a946D212484ddeE441d46afE07"
   },
   "config": {
     "timelockMinDelay": 60,
     "totalSupply": "12000000",
     "treasuryAllocation": "7800000"
   },
-  "timestamp": "2026-05-21T16:31:12.737Z"
+  "timestamp": "2026-07-22T00:57:00.678Z"
 }

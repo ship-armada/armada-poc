@@ -281,10 +281,21 @@ async function main() {
   const mockSpokeAddress = aaveManifest.contracts.mockAaveSpoke;
   const hubChainId = deployments.chainId;
 
-  // Bob's remaining shielded USDC funds the lend.
-  const lendAmount = await getSpendableBalance(bobWallet, chain, usdcAddress);
+  // Re-sync Bob's wallet after the unshield before selecting notes to lend — a stale balance would
+  // pick the note the unshield already nullified ("Note already spent"). Poll until spendable USDC
+  // reflects the spend (drops below the pre-unshield transfer amount).
+  let lendAmount = 0n;
+  {
+    const start = Date.now();
+    while (Date.now() - start < scanTimeoutMs) {
+      await scanWalletBalances(bobWalletInfo.id, chain);
+      const bal = await getSpendableBalance(bobWallet, chain, usdcAddress);
+      if (bal > 0n && bal < transferAmount) { lendAmount = bal; break; }
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+  if (lendAmount === 0n) throw new Error('STEP 4: Bob shielded USDC did not settle after unshield');
   console.log(`  Bob shielded USDC available to lend: ${ethers.formatUnits(lendAmount, 6)}`);
-  if (lendAmount === 0n) throw new Error('Bob has no shielded USDC to lend');
 
   // On sepolia the mock has mintableYield=false, so it must hold USDC to pay accrued yield on
   // redeem. Seed a small buffer from the deployer (local mints yield itself — no buffer needed).

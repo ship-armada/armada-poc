@@ -29,13 +29,14 @@ import { createWallet, DEFAULT_ENCRYPTION_KEY } from '../../lib/sdk/wallet';
 import { initializeProver } from '../../lib/sdk/prover';
 import { createShieldRequest, generateShieldPrivateKey } from '../../lib/sdk/shield';
 import { loadNetworkIntoEngine, scanWalletBalances } from '../../lib/sdk/network';
-import { createPrivateTransfer, createUnshield } from '../../lib/sdk/transfer';
+import { createPrivateTransfer, createUnshield, getSpendableBalance } from '../../lib/sdk/transfer';
+import { buildYieldAdaptTransaction } from '../../lib/sdk/yield';
 import { getChainById, getRpcUrl } from '../../lib/sdk/chain-config';
 import { loadVerificationKeys, TESTING_ARTIFACT_CONFIGS } from '../../lib/artifacts';
 import { getNetworkConfig, isLocal } from '../../config/networks';
 import { loadDeployment } from '../deploy-utils';
 
-import { TXIDVersion, POI, POINodeInterface } from '@railgun-community/engine';
+import { TXIDVersion, POI, POINodeInterface, RailgunWallet } from '@railgun-community/engine';
 import { ChainType, Chain } from '@railgun-community/shared-models';
 
 class StubPOINodeInterface extends POINodeInterface {
@@ -68,6 +69,23 @@ async function waitForTxos(
     await new Promise(r => setTimeout(r, 5000));
   }
   throw new Error(`${label}: expected ${minCount} UTXO(s) but tree sync didn't surface them within ${timeoutMs / 1000}s`);
+}
+
+/** Poll until the wallet's spendable balance of `tokenAddress` reaches at least `minAmount`. */
+async function waitForBalance(
+  walletId: string, chain: Chain, wallet: any, tokenAddress: string, minAmount: bigint, label: string, timeoutMs: number,
+): Promise<bigint> {
+  const start = Date.now();
+  let attempt = 0;
+  while (Date.now() - start < timeoutMs) {
+    await scanWalletBalances(walletId, chain);
+    const bal = await getSpendableBalance(wallet, chain, tokenAddress);
+    if (bal >= minAmount) return bal;
+    attempt += 1;
+    console.log(`  (scan ${attempt}: balance ${ethers.formatUnits(bal, 6)} < ${ethers.formatUnits(minAmount, 6)} — waiting…)`);
+    await new Promise(r => setTimeout(r, 5000));
+  }
+  throw new Error(`${label}: balance didn't reach ${ethers.formatUnits(minAmount, 6)} within ${timeoutMs / 1000}s`);
 }
 
 async function main() {
@@ -132,8 +150,10 @@ async function main() {
   const aliceWalletInfo = await createWallet(DEFAULT_ENCRYPTION_KEY);
   const bobWalletInfo = await createWallet(DEFAULT_ENCRYPTION_KEY);
   const engine = getEngine();
-  const aliceWallet = engine.wallets[aliceWalletInfo.id];
-  const bobWallet = engine.wallets[bobWalletInfo.id];
+  // engine.wallets is typed as AbstractWallet; the instances are RailgunWallets (the SDK helpers
+  // require the concrete type).
+  const aliceWallet = engine.wallets[aliceWalletInfo.id] as unknown as RailgunWallet;
+  const bobWallet = engine.wallets[bobWalletInfo.id] as unknown as RailgunWallet;
 
   console.log(`Alice: ${aliceWalletInfo.railgunAddress}`);
   console.log(`Bob:   ${bobWalletInfo.railgunAddress}`);
@@ -245,6 +265,95 @@ async function main() {
   console.log(`✓ Bob public USDC balance: ${ethers.formatUnits(bobPublicBalance, 6)}`);
 
   // ═══════════════════════════════════════════════════════════
+  // STEP 4: YIELD (lend Bob's USDC → aUSDC, accrue, redeem → USDC)
+  // ═══════════════════════════════════════════════════════════
+  console.log('\n' + '─'.repeat(40));
+  console.log('  STEP 4: YIELD (lend → accrue → redeem)');
+  console.log('─'.repeat(40));
+
+  const yieldManifest = loadDeployment(`yield-hub${suffix}.json`);
+  const aaveManifest = loadDeployment(`aave-mock-hub${suffix}.json`);
+  if (!yieldManifest || !aaveManifest) {
+    throw new Error(`yield-hub${suffix}.json / aave-mock-hub${suffix}.json not found — deploy yield + aave first`);
+  }
+  const adapterAddress = yieldManifest.contracts.armadaYieldAdapter;
+  const vaultAddress = yieldManifest.contracts.armadaYieldVault; // aUSDC (vault share token)
+  const mockSpokeAddress = aaveManifest.contracts.mockAaveSpoke;
+  const hubChainId = deployments.chainId;
+
+  // Bob's remaining shielded USDC funds the lend.
+  const lendAmount = await getSpendableBalance(bobWallet, chain, usdcAddress);
+  console.log(`  Bob shielded USDC available to lend: ${ethers.formatUnits(lendAmount, 6)}`);
+  if (lendAmount === 0n) throw new Error('Bob has no shielded USDC to lend');
+
+  // On sepolia the mock has mintableYield=false, so it must hold USDC to pay accrued yield on
+  // redeem. Seed a small buffer from the deployer (local mints yield itself — no buffer needed).
+  if (!local) {
+    const buffer = ethers.parseUnits('1', 6);
+    const spokeBal = await usdc.balanceOf(mockSpokeAddress);
+    if (spokeBal < buffer) {
+      console.log(`  Prefunding MockAaveSpoke with ${ethers.formatUnits(buffer, 6)} USDC (yield buffer)…`);
+      await (await usdc.connect(deployer).transfer(mockSpokeAddress, buffer, overrides)).wait();
+    }
+  }
+
+  // --- Lend: unshield USDC → adapter.lendAndShield → shielded aUSDC ---
+  const lend = await buildYieldAdaptTransaction({
+    wallet: bobWallet,
+    chain,
+    mode: 'lend',
+    unshieldToken: usdcAddress,
+    shieldOutputToken: vaultAddress,
+    amount: lendAmount,
+    railgunAddress: bobWalletInfo.railgunAddress,
+    adapterAddress,
+    hubChainId,
+    encryptionKey: DEFAULT_ENCRYPTION_KEY,
+    progressCallback: () => process.stdout.write('.'),
+  });
+  console.log('');
+  const lendTx = await bobSigner.sendTransaction({ to: lend.transaction.to, data: lend.transaction.data, ...overrides });
+  const lendReceipt = await lendTx.wait();
+  console.log(`✓ Lend tx: ${lendReceipt!.hash}`);
+  console.log(`✓ Circuit shape: ${lend.transactions[0].nullifiers.length}x${lend.transactions[0].commitments.length}`);
+
+  const ausdcBal = await waitForBalance(bobWalletInfo.id, chain, bobWallet, vaultAddress, 1n, 'Lend', scanTimeoutMs);
+  console.log(`✓ Bob shielded aUSDC (vault shares): ${ethers.formatUnits(ausdcBal, 6)}`);
+
+  // Advance time to accrue visible yield (local only; sepolia relies on real elapsed time).
+  if (local) {
+    const thirtyDays = 30 * 24 * 60 * 60;
+    await ethers.provider.send('evm_increaseTime', [thirtyDays]);
+    await ethers.provider.send('evm_mine', []);
+    console.log('  (advanced chain time by 30 days to accrue yield)');
+  }
+
+  // --- Redeem: unshield aUSDC → adapter.redeemAndShield → shielded USDC (principal + yield) ---
+  const redeem = await buildYieldAdaptTransaction({
+    wallet: bobWallet,
+    chain,
+    mode: 'redeem',
+    unshieldToken: vaultAddress,
+    shieldOutputToken: usdcAddress,
+    amount: ausdcBal,
+    railgunAddress: bobWalletInfo.railgunAddress,
+    adapterAddress,
+    hubChainId,
+    encryptionKey: DEFAULT_ENCRYPTION_KEY,
+    feeAmount: 0n, // self-submitted e2e — no relayer fee
+    progressCallback: () => process.stdout.write('.'),
+  });
+  console.log('');
+  const redeemTx = await bobSigner.sendTransaction({ to: redeem.transaction.to, data: redeem.transaction.data, ...overrides });
+  const redeemReceipt = await redeemTx.wait();
+  console.log(`✓ Redeem tx: ${redeemReceipt!.hash}`);
+  console.log(`✓ Circuit shape: ${redeem.transactions[0].nullifiers.length}x${redeem.transactions[0].commitments.length}`);
+
+  const usdcBack = await waitForBalance(bobWalletInfo.id, chain, bobWallet, usdcAddress, 1n, 'Redeem', scanTimeoutMs);
+  const yieldEarned = usdcBack > lendAmount ? usdcBack - lendAmount : 0n;
+  console.log(`✓ Bob shielded USDC after redeem: ${ethers.formatUnits(usdcBack, 6)} (yield: +${ethers.formatUnits(yieldEarned, 6)})`);
+
+  // ═══════════════════════════════════════════════════════════
   // SUMMARY
   // ═══════════════════════════════════════════════════════════
   console.log('\n' + '='.repeat(60));
@@ -253,6 +362,7 @@ async function main() {
   console.log('  ✓ Shield:   100 USDC shielded (Armada vkeys on-chain)');
   console.log(`  ✓ Transfer: 30 USDC sent (1x2 circuit, proof generated by Armada WASM/ZKEY)`);
   console.log(`  ✓ Unshield: 10 USDC withdrawn (proof generated by Armada WASM/ZKEY)`);
+  console.log(`  ✓ Yield:    lent ${ethers.formatUnits(lendAmount, 6)} USDC → aUSDC → redeemed ${ethers.formatUnits(usdcBack, 6)} USDC (lend + redeem adapt-proofs verified)`);
   console.log('  ✓ All proofs verified on-chain via Groth16 pairing checks');
   console.log('  ✓ No railgun-circuit-test-artifacts dependency');
 

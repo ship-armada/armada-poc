@@ -198,6 +198,7 @@ async function buildGovernanceCrowdfundTasks(): Promise<VerifyTask[]> {
         c.redemption,
         c.shieldPauseController,
         c.revenueCounter,
+        c.revenueLock,
         c.timelockController,
         revenueThreshold,    // read from on-chain
         windDownDeadline,    // read from on-chain

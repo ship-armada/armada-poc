@@ -13,10 +13,14 @@
  */
 
 import { isLocal } from "../config/networks";
-import { ethers } from "hardhat";
 import * as fs from "fs";
 import * as path from "path";
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+
+// `ethers` is lazy-loaded from hardhat inside timelockCall (its only consumer) rather than
+// imported at module scope, so plain ts-node callers of this module — e.g.
+// scripts/test_sepolia.ts, which only use loadDeployment — don't fail at import time.
+// hardhat's `ethers` export only exists under a `hardhat run` runtime.
 
 // Well-known Anvil/Hardhat default accounts (#0-9), derived from the standard mnemonic:
 // "test test test test test test test test test test test junk"
@@ -168,6 +172,8 @@ export async function timelockCall(
   description: string,
   nm: NonceManager,
 ): Promise<boolean> {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { ethers } = require("hardhat");
   if (isLocal()) {
     const rpcUrl = process.env.HUB_RPC || "http://localhost:8545";
     const jsonRpc = async (method: string, params: any[] = []) => {

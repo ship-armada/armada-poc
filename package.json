@@ -107,7 +107,10 @@
     "check:sizes": "node scripts/check-contract-sizes.js",
     "slither": "slither . --config-file slither.config.json",
     "verify": "hardhat run scripts/verify_deployment.ts --network hub",
-    "verify:sepolia": "hardhat run scripts/verify_deployment.ts --network sepoliaHub"
+    "verify:sepolia": "hardhat run scripts/verify_deployment.ts --network sepoliaHub",
+    "verify:etherscan:sepolia": "hardhat run scripts/verify_sepolia.ts --network sepoliaHub",
+    "verify:etherscan:sepolia:clientA": "hardhat run scripts/verify_sepolia.ts --network sepoliaClientA",
+    "verify:etherscan:sepolia:clientB": "hardhat run scripts/verify_sepolia.ts --network sepoliaClientB"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",

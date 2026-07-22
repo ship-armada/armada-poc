@@ -232,9 +232,11 @@ async function doInit(): Promise<void> {
   // startRailgunEngine hardcodes artifactGetterDownloadJustInTime which downloads
   // from IPFS and validates against Railgun's hash manifest. overrideArtifact()
   // writes directly into the in-memory cache, bypassing both IPFS and hash checks.
-  // In local mode we serve artifacts from armada-circuits/build/ via Vite middleware.
-  // In sepolia mode, skip the override and let the SDK use IPFS.
-  if (import.meta.env.VITE_NETWORK !== 'sepolia') {
+  // The serveCircuitArtifacts() Vite dev middleware serves armada-circuits/build for ALL
+  // networks (local + sepolia), so gate on DEV rather than network: any dev-server run gets
+  // Armada artifacts. Production builds skip this — the static-artifact path for prod sepolia
+  // is tracked separately (F4/#408) and until it lands, prod sepolia is not supported.
+  if (import.meta.env.DEV) {
     await loadArmadaCircuits(overrideArtifact)
   }
 

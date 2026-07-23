@@ -115,12 +115,20 @@ async function main() {
   // atomicCrossChainUnshield = proof-verify (~500k) + CCTP burn/message (~250k); give ample headroom.
   const overrides = local ? {} : { gasLimit: 3_000_000n };
   const scanTimeoutMs = local ? 20_000 : 150_000;
-  // CCTP delivery: mock relay is near-instant; real Iris (fast finality) is ~seconds–minutes.
-  const deliveryTimeoutMs = local ? 60_000 : 600_000;
+  // CCTP delivery: even the mock relay isn't instant — the relayer's cctp-relay uses exponential
+  // backoff (2+4+8+16+32 ≈ 62s for 5 attempts), so a delivery needing a few retries lands past a
+  // 60s window. Give local generous headroom; real Iris (fast finality) is ~seconds–minutes.
+  const deliveryTimeoutMs = local ? 180_000 : 600_000;
 
   const shieldAmount = ethers.parseUnits('10', 6);
   const unshieldAmount = ethers.parseUnits('5', 6);
-  const maxFee = 0n; // testnet CCTP does not charge a fee (matches test_sepolia cross-chain shield)
+  // CCTP V2 FAST transfers charge a fee (Circle's fee API returns a 1 bps minimum for Sepolia→Base).
+  // The hub pool's defaultFinalityThreshold is FAST (1000) and atomicCrossChainUnshield has no
+  // finality override, so on real CCTP maxFee=0 → Iris "insufficient_fee" → the burn stalls waiting
+  // for hard finality (~15-19 min) instead of fast. Cover the fast fee with margin (10 bps ≥ the
+  // 1 bps minimum); Circle deducts only the ACTUAL fee (≤ maxFee), and waitForClientDelivery already
+  // subtracts maxFee from the expected delivery. Local mock CCTP charges nothing, so 0 there.
+  const maxFee = local ? 0n : (unshieldAmount * 10n) / 10_000n;
 
   const signers = await ethers.getSigners();
   const deployer = signers[0];

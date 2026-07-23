@@ -204,6 +204,19 @@ const MSG_DEST_CALLER_LENGTH = 32;
 /** finalityThresholdExecuted — 4 bytes Iris fills in on the corrected message (volatile field). */
 const MSG_FINALITY_EXECUTED_OFFSET = 144;
 const MSG_FINALITY_EXECUTED_LENGTH = 4;
+/**
+ * feeExecuted — BurnMessageV2 body field (abs offset = messageBody 148 + body offset 164). Zero at
+ * burn; on a FAST transfer Circle fills in the actual fee charged during attestation, so it differs
+ * between the source-observed bytes and the Iris bytes. Volatile — excluded from the match check.
+ */
+const MSG_FEE_EXECUTED_OFFSET = 312;
+const MSG_FEE_EXECUTED_LENGTH = 32;
+/**
+ * expirationBlock — BurnMessageV2 body field (abs offset = messageBody 148 + body offset 196). Zero
+ * at burn; on a FAST transfer Circle fills in the fast-mint expiry during attestation. Volatile.
+ */
+const MSG_EXPIRATION_BLOCK_OFFSET = 344;
+const MSG_EXPIRATION_BLOCK_LENGTH = 32;
 /** Minimum plausible attestation length (bytes): one 65-byte ECDSA signature. */
 const MIN_ATTESTATION_BYTES = 65;
 /** Default timeout (ms) for an Iris HTTP request when the source chain config is unavailable. */
@@ -347,31 +360,36 @@ function zeroHexRange(hex: string, startByte: number, lenBytes: number): string 
 }
 
 /**
- * Do two MessageV2 byte strings match on every field EXCEPT the ones Iris legitimately fills in
- * (the nonce slot — zero in the source event, real value from Iris — and finalityThresholdExecuted)?
- * Pure + exported for tests.
+ * Do two MessageV2 byte strings match on every field EXCEPT the ones Iris/Circle legitimately fill
+ * in after the burn? Those volatile fields are: the nonce (zero in the source event, real value from
+ * Iris), finalityThresholdExecuted, and — on FAST transfers — feeExecuted (the actual fee charged)
+ * and expirationBlock (the fast-mint expiry), both zero at burn. `maxFee` is deliberately NOT zeroed:
+ * it's the user-authorized ceiling and must match what was burned (feeExecuted <= maxFee is enforced
+ * on-chain). Pure + exported for tests.
  *
  * Used to (a) select the right entry when Iris returns multiple messages for one source tx and
  * (b) guard, before broadcasting, that the bytes Iris handed us are the same message we observed
  * emitted on the source chain — so a compromised/buggy Iris response can't make us sign arbitrary
- * bytes (the destination MessageTransmitter would reject a mismatched attestation, but we'd still
- * pay gas for the revert).
+ * bytes. Ignoring the volatile slots here does not weaken on-chain integrity: the destination
+ * MessageTransmitter still verifies Circle's signature over the complete message.
  */
 export function irisMessageMatches(localHex: string, irisHex: string): boolean {
   const a = (localHex.startsWith("0x") ? localHex.slice(2) : localHex).toLowerCase();
   const b = (irisHex.startsWith("0x") ? irisHex.slice(2) : irisHex).toLowerCase();
   if (a.length !== b.length) return false;
-  const na = zeroHexRange(
-    zeroHexRange(a, MSG_NONCE_OFFSET, MSG_NONCE_LENGTH),
-    MSG_FINALITY_EXECUTED_OFFSET,
-    MSG_FINALITY_EXECUTED_LENGTH,
-  );
-  const nb = zeroHexRange(
-    zeroHexRange(b, MSG_NONCE_OFFSET, MSG_NONCE_LENGTH),
-    MSG_FINALITY_EXECUTED_OFFSET,
-    MSG_FINALITY_EXECUTED_LENGTH,
-  );
-  return na === nb;
+  // Zero every field Iris populates after the burn before comparing. maxFee is intentionally left in.
+  const zeroVolatile = (h: string): string =>
+    zeroHexRange(
+      zeroHexRange(
+        zeroHexRange(
+          zeroHexRange(h, MSG_NONCE_OFFSET, MSG_NONCE_LENGTH),
+          MSG_FINALITY_EXECUTED_OFFSET, MSG_FINALITY_EXECUTED_LENGTH,
+        ),
+        MSG_FEE_EXECUTED_OFFSET, MSG_FEE_EXECUTED_LENGTH,
+      ),
+      MSG_EXPIRATION_BLOCK_OFFSET, MSG_EXPIRATION_BLOCK_LENGTH,
+    );
+  return zeroVolatile(a) === zeroVolatile(b);
 }
 
 /**

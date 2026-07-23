@@ -211,6 +211,12 @@ const engineDebugger = {
   },
   error: (error: Error) => {
     console.error(`[Engine Error] ${error.message}`);
+    // The engine wraps the underlying failure (e.g. the real getLogs RPC error) in `cause`;
+    // print it so scan/RPC failures are diagnosable rather than the generic wrapper message.
+    const cause = (error as Error & { cause?: unknown }).cause;
+    if (cause !== undefined) {
+      console.error('[Engine Error]   ↳ cause:', cause instanceof Error ? cause.message : cause);
+    }
   },
   verboseScanLogging: false,
 };

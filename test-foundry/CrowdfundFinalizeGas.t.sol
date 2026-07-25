@@ -16,9 +16,9 @@ import "../contracts/cctp/MockUSDCV2.sol";
 ///         relative to the 30M block gas limit.
 ///
 ///         The structural maximum participantNodes count is bounded by the invite
-///         chain: MAX_SEEDS (160) + 3*MAX_SEEDS hop-1 (480) + 2*hop-1 hop-2 (960)
-///         + launch-team direct invites (120) ≈ 1,720. The sweep covers the
-///         spec-cited 300/500/800/1000/1500/1740 grid.
+///         chain: MAX_SEEDS (180) + 3*MAX_SEEDS hop-1 (540) + 2*hop-1 hop-2 (1,080)
+///         + launch-team direct invites (220) = 2,220. The sweep covers the
+///         operational 300/500/800/1000/1500/1600 grid.
 contract CrowdfundFinalizeGasTest is Test {
     MockUSDCV2 public usdc;
     ArmadaToken public armToken;
@@ -30,7 +30,7 @@ contract CrowdfundFinalizeGasTest is Test {
     uint256 constant HOP1_CAP = 4_000 * 1e6;
     uint256 constant HOP2_CAP = 1_000 * 1e6;
     uint256 constant MIN_COMMIT = 10 * 1e6;
-    uint8   constant MAX_SEEDS = 160;
+    uint8   constant MAX_SEEDS = 180;
 
     function setUp() public {
         admin = address(this);

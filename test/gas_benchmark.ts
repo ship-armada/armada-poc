@@ -45,7 +45,7 @@ describe("Gas Benchmarks", function () {
   // ============================================================
 
   describe("Crowdfund finalize() gas scaling", function () {
-    const participantCounts = [70, 100, 160]; // min 67 for MIN_SALE, max 160 (MAX_SEEDS cap)
+    const participantCounts = [70, 100, 180]; // min 67 for MIN_SALE, max 180 (MAX_SEEDS cap)
     const results: { count: number; gas: bigint; perParticipant: bigint }[] = [];
 
     for (const count of participantCounts) {

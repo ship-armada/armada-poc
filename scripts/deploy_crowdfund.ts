@@ -119,7 +119,7 @@ async function main() {
   const latestBlock = await ethers.provider.getBlock('latest');
   // crowdfundOpenDelay is an operational buffer (deployment verification,
   // announcement lead time, infra readiness) — NOT a seed-setup window.
-  // Seeds are added during week 1 of the active window; see
+  // Seeds are added during the 14-day launch-team window; see
   // ArmadaCrowdfund._requireArmLoadedAndPreInviteEnd.
   const openTimestamp = latestBlock!.timestamp + config.crowdfundOpenDelay;
   // Security council: config-driven for non-local, Anvil signer[10] fallback for local

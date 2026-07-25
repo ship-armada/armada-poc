@@ -257,12 +257,20 @@ describe("Crowdfund Multi-Node", function () {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
 
-      // Add hop-1 demand to push totalAllocUsdc above MIN_SALE
+      // Add the remaining $424K of H1 demand to clear MIN_SALE.
       const hop1Pool = signers.slice(140, 191);
-      for (let i = 0; i < 51; i++) {
-        await crowdfund.connect(extraSeeds[i]).invite(hop1Pool[i].address, 0);
-        await fundAndApprove(hop1Pool[i], USDC(4_000));
-        await crowdfund.connect(hop1Pool[i]).commit(1, USDC(4_000));
+      const slotsByAddress = new Map<string, { signer: SignerWithAddress; slots: number }>();
+      for (let i = 0; i < 106; i++) {
+        const signer = hop1Pool[i % hop1Pool.length];
+        await crowdfund.connect(extraSeeds[Math.floor(i / 3)]).invite(signer.address, 0);
+        const entry = slotsByAddress.get(signer.address) ?? { signer, slots: 0 };
+        entry.slots++;
+        slotsByAddress.set(signer.address, entry);
+      }
+      for (const { signer, slots } of slotsByAddress.values()) {
+        const amount = USDC(4_000 * slots);
+        await fundAndApprove(signer, amount);
+        await crowdfund.connect(signer).commit(1, amount);
       }
 
       await time.increase(THREE_WEEKS + 1);
@@ -510,7 +518,7 @@ describe("Crowdfund Multi-Node", function () {
 
   describe("Aggregate Claim", function () {
     // Helper: create a funded crowdfund with enough demand to finalize.
-    // Adds hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE at BASE_SALE).
+    // Adds $436K of hop-1 demand to clear MIN_SALE at BASE_SALE.
     async function setupAndFinalize() {
       const signers = await ethers.getSigners();
       // Use many seeds to get above MIN_SALE
@@ -520,10 +528,15 @@ describe("Crowdfund Multi-Node", function () {
       // seed1 self-invites to hop-1
       await crowdfund.connect(seed1).invite(seed1.address, 0);
 
-      // Additional hop-1 participants to push totalAllocUsdc above MIN_SALE
+      // Additional stacked hop-1 invitations provide the needed $432K.
       const hop1Pool = signers.slice(140, 190);
-      for (let i = 0; i < 50; i++) {
-        await crowdfund.connect(seeds[i + 1]).invite(hop1Pool[i].address, 0);
+      const slotsByAddress = new Map<string, { signer: SignerWithAddress; slots: number }>();
+      for (let i = 0; i < 108; i++) {
+        const signer = hop1Pool[i % hop1Pool.length];
+        await crowdfund.connect(seeds[1 + Math.floor(i / 3)]).invite(signer.address, 0);
+        const entry = slotsByAddress.get(signer.address) ?? { signer, slots: 0 };
+        entry.slots++;
+        slotsByAddress.set(signer.address, entry);
       }
 
       // Each seed commits $15k → 79 seeds * $15k = $1.185M
@@ -537,11 +550,11 @@ describe("Crowdfund Multi-Node", function () {
       // seed1 also commits $4k at hop-1
       await crowdfund.connect(seed1).commit(1, USDC(4_000));
 
-      // hop-1 participants commit $4K each → 50 × $4K = $200K
-      // totalAllocUsdc = $798K (hop-0) + $204K (hop-1) = $1,002K > MIN_SALE
-      for (const h of hop1Pool) {
-        await fundAndApprove(h, USDC(4_000));
-        await crowdfund.connect(h).commit(1, USDC(4_000));
+      // Seed1 contributes $4K; the remaining stacked H1 commitments total $432K.
+      for (const { signer, slots } of slotsByAddress.values()) {
+        const amount = USDC(4_000 * slots);
+        await fundAndApprove(signer, amount);
+        await crowdfund.connect(signer).commit(1, amount);
       }
 
       await time.increase(THREE_WEEKS + 1);

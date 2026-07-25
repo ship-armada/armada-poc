@@ -192,7 +192,7 @@ async function main() {
   log("NOTE", `Adding ${extraSeeds.length} extra seeds to reach minimum raise...`);
 
   // We need to deploy a new crowdfund with all these seeds pre-loaded.
-  // Seeds can be added during week 1 of the Active window, but this demo
+  // Seeds can be added during the 14-day launch-team window, but this demo
   // is already past that point. Instead, show the demo even if it cancels.
   console.log("");
   log("NOTE", `Total committed: ${fmtUsdc(totalComm)} (below $1M minimum)`);
@@ -255,9 +255,11 @@ async function main() {
   const totalAllocUsdc = await cf2.totalAllocatedUsdc();
   log("FINALIZE", `Total allocated: ${fmtArm(totalAlloc)} (${fmtUsdc(totalAllocUsdc)} USDC value)`);
 
-  // Hop-0 reserve = 70% of $1.2M = $840K. Demand = $1.2M > $840K → pro-rata
+  // Hop-0 ceiling = 60% of the 95% base pool less the 10% extra hop-2 floor.
   const [hop0tc] = await cf2.getHopStats(0);
-  const reserve0 = (BigInt(await cf2.saleSize()) * 7000n) / 10000n;
+  const saleSize = BigInt(await cf2.saleSize());
+  const basePool = (saleSize * 9500n) / 10000n;
+  const reserve0 = (basePool * 6000n) / 10000n - (saleSize * 1000n) / 10000n;
   if (hop0tc > reserve0) {
     log("ALLOC", `Hop 0: demand ${fmtUsdc(hop0tc)} > reserve ${fmtUsdc(reserve0)} \u2192 pro-rata`);
     log("ALLOC", `  Scale: ${((Number(reserve0) / Number(hop0tc)) * 100).toFixed(1)}%`);

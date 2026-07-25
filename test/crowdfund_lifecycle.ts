@@ -14,7 +14,7 @@ const USDC = (n: number) => BigInt(n) * 1_000_000n;
 const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
 
 const ONE_DAY = 86400;
-const ONE_WEEK = 7 * ONE_DAY;
+const LAUNCH_TEAM_WINDOW = 14 * ONE_DAY;
 const THREE_WEEKS = 21 * ONE_DAY;
 const THREE_YEARS = 1095 * ONE_DAY;
 
@@ -154,7 +154,7 @@ describe("Crowdfund Full Lifecycle", function () {
 
       // deployCrowdfund() already advances to windowStart
 
-      // ---- Week 1: Launch team invites ----
+      // ---- Days 1-14: Launch team invites ----
       // 3 hop-1 invites from launch team
       const ltHop1 = allSigners.slice(196, 199); // 3 addresses
       for (const invitee of ltHop1) {
@@ -177,10 +177,10 @@ describe("Crowdfund Full Lifecycle", function () {
       // Verify budget tracking
       const [budgetHop1Left, budgetHop2Left] =
         await crowdfund.getLaunchTeamBudgetRemaining();
-      expect(budgetHop1Left).to.equal(60 - 3); // 3 used
-      expect(budgetHop2Left).to.equal(60 - 1); // 1 used
+      expect(budgetHop1Left).to.equal(100 - 3); // 3 used
+      expect(budgetHop2Left).to.equal(120 - 1); // 1 used
 
-      // ---- Week 1: Peer invites ----
+      // ---- Peer invites ----
       // Seeds invite hop-1 participants. Use 17 seeds × 3 invites = 51 hop-1.
       const hop1Pool = allSigners.slice(105, 160); // 55 available
       const hop1Invitees: HardhatEthersSigner[] = [];
@@ -575,7 +575,7 @@ describe("Crowdfund Full Lifecycle", function () {
       const cfAddr = await crowdfund.getAddress();
 
       // 80 seeds × $15K at hop-0 = $1.2M raw, but hop-0 ceiling at BASE_SALE
-      // is $798K. No hop-1 demand → totalAllocUsdc = $798K < MIN_SALE → refundMode.
+      // is $564K. No hop-1 demand → totalAllocUsdc = $564K < MIN_SALE → refundMode.
       const seeds = allSigners.slice(5, 85); // 80 seeds
       await crowdfund.addSeeds(seeds.map((s) => s.address));
       // deployCrowdfund() already advances to windowStart

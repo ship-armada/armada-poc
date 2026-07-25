@@ -75,7 +75,7 @@ Governance power follows economic commitment. Until the protocol generates reven
 
 ### Design Philosophy
 
-This is a trusted-network crowdfund, not viral growth. Participation requires invitation from someone closer to the core. Hop-0 and hop-1 each have an enforced ceiling — the maximum fraction of the available pool each can absorb. Hop-2 has no enforced ceiling; instead it has a reserved floor (first claim on 5% of the fund) and an effective ceiling determined by the floor plus any hop-1 leftover. Actual allocation is demand-driven: each hop receives whatever it committed, up to its effective ceiling, and anything unused rolls forward to later hops. The launch team's invite budget closes after week 1; hop-0 and hop-1 participants may invite throughout all three weeks; commitments remain open for the full three weeks.
+This is a trusted-network crowdfund, not viral growth. Participation requires invitation from someone closer to the core. Hop-0 and hop-1 each have enforced ceilings, while hop-2 has a 15% reserved floor and an effective ceiling determined by that floor plus any hop-1 leftover. Actual allocation is demand-driven: each hop receives whatever it committed, up to its effective ceiling, and anything unused rolls forward to later hops. The launch team's invite budget closes after day 14; hop-0 and hop-1 participants may invite throughout all three weeks; commitments remain open for the full three weeks.
 
 ### Initial Network
 
@@ -83,15 +83,15 @@ The people creating Armada are inviting their network of allies to help form the
 
 Hop-0 selection criteria are determined by the launch team based on demonstrated alignment, contribution, and long-term interest in privacy infrastructure.
 
-**Maximum hop-0 count: 160.** The total number of hop-0 participants is capped at 160. This bounds the maximum network size at approximately 1,840 participant slots (160 hop-0 nodes + up to 540 hop-1 nodes + up to 1,140 hop-2 nodes). Arithmetic: hop-1 slots = (160 hop-0 × 3 invites) + 60 launch-team hop-1 = 540; hop-2 slots = (540 hop-1 nodes × 2 invites) + 60 launch-team hop-2 = 1,140. Because the same address may occupy multiple hop levels, the number of distinct individuals may be lower.
+**Maximum hop-0 count: 180.** The total number of hop-0 participants is capped at 180. This bounds the maximum network size at 2,220 participant slots (180 hop-0 nodes + up to 640 hop-1 nodes + up to 1,400 hop-2 nodes). Arithmetic: hop-1 slots = (180 hop-0 × 3 invites) + 100 launch-team hop-1 = 640; hop-2 slots = (640 hop-1 nodes × 2 invites) + 120 launch-team hop-2 = 1,400. Because the same address may occupy multiple hop levels, the number of distinct individuals may be lower. The added headroom accommodates unexpected inbound interest; launch-team hop-1 invitations target small angels similar to hop-0 participants, while hop-2 invitations expand community capacity and reduce selection constraints.
 
-**Hop-0 additions.** The launch team may add new hop-0 participants at any point during the first week, up to the 160-participant cap. Participants added later in week 1 naturally have less of the 3-week commitment window remaining — that's the cost of late addition. Once added, a hop-0 participant may issue invitations throughout the full three weeks.
+**Hop-0 additions.** The launch team may add new hop-0 participants during days 1-14, up to the 180-participant cap. Participants added later naturally have less of the 3-week commitment window remaining. Once added, a hop-0 participant may issue invitations throughout the full three weeks.
 
-**Launch team hop-1 invite budget.** In addition to hop-0 participants, the launch team holds a predeclared budget of 60 direct hop-1 placements, not tied to any hop-0 slot. This allows the launch team to invite allies with direct relationships to hop-1 without creating phantom unfilled hop-0 slots. The budget is fixed for the duration of the crowdfund.
+**Launch team hop-1 invite budget.** In addition to hop-0 participants, the launch team holds a predeclared budget of 100 direct hop-1 placements, not tied to any hop-0 slot. This allows the launch team to invite small angels similar to hop-0 participants without creating phantom unfilled hop-0 slots. The budget is fixed for the duration of the crowdfund.
 
 Launch team hop-1 invitees are full hop-1 participants: same cap ($4,000), same invite rights (up to 2 hop-2 invites each). They appear in the invite graph with the launch team address as inviter. In the `(address, hop)` node model, launch-team-issued invites originate from a designated `(launch_team_address, ROOT)` sentinel node — a fixed address with no hop level and no cap, whose sole role is to issue the predeclared launch team budget. This node is not a participant and makes no commitment.
 
-**Launch team hop-2 invite budget.** The launch team also holds a predeclared budget of 60 direct hop-2 placements. The intended use case is friends, family, and adjacent supporters for whom the $1,000 cap is appropriate. These participants receive no invite rights (consistent with all hop-2 participants). Budget is fixed for the duration of the crowdfund.
+**Launch team hop-2 invite budget.** The launch team also holds a predeclared budget of 120 direct hop-2 placements. The intended use case is friends, family, and adjacent supporters for whom the $1,000 cap is appropriate; this additional capacity reduces selection constraints. These participants receive no invite rights (consistent with all hop-2 participants). Budget is fixed for the duration of the crowdfund.
 
 **No financial incentive to invite.** Participants receive no allocation benefit from others' commitments. There is no referral bonus, no token reward, and no increase in a participant's own allocation from someone else's commitment. Invitations are an act of community-building, not a financial strategy. This keeps the invite graph honest: people invite those they genuinely want in the community, not those most likely to maximize their own return.
 
@@ -99,37 +99,37 @@ Launch team hop-1 invitees are full hop-1 participants: same cap ($4,000), same 
 
 | Hop | Description | Ceiling | Floor | Cap | Invites |
 |---|---|---|---|---|---|
-| 0 | Hop-0 (max 160) | 70% | — | $15,000 | 3 |
+| 0 | Hop-0 (max 180) | 60% raw | — | $15,000 | 3 |
 | 1 | Hop-0 invites + launch team invitations | 45% | — | $4,000 | 2 |
-| 2 | Hop-1 invites + launch team invitations | — ¹ | 5% | $1,000 | 0 |
+| 2 | Hop-1 invites + launch team invitations | — ¹ | 15% | $1,000 | 0 |
 
-¹ Hop-2 has no enforced ceiling — only a floor. Its effective ceiling is `hop2_floor + hop1_leftover`, which can reach the full sale size if hop-0 and hop-1 are both empty. The 10% figure shown in some earlier drafts was removed as dead code (`HOP_CEILING_BPS` contains no entry for hop-2).
+¹ Hop-2 has no enforced ceiling — only a floor. Its effective ceiling is `hop2_floor + hop1_leftover`, which can reach the full sale size if hop-0 and hop-1 are both empty. The extra 10% floor is funded from hop-0; `HOP_CEILING_BPS` contains no entry for hop-2.
 
-The launch team holds a predeclared invite budget separate from hop-0: 60 hop-1 invitations and 60 hop-2 invitations. These do not consume hop-0 invite slots. Launch team invitations may only be issued during the first week.
+The launch team holds a predeclared invite budget separate from hop-0: 100 hop-1 invitations and 120 hop-2 invitations. These do not consume hop-0 invite slots. Launch team invitations may only be issued during days 1-14.
 
-Hop-2 has first claim on 5% of the fund before hop-0 and hop-1 ceilings are applied. This reserved capacity is always available to hop-2, regardless of earlier hop demand, but hop-2 only receives it to the extent hop-2 participants actually commit. Hop-0 and hop-1 ceilings are calculated against the fund net of this reservation. At base fund: $60k reserved for hop-2, hop-0 and hop-1 compete for the remaining $1.14M.
+Hop-2 has first claim on 15% of the fund before hop-0 and hop-1 ceilings are applied. This reserved capacity is always available to hop-2, regardless of earlier hop demand, but hop-2 only receives it to the extent hop-2 participants actually commit. The raw hop ceilings are calculated from a 95% base pool; the additional 10 percentage points of hop-2 floor are funded only from hop-0's raw ceiling, preserving hop-1's raw ceiling.
 
-Hop-0 and hop-1 ceilings are overlapping by design — they sum to 115% of the available pool, not 100%. Hop-2 has no enforced ceiling; its effective ceiling is its reserved floor plus any hop-1 leftover, which can range from the floor to the full sale size. No hop is guaranteed to fill its ceiling. Each hop absorbs up to its effective ceiling based on actual demand; anything unused rolls forward. Earlier hops fill first; later hops absorb whatever remains.
+The raw BPS terms overlap by design: 60% + 45% = 105% of the 95% base pool. This is not the total of the final enforced ceilings, because hop-0 additionally loses 10% of sale size to fund hop-2's extra floor and hop-1 is bounded by the pool remaining after hop-0. Hop-2 has no enforced ceiling; its effective ceiling is its reserved floor plus any hop-1 leftover. No hop is guaranteed to fill its ceiling. Each hop absorbs up to its effective ceiling based on actual demand; anything unused rolls forward. Earlier hops fill first; later hops absorb whatever remains.
 
 ### Ceiling Amounts
 
-Hop-2 floor reservation comes off the top. Hop-0 and hop-1 ceilings are applied against the remainder.
+`base_pool = sale_size × 95%`, `hop2_floor = sale_size × 15%`, and `available = sale_size - hop2_floor`. Hop-0's raw ceiling is `60% × base_pool - 10% × sale_size`; hop-1's raw ceiling is `45% × base_pool`.
 
 **Base fund ($1.2M):**
 
 | Hop | Floor reservation | Available pool | Ceiling (enforced) | Max ceiling (with rollover) |
 |---|---|---|---|---|
-| 2 | $60,000 | — | No enforced ceiling | $60k floor + full hop-1 leftover |
-| 0 | — | $1,140,000 | 70% = $798k | $798k |
-| 1 | — | $1,140,000 | 45% = $513k | $1,140k (if hop-0 empty) |
+| 2 | $180,000 | — | No enforced ceiling | $180k floor + hop-1 leftover |
+| 0 | — | $1,020,000 | `60% × $1.14M - $120k = $564k` | $564k |
+| 1 | — | $1,020,000 | `45% × $1.14M = $513k` | $1,020,000 if hop-0 is empty and its $564k capacity rolls forward |
 
 **Expanded fund ($1.8M):**
 
 | Hop | Floor reservation | Available pool | Ceiling (enforced) | Max ceiling (with rollover) |
 |---|---|---|---|---|
-| 2 | $90,000 | — | No enforced ceiling | $90k floor + full hop-1 leftover |
-| 0 | — | $1,710,000 | 70% = $1,197k | $1,197k |
-| 1 | — | $1,710,000 | 45% = $769.5k | $1,710k (if hop-0 empty) |
+| 2 | $270,000 | — | No enforced ceiling | $270k floor + hop-1 leftover |
+| 0 | — | $1,530,000 | `60% × $1.71M - $180k = $846k` | $846k |
+| 1 | — | $1,530,000 | `45% × $1.71M = $769.5k` | $1,530,000 if hop-0 is empty and its $846k capacity rolls forward |
 
 ### Invitation Limits
 
@@ -258,12 +258,12 @@ Residual risk — a hop-0 participant concentrating votes at scale — is primar
 
 | Phase | Duration |
 |---|---|
-| Launch team invite window | Days 1–7 (first week only) |
+| Launch team invite window | Days 1-14 |
 | Hop-0 invite window | Days 1–21 (full 3 weeks) |
 | Hop-1 invite window | Days 1–21 (full 3 weeks) |
 | Commitment window | Days 1–21 (full 3 weeks) |
 
-The launch team's invite budget (hop-0 additions, hop-1, hop-2 placements) may only be issued during the first week. Hop-0 and hop-1 participants may issue invitations throughout the full three weeks — right up to the commitment deadline. This limits the launch team's ability to issue new invitations with live oversubscription data visible (they can still do so during days 1–7 but not after), while giving hop-0 and hop-1 participants maximum flexibility to propagate the network throughout the window. Note: a launch team hop-1 invitee issued on day 7 has the full remaining 14 days to issue their own hop-2 invitations — the launch team's invite window closing does not affect hop-1 invite rights.
+The launch team's invite budget (hop-0 additions, hop-1, hop-2 placements) may only be issued during days 1-14. Hop-0 and hop-1 participants may issue invitations throughout the full three weeks — right up to the commitment deadline. This leaves launch-team discretion constrained only during the final week and lets the team observe live subscription data for 14 days before its discretion ends. A launch-team invite issued on day 14 has seven days remaining before the sale ends; the launch-team deadline does not affect hop-1 invite rights.
 
 ### Commitment
 
@@ -288,9 +288,9 @@ Deployment sequence:
 
 No CREATE2 is used — the crowdfund address is resolved at conventional deploy time and passed back to subsequent transfer calls.
 
-`loadArm()` may be called before or at the configured open timestamp. If called in advance, the contract is armed but `commit()` reverts until the open timestamp is reached. `addSeed()` and `launchTeamInvite()` are similarly gated to the week-1 window (which begins at the open timestamp) and must not be called before the window is active.
+`loadArm()` may be called before or at the configured open timestamp. If called in advance, the contract is armed but `commit()` reverts until the open timestamp is reached. `addSeed()` and `launchTeamInvite()` are similarly gated to the days 1-14 launch-team window (which begins at the open timestamp) and must not be called before the window is active.
 
-4. Commitment window opens at the configured open timestamp
+5. Commitment window opens at the configured open timestamp
 
 ### Finalization
 
@@ -314,7 +314,7 @@ When `finalize()` is called:
 2. **Per-hop effective ceilings are calculated via the waterfall pass:** hop-2 floor reserved first, hop-0 ceiling applied against the available pool, hop-0 leftover increases hop-1's effective ceiling, hop-1 leftover increases hop-2's effective ceiling. The stored `ceilings[hop]` values are the **final effective ceilings after the waterfall** — not the raw BPS ceilings from the hop table. These are the numbers `computeAllocation()` uses directly.
 3. **Per-hop aggregate demand is computed:** `finalize()` iterates all participants once to compute `hopDemand[hop]` — the sum of `effectiveUsdc(p, hop)` for all participants at that hop, where `effectiveUsdc(p, hop) = min(committed[p][hop], slotCount[p][hop] * HOP_CAP[hop])`. **Multiple slots per hop per address is a hard requirement** — the entire cap model, self-fill analysis, and `computeAllocation()` logic depend on `slotCount[p][hop]` being a counter that increments with each invite received. If the contract models caps as a single boolean "has access to this hop" rather than a slot count, this spec is incorrect and the allocation math must be redesigned.
 4. **Aggregate allocation is computed:** `totalAllocatedUsdc = sum(min(hopDemand[hop], ceilings[hop]))` across all hops. `totalAllocatedArm = totalAllocatedUsdc * ARM_PER_USDC_RATE`.
-5. **Post-allocation minimum raise check:** if `totalAllocatedUsdc < MINIMUM_RAISE ($1,000,000 USDC)`, the contract sets **both `finalized = true` and `refundMode = true`** and stops — no treasury transfer, no aggregate recording beyond the flags. Setting `finalized = true` permanently disables further calls to `finalize()` and `cancel()`. **In this branch, every participant may call `claimRefund()` to withdraw their full deposited USDC** — not a pro-rata refund, but the complete raw amount they deposited. **`claim()` reverts when `refundMode == true`.** This branch handles both cases: (a) `capped_demand` was below $1M (obvious failure — allocation math produces near-zero totals), and (b) `capped_demand` was above $1M but post-waterfall `totalAllocatedUsdc` fell below $1M (occurs at base size when hop-0 is oversubscribed and combined later-hop demand doesn't close the gap). Neither case can occur after expansion, where hop-0's ceiling ($1,197k) already exceeds the minimum raise. This must not revert the transaction — a revert would leave the contract permanently stuck with no path to refunds or ARM recovery.
+5. **Post-allocation minimum raise check:** if `totalAllocatedUsdc < MINIMUM_RAISE ($1,000,000 USDC)`, the contract sets **both `finalized = true` and `refundMode = true`** and stops — no treasury transfer, no aggregate recording beyond the flags. Setting `finalized = true` permanently disables further calls to `finalize()` and `cancel()`. **In this branch, every participant may call `claimRefund()` to withdraw their full deposited USDC** — not a pro-rata refund, but the complete raw amount they deposited. **`claim()` reverts when `refundMode == true`.** Refund mode is reachable at both base and expanded sale sizes: concentrated hop-0 demand can cross the $1.5M expansion trigger while the expanded hop-0 ceiling remains only $846,000, below the minimum raise. Finalization must not revert in either case; success is based on actual post-waterfall allocated USDC, not raw or capped demand.
 6. **Aggregate state is written:** `finalized = true`, `finalizationTimestamp`, `saleSize`, `ceilings[]`, `hopDemand[]`, `totalAllocatedArm`, `totalArmTransferred = 0` (counter incremented by `claim()` when ARM is actually sent)
 7. **Net USDC proceeds transfer immediately to treasury** — `netProceeds = totalAllocatedUsdc` (USDC domain — computed directly from accepted USDC, not from `totalAllocatedArm * PRICE` which can diverge by rounding dust), transferred in the same transaction
 
@@ -428,7 +428,7 @@ Post-finalization, all privileged functions are permanently inactive. `withdrawU
 
 The allocation algorithm proceeds in four sequential steps, each with a separately bounded budget:
 
-1. **Hop-2 floor reserved first.** 5% of `sale_size` is set aside for hop-2 before hop-0 or hop-1 are allocated. Hop-0 and hop-1 compete only for the remaining `available` pool.
+1. **Hop-2 floor reserved first.** 15% of `sale_size` is set aside for hop-2 before hop-0 or hop-1 are allocated. Hop-0 and hop-1 compete only for the remaining `available` pool; the additional 10 percentage points are funded from hop-0's raw ceiling.
 
 2. **Hop-0 allocated from `available`.** Demand is served up to `hop0_ceiling`. Any unused hop-0 capacity increases hop-1's effective ceiling.
 
@@ -438,7 +438,7 @@ The allocation algorithm proceeds in four sequential steps, each with a separate
 
 Oversubscription at any hop is resolved pro-rata within that hop's effective ceiling, bounded by per-address per-hop caps (where the cap equals `participation_slots[(address, hop)] × HOP_CAP[hop]`). An address committed at multiple hops receives ARM allocation from each hop independently. See appendix for full pseudocode.
 
-`capped_demand` — the sum of all aggregated per-address per-hop balances after caps — is the canonical demand variable used for the minimum raise check, the expansion trigger, and per-hop statistics. An address committed at multiple hops contributes to `capped_demand` at each hop independently.
+`capped_demand` — the sum of all aggregated per-address per-hop balances after caps — is the canonical demand variable used for the expansion trigger and per-hop statistics. The minimum raise is checked against post-waterfall `totalAllocatedUsdc`. An address committed at multiple hops contributes to `capped_demand` at each hop independently.
 
 ### Rollover
 
@@ -558,7 +558,7 @@ Those who paid have priority over those who received tokens at zero cost basis. 
 ## Risk Acknowledgments
 
 - **Hop-0 selection quality is the critical dependency.** The allocation mechanism is algorithmic, but the network's governance quality depends entirely on the launch team's hop-0 selection. Trusted-network hop-0 selection is the primary defence against governance concentration and Sybil attacks — the contract mechanism does not substitute for it. Maximum single-entity capture from one subtree is $33k (2.75% of base fund); an address invited by multiple hop-0 participants accumulates beyond this. See Self-Filling section.
-- **At base size, hop-0 alone cannot meet the minimum raise.** Hop-0's ceiling ($798k at base fund) is below the minimum raise ($1M). However, the same addresses filling hop-0 can also commit at hop-1 and hop-2 — those contributions count independently. For example, 67 hop-0 participants each committing $15k at hop-0 and $4k at hop-1 produces $1.273M capped_demand (base sale) and ~$1.066M net_proceeds — sufficient to finalize. After expansion (capped_demand ≥ $1.5M), hop-0's ceiling rises to $1,197k and hop-0 alone can succeed.
+- **Hop-0 alone cannot meet the minimum raise.** Hop-0's ceiling is $564,000 at base size and $846,000 after expansion, both below the $1,000,000 minimum. For example, 67 participants each contributing $15,000 at hop-0 and $4,000 at hop-1 produce $564,000 + $268,000 = $832,000 of allocation. At least $168,000 of additional eligible hop-1 or hop-2 allocation is required to avoid refund mode. Meaningful hop-1 and hop-2 participation is an intended property of the design.
 - **Early governance proposals may pass on thin quorum.** Voting power activates immediately upon claim and delegation with no averaging period. The first proposals after the 7-day quiet period may be created when only a small fraction of participants have claimed. Participants are strongly encouraged to claim and delegate promptly after finalization.
 - **Governance capture is possible.** Whitelist is the mitigation, not a guarantee.
 - **Propagation may fail.** Unused supply flows to treasury.
@@ -584,13 +584,13 @@ Those who paid have priority over those who received tokens at zero cost basis. 
 | Pre-crowdfund distribution | Early network allocation distributed before the crowdfund opens | Full transparency for funders |
 | Recurring payments | Not supported in v1 | Steward submits monthly batches instead |
 | Hop allocation model | Demand-driven ceilings, not fixed reserves | Capacity follows actual demand; no hop is guaranteed allocation it didn't earn; unused capacity rolls forward |
-| Overlapping ceilings | Hop-0 and hop-1 sum to 115% of available (70/45); hop-2 has no fixed ceiling | Hop-0 and hop-1 can absorb more if the other underperforms. Hop-2's effective ceiling is floor + hop-1 leftover — it can grow arbitrarily large if earlier hops are empty, preserving full rollover flexibility |
-| Hop-2 hard floor | 5% of the fund reserved — hop-2 has first claim on this capacity | Hop-2 is governance breadth and ecosystem signal. The reserved capacity ensures hop-2 can always absorb up to the floor amount regardless of earlier hop demand. Actual receipt depends on hop-2 demand. |
+| Overlapping ceilings | Raw terms total 105% of the 95% base pool (60/45); hop-0 additionally funds the extra 10% hop-2 floor | The enforced ceilings do not simply total 105%: hop-1 is bounded by remaining available pool after hop-0. Hop-2's effective ceiling is floor + hop-1 leftover, preserving forward-only rollover. |
+| Hop-2 hard floor | 15% of the fund reserved — hop-2 has first claim on this capacity | Hop-2 is governance breadth and ecosystem signal. The additional 10 percentage points are funded only from hop-0's ceiling, protecting hop-1's raw ceiling while reserving more capacity for community demand. |
 | Multi-hop commits from single address | Permitted; receives ARM allocation at each hop independently | $33k per-subtree ceiling (2.75% of base raise). An address invited by multiple hop-0 participants accumulates across all subtrees — no global cap, but all participation is visible in the graph. Concentration is legible, not preventable. |
-| Invite window | Launch team: days 1–7 only; Hop-0 and hop-1: full 3 weeks | Narrows launch team discretion to week 1 — after that, no new hop-0 participants can be added and no new launch team invites can be issued. Live oversubscription data is visible during days 1–7, so this reduces but does not eliminate data-informed invite issuance. Hop-0 and hop-1 participants retain full flexibility throughout. |
-| Rolling hop-0 additions | Launch team may add hop-0 participants during week 1 only, up to 160-participant cap | Constrained to launch team's invite window. Once added, hop-0 participants may invite throughout the full 3 weeks. |
-| Hop-0 cap | 160 hop-0 participants maximum | Bounds network to ~1,840 participant slots (nodes); distinct individuals may be fewer under single-address multi-hop |
-| Launch team invite budgets | 60 hop-1 + 60 hop-2 invitations, predeclared, week 1 only | Extends the initial community with allies not connected to any hop-0 participant. |
+| Invite window | Launch team: days 1-14; Hop-0 and hop-1: full 3 weeks | Launch-team discretion is constrained only for the final week, while the team can observe live subscription data for 14 days before the deadline. Hop-0 and hop-1 participants retain full flexibility throughout. |
+| Rolling hop-0 additions | Launch team may add hop-0 participants during days 1-14, up to 180-participant cap | Constrained to the launch-team invite window. Once added, hop-0 participants may invite throughout the full 3 weeks. |
+| Hop-0 cap | 180 hop-0 participants maximum | Bounds network to 2,220 participant slots; distinct individuals may be fewer under single-address multi-hop. |
+| Launch team invite budgets | 100 hop-1 + 120 hop-2 invitations, predeclared, days 1-14 only | Adds headroom for small angels and community participation while reducing selection constraints. |
 | Rollover | Unconditional — leftover always rolls forward | Rollover thresholds dropped as weak sybil protection; hop-0 selection is the real defence. Simpler contract. |
 | No commitment withdrawals | Commitments are final once submitted | Eliminates gaming risk and simplifies contract; 3-week maximum lock period is known upfront |
 | ARM pre-load requirement | 1,800,000 ARM loaded before window opens | Ensures claim records written at finalization are always backed by sufficient ARM; enforced by contract flag |
@@ -611,8 +611,8 @@ Those who paid have priority over those who received tokens at zero cost basis. 
 | Function | Caller | Parameters | Preconditions | Effects |
 |---|---|---|---|---|
 | `loadArm()` | Anyone (once) | — | Contract holds ≥ MAX_SALE ARM; not already called | Sets ARM-loaded flag; arms the sale (commitment window opens at configured `openTimestamp`, not at the moment `loadArm()` is called); emits `ArmLoaded` |
-| `addSeed(address)` | Launch team | Hop-0 address | ARM loaded; week 1 only; hop-0 count < 160; address not already hop-0; not cancelled; not finalized | Adds address as hop-0 node with `invitedBy = address(0)` (the canonical ROOT marker); emits `SeedAdded(seed)`; decrements hop-0 budget. The inviter is implicit — `addSeed` is callable only by the launch team sentinel, so off-chain reconstruction tools should treat every `SeedAdded` event as a ROOT edge. |
-| `launchTeamInvite(invitee, fromHop)` | Launch team | Target address, inviter's hop (0 or 1; invitee joins at `fromHop + 1`) | ARM loaded; week 1 only; budget remaining for target hop; not cancelled; not finalized | Records invite edge from ROOT to invitee at `fromHop + 1`; emits `Invited(ROOT, invitee, fromHop + 1, 0)`; decrements launch team budget |
+| `addSeed(address)` | Launch team | Hop-0 address | ARM loaded; days 1-14 only; hop-0 count < 180; address not already hop-0; not cancelled; not finalized | Adds address as hop-0 node with `invitedBy = address(0)` (the canonical ROOT marker); emits `SeedAdded(seed)`; decrements hop-0 budget. The inviter is implicit — `addSeed` is callable only by the launch team sentinel, so off-chain reconstruction tools should treat every `SeedAdded` event as a ROOT edge. |
+| `launchTeamInvite(invitee, fromHop)` | Launch team | Target address, inviter's hop (0 or 1; invitee joins at `fromHop + 1`) | ARM loaded; days 1-14 only; budget remaining for target hop; not cancelled; not finalized | Records invite edge from ROOT to invitee at `fromHop + 1`; emits `Invited(ROOT, invitee, fromHop + 1, 0)`; decrements launch team budget |
 | `commit(hop, amount)` | Participant | Hop level, USDC amount | ARM loaded; pre-deadline; not cancelled; not finalized; `amount >= MIN_COMMIT` (10 USDC); address holds at least one participation slot at this hop (hop-0 slots from `SeedAdded`; hop-1/hop-2 slots from `Invited`) | Records commitment; transfers USDC to escrow; emits `Committed` |
 | `invite(invitee, fromHop)` | Inviter | Target address, inviter's hop | ARM loaded; pre-deadline; not cancelled; not finalized; caller has available slots at `fromHop` | Records invite edge; creates a new participation slot for invitee at `fromHop + 1` (increases invitee's cap by `HOP_CAP[fromHop + 1]`); emits `Invited(caller, invitee, fromHop + 1, 0)`; decrements inviter's slot count at `fromHop` |
 | `commitWithInvite(inviter, fromHop, nonce, deadline, signature, amount)` | Invitee | Inviter address, inviter's hop, nonce, deadline, EIP-712 signature, USDC amount | Valid EIP-712 + EIP-1271 signature; `nonce > 0`; `amount >= MIN_COMMIT` (10 USDC); `block.timestamp ≤ deadline`; nonce not used/revoked; inviter has available slots at `fromHop`; ARM loaded; pre-deadline; not cancelled; not finalized; USDC approved | Records invite edge + commitment atomically; creates a new participation slot for invitee at `fromHop + 1`; transfers USDC to escrow; emits `Invited(inviter, caller, fromHop + 1, nonce)` + `Committed(caller, fromHop + 1, amount)`; consumes nonce; decrements inviter's slot count |
@@ -706,7 +706,7 @@ The following pseudocode is the **specification-intent** description of the allo
 - Per-address cap at any hop = `participation_slots[(address, hop)] × HOP_CAP[hop]`. Slot sources: hop-0 from `SeedAdded`; hop-1/hop-2 from `Invited` events.
 - `loadArm()` has been called; contract holds ≥ `MAX_SALE` ARM.
 - The commitment deadline has passed.
-- After computing allocations, if `totalAllocatedUsdc < MINIMUM_RAISE`, the contract sets both `finalized = true` and `refundMode = true` without reverting — `finalized = true` permanently disables `finalize()` and `cancel()`; `claimRefund()` activates via the `refundMode` condition. This handles both sub-minimum `capped_demand` and the base-size post-waterfall shortfall case.
+- After computing allocations, if `totalAllocatedUsdc < MINIMUM_RAISE`, the contract sets both `finalized = true` and `refundMode = true` without reverting — `finalized = true` permanently disables `finalize()` and `cancel()`; `claimRefund()` activates via the `refundMode` condition. This handles both raw-demand shortfalls and post-waterfall shortfalls at base or expanded sale size.
 
 ```python
 # Constants
@@ -721,8 +721,9 @@ PRICE             = 1               # Specification uses whole-unit amounts for 
 # All token amounts in the contract must use smallest units; this pseudocode uses
 # whole units throughout for readability. Do not read PRICE = 1 as a unit conversion.
 
-HOP_CEILING_BPS = {0: 7000, 1: 4500}    # BPS of available pool; hop-2 uses floor+rollover, not a BPS ceiling
-HOP2_FLOOR_BPS  = 500                   # BPS of sale_size
+HOP_CEILING_BPS       = {0: 6000, 1: 4500}  # raw BPS of base_pool
+HOP2_BASE_FLOOR_BPS   = 500
+HOP2_EXTRA_FLOOR_BPS  = 1000
 HOP_CAP         = {0: 15_000, 1: 4_000, 2: 1_000}  # USDC per slot per hop
 # Per-address cap at a given hop = participation_slots[(address, hop)] × HOP_CAP[hop]
 # Slot sources by hop:
@@ -757,13 +758,16 @@ def allocate(commitments, participation_slots):
     capped_demand = sum(aggregated.values())  # USDC
     sale_size = MAX_SALE if capped_demand >= EXPANSION_TRIGGER else BASE_SALE
 
-    # Step 3: Reserve hop-2 floor upfront.
-    # Hop-2 has first claim on this capacity; hop-0 and hop-1 compete only for available.
-    hop2_floor   = HOP2_FLOOR_BPS * sale_size // 10_000
-    available    = sale_size - hop2_floor
+    # Step 3: Reserve hop-2 floor upfront. The extra floor comes only from hop-0.
+    hop2_floor = (HOP2_BASE_FLOOR_BPS + HOP2_EXTRA_FLOOR_BPS) * sale_size // 10_000
+    base_pool  = sale_size * (10_000 - HOP2_BASE_FLOOR_BPS) // 10_000
+    available  = sale_size - hop2_floor
 
-    hop0_ceiling = HOP_CEILING_BPS[0] * available // 10_000
-    hop1_ceiling = HOP_CEILING_BPS[1] * available // 10_000
+    hop0_ceiling = max(0, (
+        HOP_CEILING_BPS[0] * base_pool // 10_000
+        - HOP2_EXTRA_FLOOR_BPS * sale_size // 10_000
+    ))
+    hop1_ceiling = HOP_CEILING_BPS[1] * base_pool // 10_000
 
     def participants(hop):
         # All addresses committed at this hop, regardless of other hops they joined.
@@ -901,7 +905,7 @@ def allocate(commitments, participation_slots):
 
 | Property | Guarantee |
 |---|---|
-| Hop-2 reserved capacity | Hop-2 always has first claim on `HOP2_FLOOR_BPS × sale_size`; actual receipt depends on hop-2 demand |
+| Hop-2 reserved capacity | Hop-2 always has first claim on `(HOP2_BASE_FLOOR_BPS + HOP2_EXTRA_FLOOR_BPS) × sale_size`; actual receipt depends on hop-2 demand |
 | USDC conservation | `net_proceeds + sum(refunds) == sum(total_deposited)` (settlement-completion identity — holds once all participants have claimed) |
 | ARM conservation | `totalArmTransferred + sweepableArm == 1,800,000` (sweepableArm = preloaded - totalArmTransferred) |
 | Minimum raise | If `totalAllocatedUsdc < MINIMUM_RAISE` after aggregate computation, contract sets `refundMode = true` (no revert — state must be preserved for `claimRefund()` to work) |

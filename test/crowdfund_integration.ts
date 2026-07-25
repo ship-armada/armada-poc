@@ -21,7 +21,7 @@ const Phase = { Active: 0, Finalized: 1, Canceled: 2 };
 
 // Time constants
 const ONE_DAY = 86400;
-const ONE_WEEK = 7 * ONE_DAY;
+const LAUNCH_TEAM_WINDOW = 14 * ONE_DAY;
 const THREE_WEEKS = 21 * ONE_DAY;
 
 // USDC amounts (6 decimals)
@@ -66,14 +66,23 @@ describe("Crowdfund Integration", function () {
   }
 
   // Add hop-1 demand to avoid refundMode when testing with seeds-only at hop-0.
-  // At BASE_SALE, hop-0 ceiling ($798K) < MIN_SALE ($1M). Adding 51 hop-1 at $4K
-  // pushes totalAllocUsdc to $1,002K > $1M. Hop-0 allocation math stays unchanged.
+  // At BASE_SALE, hop-0 ceiling ($564K) < MIN_SALE ($1M). Adding $436K of
+  // hop-1 demand brings projected allocation to the $1M minimum.
   async function addHop1ForMinSale(seeds: SignerWithAddress[], hop1Pool: SignerWithAddress[]) {
-    const count = Math.min(51, hop1Pool.length, seeds.length);
-    for (let i = 0; i < count; i++) {
-      await crowdfund.connect(seeds[i]).invite(hop1Pool[i].address, 0);
-      await fundAndApprove(hop1Pool[i], USDC(4_000));
-      await crowdfund.connect(hop1Pool[i]).commit(1, USDC(4_000));
+    const inviteSlots = 109;
+    const committedSlots = new Map<string, { signer: SignerWithAddress; slots: number }>();
+    for (let i = 0; i < inviteSlots; i++) {
+      const inviter = seeds[i % seeds.length];
+      const signer = hop1Pool[i % hop1Pool.length];
+      await crowdfund.connect(inviter).invite(signer.address, 0);
+      const entry = committedSlots.get(signer.address) ?? { signer, slots: 0 };
+      entry.slots++;
+      committedSlots.set(signer.address, entry);
+    }
+    for (const { signer, slots } of committedSlots.values()) {
+      const amount = USDC(4_000 * slots);
+      await fundAndApprove(signer, amount);
+      await crowdfund.connect(signer).commit(1, amount);
     }
   }
 
@@ -137,13 +146,13 @@ describe("Crowdfund Integration", function () {
       const ltie = await crowdfund.launchTeamInviteEnd();
       expect(ws).to.be.gt(0);
       expect(we - ws).to.equal(THREE_WEEKS);
-      expect(ltie - ws).to.equal(ONE_WEEK);
+      expect(ltie - ws).to.equal(LAUNCH_TEAM_WINDOW);
 
-      // Check hop configs (overlapping ceilings: 70/45/0 — hop-2 uses floor+rollover, not BPS).
+      // Check hop configs (overlapping ceilings: 60/45/0 — hop-2 uses floor+rollover, not BPS).
       // Tuple order matches struct field order after audit-68 packing reorder:
       // (ceilingBps, maxInvites, maxInvitesReceived, capUsdc).
       const [ceilingBps0, maxInv0, , cap0] = await crowdfund.hopConfigs(0);
-      expect(ceilingBps0).to.equal(7000);
+      expect(ceilingBps0).to.equal(6000);
       expect(cap0).to.equal(USDC(15_000));
       expect(maxInv0).to.equal(3);
 
@@ -194,14 +203,14 @@ describe("Crowdfund Integration", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: already whitelisted");
     });
 
-    it("should reject adding seeds after week 1 of active window", async function () {
+    it("should reject adding seeds after the launch-team invite window", async function () {
       await crowdfund.addSeed(seed1.address);
 
-      // Seeds allowed during week 1; fast-forward past launchTeamInviteEnd
-      await time.increase(ONE_WEEK + 1);
+      // Seeds are allowed during the launch-team invite window.
+      await time.increase(LAUNCH_TEAM_WINDOW + 1);
       await expect(
         crowdfund.addSeed(seed2.address)
-      ).to.be.revertedWith("ArmadaCrowdfund: outside week-1 window");
+      ).to.be.revertedWith("ArmadaCrowdfund: outside launch-team invite window");
     });
   });
 
@@ -334,8 +343,8 @@ describe("Crowdfund Integration", function () {
 
       // windowEnd = windowStart + 3 weeks
       expect(we - ws).to.equal(THREE_WEEKS);
-      // launchTeamInviteEnd = windowStart + 1 week
-      expect(ltie - ws).to.equal(ONE_WEEK);
+      // launchTeamInviteEnd = windowStart + 14 days
+      expect(ltie - ws).to.equal(LAUNCH_TEAM_WINDOW);
       // windowStart should be the openTimestamp we passed to constructor
       expect(ws).to.be.gt(0);
     });
@@ -667,7 +676,7 @@ describe("Crowdfund Integration", function () {
 
     it("should allocate fully when demand <= reserve", async function () {
       // Setup: 68 seeds at $15K = $1.02M demand.
-      // Hop-0 ceiling = 70% of netRaise = 70% of $1.14M = $798K, so demand > ceiling.
+      // Hop-0 ceiling = 60% of the $1.14M base pool minus $120K = $564K.
       // Need to reach MIN_SALE first — use many seeds
       const seeds = allSigners.slice(1, 80);
       for (const s of seeds) {
@@ -693,9 +702,9 @@ describe("Crowdfund Integration", function () {
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
       expect(await crowdfund.saleSize()).to.equal(USDC(1_200_000)); // BASE_SALE
 
-      // Hop 0 ceiling = 70% of $1.14M (netRaise) = $798K. Demand = $1,020,000 > $798K → pro-rata
+      // Hop-0 ceiling is $564K. Demand = $1,020,000, so it is pro-rata.
       const [alloc, refund] = await crowdfund.computeAllocation(seeds[0].address);
-      // Pro-rata: alloc = (15000 * 798000) / 1020000 ≈ 11735.29 USDC worth
+      // Pro-rata: alloc = (15000 * 564000) / 1020000 ≈ 8294.12 USDC worth
       expect(alloc).to.be.gt(0);
       expect(refund).to.be.gt(0); // some refund because oversubscribed
     });
@@ -721,15 +730,12 @@ describe("Crowdfund Integration", function () {
       await crowdfund.finalize();
 
       // saleSize = BASE_SALE = $1.2M
-      // hop2Floor = 5% of $1.2M = $60K, netRaise = $1.14M
-      // Hop 0 ceiling = 70% of $1.14M = $798,000
-      // Hop 0 demand = $1,050,000 > $798,000 → pro-rata
-      // scale = 798000 / 1050000 = 0.76
-      // Each $15K commit → $11,400 allocation → 11,400 ARM
+      // Hop-2 floor = 15% of $1.2M = $180K; H0 ceiling = $564K.
+      // Hop-0 demand = $1,050,000, so each $15K commit receives about $8,057.14.
       const [alloc, refund] = await crowdfund.computeAllocation(seeds[0].address);
       const allocArm = Number(alloc) / 1e18; // ARM allocation in whole tokens
-      expect(allocArm).to.be.closeTo(11_400, 1); // ~11,400 ARM ($11.4K at $1/ARM)
-      expect(refund).to.be.closeTo(USDC(3_600), USDC(1)); // ~$3.6K refund
+      expect(allocArm).to.be.closeTo(8_057, 1);
+      expect(refund).to.be.closeTo(USDC(6_943), USDC(1));
     });
   });
 
@@ -783,7 +789,7 @@ describe("Crowdfund Integration", function () {
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
-      // Hop-0 demand ($1.02M) > ceiling ($798K) → over-subscribed.
+      // Hop-0 demand ($1.02M) exceeds the $564K ceiling.
       const saleSizeVal = await crowdfund.saleSize();
       const totalAllocUsdcVal = await crowdfund.totalAllocatedUsdc();
       const leftover = saleSizeVal - totalAllocUsdcVal;
@@ -1254,9 +1260,7 @@ describe("Crowdfund Integration", function () {
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
       expect(await crowdfund.saleSize()).to.equal(USDC(1_200_000)); // BASE
 
-      // Hop-0 demand = $1,050,000, ceiling = 70% of $1.14M = $798,000 → pro-rata
-      // scale = 798000/1050000 = 0.76
-      // Each $15K → $11,400 allocated → 11,400 ARM
+      // Hop-0 demand = $1,050,000, ceiling = $564,000, so it is pro-rata.
 
       // Claim first seed
       const armBefore = await armToken.balanceOf(seeds[0].address);

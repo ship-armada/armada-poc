@@ -126,8 +126,7 @@ export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
                 // The ceiling is projected off the *projected* sale size (BASE/MAX
                 // until finalized) so the % is meaningful pre-finalization, since
                 // `state.saleSize` is 0 until finalize() (matches Est. alloc).
-                const effCeiling =
-                  (estimate.effectiveSaleSize * BigInt(cfg?.ceilingBps ?? 0)) / 10_000n
+                const effCeiling = estimate.perHopCeiling[hop] ?? 0n
                 const fillPct =
                   effCeiling > 0n ? Number((stats.cappedCommitted * 10_000n) / effCeiling) / 100 : 0
                 const fillClass =
@@ -141,7 +140,7 @@ export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
                         {hopLabel(hop)}
                       </span>
                     </td>
-                    <td>{isFloor ? 'Floor' : `${(cfg?.ceilingBps ?? 0) / 100}%`}</td>
+                    <td>{isFloor ? '15% floor' : `${(cfg?.ceilingBps ?? 0) / 100}% raw`}</td>
                     <td>{cfg ? formatUsdc(cfg.capUsdc) : '—'}</td>
                     <td>
                       {hop === 0

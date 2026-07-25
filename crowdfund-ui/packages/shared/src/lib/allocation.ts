@@ -2,7 +2,10 @@
 // ABOUTME: Used pre-finalization to show estimated total allocation (post-ceiling) in the UI.
 
 import { CROWDFUND_CONSTANTS, HOP_CONFIGS } from './constants.js'
-import type { HopStatsData } from '../components/StatsBar.js'
+
+export interface HopAllocationStats {
+  cappedCommitted: bigint
+}
 
 export interface AllocationEstimate {
   /** Total USDC that would be allocated (after hop ceilings) */
@@ -18,15 +21,15 @@ export interface AllocationEstimate {
 /**
  * Estimate hop-level allocations from current capped demand.
  * Mirrors the contract's _computeHopAllocations logic:
- *   1. Reserve hop-2 floor off the top
- *   2. Apply hop-0 ceiling (BPS of available pool)
+ *   1. Reserve the complete hop-2 floor off the top
+ *   2. Apply hop-0 ceiling (60% of the 95% base pool, less the extra floor)
  *   3. Roll over leftover to hop-1
  *   4. Roll over leftover to hop-2 (floor + leftover)
  *
  * Pre-finalization, saleSize is 0 — use BASE_SALE or MAX_SALE based on
  * whether capped demand meets the elastic trigger.
  */
-export function estimateAllocation(hopStats: HopStatsData[], cappedDemand: bigint, saleSize: bigint): AllocationEstimate {
+export function estimateAllocation(hopStats: readonly HopAllocationStats[], cappedDemand: bigint, saleSize: bigint): AllocationEstimate {
   // Determine effective sale size
   let effectiveSaleSize: bigint
   if (saleSize > 0n) {
@@ -37,18 +40,23 @@ export function estimateAllocation(hopStats: HopStatsData[], cappedDemand: bigin
     effectiveSaleSize = CROWDFUND_CONSTANTS.BASE_SALE
   }
 
-  const hop2Floor = (effectiveSaleSize * BigInt(CROWDFUND_CONSTANTS.HOP2_FLOOR_BPS)) / 10_000n
+  const hop2Floor = (effectiveSaleSize * BigInt(
+    CROWDFUND_CONSTANTS.HOP2_BASE_FLOOR_BPS + CROWDFUND_CONSTANTS.HOP2_EXTRA_FLOOR_BPS,
+  )) / 10_000n
   const available = effectiveSaleSize - hop2Floor
+  const basePool = (effectiveSaleSize * BigInt(10_000 - CROWDFUND_CONSTANTS.HOP2_BASE_FLOOR_BPS)) / 10_000n
 
   // Hop-0
-  const hop0Ceiling = (available * BigInt(HOP_CONFIGS[0].ceilingBps)) / 10_000n
+  const hop0Ceiling =
+    (basePool * BigInt(HOP_CONFIGS[0].ceilingBps)) / 10_000n -
+    (effectiveSaleSize * BigInt(CROWDFUND_CONSTANTS.HOP2_EXTRA_FLOOR_BPS)) / 10_000n
   const hop0Demand = hopStats[0]?.cappedCommitted ?? 0n
   const hop0Alloc = hop0Demand <= hop0Ceiling ? hop0Demand : hop0Ceiling
   const hop0Leftover = hop0Ceiling - hop0Alloc
   const remainingAvailable = available - hop0Alloc
 
   // Hop-1
-  const hop1BaseCeiling = (available * BigInt(HOP_CONFIGS[1].ceilingBps)) / 10_000n
+  const hop1BaseCeiling = (basePool * BigInt(HOP_CONFIGS[1].ceilingBps)) / 10_000n
   let hop1EffCeiling = hop1BaseCeiling + hop0Leftover
   if (hop1EffCeiling > remainingAvailable) {
     hop1EffCeiling = remainingAvailable
@@ -86,7 +94,7 @@ export interface UserHopPosition {
  */
 export function estimateUserArmAllocation(
   positions: UserHopPosition[],
-  hopStats: HopStatsData[],
+  hopStats: readonly HopAllocationStats[],
   cappedDemand: bigint,
   saleSize: bigint,
 ): bigint {

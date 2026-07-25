@@ -16,7 +16,6 @@ import {
   ErrorAlert,
   ErrorBoundary,
   StaleDataBanner,
-  CROWDFUND_CONSTANTS,
   formatTimeLeft,
   formatTimeLeftDetail,
   truncateAddress,
@@ -210,7 +209,6 @@ function getClaimAvailability(
   armLoaded: boolean,
   windowEnd: number,
   blockTimestamp: number,
-  cappedDemand: bigint,
 ): ClaimAvailability {
   if (!armLoaded && phase === 0) return { state: 'pre-open' }
   if (phase === 1) return { state: 'available' } // finalized
@@ -218,8 +216,6 @@ function getClaimAvailability(
 
   // phase 0
   const windowEnded = windowEnd > 0 && blockTimestamp > windowEnd
-  const belowMin = cappedDemand < CROWDFUND_CONSTANTS.MIN_SALE
-  if (windowEnded && belowMin) return { state: 'available' } // refund eligibility
   if (windowEnded) return { state: 'pending', reason: 'Awaiting finalization' }
   return { state: 'pending', reason: 'Opens after the campaign window ends' }
 }
@@ -559,18 +555,11 @@ export function App() {
     if (!primary) return { status: 'no-position', walletDisplay }
     const hop = primary.hop
     const userSummary = summaries.get(wallet.address.toLowerCase())
-    // Refund-mode signal: contract flag is canonical post-finalize; pre-
-    // finalize we infer it from the closed window + sub-minimum demand so
-    // the card stops showing a misleading "ARM allocation" before the
-    // launch team calls finalize().
-    const windowEnded =
-      contractState.windowEnd > 0 &&
-      contractState.blockTimestamp > contractState.windowEnd
-    const saleBelowMin = contractState.cappedDemand < CROWDFUND_CONSTANTS.MIN_SALE
+    // Refund mode is contract-authoritative: before finalize(), the sale may
+    // still succeed or refund depending on the full waterfall allocation.
     const refundMode =
       contractState.refundMode ||
-      contractState.phase === 2 ||
-      (windowEnded && saleBelowMin)
+      contractState.phase === 2
     // Refund amount: prefer the on-chain post-claim `refundUsdc` from the
     // user's graph summary; otherwise the user's total committed across
     // all hops (full refund when sale falls below min).
@@ -619,14 +608,12 @@ export function App() {
         contractState.armLoaded,
         contractState.windowEnd,
         contractState.blockTimestamp,
-        contractState.cappedDemand,
       ),
     [
       contractState.phase,
       contractState.armLoaded,
       contractState.windowEnd,
       contractState.blockTimestamp,
-      contractState.cappedDemand,
     ],
   )
 

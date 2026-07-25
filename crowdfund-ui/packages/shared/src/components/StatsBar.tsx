@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { motion } from 'framer-motion'
 import { Clock, DollarSign, UserCheck, Users } from 'lucide-react'
 import { formatArm, formatTimeLeft, formatTimeLeftDetail, formatUsdc } from '../lib/format.js'
-import { CROWDFUND_CONSTANTS, HOP_CONFIGS } from '../lib/constants.js'
+import { CROWDFUND_CONSTANTS } from '../lib/constants.js'
 import { estimateAllocation } from '../lib/allocation.js'
 import { Skeleton } from './ui/skeleton.js'
 import { InfoTooltip } from './InfoTooltip.js'
@@ -180,8 +180,8 @@ function PerHopStrip({
   hopStats: HopStatsData[]
   saleSize: bigint
 }) {
-  const effectiveSaleSize =
-    saleSize > 0n ? saleSize : CROWDFUND_CONSTANTS.BASE_SALE
+  const cappedDemand = hopStats.reduce((total, stat) => total + stat.cappedCommitted, 0n)
+  const estimate = estimateAllocation(hopStats, cappedDemand, saleSize)
   // Hop color tokens defined in theme.css. Bar fills use the same
   // primary→primary/65 gradient recipe as TableView's invites bar, swapping
   // the hop hue in for visual consistency across the surface.
@@ -206,12 +206,7 @@ function PerHopStrip({
 return (
 <div className="grid grid-cols-1 gap-x-6 gap-y-1.5 px-1 sm:grid-cols-3">
 {hopStats.map((stat, hop) => {
-const cfg = HOP_CONFIGS[hop]
-const ceilingBps = cfg?.ceilingBps ?? 0
-const ceiling =
-ceilingBps > 0
-? (effectiveSaleSize * BigInt(ceilingBps)) / 10_000n
-: 0n
+const ceiling = estimate.perHopCeiling[hop] ?? 0n
 const pct =
 ceiling > 0n
 ? Math.min(999, Number((stat.cappedCommitted * 100n) / ceiling))
@@ -230,7 +225,7 @@ style={{ width: `${visualWidth}%` }}
 />
 </div>
 <div className="w-8 text-right text-muted-foreground">
-{ceilingBps > 0 ? `${pct}%` :'—'}
+{ceiling > 0n ? `${pct}%` :'—'}
             </div>
           </div>
         )

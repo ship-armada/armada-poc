@@ -37,11 +37,11 @@ Single source of truth for every concrete value that enters the deployed contrac
 | Parameter | Human-readable | Unix timestamp | Mutability | Verified | Notes |
 |---|---|---|---|---|---|
 | Open timestamp | `[TBD: date/time UTC]` | `[TBD]` | Immutable (constructor) | ☐ | Commitment window, hop-0 additions, and invites begin here |
-| Week-1 deadline | Open + 7 days | `[TBD]` | Immutable (constructor) | ☐ | `addSeed()` and `launchTeamInvite()` revert after this |
+| Launch-team invite deadline | Open + 14 days | `[TBD]` | Immutable (constructor) | ☐ | `addSeed()` and `launchTeamInvite()` revert after this |
 | Commitment deadline | Open + 21 days | `[TBD]` | Immutable (constructor) | ☐ | `commit()`, `commitWithInvite()`, `invite()` revert after this |
 | Claim deadline | Finalization + 3 years | Computed at finalization | Immutable (derived) | — | `claim()` permitted when `block.timestamp <= finalizationTimestamp + 94_608_000`. Sweep eligible at `>`. |
 
-**Timestamp verification:** Convert each unix timestamp back to human-readable and confirm date, time, and timezone match intent. Verify `week1Deadline == openTimestamp + 604_800` (7 × 86400). Verify `commitmentDeadline == openTimestamp + 1_814_400` (21 × 86400).
+**Timestamp verification:** Convert each unix timestamp back to human-readable and confirm date, time, and timezone match intent. Verify `launchTeamInviteDeadline == openTimestamp + 1_209_600` (14 × 86400). Verify `commitmentDeadline == openTimestamp + 1_814_400` (21 × 86400).
 
 **3-year duration:** Exactly `94_608_000 seconds` (1,095 days = 3 × 365 days). This is a fixed second count, not 3 calendar years — does not account for leap years.
 
@@ -70,8 +70,9 @@ Single source of truth for every concrete value that enters the deployed contrac
 | Parameter | Hop-0 | Hop-1 | Hop-2 | Mutability |
 |---|---|---|---|---|
 | HOP_CAP (per slot) | $15,000 (`15_000_000_000` USDC) | $4,000 (`4_000_000_000` USDC) | $1,000 (`1_000_000_000` USDC) | Immutable (constant) |
-| HOP_CEILING_BPS | 7000 (70% of available) | 4500 (45% of available) | — (no enforced ceiling) | Immutable (constant) |
-| HOP2_FLOOR_BPS | — | — | 500 (5% of sale_size) | Immutable (constant) |
+| HOP_CEILING_BPS | 6000 (60% of base pool, then less extra floor) | 4500 (45% of base pool) | — (no enforced ceiling) | Immutable (constant) |
+| HOP2_BASE_FLOOR_BPS | — | — | 500 (5% of sale_size) | Immutable (constant) |
+| HOP2_EXTRA_FLOOR_BPS | — | — | 1000 (additional 10% of sale_size) | Immutable (constant) |
 | Outgoing invite slots per slot (`maxInvites`) | 3 | 2 | 0 | Immutable (constant) |
 | Incoming invite stacking cap (`maxInvitesReceived`) | 1 | 10 | 20 | Immutable (constant) |
 | Slot source | `SeedAdded` | `Invited` | `Invited` | — |
@@ -82,8 +83,8 @@ Single source of truth for every concrete value that enters the deployed contrac
 
 **Commitment floor (`MIN_COMMIT`):** `10 USDC` (`10_000_000` USDC, 6 decimals). Both `commit()` and `commitWithInvite()` revert with `amount < MIN_COMMIT`. Immutable (constant). Sized to keep dust commits out of the participant graph — every commit registers a `participantNode`, and the rounding buffer at finalization is bounded by `participantNodes.length`. Not enforced as a percentage of cap.
 
-**Ceiling amounts at base ($1.2M):** hop-2 floor = $60k; available = $1.14M; hop-0 ceiling = $798k; hop-1 ceiling = $513k
-**Ceiling amounts at expanded ($1.8M):** hop-2 floor = $90k; available = $1.71M; hop-0 ceiling = $1,197k; hop-1 ceiling = $769.5k
+**Ceiling amounts at base ($1.2M):** base pool = $1.14M; hop-2 floor = $180k; available = $1.02M; hop-0 ceiling = $564k; hop-1 raw ceiling = $513k and can rise to $1.02M with all hop-0 capacity rolled forward.
+**Ceiling amounts at expanded ($1.8M):** base pool = $1.71M; hop-2 floor = $270k; available = $1.53M; hop-0 ceiling = $846k; hop-1 raw ceiling = $769.5k and can rise to $1.53M with all hop-0 capacity rolled forward.
 
 ---
 
@@ -91,10 +92,10 @@ Single source of truth for every concrete value that enters the deployed contrac
 
 | Parameter | Value | Mutability | Verified | Notes |
 |---|---|---|---|---|
-| Hop-0 budget | 160 | Immutable (constant) | ☐ | Max `addSeed()` calls |
-| Launch-team hop-1 budget | 60 | Immutable (constant) | ☐ | Max `launchTeamInvite(_, 0)` calls |
-| Launch-team hop-2 budget | 60 | Immutable (constant) | ☐ | Max `launchTeamInvite(_, 1)` calls |
-| Max network size | ~1,840 nodes | Derived | — | 160 + 540 + 1,140 (see CROWDFUND.md) |
+| Hop-0 budget | 180 | Immutable (constant) | ☐ | Max `addSeed()` calls |
+| Launch-team hop-1 budget | 100 | Immutable (constant) | ☐ | Max `launchTeamInvite(_, 0)` calls |
+| Launch-team hop-2 budget | 120 | Immutable (constant) | ☐ | Max `launchTeamInvite(_, 1)` calls |
+| Max network size | 2,220 nodes | Derived | — | 180 + 640 + 1,400 (see CROWDFUND.md) |
 
 ---
 
@@ -207,7 +208,7 @@ Every parameter in this contract falls into one of three categories:
 **There are no admin-mutable parameters in the crowdfund contract.** No address can change any parameter after deployment. This is intentional — the mechanism is fully predeclared.
 
 The only role-gated *actions* are:
-- ROOT: `addSeed()`, `launchTeamInvite()` — week 1 only
+- ROOT: `addSeed()`, `launchTeamInvite()` — days 1-14 only
 - Security Council: `cancel()` — pre-finalization only
 
 Neither of these changes a parameter. They execute predeclared actions within predeclared budgets.

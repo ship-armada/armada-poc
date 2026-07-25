@@ -9,7 +9,6 @@ import {
   type ReceiptLogLike,
   type Step4Transaction,
   CROWDFUND_ABI_FRAGMENTS,
-  CROWDFUND_CONSTANTS,
   HOP_CONFIGS,
   formatArm,
   formatUsdc,
@@ -604,40 +603,11 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     )
   }
 
-  // Pre-finalize disambiguation: when the commit window has ended but
-  // `finalize()` hasn't been called yet, the contract still reports
-  // `phase=0` and `refundMode=false`, and `computeAllocation()` returns
-  // (0, 0) for everyone (allocations only exist post-finalization). Without
-  // this branch the user falls through to the generic "Nothing to claim"
-  // copy below, which is misleading when the sale's outcome is already
-  // determined (e.g., capped demand fell short of MIN_SALE → everyone gets
-  // a USDC refund, but no one can claim it until someone calls finalize()).
+  // Before finalize(), the contract still reports `phase=0` and
+  // `refundMode=false`, and allocations do not exist. The final outcome
+  // depends on post-waterfall allocation, so no refund is claimable yet.
   const windowEnded = props.windowEnd > 0 && props.blockTimestamp > props.windowEnd
-  const saleBelowMin = props.cappedDemand < CROWDFUND_CONSTANTS.MIN_SALE
   if (phase === 0 && windowEnded) {
-    if (saleBelowMin) {
-      return (
-        <CardShell title="Sale ended below minimum">
-          <p className={styles.gateBody}>
-            {props.totalCommitted > 0n
-              ? `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum raise. Once it's finalized, you'll be able to claim a refund of your committed ${formatUsdc(props.totalCommitted)} from here.`
-              : `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum raise. Once it's finalized, all committed USDC will be refundable to the addresses that participated.`}
-          </p>
-          <p className={styles.gateBodyFootnote}>
-            Finalization is permissionless — anyone can trigger it. Refresh this page once it's done.
-          </p>
-          <div className={styles.gateActions}>
-            <ArmadaButton
-              variant="secondary"
-              size="md"
-              label="Back to crowdfund"
-              showIcon={false}
-              onClick={onGoToNetwork}
-            />
-          </div>
-        </CardShell>
-      )
-    }
     return (
       <CardShell title="Awaiting finalization">
         <p className={styles.gateBody}>

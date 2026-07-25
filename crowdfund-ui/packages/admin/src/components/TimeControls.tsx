@@ -65,7 +65,7 @@ export function TimeControls({ timeControls, state, onMintUsdc }: TimeControlsPr
   const [ethRecipient, setEthRecipient] = useState(ANVIL_ACCOUNTS[1].address)
   const [ethAmount, setEthAmount] = useState('100')
 
-  const week1 = useActionStatus()
+  const launchTeamDeadline = useActionStatus()
   const windowEnd = useActionStatus()
   const claimDeadline = useActionStatus()
   const customAdvance = useActionStatus()
@@ -116,11 +116,11 @@ export function TimeControls({ timeControls, state, onMintUsdc }: TimeControlsPr
         <div className="text-muted-foreground">Time Warp</div>
         <div className="flex flex-wrap gap-1">
           <button
-            className={`px-2 py-1 rounded bg-muted hover:bg-muted/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${statusClass(week1.status)}`}
-            onClick={() => week1.run(() => timeControls.skipToWeek1End(state.launchTeamInviteEnd, state.blockTimestamp))}
-            disabled={state.blockTimestamp >= state.launchTeamInviteEnd || week1.status === 'busy'}
+            className={`px-2 py-1 rounded bg-muted hover:bg-muted/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${statusClass(launchTeamDeadline.status)}`}
+            onClick={() => launchTeamDeadline.run(() => timeControls.skipToLaunchTeamInviteDeadline(state.launchTeamInviteEnd, state.blockTimestamp))}
+            disabled={state.blockTimestamp >= state.launchTeamInviteEnd || launchTeamDeadline.status === 'busy'}
           >
-            {statusLabel(week1.status, 'Skip to Week-1 End')}
+            {statusLabel(launchTeamDeadline.status, 'Skip to Launch-Team Deadline')}
           </button>
           <button
             className={`px-2 py-1 rounded bg-muted hover:bg-muted/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${statusClass(windowEnd.status)}`}

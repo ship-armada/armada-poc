@@ -65,6 +65,10 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
     uint8 public constant MAX_SEEDS = 180;                       // max number of seeds (hop-0 participants)
     uint8 public constant LAUNCH_TEAM_HOP1_BUDGET = 100;         // launch team direct hop-1 invite slots
     uint8 public constant LAUNCH_TEAM_HOP2_BUDGET = 120;         // launch team direct hop-2 invite slots
+    // Hard cap on total participant nodes. finalize() iterates every node in one tx at ~8,200 gas/node
+    // (cold); this bound keeps it under the 16,777,216 (2^24, EIP-7825) per-tx gas cap. 1,800 nodes
+    // ≈ 15.2M gas (~9% margin). Enforced in _initParticipant. See the DESIGN NOTE on _iterateCappedDemand.
+    uint256 public constant MAX_FINALIZE_NODES = 1800;
 
     // EIP-712 typehash for off-chain invite signatures
     bytes32 public constant INVITE_TYPEHASH = keccak256(
@@ -225,6 +229,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
 
     /// @dev Initialize a new participant node at the given hop.
     function _initParticipant(address participant, uint8 hop, address inviter_) private {
+        // Bound total nodes so one-shot finalize() stays under the 16,777,216 (2^24, EIP-7825)
+        // per-tx gas cap. Single choke point for all node creation (seeds + every invite path).
+        require(participantNodes.length < MAX_FINALIZE_NODES, "ArmadaCrowdfund: node cap reached");
         participants[participant][hop].isWhitelisted = true;
         participants[participant][hop].invitesReceived = 1;
         participants[participant][hop].invitedBy = inviter_;
@@ -903,12 +910,17 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
     ///      DESIGN NOTE: This iterates the full participantNodes array — O(n) where n is total
     ///      participants across all hops. The array is bounded by invite chain limits:
     ///      MAX_SEEDS (180) at hop-0, with HOPx_MAX_INVITES at each subsequent hop, giving a
-    ///      structural maximum of 2,220 nodes (incl. launch-team direct invites).
-    ///      Measured profile (test-foundry/CrowdfundFinalizeGas.t.sol): ~2,220 gas per iteration
-    ///      with ~332k fixed overhead, so finalize() at structural max ≈ 4.2M gas — 14% of the
-    ///      30M block limit. An incremental tracking approach was considered but rejected to
-    ///      avoid changing the accounting flow. If invite limits are ever significantly
-    ///      increased, this should be revisited.
+    ///      structural maximum of ~2,220 nodes (incl. launch-team direct invites).
+    ///      Cold-storage cost is ~8,200 gas/node (measured; test-foundry/CrowdfundFinalizeGasCold.t.sol);
+    ///      an invited-but-uncommitted node still costs ~4,950 gas (2 cold SLOADs before the skip),
+    ///      so cost scales with whitelist count, not commit count. A single Ethereum transaction is
+    ///      capped at 16,777,216 gas (2^24, EIP-7825), so one-shot finalize() at the structural max
+    ///      (~18.6M gas) would EXCEED that cap and be unsubmittable. Total node count is therefore
+    ///      capped at MAX_FINALIZE_NODES (enforced in _initParticipant): 1,800 nodes ≈ 15.2M gas,
+    ///      ~9% under the cap.
+    ///      NOTE: an earlier profile (test-foundry/CrowdfundFinalizeGas.t.sol) reported ~2,220 gas
+    ///      per iteration / ~4.2M at max, but it measured WARM slots and understates a real
+    ///      cold-first-touch transaction by ~3.6x; do not rely on it.
     function _iterateCappedDemand() internal view returns (
         uint256 globalCapped,
         uint256[3] memory perHopCapped

@@ -655,8 +655,9 @@ Those who paid have priority over those who received tokens at zero cost basis. 
 
 **Lazy settlement architecture.** `finalize()` writes only aggregate state — zero per-participant storage. Per-participant allocation computation and storage writes happen at `claim()` time, paid by each claimant. This eliminates the gas scaling problem that made eager per-participant finalization infeasible at ~800 participants.
 
-**`finalize()` gas profile (~3-5M gas, within 30M block limit):**
-- Iterates all participants once to compute `hopDemand[]`: ~800 participants × ~1.5 hops avg = ~1,200 SLOADs for commitment reads. Cold first-access is 2,100 gas; subsequent reads of the same participant's other hops are warm (100 gas). Estimated: ~2-4M gas depending on storage layout.
+**`finalize()` gas profile (cold-storage, measured):**
+- Iterates every whitelisted node once to compute `hopDemand[]`. On-chain `finalize()` is its own transaction, so every node's storage is cold on first touch — **~8,200 gas/node** (2–3 cold SLOADs each). At ~800 committed participants ≈ **~6.7M gas**. Invited-but-uncommitted nodes still cost ~4,950 gas each (2 cold SLOADs before the skip), so gas scales with **whitelist** count, not commit count.
+- **A single transaction is capped at 16,777,216 gas (2^24, EIP-7825).** One-shot `finalize()` at the ~2,220-node structural maximum ≈ **~18.6M gas → exceeds the cap and is unsubmittable.** Participant count must be bounded (below ~2,000 nodes) to keep `finalize()` submittable; the block gas limit (~30M+) is not the binding constraint — the per-tx cap is.
 - Aggregate SSTOREs (hopDemand, ceilings, saleSize, finalized, timestamp, totalAllocatedArm, totalArmTransferred): ~10 SSTOREs = ~200k gas
 - USDC transfer to treasury: ~65k gas
 - Event + overhead: ~200k gas

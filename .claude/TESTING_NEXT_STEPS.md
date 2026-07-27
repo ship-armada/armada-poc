@@ -152,16 +152,17 @@ Write a `Handler` contract that randomly calls `invite()`, `commit()`, `finalize
 
 ### Crowdfund `finalize()` Gas Ceiling
 
-The `finalize()` function iterates all participants twice (hop allocation pass + individual allocation pass). Profile with:
+Under lazy settlement `finalize()` iterates every whitelisted node once (per-participant allocation is deferred to `claim()`). Cold cost ~8,200 gas/node (measured, `test-foundry/CrowdfundFinalizeGasCold.t.sol`). The binding limit is the **16,777,216 (2^24, EIP-7825) per-transaction cap**, NOT the block gas limit.
 
-| Participants | Expected Gas | Block Limit? |
+| Participants (committed) | Cold finalize() gas | Under 2^24 cap? |
 |-------------|-------------|-------------|
-| 100 | ~1M gas | OK |
-| 500 | ~5M gas | OK |
-| 1,000 | ~10M gas | Tight |
-| 2,000 | ~20M gas | Over 15M limit |
+| 500 | ~4.2M | OK |
+| 800 | ~6.7M | OK |
+| 1,800 | ~15.2M | OK (~9% margin) |
+| 2,000 | ~16.6M | Marginal |
+| 2,220 (structural max) | ~18.6M | **OVER — unsubmittable** |
 
-If gas exceeds 15M (Ethereum mainnet block gas limit), the contract needs batched finalization for production. For L2 deployment this is less critical.
+`finalize()` crosses the 2^24 cap at ~2,025 nodes, below the 2,220 structural max, so participant count is capped below ~2,000 (see `_initParticipant`) to keep one-shot `finalize()` submittable. The per-tx cap is protocol-level (applies on L2s targeting the same rule too).
 
 ### Governance Gas
 

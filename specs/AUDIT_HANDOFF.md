@@ -95,7 +95,7 @@ Ian must produce the following before handoff. Each item has a pass/fail criteri
 
 | Evidence | Pass criterion |
 |---|---|
-| S16 max-network `finalize()` gas | Measured and recorded. Expected 3-5M under lazy settlement (aggregate-only). |
+| S16 max-network `finalize()` gas | Measured cold: ~8,200 gas/node → ~7-12M at ~800 participants. One-shot at the ~2,220-node structural max ≈18.6M **exceeds the 16,777,216 (2^24, EIP-7825) per-tx cap**, so participant count is capped below ~2,000. |
 | `claim()` gas per participant | Measured. Expected ~200k. |
 | `computeAllocation()` gas (view) | Measured. Should be negligible. |
 | Slot-count model confirmed | `slotCount[address][hop]` is a counter, not a boolean. Required for `computeAllocation()` correctness. |

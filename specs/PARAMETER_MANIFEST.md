@@ -95,7 +95,8 @@ Single source of truth for every concrete value that enters the deployed contrac
 | Hop-0 budget | 180 | Immutable (constant) | ☐ | Max `addSeed()` calls |
 | Launch-team hop-1 budget | 100 | Immutable (constant) | ☐ | Max `launchTeamInvite(_, 0)` calls |
 | Launch-team hop-2 budget | 120 | Immutable (constant) | ☐ | Max `launchTeamInvite(_, 1)` calls |
-| Max network size | 2,220 nodes | Derived | — | 180 + 640 + 1,400 (see CROWDFUND.md) |
+| `MAX_FINALIZE_NODES` | 1,800 | Immutable (constant) | ☐ | Hard cap on total `participantNodes`, enforced in `_initParticipant`. Keeps one-shot `finalize()` (~8,200 gas/node cold, ~15.2M at 1,800) under the **16,777,216 (2^24, EIP-7825) per-tx gas cap**. Node creation reverts `"node cap reached"` beyond it. |
+| Structural max network size | 2,220 nodes | Derived | — | 180 + 640 + 1,400 — but `MAX_FINALIZE_NODES` (1,800) binds first, so 2,220 is not reachable (see CROWDFUND.md) |
 
 ---
 
@@ -161,7 +162,7 @@ Unlike §8.1, these **are** deployment inputs for the governance / RevenueLock d
 |---|---|---|---|
 | Settlement mode | Lazy settlement | ✓ | `finalize()` writes aggregate state only; `Allocated` + `AllocatedHop` emitted at individual `claim()` time. No `emitSettlement()`, no `SettlementComplete`. |
 | Gas estimate at max network | `[TBD]` gas | ☐ | From IMPLEMENTATION_TEST.md S16 fixture |
-| Block gas limit target | 30,000,000 | — | Current mainnet limit |
+| Per-tx gas cap | 16,777,216 (2^24) | — | EIP-7825 single-tx cap — the binding limit for `finalize()`; the block gas limit (~30M+) is not |
 
 ---
 

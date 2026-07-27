@@ -224,7 +224,7 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
                 <tr key={hop} className="border-b border-border/50">
                   <td className="py-1 pr-4">{hopLabel(hop)}</td>
                   <td className="py-1 pr-4">
-                    {isFloorHop ? '15% floor' : `${(hopConfig?.ceilingBps ?? 0) / 100}% raw`}
+                    {isFloorHop ? `${(CROWDFUND_CONSTANTS.HOP2_BASE_FLOOR_BPS + CROWDFUND_CONSTANTS.HOP2_EXTRA_FLOOR_BPS) / 100}% floor` : `${(hopConfig?.ceilingBps ?? 0) / 100}% raw`}
                   </td>
                   <td className="py-1 pr-4">{hopConfig ? formatUsdc(hopConfig.capUsdc) : '-'}</td>
                   <td className="py-1 pr-4">

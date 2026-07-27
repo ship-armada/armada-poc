@@ -164,6 +164,8 @@ Under lazy settlement `finalize()` iterates every whitelisted node once (per-par
 
 `finalize()` crosses the 2^24 cap at ~2,025 nodes, below the 2,220 structural max, so participant count is capped below ~2,000 (see `_initParticipant`) to keep one-shot `finalize()` submittable. The per-tx cap is protocol-level (applies on L2s targeting the same rule too).
 
+> **Measurement provenance:** figures above measured 2026-07 with Solidity 0.8.17 (Foundry, `optimizer.runs = 256`) via `test-foundry/CrowdfundFinalizeGasCold.t.sol` (cold-storage: `vm.cool()` before `finalize()`). Cold-SLOAD cost is a protocol constant, but these are empirical — **re-profile before mainnet, on the actual deploy compiler profile** (Hardhat 0.8.17 / `runs = 200`) and again after any change to `_iterateCappedDemand`, the participant storage layout, or the gas schedule. The `test_cold_cap_guard_*` cases assert `finalize()` at the node cap stays under 2^24, so they fail loudly if the margin ever erodes.
+
 ### Governance Gas
 
 - `castVote()` with 1000+ checkpoints in ERC20Votes (binary search depth via `getPastVotes`)

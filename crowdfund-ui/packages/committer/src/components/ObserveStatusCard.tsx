@@ -140,7 +140,7 @@ export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
                         {hopLabel(hop)}
                       </span>
                     </td>
-                    <td>{isFloor ? '15% floor' : `${(cfg?.ceilingBps ?? 0) / 100}% raw`}</td>
+                    <td>{isFloor ? `${(CROWDFUND_CONSTANTS.HOP2_BASE_FLOOR_BPS + CROWDFUND_CONSTANTS.HOP2_EXTRA_FLOOR_BPS) / 100}% floor` : `${(cfg?.ceilingBps ?? 0) / 100}% raw`}</td>
                     <td>{cfg ? formatUsdc(cfg.capUsdc) : '—'}</td>
                     <td>
                       {hop === 0

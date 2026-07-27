@@ -33,11 +33,25 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
     uint256 public constant ARM_PRICE = 1e6;                    // $1.00 per ARM in USDC
     uint256 public constant ELASTIC_TRIGGER = 1_500_000 * 1e6;  // $1.5M capped demand triggers expansion
     uint8 public constant NUM_HOPS = 3;
+
+    /// @dev WATERFALL DESIGN NOTE. Allocation is computed against `saleSize` (BASE_SALE, or MAX_SALE
+    ///      after expansion). Hop-2's guaranteed floor is split across two constants, which differ in
+    ///      HOW they are funded:
+    ///        - HOP2_BASE_FLOOR_BPS (5%): shrinks the pool the hop-0/hop-1 *raw* ceilings apply to.
+    ///          basePool = saleSize * (10000 - HOP2_BASE_FLOOR_BPS) / 10000 = 95% of saleSize.
+    ///        - HOP2_EXTRA_FLOOR_BPS (10%): an additional slice reserved for hop-2, funded entirely
+    ///          out of hop-0's ceiling (subtracted from it) so hop-1's ceiling is left untouched.
+    ///      Effective ceilings as a share of saleSize (derived in _computeHopAllocations):
+    ///        hop-0       = 60% * 95% - 10% = 47%
+    ///        hop-1       = 45% * 95%       = 42.75%
+    ///        hop-2 floor = 5% + 10%        = 15%   (+ unconditional rollover of hop-0/hop-1 leftover)
+    ///      Raw ceilings overlap (60% + 45% of basePool > 100%); a remainingAvailable tracker in
+    ///      _computeHopAllocations guarantees total allocation never exceeds saleSize.
     uint256 public constant HOP2_BASE_FLOOR_BPS = 500;   // 5% base-pool reduction
     uint256 public constant HOP2_EXTRA_FLOOR_BPS = 1000; // additional 10% reserved for hop-2
 
-    /// @notice Per-hop raw ceiling shares (basis points of the 95% base pool).
-    ///         Hop-0 additionally funds hop-2's extra floor from its own ceiling.
+    /// @notice Per-hop raw ceiling shares (basis points of the 95% base pool). Hop-0 additionally
+    ///         funds hop-2's extra floor from its own ceiling (see WATERFALL DESIGN NOTE above).
     uint16 public constant HOP0_CEILING_BPS = 6000; // 60%
     uint16 public constant HOP1_CEILING_BPS = 4500; // 45%
 

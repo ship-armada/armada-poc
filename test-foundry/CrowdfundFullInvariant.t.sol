@@ -388,4 +388,18 @@ contract CrowdfundFullInvariantTest is Test {
             "totalCommitted mismatch"
         );
     }
+
+    /// @notice INV-C5: aggregate allocated USDC never exceeds the sale size (waterfall conservation).
+    ///         WHY: the July-2026 waterfall draws hop-0+hop-1 from `available` (85%) via the
+    ///         remainingAvailable cap and hop-2 from its 15% floor + rollover; `available + hop2Floor
+    ///         == saleSize` bounds the total. Holds trivially pre-finalize / in refund mode
+    ///         (totalAllocatedUsdc == 0). This is the aggregate counterpart to INV-C1
+    ///         (per-participant alloc + refund == committed).
+    function invariant_totalAllocatedWithinSaleSize() public view {
+        assertLe(
+            crowdfund.totalAllocatedUsdc(),
+            crowdfund.saleSize(),
+            "INV-C5: totalAllocatedUsdc > saleSize"
+        );
+    }
 }

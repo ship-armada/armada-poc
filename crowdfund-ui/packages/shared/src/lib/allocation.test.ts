@@ -91,6 +91,48 @@ describe('estimateAllocation', () => {
   })
 })
 
+describe('estimateAllocation — cross-language differential vectors', () => {
+  // WHY: this is the off-chain mirror of the contract's _computeHopAllocations, which drives the
+  // committer/admin/indexer refund projection. This SAME (saleSize, demand) → total table is
+  // asserted against the Solidity source of truth in test-foundry/CrowdfundWaterfallMath.t.sol.
+  // Any drift between the two implementations fails one side. Keep the two tables in lockstep.
+  const K = 1_000n * USDC
+  const B = CROWDFUND_CONSTANTS.BASE_SALE
+  const M = CROWDFUND_CONSTANTS.MAX_SALE
+  const cases: Array<[bigint, bigint, bigint, bigint, bigint]> = [
+    // saleSize, d0, d1, d2, expectedTotal
+    [B, 2_000n * K, 0n, 0n, 564n * K],
+    [M, 2_000n * K, 0n, 0n, 846n * K],
+    [B, 2_000n * K, 2_000n * K, 2_000n * K, 1_200n * K],
+    [M, 2_000n * K, 2_000n * K, 2_000n * K, 1_800n * K],
+    [B, 564n * K, 0n, 2_000n * K, 1_200n * K],
+    [B, 0n, 2_000n * K, 0n, 1_020n * K],
+    [B, 1_050n * K, 436n * K, 0n, 1_000n * K],
+    [B, 1_050n * K, 435n * K, 0n, 999n * K],
+    [M, 1_500n * K, 0n, 0n, 846n * K],
+  ]
+  it.each(cases)('saleSize=%s d=(%s,%s,%s) → %s', (saleSize, d0, d1, d2, expected) => {
+    expect(estimateForDemands(d0, d1, d2, saleSize).totalAllocUsdc).toBe(expected)
+  })
+})
+
+describe('estimateAllocation — economic thresholds', () => {
+  it('selects BASE below the elastic trigger and MAX at/above it (matches contract `capped >= ELASTIC_TRIGGER`)', () => {
+    // saleSize 0 → estimateAllocation picks the sale size from capped demand vs ELASTIC_TRIGGER.
+    const below = estimateForDemands(CROWDFUND_CONSTANTS.ELASTIC_TRIGGER - 1n, 0n, 0n)
+    const at = estimateForDemands(CROWDFUND_CONSTANTS.ELASTIC_TRIGGER, 0n, 0n)
+    expect(below.effectiveSaleSize).toBe(CROWDFUND_CONSTANTS.BASE_SALE)
+    expect(at.effectiveSaleSize).toBe(CROWDFUND_CONSTANTS.MAX_SALE)
+  })
+
+  it('projected allocation straddles MIN_SALE at the refund boundary (finalize uses `< MIN_SALE`)', () => {
+    const atMin = estimateForDemands(1_050_000n * USDC, 436_000n * USDC, 0n, CROWDFUND_CONSTANTS.BASE_SALE)
+    const belowMin = estimateForDemands(1_050_000n * USDC, 435_000n * USDC, 0n, CROWDFUND_CONSTANTS.BASE_SALE)
+    expect(atMin.totalAllocUsdc).toBe(CROWDFUND_CONSTANTS.MIN_SALE) // == $1M → finalize() succeeds
+    expect(belowMin.totalAllocUsdc).toBeLessThan(CROWDFUND_CONSTANTS.MIN_SALE) // < $1M → refund mode
+  })
+})
+
 describe('estimateUserArmAllocation', () => {
   it('returns 0 for empty positions', () => {
     expect(estimateUserArmAllocation([], emptyHopStats(), 0n, 0n)).toBe(0n)

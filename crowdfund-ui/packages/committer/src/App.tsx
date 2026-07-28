@@ -926,6 +926,7 @@ export function App() {
                 totalCommitted={userTotalCommitted}
                 windowEnd={contractState.windowEnd}
                 cappedDemand={contractState.cappedDemand}
+                hopStats={contractState.hopStats}
                 claimAvailable={claimAvailability.state === 'available'}
                 claimCountdownSeconds={lifecycleCountdown}
                 onGoToMyPosition={() => setPage('my-position')}

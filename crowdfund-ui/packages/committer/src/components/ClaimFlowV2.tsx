@@ -9,7 +9,10 @@ import {
   type ReceiptLogLike,
   type Step4Transaction,
   CROWDFUND_ABI_FRAGMENTS,
+  CROWDFUND_CONSTANTS,
   HOP_CONFIGS,
+  estimateAllocation,
+  type HopAllocationStats,
   formatArm,
   formatUsdc,
   formatCountdown,
@@ -62,6 +65,9 @@ export interface ClaimFlowV2Props {
   totalCommitted: bigint
   windowEnd: number
   cappedDemand: bigint
+  /** Per-hop capped-demand aggregates, for projecting the post-waterfall
+   *  allocation pre-finalization (mirrors the admin FinalizePanel). */
+  hopStats: readonly HopAllocationStats[]
   claimAvailable: boolean
   claimCountdownSeconds?: number
   onGoToMyPosition: () => void
@@ -604,10 +610,41 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   }
 
   // Before finalize(), the contract still reports `phase=0` and
-  // `refundMode=false`, and allocations do not exist. The final outcome
-  // depends on post-waterfall allocation, so no refund is claimable yet.
+  // `refundMode=false`, and computeAllocation() returns (0,0) for everyone
+  // (allocations only exist post-finalization). Once the commit window closes,
+  // cappedDemand is frozen, so the post-waterfall outcome is deterministic —
+  // project it the same way finalize() will (estimateAllocation, matching the
+  // admin FinalizePanel) to give a below-min committer a definitive heads-up.
   const windowEnded = props.windowEnd > 0 && props.blockTimestamp > props.windowEnd
   if (phase === 0 && windowEnded) {
+    // Refund is triggered by post-waterfall totalAllocatedUsdc < MIN_SALE — NOT
+    // raw cappedDemand, which the July-2026 waterfall makes an incomplete
+    // predictor (concentrated hop-0 demand can clear the expansion trigger yet
+    // still allocate below the minimum raise).
+    const projectedAlloc = estimateAllocation(props.hopStats, props.cappedDemand, 0n).totalAllocUsdc
+    if (projectedAlloc < CROWDFUND_CONSTANTS.MIN_SALE) {
+      return (
+        <CardShell title="Sale ended below minimum">
+          <p className={styles.gateBody}>
+            {props.totalCommitted > 0n
+              ? `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum raise. Once it's finalized, you'll be able to claim a refund of your committed ${formatUsdc(props.totalCommitted)} from here.`
+              : `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum raise. Once it's finalized, all committed USDC will be refundable to the addresses that participated.`}
+          </p>
+          <p className={styles.gateBodyFootnote}>
+            Finalization is permissionless — anyone can trigger it. Refresh this page once it's done.
+          </p>
+          <div className={styles.gateActions}>
+            <ArmadaButton
+              variant="secondary"
+              size="md"
+              label="Back to crowdfund"
+              showIcon={false}
+              onClick={onGoToNetwork}
+            />
+          </div>
+        </CardShell>
+      )
+    }
     return (
       <CardShell title="Awaiting finalization">
         <p className={styles.gateBody}>

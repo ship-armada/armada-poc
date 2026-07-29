@@ -39,6 +39,7 @@ import {
   detectOmittedNullifiers,
   getOwnUnspentNotes,
   checkOwnNullifiersOnChain,
+  toNullifierBytes32,
 } from './nullifierCrossCheck'
 
 function txo(overrides: Record<string, unknown>) {
@@ -97,16 +98,35 @@ describe('getOwnUnspentNotes', () => {
   })
 })
 
+describe('toNullifierBytes32', () => {
+  it('0x-prefixes the engine\'s unprefixed 32-byte nullifier hex', () => {
+    const raw = 'ab'.repeat(32) // 64 hex chars, no 0x — exactly what the engine hands us
+    expect(toNullifierBytes32(raw)).toBe(`0x${raw}`)
+  })
+
+  it('left-pads a short (leading-zero-trimmed) value to 32 bytes', () => {
+    expect(toNullifierBytes32('5f4caf43')).toBe(`0x${'5f4caf43'.padStart(64, '0')}`)
+  })
+
+  it('is idempotent on an already-prefixed value', () => {
+    const v = `0x${'cd'.repeat(32)}`
+    expect(toNullifierBytes32(v)).toBe(v)
+  })
+})
+
 describe('checkOwnNullifiersOnChain (wired)', () => {
-  it('flags omission-detected when the hub contract reports an own unspent note as spent', async () => {
+  it('flags omission-detected and passes a 0x-prefixed bytes32 to the contract', async () => {
+    // The engine yields the nullifier UNPREFIXED; the wired check must normalize it before the
+    // ethers call, else ethers throws "invalid BytesLike value" (the WI-5 fail-open regression).
+    const rawNullifier = 'ab'.repeat(32)
     hoisted.walletForID.mockReturnValue({
-      TXOs: vi.fn(async () => [txo({ tree: 0, nullifier: '0xa', spendtxid: false })]),
+      TXOs: vi.fn(async () => [txo({ tree: 0, nullifier: rawNullifier, spendtxid: false })]),
     })
     hoisted.contractInstance.nullifiers.mockResolvedValue(true) // chain says spent
 
     const r = await checkOwnNullifiersOnChain('wallet-1')
     expect(r.omissionDetected).toBe(true)
-    expect(hoisted.contractInstance.nullifiers).toHaveBeenCalledWith(0, '0xa')
+    expect(hoisted.contractInstance.nullifiers).toHaveBeenCalledWith(0, `0x${rawNullifier}`)
   })
 
   it('returns ok when the chain agrees the notes are unspent', async () => {

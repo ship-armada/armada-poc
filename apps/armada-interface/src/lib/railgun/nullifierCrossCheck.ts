@@ -11,6 +11,17 @@ import { timeoutProvider, getHubChainDescriptor } from './network'
 // auto getter. Set in TransactModule.sol when a note is spent. No SDK read helper exists.
 const NULLIFIERS_ABI = ['function nullifiers(uint256,bytes32) view returns (bool)']
 
+/**
+ * Normalize a TXO nullifier for the `bytes32` ABI arg. The engine stores it as an UNPREFIXED,
+ * zero-padded 32-byte hex string (`ByteUtils.nToHex(nullifier, ByteLength.UINT_256)`), but ethers'
+ * `bytes32` encoder requires a `0x`-prefixed BytesLike — passing the raw value throws
+ * "invalid BytesLike value". Idempotent: tolerates an already-prefixed or short-trimmed value.
+ */
+export function toNullifierBytes32(nullifier: string): string {
+  const raw = nullifier.startsWith('0x') ? nullifier.slice(2) : nullifier
+  return `0x${raw.padStart(64, '0')}`
+}
+
 // The Railgun SDK crashes on module-load under jsdom (circomlibjs) — defer to call time, same
 // pattern as sync.ts / wallet.ts. One import per session.
 async function railgunSdk() {
@@ -99,7 +110,7 @@ export async function checkOwnNullifiersOnChain(walletId: string): Promise<Nulli
     if (!contract) return { checked: 0, omissionDetected: false }
 
     return await detectOmittedNullifiers(notes, (tree, nullifier) =>
-      contract.nullifiers(tree, nullifier),
+      contract.nullifiers(tree, toNullifierBytes32(nullifier)),
     )
   } catch (err) {
     trackError('railgun.nullifierCrossCheck', err)

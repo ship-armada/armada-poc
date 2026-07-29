@@ -17,4 +17,12 @@ describe('getNetworkConfig', () => {
     expect(cfg.mode).toBe('local')
     expect(cfg.maxLogRange).toBeGreaterThanOrEqual(50_000)
   })
+
+  // B4 invariant: with VITE_INDEXER_URL unset (the default test env), indexerUrl resolves to null,
+  // so the watcher quick-sync client returns empty and the engine falls back to its slow on-chain
+  // scan. The app must be fully functional in this state. When set, both modes honor the env var.
+  it('resolves indexerUrl to null when VITE_INDEXER_URL is unset (quick sync disabled → slow scan)', () => {
+    const cfg = getNetworkConfig()
+    expect(cfg.indexerUrl).toBeNull()
+  })
 })

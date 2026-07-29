@@ -1,13 +1,15 @@
 // ABOUTME: Tests for preloadArtifactsFromOrigin (P0-12) — the self-hosted artifact preload gate.
-// ABOUTME: available → overrideArtifact per variant; unavailable / per-variant failure → silent no-op (SDK IPFS fallback covers it).
+// ABOUTME: available → registers each variant with our ArtifactGetter; unavailable / per-variant failure → silent no-op.
 
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest'
 
-const overrideArtifactMock = vi.hoisted(() => vi.fn())
-vi.mock('@railgun-community/wallet', () => ({
-  overrideArtifact: overrideArtifactMock,
-  ArtifactStore: class {},
-}))
+// Spy on the getter registration while keeping the real armadaVariantKey (the test asserts the
+// padded NNxMM keys the getter actually looks up).
+const setArmadaArtifactMock = vi.hoisted(() => vi.fn())
+vi.mock('./artifactGetter', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./artifactGetter')>()
+  return { ...actual, setArmadaArtifact: setArmadaArtifactMock }
+})
 
 import { preloadArtifactsFromOrigin } from './artifacts'
 
@@ -16,7 +18,7 @@ const ORIGINAL_FETCH = globalThis.fetch
 
 beforeEach(() => {
   fetchMock.mockReset()
-  overrideArtifactMock.mockReset()
+  setArmadaArtifactMock.mockReset()
   globalThis.fetch = fetchMock as unknown as typeof fetch
 })
 
@@ -32,7 +34,7 @@ function jsonResponse(): Response {
 }
 
 describe('preloadArtifactsFromOrigin', () => {
-  it('overrides each preload variant when artifacts are served at the origin', async () => {
+  it('registers each preload variant with the getter when artifacts are served at the origin', async () => {
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
       if (init?.method === 'HEAD') return Promise.resolve(new Response(null, { status: 200 }))
       if (String(url).endsWith('vkey.json')) return Promise.resolve(jsonResponse())
@@ -41,15 +43,16 @@ describe('preloadArtifactsFromOrigin', () => {
 
     await preloadArtifactsFromOrigin()
 
-    expect(overrideArtifactMock).toHaveBeenCalledTimes(3)
-    expect(overrideArtifactMock.mock.calls.map(c => c[0])).toEqual(['1x2', '2x2', '2x3'])
+    expect(setArmadaArtifactMock).toHaveBeenCalledTimes(3)
+    // Padded NNxMM keys — the format the getter looks up.
+    expect(setArmadaArtifactMock.mock.calls.map(c => c[0])).toEqual(['01x02', '02x02', '02x03'])
   })
 
-  it('is a silent no-op when artifacts are not served (HEAD 404) — SDK IPFS fallback covers it', async () => {
+  it('is a silent no-op when artifacts are not served (HEAD 404)', async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 404 }))
 
     await expect(preloadArtifactsFromOrigin()).resolves.toBeUndefined()
-    expect(overrideArtifactMock).not.toHaveBeenCalled()
+    expect(setArmadaArtifactMock).not.toHaveBeenCalled()
   })
 
   it('does not abort the other variants (or throw) when one variant fetch fails', async () => {
@@ -61,8 +64,8 @@ describe('preloadArtifactsFromOrigin', () => {
     })
 
     await expect(preloadArtifactsFromOrigin()).resolves.toBeUndefined()
-    // 1x2 and 2x3 succeed; 2x2 fails → 2 overrides, no throw.
-    expect(overrideArtifactMock).toHaveBeenCalledTimes(2)
-    expect(overrideArtifactMock.mock.calls.map(c => c[0])).toEqual(['1x2', '2x3'])
+    // 1x2 and 2x3 succeed; 2x2 fails → 2 registrations, no throw.
+    expect(setArmadaArtifactMock).toHaveBeenCalledTimes(2)
+    expect(setArmadaArtifactMock.mock.calls.map(c => c[0])).toEqual(['01x02', '02x03'])
   })
 })

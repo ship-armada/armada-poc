@@ -35,7 +35,7 @@ const ONE_SHOT_RPC_TIMEOUT_MS = 15_000
  * `new JsonRpcProvider(url)` inherits ethers' ~300s default, so a wedged RPC pins the caller far
  * past any reasonable budget. Constructing from a `FetchRequest` lets us bound it.
  */
-function timeoutProvider(url: string, timeoutMs: number = ONE_SHOT_RPC_TIMEOUT_MS): ethers.JsonRpcProvider {
+export function timeoutProvider(url: string, timeoutMs: number = ONE_SHOT_RPC_TIMEOUT_MS): ethers.JsonRpcProvider {
   const req = new ethers.FetchRequest(url)
   req.timeout = timeoutMs
   return new ethers.JsonRpcProvider(req)

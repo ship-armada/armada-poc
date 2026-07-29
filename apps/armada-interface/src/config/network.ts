@@ -152,7 +152,9 @@ function localConfig(): NetworkConfig {
     relayerUrl: (import.meta.env.VITE_RELAYER_URL as string | undefined) ?? 'http://localhost:3001',
     // Iris URL is unused in local mode (CCTP relays via mock module), but populate for type completeness.
     irisUrl: 'https://iris-api-sandbox.circle.com',
-    indexerUrl: null,
+    // Honor VITE_INDEXER_URL so the watcher quick-sync path can be exercised against a locally-run
+    // indexer (see the F5 local-testing recipe). Unset → null → engine slow scan (B4 invariant).
+    indexerUrl: (import.meta.env.VITE_INDEXER_URL as string | undefined) ?? null,
     pollIntervalMs: 5_000,
     maxLogRange: 100_000,
   }

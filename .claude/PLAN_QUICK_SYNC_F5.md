@@ -9,6 +9,14 @@
 > agent with no prior context on this thread — all facts are inlined with `file:line` refs.
 > Author: A.W.E.S.O.M.-O 4000, 2026-07-28.
 
+> **Branch strategy.** This work lives on `iskay/quick-sync-f5`, branched off
+> `iskay/armada-circuits-gasless-integration` (PR #410) — **not** part of #410. #410 supplies F5's
+> test surface (new circuit artifacts + Sepolia deployment manifests), so F5 is developed as a
+> dependent branch on top of it. Open the F5 PR with base = `iskay/armada-circuits-gasless-integration`
+> (reviewers see only F5's diff; GitHub auto-retargets to `main` when #410 merges). While #410 is in
+> review, rebase F5 onto its tip as it changes; once #410 merges, `git rebase origin/main` drops #410's
+> commits out automatically. Do not rename the branch after its PR opens (that closes the PR).
+
 ---
 
 ## 0. TL;DR for the implementer

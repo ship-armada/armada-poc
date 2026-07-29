@@ -36,6 +36,12 @@ export type EventRegistry = {
   'shielded.schema-migration': { from: number; to: number }
   // User pressed "Try Again" on a failed initial balance sync. No identifiers — just the action.
   'shielded.syncRetry':       Record<string, never>
+  // Watcher quick-sync outcome — one line per hub scan's quick-sync attempt so activation +
+  // fallback are observable in dev and prod. Counts + block numbers only (never addresses/amounts).
+  //   'served'     — hit the watcher; commitments>0 means events actually flowed
+  //   'no-indexer' — VITE_INDEXER_URL unset → engine slow-scans (normal; the B4 fallback)
+  //   'fell-back'  — attempted but failed → engine slow-scans (paired with a railgun.quickSync error)
+  'railgun.quicksync':        { outcome: 'served' | 'no-indexer' | 'fell-back'; pages?: number; commitments?: number; unshields?: number; nullifiers?: number; throughBlock?: number; reason?: string }
 
   'tx.submitted':             { id: string; kind: TxKind }
   'tx.transition':            { id: string; kind: TxKind; from: TxStage; to: TxStage; executionState: TxRecord['executionState'] }

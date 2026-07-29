@@ -10,6 +10,7 @@ const hoisted = vi.hoisted(() => ({
     indexerUrl: 'https://indexer.example' as string | null,
   },
   trackError: vi.fn(),
+  track: vi.fn(),
 }))
 
 vi.mock('@/config/network', () => ({
@@ -18,6 +19,7 @@ vi.mock('@/config/network', () => ({
 
 vi.mock('@/lib/telemetry', () => ({
   trackError: hoisted.trackError,
+  track: hoisted.track,
 }))
 
 import { quickSyncEventsClient } from './quickSync'
@@ -32,6 +34,7 @@ const ORIGINAL_FETCH = globalThis.fetch
 beforeEach(() => {
   fetchMock.mockReset()
   hoisted.trackError.mockReset()
+  hoisted.track.mockReset()
   hoisted.networkConfig.indexerUrl = 'https://indexer.example'
   globalThis.fetch = fetchMock as unknown as typeof fetch
 })
@@ -95,6 +98,14 @@ describe('quickSyncEventsClient', () => {
     expect(result.unshieldEvents).toHaveLength(1)
     expect(result.nullifierEvents).toHaveLength(1)
     expect(hoisted.trackError).not.toHaveBeenCalled()
+    expect(hoisted.track).toHaveBeenCalledWith('railgun.quicksync', {
+      outcome: 'served',
+      pages: 2,
+      commitments: 2,
+      unshields: 1,
+      nullifiers: 1,
+      throughBlock: 250,
+    })
   })
 
   it('returns empty (slow-scan fallback) when indexerUrl is null', async () => {
@@ -102,6 +113,7 @@ describe('quickSyncEventsClient', () => {
     const result = await quickSyncEventsClient(V2, HUB_CHAIN, 0)
     expect(result).toEqual({ commitmentEvents: [], unshieldEvents: [], nullifierEvents: [] })
     expect(fetchMock).not.toHaveBeenCalled()
+    expect(hoisted.track).toHaveBeenCalledWith('railgun.quicksync', { outcome: 'no-indexer' })
   })
 
   it('returns empty when the requested chain is not the hub', async () => {
@@ -136,6 +148,10 @@ describe('quickSyncEventsClient', () => {
     const result = await quickSyncEventsClient(V2, HUB_CHAIN, 0)
     expect(result).toEqual({ commitmentEvents: [], unshieldEvents: [], nullifierEvents: [] })
     expect(hoisted.trackError).toHaveBeenCalled()
+    expect(hoisted.track).toHaveBeenCalledWith('railgun.quicksync', {
+      outcome: 'fell-back',
+      reason: 'fetch-error',
+    })
   })
 
   it('returns empty on a non-2xx response', async () => {
@@ -143,6 +159,11 @@ describe('quickSyncEventsClient', () => {
     const result = await quickSyncEventsClient(V2, HUB_CHAIN, 0)
     expect(result.commitmentEvents).toEqual([])
     expect(hoisted.trackError).toHaveBeenCalled()
+    expect(hoisted.track).toHaveBeenCalledWith('railgun.quicksync', {
+      outcome: 'fell-back',
+      reason: 'http-503',
+      pages: 0,
+    })
   })
 
   it('returns empty on a malformed page (missing arrays / cursors)', async () => {

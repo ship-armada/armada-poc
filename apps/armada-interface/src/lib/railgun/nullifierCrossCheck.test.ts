@@ -127,6 +127,9 @@ describe('checkOwnNullifiersOnChain (wired)', () => {
     const r = await checkOwnNullifiersOnChain('wallet-1')
     expect(r.omissionDetected).toBe(true)
     expect(hoisted.contractInstance.nullifiers).toHaveBeenCalledWith(0, `0x${rawNullifier}`)
+    // Batching disabled (batchMaxCount=1): the check fans out one call per note and must not let
+    // ethers fold them into a batch that batch-limited RPCs (e.g. drpc free plan) reject.
+    expect(hoisted.timeoutProvider).toHaveBeenCalledWith(expect.any(String), undefined, 1)
   })
 
   it('returns ok when the chain agrees the notes are unspent', async () => {

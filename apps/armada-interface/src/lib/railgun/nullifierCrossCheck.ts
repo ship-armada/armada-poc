@@ -84,7 +84,12 @@ async function buildNullifiersContract(): Promise<NullifiersContract | null> {
   const deployments = await loadDeployments()
   const privacyPool = deployments.hub.contracts.privacyPool
   if (!privacyPool) return null
-  return new ethers.Contract(privacyPool, NULLIFIERS_ABI, timeoutProvider(rpc)) as unknown as NullifiersContract
+  // Disable JSON-RPC batching (batchMaxCount=1): the cross-check fans out one `nullifiers(...)` call
+  // per unspent note concurrently, and ethers would fold them into a single batch that batch-limited
+  // free-tier RPCs reject (e.g. drpc's free plan caps batches at 3) — which would fail the whole
+  // check open. One request per read keeps it provider-agnostic. Multicall is the mainnet follow-up.
+  const provider = timeoutProvider(rpc, undefined, 1)
+  return new ethers.Contract(privacyPool, NULLIFIERS_ABI, provider) as unknown as NullifiersContract
 }
 
 /**

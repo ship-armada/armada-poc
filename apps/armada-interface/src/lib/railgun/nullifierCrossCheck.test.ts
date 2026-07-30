@@ -10,6 +10,7 @@ const hoisted = vi.hoisted(() => ({
   timeoutProvider: vi.fn(() => ({})),
   contractInstance: { nullifiers: vi.fn() },
   ContractCtor: vi.fn(),
+  aggregate3: vi.fn(),
   trackError: vi.fn(),
 }))
 
@@ -29,6 +30,7 @@ vi.mock('ethers', () => ({
 }))
 vi.mock('@/config/network', () => ({ getNetworkConfig: hoisted.getNetworkConfig }))
 vi.mock('@/config/deployments', () => ({ loadDeployments: hoisted.loadDeployments }))
+vi.mock('@/lib/multicall3', () => ({ aggregate3: hoisted.aggregate3 }))
 vi.mock('./network', () => ({
   timeoutProvider: hoisted.timeoutProvider,
   getHubChainDescriptor: () => ({ type: 0, id: 31337 }),
@@ -53,11 +55,14 @@ beforeEach(() => {
 })
 
 describe('detectOmittedNullifiers (pure)', () => {
-  const isSpent = (map: Record<string, boolean>) => async (tree: number, nf: string) =>
-    map[`${tree}:${nf}`] ?? false
+  // Batch checker: returns one flag per note (in order), looked up by `${tree}:${nullifier}`.
+  const spentBatch =
+    (map: Record<string, boolean>) =>
+    async (notes: readonly { tree: number; nullifier: string }[]) =>
+      notes.map((n) => map[`${n.tree}:${n.nullifier}`] ?? false)
 
   it('reports no omission for an empty note set', async () => {
-    const r = await detectOmittedNullifiers([], isSpent({}))
+    const r = await detectOmittedNullifiers([], spentBatch({}))
     expect(r).toEqual({ checked: 0, omissionDetected: false })
   })
 
@@ -66,7 +71,7 @@ describe('detectOmittedNullifiers (pure)', () => {
       { tree: 0, nullifier: '0xa' },
       { tree: 1, nullifier: '0xb' },
     ]
-    const r = await detectOmittedNullifiers(notes, isSpent({}))
+    const r = await detectOmittedNullifiers(notes, spentBatch({}))
     expect(r).toEqual({ checked: 2, omissionDetected: false })
   })
 
@@ -75,8 +80,14 @@ describe('detectOmittedNullifiers (pure)', () => {
       { tree: 0, nullifier: '0xa' },
       { tree: 1, nullifier: '0xb' },
     ]
-    const r = await detectOmittedNullifiers(notes, isSpent({ '1:0xb': true }))
+    const r = await detectOmittedNullifiers(notes, spentBatch({ '1:0xb': true }))
     expect(r).toEqual({ checked: 2, omissionDetected: true })
+  })
+
+  it('short-circuits (no batch call) for an empty note set', async () => {
+    const checker = vi.fn(async () => [])
+    await detectOmittedNullifiers([], checker)
+    expect(checker).not.toHaveBeenCalled()
   })
 })
 
@@ -115,31 +126,73 @@ describe('toNullifierBytes32', () => {
 })
 
 describe('checkOwnNullifiersOnChain (wired)', () => {
-  it('flags omission-detected and passes a 0x-prefixed bytes32 to the contract', async () => {
+  it('flags omission-detected and batches a 0x-prefixed bytes32 into one aggregate3 call', async () => {
     // The engine yields the nullifier UNPREFIXED; the wired check must normalize it before the
-    // ethers call, else ethers throws "invalid BytesLike value" (the WI-5 fail-open regression).
+    // ethers encode, else ethers throws "invalid BytesLike value" (the WI-5 fail-open regression).
     const rawNullifier = 'ab'.repeat(32)
     hoisted.walletForID.mockReturnValue({
       TXOs: vi.fn(async () => [txo({ tree: 0, nullifier: rawNullifier, spendtxid: false })]),
     })
-    hoisted.contractInstance.nullifiers.mockResolvedValue(true) // chain says spent
+    hoisted.aggregate3.mockResolvedValue([{ success: true, result: [true] }]) // chain says spent
 
     const r = await checkOwnNullifiersOnChain('wallet-1')
     expect(r.omissionDetected).toBe(true)
-    expect(hoisted.contractInstance.nullifiers).toHaveBeenCalledWith(0, `0x${rawNullifier}`)
-    // Batching disabled (batchMaxCount=1): the check fans out one call per note and must not let
-    // ethers fold them into a batch that batch-limited RPCs (e.g. drpc free plan) reject.
-    expect(hoisted.timeoutProvider).toHaveBeenCalledWith(expect.any(String), undefined, 1)
+    // One aggregate3 batch, one call per note, with the normalized bytes32 arg.
+    expect(hoisted.aggregate3).toHaveBeenCalledTimes(1)
+    const [, calls] = hoisted.aggregate3.mock.calls[0]
+    expect(calls).toEqual([
+      { contract: hoisted.contractInstance, functionName: 'nullifiers', args: [0, `0x${rawNullifier}`] },
+    ])
+    // Multicall collapses the fan-out to a single eth_call, so batching no longer needs disabling.
+    expect(hoisted.timeoutProvider).toHaveBeenCalledWith(expect.any(String))
+  })
+
+  it('batches every unspent note into a single aggregate3 call', async () => {
+    hoisted.walletForID.mockReturnValue({
+      TXOs: vi.fn(async () => [
+        txo({ tree: 0, nullifier: '0xa', spendtxid: false }),
+        txo({ tree: 1, nullifier: '0xb', spendtxid: false }),
+        txo({ tree: 2, nullifier: '0xc', spendtxid: false }),
+      ]),
+    })
+    hoisted.aggregate3.mockResolvedValue([
+      { success: true, result: [false] },
+      { success: true, result: [false] },
+      { success: true, result: [false] },
+    ])
+
+    const r = await checkOwnNullifiersOnChain('wallet-1')
+    expect(r).toEqual({ checked: 3, omissionDetected: false })
+    expect(hoisted.aggregate3).toHaveBeenCalledTimes(1)
+    const [, calls] = hoisted.aggregate3.mock.calls[0]
+    expect(calls).toHaveLength(3)
   })
 
   it('returns ok when the chain agrees the notes are unspent', async () => {
     hoisted.walletForID.mockReturnValue({
       TXOs: vi.fn(async () => [txo({ tree: 0, nullifier: '0xa', spendtxid: false })]),
     })
-    hoisted.contractInstance.nullifiers.mockResolvedValue(false)
+    hoisted.aggregate3.mockResolvedValue([{ success: true, result: [false] }])
 
     const r = await checkOwnNullifiersOnChain('wallet-1')
     expect(r).toEqual({ checked: 1, omissionDetected: false })
+  })
+
+  it('treats an unreadable sub-call as not-spent (fail-open per note)', async () => {
+    hoisted.walletForID.mockReturnValue({
+      TXOs: vi.fn(async () => [
+        txo({ tree: 0, nullifier: '0xa', spendtxid: false }),
+        txo({ tree: 1, nullifier: '0xb', spendtxid: false }),
+      ]),
+    })
+    // First note unreadable (success:false), second reads unspent → no omission flagged.
+    hoisted.aggregate3.mockResolvedValue([
+      { success: false, result: undefined },
+      { success: true, result: [false] },
+    ])
+
+    const r = await checkOwnNullifiersOnChain('wallet-1')
+    expect(r).toEqual({ checked: 2, omissionDetected: false })
   })
 
   it('short-circuits (no RPC) when the wallet has no unspent notes', async () => {
@@ -147,14 +200,14 @@ describe('checkOwnNullifiersOnChain (wired)', () => {
 
     const r = await checkOwnNullifiersOnChain('wallet-1')
     expect(r).toEqual({ checked: 0, omissionDetected: false })
-    expect(hoisted.contractInstance.nullifiers).not.toHaveBeenCalled()
+    expect(hoisted.aggregate3).not.toHaveBeenCalled()
   })
 
   it('fails open (no false block) and logs when the on-chain query errors', async () => {
     hoisted.walletForID.mockReturnValue({
       TXOs: vi.fn(async () => [txo({ tree: 0, nullifier: '0xa', spendtxid: false })]),
     })
-    hoisted.contractInstance.nullifiers.mockRejectedValue(new Error('rpc down'))
+    hoisted.aggregate3.mockRejectedValue(new Error('rpc down'))
 
     const r = await checkOwnNullifiersOnChain('wallet-1')
     expect(r.omissionDetected).toBe(false)

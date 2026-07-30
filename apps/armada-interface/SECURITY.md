@@ -51,9 +51,10 @@ functional with no indexer configured.
 - **P6 — nullifier query IP linkability (testnet: accepted).** The nullifier cross-check queries the
   wallet's own nullifiers directly, letting the RPC provider link them to the user's IP when those
   notes are later spent on-chain. **Accepted for testnet** — it matches the exposure the app already
-  has (every RPC read goes to the same provider). **Mainnet follow-up:** batch the lookups via
-  multicall mixed with decoy nullifiers sampled from the global commitment stream, so the provider
-  can't isolate the user's own set. Tracked for the mainnet hardening pass.
+  has (every RPC read goes to the same provider). The lookups are now batched into one Multicall3
+  `aggregate3` eth_call. **Mainnet follow-up:** mix in decoy nullifiers sampled from the global
+  commitment stream so the provider can't isolate the user's own set. Tracked for the mainnet
+  hardening pass.
 - **Engine version lockstep (B3).** The watcher decodes hub logs into engine-`9.5.1`
   `AccumulatedEvents` shapes, compile-time pinned. Bumping `@railgun-community/engine` here requires
   a paired watcher type-pin PR in `ship-armada/armada-relayer` in the same change window.

@@ -5,6 +5,7 @@ import { ethers } from 'ethers'
 import { getNetworkConfig } from '@/config/network'
 import { loadDeployments } from '@/config/deployments'
 import { trackError } from '@/lib/telemetry'
+import { aggregate3, type AggregateCall } from '@/lib/multicall3'
 import { timeoutProvider, getHubChainDescriptor } from './network'
 
 // PrivacyPoolStorage.sol: mapping(uint256 => mapping(bytes32 => bool)) public nullifiers → this
@@ -60,36 +61,56 @@ export async function getOwnUnspentNotes(walletId: string): Promise<OwnUnspentNo
 
 /**
  * Pure omission detector: given the wallet's own locally-unspent notes and a way to ask the chain
- * whether a `(tree, nullifier)` is spent, report whether any note is spent on-chain (→ the watcher
- * omitted its Nullified event, so the displayed balance is stale).
+ * (in one batch) which are spent, report whether any note is spent on-chain (→ the watcher omitted
+ * its Nullified event, so the displayed balance is stale). The batch checker returns one flag per
+ * note in order; a flag that couldn't be read comes back `false` (fail-open — never a false block).
  */
 export async function detectOmittedNullifiers(
   notes: readonly OwnUnspentNote[],
-  isSpentOnChain: (tree: number, nullifier: string) => Promise<boolean>,
+  areSpentOnChain: (notes: readonly OwnUnspentNote[]) => Promise<readonly boolean[]>,
 ): Promise<NullifierCrossCheckResult> {
   if (notes.length === 0) return { checked: 0, omissionDetected: false }
-  const spentFlags = await Promise.all(notes.map((n) => isSpentOnChain(n.tree, n.nullifier)))
+  const spentFlags = await areSpentOnChain(notes)
   return { checked: notes.length, omissionDetected: spentFlags.some((spent) => spent === true) }
 }
 
-/** Narrow view of the PrivacyPool nullifiers getter — avoids ethers' loose index-signature typing. */
-interface NullifiersContract {
-  nullifiers(treeNumber: number, nullifier: string): Promise<boolean>
+/** Reader for the hub PrivacyPool nullifiers getter — the contract (for ABI encode/decode) + its provider. */
+interface NullifiersReader {
+  contract: ethers.Contract
+  provider: ethers.JsonRpcProvider
 }
 
-/** Build the read-only hub PrivacyPool contract for the nullifiers getter. Null if unconfigured. */
-async function buildNullifiersContract(): Promise<NullifiersContract | null> {
+/** Build the read-only hub PrivacyPool contract + provider for the nullifiers getter. Null if unconfigured. */
+async function buildNullifiersReader(): Promise<NullifiersReader | null> {
   const rpc = getNetworkConfig().hub.rpcUrls[0]
   if (!rpc) return null
   const deployments = await loadDeployments()
   const privacyPool = deployments.hub.contracts.privacyPool
   if (!privacyPool) return null
-  // Disable JSON-RPC batching (batchMaxCount=1): the cross-check fans out one `nullifiers(...)` call
-  // per unspent note concurrently, and ethers would fold them into a single batch that batch-limited
-  // free-tier RPCs reject (e.g. drpc's free plan caps batches at 3) — which would fail the whole
-  // check open. One request per read keeps it provider-agnostic. Multicall is the mainnet follow-up.
-  const provider = timeoutProvider(rpc, undefined, 1)
-  return new ethers.Contract(privacyPool, NULLIFIERS_ABI, provider) as unknown as NullifiersContract
+  // A single Multicall3 `aggregate3` folds every note's `nullifiers(...)` read into ONE eth_call, so
+  // there is nothing for JSON-RPC batching to over-batch — the batch-limit that forced `batchMaxCount=1`
+  // (e.g. drpc's free plan caps JSON-RPC batches at 3) no longer applies. Default provider batching is fine.
+  const provider = timeoutProvider(rpc)
+  const contract = new ethers.Contract(privacyPool, NULLIFIERS_ABI, provider)
+  return { contract, provider }
+}
+
+/**
+ * Ask the chain, in one Multicall3 `aggregate3` call, whether each note's `(tree, nullifier)` is
+ * spent. Returns one flag per note in order; a sub-call that reverted/returned no data maps to
+ * `false` (fail-open — a note we couldn't read is not treated as spent).
+ */
+async function queryNullifiersSpent(
+  reader: NullifiersReader,
+  notes: readonly OwnUnspentNote[],
+): Promise<boolean[]> {
+  const calls: AggregateCall[] = notes.map((n) => ({
+    contract: reader.contract,
+    functionName: 'nullifiers',
+    args: [n.tree, toNullifierBytes32(n.nullifier)],
+  }))
+  const results = await aggregate3(reader.provider, calls)
+  return results.map((r) => (r.success && r.result !== undefined ? r.result[0] === true : false))
 }
 
 /**
@@ -97,8 +118,9 @@ async function buildNullifiersContract(): Promise<NullifiersContract | null> {
  *
  * PRIVACY (P6, testnet decision): querying our own nullifiers directly lets the RPC provider link
  * them to our IP when the notes are later spent on-chain. Accepted for testnet — it matches the
- * exposure the app already has (every RPC read goes to the same provider). Mainnet follow-up: batch
- * via multicall mixed with decoy nullifiers sampled from the global stream. See SECURITY.md.
+ * exposure the app already has (every RPC read goes to the same provider). The reads are batched via
+ * multicall (one eth_call); mixing in decoy nullifiers sampled from the global stream so the provider
+ * can't tell which are ours is the remaining mainnet follow-up. See SECURITY.md.
  *
  * FAIL-OPEN: the cross-check is a UX-integrity safeguard, not the double-spend boundary — the chain
  * rejects an actual double-spend regardless. A transient hub-RPC error must not block spending, so
@@ -111,12 +133,10 @@ export async function checkOwnNullifiersOnChain(walletId: string): Promise<Nulli
     const notes = await getOwnUnspentNotes(walletId)
     if (notes.length === 0) return { checked: 0, omissionDetected: false }
 
-    const contract = await buildNullifiersContract()
-    if (!contract) return { checked: 0, omissionDetected: false }
+    const reader = await buildNullifiersReader()
+    if (!reader) return { checked: 0, omissionDetected: false }
 
-    return await detectOmittedNullifiers(notes, (tree, nullifier) =>
-      contract.nullifiers(tree, toNullifierBytes32(nullifier)),
-    )
+    return await detectOmittedNullifiers(notes, (batch) => queryNullifiersSpent(reader, batch))
   } catch (err) {
     trackError('railgun.nullifierCrossCheck', err)
     return { checked: 0, omissionDetected: false }

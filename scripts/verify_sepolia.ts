@@ -231,6 +231,15 @@ async function buildHubProtocolTasks(): Promise<VerifyTask[]> {
       // hookRouter constructor: (messageTransmitter)
       { name: "CCTPHookRouter (hub)", address: pc.hookRouter, constructorArguments: [pool.cctp.messageTransmitter] },
     );
+    // GaslessShieldWrapper constructor: (usdc, pool). Unlike the Poseidon-linked modules it has no
+    // library linking, so it verifies cleanly. Guarded because older manifests predate the wrapper.
+    if (pc.gaslessShieldWrapper) {
+      tasks.push({
+        name: "GaslessShieldWrapper",
+        address: pc.gaslessShieldWrapper,
+        constructorArguments: [pool.cctp.usdc, pc.privacyPool],
+      });
+    }
   }
 
   if (yieldD?.contracts && aave?.contracts && gov?.contracts && cctp?.contracts) {
@@ -299,11 +308,21 @@ async function buildClientChainTasks(role: "clientA" | "clientB"): Promise<Verif
     throw new Error(`PrivacyPoolClient manifest not found for role=${role}`);
   }
   const cc = client.contracts;
-  return [
+  const tasks: VerifyTask[] = [
     { name: "PrivacyPoolClient", address: cc.privacyPoolClient, constructorArguments: [] },
     // hookRouter constructor: (messageTransmitter)
     { name: "CCTPHookRouter (client)", address: cc.hookRouter, constructorArguments: [client.cctp.messageTransmitter] },
   ];
+  // GaslessShieldWrapperClient constructor: (usdc, pool) — mirrors the hub wrapper. Guarded because
+  // older client manifests predate the permit-gasless wrapper.
+  if (cc.gaslessShieldWrapperClient) {
+    tasks.push({
+      name: "GaslessShieldWrapperClient",
+      address: cc.gaslessShieldWrapperClient,
+      constructorArguments: [client.cctp.usdc, cc.privacyPoolClient],
+    });
+  }
+  return tasks;
 }
 
 async function main() {

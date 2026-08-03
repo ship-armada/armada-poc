@@ -29,6 +29,13 @@ import { cctpMaxFeeForKind, submitRelay, fetchCctpDeliveryStatus } from '@/lib/r
 import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
 import { signUsdcPermit } from '@/lib/wallet/permit'
 import { buildGaslessCrossChainShieldCalldata } from '@/lib/wallet/gasless-cross-chain-shield'
+import {
+  computeShieldDataHash,
+  readIntentNonce,
+  signCrossChainShieldIntent,
+  toShieldDataStruct,
+  type ShieldDataStruct,
+} from '@/lib/wallet/shield-intent'
 import { ensureChain } from '@/lib/network-switch'
 import { advance, markFailed, markWaiting, patchArtifacts } from '@/lib/tx/reducer'
 import { recordBroadcastHash } from '@/lib/tx/broadcast'
@@ -195,41 +202,13 @@ async function runBuildProof(
   )
   if (ctx.signal.aborted) throw new Error('cancelled')
 
-  // Phase B4 — gasless path also requires an EIP-2612 USDC permit on the CLIENT chain (the
-  // chain where the user's USDC lives + where the wrapper will pull from). Sign it here so the
-  // two wallet prompts (RAILGUN_SHIELD then permit) surface back-to-back; the submit stage is
-  // then network-only with no further user interaction. Permit value = the entered `amount`;
-  // the wrapper splits it on-chain: `(amount - fee)` burned through CCTP, `fee` to the relayer.
-  let permitV: number | undefined
-  let permitR: `0x${string}` | undefined
-  let permitS: `0x${string}` | undefined
-  if (record.meta.useGasless) {
-    if (
-      record.meta.feeAmount === undefined ||
-      record.meta.wrapperAddress === undefined ||
-      record.meta.permitDeadline === undefined
-    ) {
-      throw new Error(
-        'Shield-xchain gasless mode requires feeAmount + wrapperAddress + permitDeadline in meta.',
-      )
-    }
-    const ownerCaptured = record.walletContext.evmAddress
-    if (!ownerCaptured) {
-      throw new Error('Cross-chain deposit requires a connected EVM wallet; none captured at submit time.')
-    }
-    const sig = await signUsdcPermit({
-      usdcAddress: clientUsdcAddress as `0x${string}`,
-      chainId: record.meta.fromChainId,
-      owner: ownerCaptured as `0x${string}`,
-      spender: record.meta.wrapperAddress as `0x${string}`,
-      value: record.meta.amount,
-      deadline: BigInt(record.meta.permitDeadline),
-    })
-    permitV = sig.v
-    permitR = sig.r
-    permitS = sig.s
-    if (ctx.signal.aborted) throw new Error('cancelled')
-  }
+  // Phase C — gasless path: build the relayer fee note (a second note carried across CCTP, minted
+  // on the hub at full value), then sign an EIP-2612 USDC permit on the CLIENT chain AND an EIP-712
+  // CrossChainShieldIntent binding both notes + the CCTP maxFee/finality. All wallet prompts surface
+  // here back-to-back; the submit stage is network-only. Permit value = the entered `amount`.
+  const gaslessArtifacts = record.meta.useGasless
+    ? await buildGaslessXchainArtifacts(record, ctx, request, clientUsdcAddress, hubUsdcAddress)
+    : undefined
 
   await ctx.upsert(advance(record, 'submit-relayer', {
     shieldRequest: {
@@ -242,8 +221,108 @@ async function runBuildProof(
     privacyPoolClientAddress,
     clientUsdcAddress,
     hubUsdcAddress,
-    ...(permitV !== undefined ? { permitV, permitR, permitS } : {}),
+    ...(gaslessArtifacts ?? {}),
   }))
+}
+
+/**
+ * Build the gasless-specific artifacts for the cross-chain path: the relayer fee note (hub-usdc
+ * denominated), the CLIENT-chain EIP-2612 permit, and the EIP-712 CrossChainShieldIntent binding
+ * both notes + the CCTP `maxFee`/finality (resolved here so the submit stage passes the same values
+ * the user signed). Gasless shields carry no integrator (address(0)).
+ */
+async function buildGaslessXchainArtifacts(
+  record: TxRecord<'shield-xchain'>,
+  ctx: Parameters<typeof shieldXchainHandler.run>[1],
+  userNote: Awaited<ReturnType<typeof createShieldRequest>>,
+  clientUsdcAddress: string,
+  hubUsdcAddress: string,
+): Promise<{
+  permitV: number
+  permitR: `0x${string}`
+  permitS: `0x${string}`
+  feeNote: { npk: `0x${string}`; value: string; encryptedBundle: readonly [`0x${string}`, `0x${string}`, `0x${string}`]; shieldKey: `0x${string}` }
+  feeShieldRandom: string
+  intentSig: `0x${string}`
+  intentNonce: string
+  intentMaxFee: string
+  intentMinFinality: number
+}> {
+  if (
+    record.meta.feeAmount === undefined ||
+    record.meta.wrapperAddress === undefined ||
+    record.meta.permitDeadline === undefined ||
+    record.meta.broadcasterRailgunAddress === undefined
+  ) {
+    throw new Error(
+      'Shield-xchain gasless mode requires feeAmount + wrapperAddress + permitDeadline + broadcasterRailgunAddress in meta.',
+    )
+  }
+  const ownerCaptured = record.walletContext.evmAddress
+  if (!ownerCaptured) {
+    throw new Error('Cross-chain deposit requires a connected EVM wallet; none captured at submit time.')
+  }
+  const owner = ownerCaptured as `0x${string}`
+  const wrapper = record.meta.wrapperAddress as `0x${string}`
+  const deadline = BigInt(record.meta.permitDeadline)
+
+  // Fee note is HUB-usdc denominated — the commitment is minted on the hub after CCTP delivery.
+  const feeShieldPrivateKey = generateRandomShieldPrivateKey()
+  const feeNote = await createShieldRequest(
+    record.meta.broadcasterRailgunAddress,
+    record.meta.feeAmount,
+    hubUsdcAddress,
+    feeShieldPrivateKey,
+  )
+  if (ctx.signal.aborted) throw new Error('cancelled')
+
+  // Gasless cross-chain shields carry no integrator (address(0)).
+  const userNoteStruct = toShieldDataStruct(userNote, ethers.ZeroAddress as `0x${string}`)
+  const feeNoteStruct = toShieldDataStruct(feeNote, ethers.ZeroAddress as `0x${string}`)
+  const { maxFee, minFinalityThreshold } = await resolveCctpSubmitParams(record)
+  const intentNonce = await readIntentNonce(wrapper, record.meta.fromChainId, owner)
+
+  // 1. EIP-2612 permit for the full total on the CLIENT chain (both notes' value).
+  const permitSig = await signUsdcPermit({
+    usdcAddress: clientUsdcAddress as `0x${string}`,
+    chainId: record.meta.fromChainId,
+    owner,
+    spender: wrapper,
+    value: record.meta.amount,
+    deadline,
+  })
+  if (ctx.signal.aborted) throw new Error('cancelled')
+
+  // 2. EIP-712 CrossChainShieldIntent binding both note hashes + CCTP params + deadline + nonce.
+  const intentSig = await signCrossChainShieldIntent({
+    wrapperAddress: wrapper,
+    chainId: record.meta.fromChainId,
+    user: owner,
+    userNoteHash: computeShieldDataHash(userNoteStruct),
+    feeNoteHash: computeShieldDataHash(feeNoteStruct),
+    maxFee,
+    minFinalityThreshold,
+    deadline,
+    nonce: intentNonce,
+  })
+  if (ctx.signal.aborted) throw new Error('cancelled')
+
+  return {
+    permitV: permitSig.v,
+    permitR: permitSig.r,
+    permitS: permitSig.s,
+    feeNote: {
+      npk: feeNote.npk,
+      value: feeNote.value.toString(),
+      encryptedBundle: feeNote.encryptedBundle,
+      shieldKey: feeNote.shieldKey,
+    },
+    feeShieldRandom: feeNote.random,
+    intentSig,
+    intentNonce: intentNonce.toString(),
+    intentMaxFee: maxFee.toString(),
+    intentMinFinality: minFinalityThreshold,
+  }
 }
 
 async function runSubmitAndBurn(
@@ -407,17 +486,22 @@ async function runGaslessSubmit(
   }
 
   const shieldRequest = artifacts.shieldRequest!
-  const permitV = artifacts.permitV
-  const permitR = artifacts.permitR
-  const permitS = artifacts.permitS
+  const { permitV, permitR, permitS, feeNote, intentSig, intentNonce, intentMaxFee, intentMinFinality, feeShieldRandom } =
+    artifacts
   if (permitV === undefined || permitR === undefined || permitS === undefined) {
     throw new Error('Shield-xchain gasless submit requires permit (v, r, s) in artifacts — re-run build-proof.')
   }
   if (
-    record.meta.feeAmount === undefined ||
-    record.meta.wrapperAddress === undefined ||
-    record.meta.permitDeadline === undefined
+    feeNote === undefined ||
+    intentSig === undefined ||
+    intentNonce === undefined ||
+    intentMaxFee === undefined ||
+    intentMinFinality === undefined ||
+    feeShieldRandom === undefined
   ) {
+    throw new Error('Shield-xchain gasless submit requires the fee note + intent artifacts — re-run build-proof.')
+  }
+  if (record.meta.wrapperAddress === undefined || record.meta.permitDeadline === undefined) {
     throw new Error('Shield-xchain gasless submit requires gasless meta fields — re-run build-proof.')
   }
   const ownerCaptured = record.walletContext.evmAddress
@@ -425,7 +509,7 @@ async function runGaslessSubmit(
     throw new Error('Shield-xchain gasless submit requires a connected EVM wallet; none captured at submit time.')
   }
 
-  // Permit-deadline guard (P0-1): an expired EIP-2612 permit makes the wrapper call revert, so
+  // Permit-deadline guard (P0-1): an expired permit/intent makes the wrapper call revert, so
   // POSTing is doomed. Fail with honest copy. Nothing was sent (PRE_FLIGHT_REVERT).
   if (record.meta.permitDeadline * 1000 <= Date.now()) {
     throw asTxError({
@@ -434,31 +518,41 @@ async function runGaslessSubmit(
     })
   }
 
-  const { maxFee, minFinalityThreshold } = await resolveCctpSubmitParams(record)
-
-  // The CCTP destinationCaller is pinned to hubHookRouter by PrivacyPoolClient (issue #64) — it is no
-  // longer part of the signed CrossChainParams struct.
-  const data = buildGaslessCrossChainShieldCalldata({
-    user: ownerCaptured as `0x${string}`,
-    totalAmount: record.meta.amount,
-    fee: record.meta.feeAmount,
-    deadline: BigInt(record.meta.permitDeadline),
-    v: permitV,
-    r: permitR as `0x${string}`,
-    s: permitS as `0x${string}`,
-    maxFee,
-    minFinalityThreshold,
-    shieldRequest: {
+  const zero = ethers.ZeroAddress as `0x${string}`
+  // Reconstruct the exact userNote + feeNote the intent was signed over. maxFee/finality come from
+  // the STORED intent values (not recomputed) or the signature would mismatch.
+  const userNote: ShieldDataStruct = toShieldDataStruct(
+    {
       npk: shieldRequest.npk as `0x${string}`,
       value: BigInt(shieldRequest.value),
-      encryptedBundle: shieldRequest.encryptedBundle as readonly [
-        `0x${string}`,
-        `0x${string}`,
-        `0x${string}`,
-      ],
+      encryptedBundle: shieldRequest.encryptedBundle,
       shieldKey: shieldRequest.shieldKey as `0x${string}`,
+      random: '',
     },
-    integrator: ethers.ZeroAddress as `0x${string}`,
+    zero,
+  )
+  const feeNoteStruct: ShieldDataStruct = toShieldDataStruct(
+    {
+      npk: feeNote.npk,
+      value: BigInt(feeNote.value),
+      encryptedBundle: feeNote.encryptedBundle,
+      shieldKey: feeNote.shieldKey,
+      random: feeShieldRandom,
+    },
+    zero,
+  )
+  const data = buildGaslessCrossChainShieldCalldata({
+    user: ownerCaptured as `0x${string}`,
+    deadline: BigInt(record.meta.permitDeadline),
+    nonce: BigInt(intentNonce),
+    maxFee: BigInt(intentMaxFee),
+    minFinalityThreshold: intentMinFinality,
+    permitV,
+    permitR: permitR as `0x${string}`,
+    permitS: permitS as `0x${string}`,
+    intentSig,
+    userNote,
+    feeNote: feeNoteStruct,
   })
 
   let submitResponse
@@ -470,6 +564,7 @@ async function runGaslessSubmit(
         data,
         feesCacheId: record.meta.feeCacheId,
         idempotencyKey: record.id,
+        feeShieldRandom,
       },
       ctx.signal,
     )

@@ -7,91 +7,73 @@ import {
   buildGaslessCrossChainShieldCalldata,
   GASLESS_CROSS_CHAIN_SHIELD_WRAPPER_ABI,
 } from './gasless-cross-chain-shield'
+import type { ShieldDataStruct } from './shield-intent'
 
 const USER = '0x1111111111111111111111111111111111111111' as const
-const INTEGRATOR = '0x2222222222222222222222222222222222222222' as const
+const INTEGRATOR = '0x3333333333333333333333333333333333333333' as const
+const ZERO = '0x0000000000000000000000000000000000000000' as const
 
-function baseRequest() {
+function note(npk: string, value: bigint, integrator: `0x${string}`): ShieldDataStruct {
+  return {
+    npk: npk as `0x${string}`,
+    value,
+    encryptedBundle: [
+      ('0x' + '00'.repeat(32)) as `0x${string}`,
+      ('0x' + '00'.repeat(32)) as `0x${string}`,
+      ('0x' + '00'.repeat(32)) as `0x${string}`,
+    ] as const,
+    shieldKey: ('0x' + '00'.repeat(32)) as `0x${string}`,
+    integrator,
+  }
+}
+
+function baseInput() {
   return {
     user: USER,
-    totalAmount: 10_500_000n, // 10.5 USDC (10 shield + 0.5 fee)
-    fee: 500_000n,
     deadline: 9_999_999_999n,
-    v: 28,
-    r: ('0x' + 'a'.repeat(64)) as `0x${string}`,
-    s: ('0x' + 'b'.repeat(64)) as `0x${string}`,
-    maxFee: 100_000n,
+    nonce: 0n,
+    maxFee: 1000n,
     minFinalityThreshold: 1000,
-    shieldRequest: {
-      npk: ('0x' + 'c'.repeat(64)) as `0x${string}`,
-      value: 10_000_000n,
-      encryptedBundle: [
-        ('0x' + '11'.repeat(32)) as `0x${string}`,
-        ('0x' + '22'.repeat(32)) as `0x${string}`,
-        ('0x' + '33'.repeat(32)) as `0x${string}`,
-      ] as const,
-      shieldKey: ('0x' + '44'.repeat(32)) as `0x${string}`,
-    },
-    integrator: INTEGRATOR,
+    permitV: 27,
+    permitR: ('0x' + 'a'.repeat(64)) as `0x${string}`,
+    permitS: ('0x' + 'b'.repeat(64)) as `0x${string}`,
+    intentSig: ('0x' + 'd'.repeat(130)) as `0x${string}`,
+    userNote: note('0x' + 'c'.repeat(64), 10_000_000n, INTEGRATOR),
+    feeNote: note('0x' + 'e'.repeat(64), 500_000n, ZERO),
   }
 }
 
 describe('buildGaslessCrossChainShieldCalldata', () => {
   it('pins the gaslessCrossChainShield selector', () => {
-    // WHY: the relayer's gasless-fee-verifier.ts hardcodes the gaslessCrossChainShield selector
-    // (`0x742d0b54`, the first 4 bytes of keccak256("gaslessCrossChainShield((address,uint256,
-    // uint256,uint256,uint8,bytes32,bytes32),(uint256,uint32,bytes32,bytes32[3],bytes32,
-    // address))")). A wrapper-signature refactor (arg reorder, struct rename) would change the
-    // selector and silently produce calldata the relayer rejects as INVALID_DATA. Hardcoding
-    // rather than recomputing so the test fails LOUDLY on drift instead of silently agreeing with
-    // whatever the new shape became. (destinationCaller was removed per issue #64 — pinned on-chain.)
-    const data = buildGaslessCrossChainShieldCalldata(baseRequest())
-    expect(slice(data, 0, 4)).toBe('0x742d0b54')
+    // WHY: the relayer's GASLESS_CROSS_CHAIN_SHIELD_SELECTOR must match. Hardcoding fails loudly on
+    // any ABI-shape drift rather than silently producing calldata the relayer rejects.
+    const data = buildGaslessCrossChainShieldCalldata(baseInput())
+    expect(slice(data, 0, 4)).toBe('0xd34e1968')
   })
 
-  it('round-trips through viem decoder with all PermitInput + CrossChainParams args intact', () => {
-    // WHY: a position shift inside either tuple would silently corrupt the wrapper's permit
-    // verification or the CCTP destination context (npk, ciphertext bundle, finality
-    // threshold). Round-trip decode pins every arg as a defensive layer above the viem ABI
-    // encoder so a future encoder-version bump doesn't reshape outputs unnoticed.
-    const input = baseRequest()
+  it('round-trips through the viem decoder with all args intact', () => {
+    // WHY: the intent binds keccak256(abi.encode(userNote)) + keccak256(abi.encode(feeNote)) + the
+    // CCTP params, so the calldata must carry exactly those. Round-trip-decode to surface silent
+    // corruption at test time rather than an on-chain "bad intent sig".
+    const input = baseInput()
     const data = buildGaslessCrossChainShieldCalldata(input)
 
-    const decoded = decodeFunctionData({
-      abi: GASLESS_CROSS_CHAIN_SHIELD_WRAPPER_ABI,
-      data,
-    })
+    const decoded = decodeFunctionData({ abi: GASLESS_CROSS_CHAIN_SHIELD_WRAPPER_ABI, data })
     expect(decoded.functionName).toBe('gaslessCrossChainShield')
-    const [permitInput, dest] = decoded.args
-    expect(permitInput.user).toBe(input.user)
-    expect(permitInput.totalAmount).toBe(input.totalAmount)
-    expect(permitInput.fee).toBe(input.fee)
-    expect(permitInput.deadline).toBe(input.deadline)
-    expect(permitInput.v).toBe(input.v)
-    expect(permitInput.r).toBe(input.r)
-    expect(permitInput.s).toBe(input.s)
+    const [params, intentSig, userNote, feeNote] = decoded.args
 
-    expect(dest.maxFee).toBe(input.maxFee)
-    expect(dest.minFinalityThreshold).toBe(input.minFinalityThreshold)
-    expect(dest.npk).toBe(input.shieldRequest.npk)
-    expect(dest.encryptedBundle).toEqual(input.shieldRequest.encryptedBundle)
-    expect(dest.shieldKey).toBe(input.shieldRequest.shieldKey)
-    expect(dest.integrator).toBe(input.integrator)
-  })
+    expect(params.user).toBe(input.user)
+    expect(params.deadline).toBe(input.deadline)
+    expect(params.nonce).toBe(input.nonce)
+    expect(params.maxFee).toBe(input.maxFee)
+    expect(params.minFinalityThreshold).toBe(input.minFinalityThreshold)
+    expect(params.permitV).toBe(input.permitV)
+    expect(intentSig).toBe(input.intentSig)
 
-  it('standard finality threshold (0) encodes cleanly', () => {
-    // WHY: minFinalityThreshold 0 is the STANDARD default (the contract resolves 0 → STANDARD).
-    // Pin that the builder encodes the zero value cleanly rather than rejecting it.
-    const input = {
-      ...baseRequest(),
-      minFinalityThreshold: 0,
-    }
-    const data = buildGaslessCrossChainShieldCalldata(input)
-    const decoded = decodeFunctionData({
-      abi: GASLESS_CROSS_CHAIN_SHIELD_WRAPPER_ABI,
-      data,
-    })
-    const [, dest] = decoded.args
-    expect(dest.minFinalityThreshold).toBe(0)
+    expect(userNote.npk).toBe(input.userNote.npk)
+    expect(userNote.value).toBe(10_000_000n)
+    expect(userNote.integrator).toBe(INTEGRATOR)
+    expect(feeNote.npk).toBe(input.feeNote.npk)
+    expect(feeNote.value).toBe(500_000n)
   })
 })

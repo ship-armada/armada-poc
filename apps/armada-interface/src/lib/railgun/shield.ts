@@ -51,6 +51,13 @@ export interface ShieldRequestData {
   readonly value: bigint
   readonly encryptedBundle: readonly [`0x${string}`, `0x${string}`, `0x${string}`]
   readonly shieldKey: `0x${string}`
+  /**
+   * The 16-byte per-note salt (hex, no 0x) the engine bound into `npk = Poseidon(masterPublicKey,
+   * random)`. Surfaced so a relayer fee note can be verified without decryption: the relayer
+   * recomputes the npk from its own masterPublicKey + this random and matches it against the note
+   * (same primitive as the yield-redeem `feeShieldRandom`, see relayer `redeem-fee-verifier.ts`).
+   */
+  readonly random: string
 }
 
 function toBytes32Hex(input: string | bigint): `0x${string}` {
@@ -110,5 +117,6 @@ export async function createShieldRequest(
       toBytes32Hex(shieldRequest.ciphertext.encryptedBundle[2].toString()),
     ] as const,
     shieldKey: toBytes32Hex(shieldRequest.ciphertext.shieldKey.toString()),
+    random,
   }
 }

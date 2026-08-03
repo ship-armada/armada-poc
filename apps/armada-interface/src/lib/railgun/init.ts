@@ -6,6 +6,9 @@
 // in this module don't blow up before any user code runs. Production cost: one extra microtask
 // the first time initRailgunEngine() runs.
 import { getDefaultStore } from 'jotai'
+// Type-only import — erased at compile time (verbatimModuleSyntax), so it does NOT trigger the
+// jsdom-crashing module-load the runtime `import()` calls below guard against.
+import type { Artifact } from '@railgun-community/shared-models'
 import { createWebDatabase } from './database'
 import { createBrowserArtifactStore } from './artifacts'
 import { initializeProver } from './prover'
@@ -96,9 +99,72 @@ export async function initRailgunEngine(): Promise<void> {
   }
 }
 
+/**
+ * Load Armada circuit artifacts from the Vite dev server and inject them into
+ * the Railgun SDK's in-memory cache via overrideArtifact().
+ *
+ * In local mode, artifacts are served from armada-circuits/build/ via the
+ * serveCircuitArtifacts() Vite middleware at /api/circuits/<N>x<M>/.
+ *
+ * Only loads the shapes registered on-chain (TESTING_ARTIFACT_CONFIGS).
+ * Each shape's WASM (~4MB) + ZKEY (~13MB) are fetched once and cached for
+ * the session. Lazy loading is handled by the SDK — overrideArtifact just
+ * primes the cache so the first proof doesn't pay the IPFS + hash-check penalty.
+ */
+
+// The shapes registered on PrivacyPool during deployment
+const ARMADA_SHAPES: Array<[number, number]> = [
+  [1, 1], [1, 2], [2, 2], [2, 3], [8, 4],
+  [2, 1], [3, 1], [4, 1], [5, 1], [6, 1], [7, 1], [8, 1],
+  [3, 2], [4, 2], [5, 2], [6, 2],
+  [1, 3], [3, 3], [4, 3],
+]
+
+async function loadArmadaCircuits(
+  overrideArtifact: (variant: string, artifact: Artifact) => void,
+): Promise<void> {
+  // eslint-disable-next-line no-console
+  console.log('[railgun] Loading Armada circuit artifacts...')
+
+  for (const [n, m] of ARMADA_SHAPES) {
+    const variant = `${n.toString().padStart(2, '0')}x${m.toString().padStart(2, '0')}`
+    const shape = `${n}x${m}`
+    const base = `/api/circuits/${shape}`
+
+    try {
+      const [wasmRes, zkeyRes, vkeyRes] = await Promise.all([
+        fetch(`${base}/wasm`),
+        fetch(`${base}/zkey`),
+        fetch(`${base}/vkey`),
+      ])
+
+      if (!wasmRes.ok || !zkeyRes.ok || !vkeyRes.ok) {
+        // eslint-disable-next-line no-console
+        console.warn(`[railgun] Skipping ${variant}: artifacts not available (WASM:${wasmRes.status} ZKEY:${zkeyRes.status})`)
+        continue
+      }
+
+      const wasm = new Uint8Array(await wasmRes.arrayBuffer())
+      const zkey = new Uint8Array(await zkeyRes.arrayBuffer())
+      const vkey = await vkeyRes.json()
+
+      // `dat` is the native-prover witness calculator; we use the snarkjs (wasm) path, so it's
+      // unused. The SDK's Artifact type still requires the key — pass it explicitly as undefined.
+      overrideArtifact(variant, { wasm, zkey, vkey, dat: undefined })
+    } catch (err) {
+      // Non-fatal — the SDK will fall back to IPFS for this shape
+      // eslint-disable-next-line no-console
+      console.warn(`[railgun] Failed to load ${variant}:`, err)
+    }
+  }
+
+  // eslint-disable-next-line no-console
+  console.log('[railgun] Armada circuit artifacts loaded')
+}
+
 async function doInit(): Promise<void> {
   const [
-    { startRailgunEngine, setLoggers, setOnUTXOMerkletreeScanCallback },
+    { startRailgunEngine, setLoggers, setOnUTXOMerkletreeScanCallback, overrideArtifact },
     { POI },
     { MerkletreeScanStatus },
   ] = await Promise.all([
@@ -161,6 +227,18 @@ async function doInit(): Promise<void> {
     undefined, // customPOILists
     debugLogging, // verboseScanLogging — gated on DEV (P1-27)
   )
+
+  // Override the SDK's IPFS artifact pipeline with Armada's own circuits.
+  // startRailgunEngine hardcodes artifactGetterDownloadJustInTime which downloads
+  // from IPFS and validates against Railgun's hash manifest. overrideArtifact()
+  // writes directly into the in-memory cache, bypassing both IPFS and hash checks.
+  // The serveCircuitArtifacts() Vite dev middleware serves armada-circuits/build for ALL
+  // networks (local + sepolia), so gate on DEV rather than network: any dev-server run gets
+  // Armada artifacts. Production builds skip this — the static-artifact path for prod sepolia
+  // is tracked separately (F4/#408) and until it lands, prod sepolia is not supported.
+  if (import.meta.env.DEV) {
+    await loadArmadaCircuits(overrideArtifact)
+  }
 
   // Wire SDK merkletree scan progress into syncStateAtom so the UI can show a banner +
   // progress bar during the initial historical scan. The SDK emits one of four statuses;

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.17;
 
 import "../../cctp/ICCTPV2.sol";
+import {ShieldData} from "../types/CCTPTypes.sol";
 
 /**
  * @title IPrivacyPoolClient
@@ -101,6 +102,23 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
         bytes32[3] calldata encryptedBundle,
         bytes32 shieldKey,
         address integrator
+    ) external returns (uint64 nonce);
+
+    /**
+     * @notice Cross-chain shield with a relayer fee note (gasless path). Burns
+     *         `userNote.value + feeNote.value` and carries both notes to the Hub, which mints the
+     *         user's note net of the CCTP fee and the relayer's fee note at full value.
+     * @param maxFee Maximum CCTP relayer fee (deducted at protocol level, 0 = no fee)
+     * @param minFinalityThreshold Finality level (FAST/STANDARD, 0 = contract default)
+     * @param userNote Recipient note (index 0 on the Hub; absorbs the CCTP fee)
+     * @param feeNote Relayer fee note (minted at full value on the Hub)
+     * @return nonce CCTP message nonce
+     */
+    function crossChainShieldWithFee(
+        uint256 maxFee,
+        uint32 minFinalityThreshold,
+        ShieldData calldata userNote,
+        ShieldData calldata feeNote
     ) external returns (uint64 nonce);
 
     // ══════════════════════════════════════════════════════════════════════════

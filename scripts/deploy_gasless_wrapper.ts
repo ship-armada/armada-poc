@@ -4,16 +4,15 @@
 /**
  * Deploy Gasless Shield Wrapper
  *
- * Phase B2 of the relayer-mediation plan: deploys the permit-based gasless wrappers that
- * back `shield` (hub) and `shield-xchain` (client) for users who hold only USDC.
+ * Phase C of the relayer-mediation plan: deploys the permissionless permit-based gasless wrappers
+ * that back `shield` (hub) and `shield-xchain` (client) for users who hold only USDC.
  *
  *   Hub:    GaslessShieldWrapper       → calls PrivacyPool.shield(...)
- *   Client: GaslessShieldWrapperClient → calls PrivacyPoolClient.crossChainShield(...)
+ *   Client: GaslessShieldWrapperClient → calls PrivacyPoolClient.crossChainShieldWithFee(...)
  *
- * Owner = deployer; relayer = deployer.address. The relayer EOA matches the deployer in the
- * POC config (`relayer/config.ts::accounts.deployer`) — the same key submits txs from the
- * armada-relayer process. `setRelayer(addr)` exists on both wrappers for key rotation without
- * redeploy when the relayer wallet later splits from the deployer.
+ * The wrappers are permissionless: submission is open to any relayer and the fee is paid as a
+ * shielded note bound in the user's EIP-712 intent, so there is no stored `relayer` address and no
+ * `setRelayer` rotation step — the constructor takes only (usdc, pool).
  *
  * Prerequisites:
  *   - privacy-pool deployment manifest for the target chain (deploy_privacy_pool.ts ran first)
@@ -36,8 +35,7 @@
  *
  *   Pass `FORCE_REDEPLOY=1` (env var) to override and deploy a fresh wrapper unconditionally —
  *   only useful when intentionally rotating the wrapper itself. Note that a forced redeploy
- *   strands USDC permits the user has already signed against the old address; setRelayer() is
- *   the right tool for relayer-key rotation without a wrapper redeploy.
+ *   strands USDC permits + intents the user has already signed against the old address.
  */
 
 import { ethers } from "hardhat";
@@ -89,7 +87,6 @@ async function deployForRole(role: ChainRole): Promise<void> {
   console.log(`Environment: ${config.env}`);
   console.log(`USDC:           ${usdcAddress}`);
   console.log(`Pool:           ${poolAddress}`);
-  console.log(`Relayer EOA:    ${deployer.address}  (deployer doubles as relayer in POC)`);
   console.log("");
 
   // Idempotency: short-circuit when the manifest already records an address whose contract is
@@ -104,24 +101,6 @@ async function deployForRole(role: ChainRole): Promise<void> {
     if (code !== "0x") {
       console.log(`${contractName} already deployed at ${existing} (manifest + on-chain code).`);
       console.log(`Skipping. Set FORCE_REDEPLOY=1 to deploy a fresh wrapper.`);
-      // Verify the wrapper's relayer field still matches our deployer EOA — defensive against a
-      // historical setRelayer() that points the wrapper at a different EOA than the running
-      // relayer service uses. A mismatch isn't fatal (the service might be running from that
-      // other key), but operators should know.
-      try {
-        const wrapper = await ethers.getContractAt(contractName, existing);
-        const currentRelayer: string = await wrapper.relayer();
-        if (currentRelayer.toLowerCase() !== deployer.address.toLowerCase()) {
-          console.warn(
-            `WARNING: wrapper.relayer() = ${currentRelayer}, deployer = ${deployer.address}. ` +
-              `If the relayer service signs with the deployer key, gaslessShield calls will revert ` +
-              `with "not relayer". Run setRelayer(${deployer.address}) to fix, or update the ` +
-              `relayer service to sign with ${currentRelayer}.`,
-          );
-        }
-      } catch (e: any) {
-        console.warn(`Could not verify wrapper.relayer(): ${e.message ?? e}`);
-      }
       return;
     }
     console.log(
@@ -139,7 +118,6 @@ async function deployForRole(role: ChainRole): Promise<void> {
   const wrapper = await Wrapper.deploy(
     usdcAddress,
     poolAddress,
-    deployer.address,
     nm.override(),
   );
   await wrapper.deploymentTransaction()!.wait();

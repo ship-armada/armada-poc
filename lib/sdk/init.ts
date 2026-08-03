@@ -32,8 +32,8 @@ import * as fs from 'fs';
 import { HUB_CHAIN, HUB_RPC, CLIENT_RPC, DEPLOYMENT_BLOCK } from './chain-config';
 import { ethers, FallbackProvider } from 'ethers';
 
-// @ts-ignore - test artifacts package
-import { getArtifact } from 'railgun-circuit-test-artifacts';
+// Armada's own circuit artifacts (replaces unlicensed railgun-circuit-test-artifacts)
+import { getArtifact } from './armada-artifacts';
 
 // ============ Storage Configuration ============
 
@@ -76,7 +76,7 @@ const artifactCache: Map<string, Artifact> = new Map();
 
 /**
  * Get artifacts for circuit with given nullifiers and commitments
- * Uses the test artifacts package for our local devnet
+ * Uses Armada's own compiled circuits (armada-circuits/build/)
  */
 async function getArtifacts(inputs: {
   nullifiers: bigint[];
@@ -110,8 +110,8 @@ async function getArtifacts(inputs: {
     return artifact;
   } catch (error) {
     throw new Error(
-      `Failed to load artifacts for ${key}. ` +
-        `Available circuits: 1x2, 2x2, 2x3, 8x4. Error: ${error}`
+      `Failed to load Armada artifacts for ${key}. ` +
+        `Run scripts/fetch-circuits.sh to install the pinned release. Error: ${error}`
     );
   }
 }
@@ -211,6 +211,12 @@ const engineDebugger = {
   },
   error: (error: Error) => {
     console.error(`[Engine Error] ${error.message}`);
+    // The engine wraps the underlying failure (e.g. the real getLogs RPC error) in `cause`;
+    // print it so scan/RPC failures are diagnosable rather than the generic wrapper message.
+    const cause = (error as Error & { cause?: unknown }).cause;
+    if (cause !== undefined) {
+      console.error('[Engine Error]   ↳ cause:', cause instanceof Error ? cause.message : cause);
+    }
   },
   verboseScanLogging: false,
 };

@@ -188,6 +188,12 @@ export interface MetaShield extends MetaCommon {
    * window per plan doc) and frozen here so the handler signs the permit with the same value.
    */
   permitDeadline?: number
+  /**
+   * Phase C — the relayer's Railgun (`0zk...`) address, frozen from the fee quote. The gasless
+   * build-proof shields the relayer's fee note to this npk (a second note in the array), replacing
+   * the old public-USDC fee. Only set when `useGasless` is true.
+   */
+  broadcasterRailgunAddress?: string
 }
 
 export interface MetaShieldXchain extends MetaCommon {
@@ -223,6 +229,12 @@ export interface MetaShieldXchain extends MetaCommon {
    * window per plan doc) and frozen here so the handler signs the permit with the same value.
    */
   permitDeadline?: number
+  /**
+   * Phase C — the relayer's Railgun (`0zk...`) address, frozen from the fee quote. The gasless
+   * build-proof shields the relayer's fee note to this npk (carried across CCTP, minted on the
+   * hub at full value). Only set when `useGasless` is true.
+   */
+  broadcasterRailgunAddress?: string
 }
 
 export interface MetaUnshieldLocal extends MetaCommon, MetaBroadcaster {
@@ -417,6 +429,25 @@ export interface ArtifactsShield extends ArtifactsCommon {
   permitR?: `0x${string}`
   permitS?: `0x${string}`
   /**
+   * Phase C — the relayer's fee note (a second ShieldRequest to the relayer's 0zk), captured at
+   * build-proof when `meta.useGasless` is true. The gasless submit shields `[shieldRequest, feeNote]`
+   * as one array. Absent on direct-submit records.
+   */
+  feeNote?: {
+    npk: `0x${string}`
+    value: string
+    encryptedBundle: readonly [`0x${string}`, `0x${string}`, `0x${string}`]
+    shieldKey: `0x${string}`
+  }
+  /**
+   * Phase C — the fee note's 16-byte hex `random`, sent on the /relay request so the relayer can
+   * verify the fee note is shielded to its own 0zk without decryption. Absent on direct-submit.
+   */
+  feeShieldRandom?: string
+  /** Phase C — the EIP-712 ShieldIntent signature; and the intent nonce it consumed (stringified). */
+  intentSig?: `0x${string}`
+  intentNonce?: string
+  /**
    * Direct-path approve leg (S-M4). `approveTxHash` is set after the USDC `approve` confirms;
    * `approveSkipped` is set when allowance already covered the amount (no approve prompt). Drives
    * the WalletConfirmList checklist (`shieldWalletSteps`). Absent on the gasless path.
@@ -474,6 +505,28 @@ export interface ArtifactsShieldXchain extends ArtifactsXchain {
   permitV?: number
   permitR?: `0x${string}`
   permitS?: `0x${string}`
+  /**
+   * Phase C — the relayer's fee note (built against the HUB usdc; minted on the hub at full value),
+   * captured at build-proof when `meta.useGasless` is true. Absent on direct-submit records.
+   */
+  feeNote?: {
+    npk: `0x${string}`
+    value: string
+    encryptedBundle: readonly [`0x${string}`, `0x${string}`, `0x${string}`]
+    shieldKey: `0x${string}`
+  }
+  /** Phase C — the fee note's 16-byte hex `random`, sent on /relay for relayer-side npk verification. */
+  feeShieldRandom?: string
+  /** Phase C — the EIP-712 CrossChainShieldIntent signature; and the intent nonce it consumed. */
+  intentSig?: `0x${string}`
+  intentNonce?: string
+  /**
+   * Phase C — the CCTP `maxFee` + finality bound into the intent at build-proof. Frozen so the
+   * submit stage passes the same values the user signed (they can't be recomputed at submit or the
+   * signature would mismatch). Stringified maxFee for IDB serializability.
+   */
+  intentMaxFee?: string
+  intentMinFinality?: number
   /** Direct-path approve leg (S-M4) — see ArtifactsShield. Absent on the gasless path. */
   approveTxHash?: `0x${string}`
   approveSkipped?: boolean

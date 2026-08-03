@@ -256,6 +256,17 @@ export const armadaRelayerSettings = {
    * compression caused by a stale quote should still leave the relayer break-even.
    */
   profitMarginBps: 0,
+  /**
+   * The pool's base shield-fee rate in basis points (default 0.50% = 50). Used to GROSS UP the
+   * gasless `shield` / `shieldXchain` tier quotes: the relayer is paid via a shielded fee note, and
+   * the pool charges this shield fee on that note too (the wrapper is not fee-exempt), so the note
+   * must be sized `net / (1 - bps)` for the relayer to net its gas-reimbursement target. Gasless
+   * shields use `integrator = address(0)`, so this base rate is the exact deduction. Keep in sync
+   * with `ArmadaFeeModule.baseArmadaTakeBps`; override via `RELAYER_SHIELD_FEE_BPS` if governance
+   * changes it. (If it drifts too high, the relayer under-nets by the difference — never over-charges
+   * the protocol, since the on-chain fee is authoritative.)
+   */
+  shieldFeeBps: Number(process.env.RELAYER_SHIELD_FEE_BPS ?? "50"),
   /** ETH/USDC price for fee calculation */
   ethUsdcPrice: netConfig.ethUsdcPrice,
   /** Fee quote validity in seconds */

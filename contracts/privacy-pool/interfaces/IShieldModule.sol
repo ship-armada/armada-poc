@@ -40,7 +40,7 @@ interface IShieldModule {
      *      USDC has already been minted to the PrivacyPool by CCTP
      *
      * @param amount Amount of USDC received (from CCTP)
-     * @param data Shield data from the CCTP payload
+     * @param datas Shield note array from the CCTP payload (index 0 is the recipient note)
      */
-    function processIncomingShield(uint256 amount, ShieldData calldata data) external;
+    function processIncomingShield(uint256 amount, ShieldData[] calldata datas) external;
 }

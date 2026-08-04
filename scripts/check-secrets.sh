@@ -25,6 +25,12 @@ ALLOWED_FILES=(
   "scripts/multicall3-bytecode.ts"  # Canonical Multicall3 public runtime bytecode (not a key) — etched onto local Anvil
 )
 
+# Directories whose entire contents are captured differential test vectors derived from FIXED TEST
+# SEEDS (not real secrets). The values (keys, commitments, proofs) are reproducible from known inputs.
+ALLOWED_DIRS=(
+  "scripts/capture/vectors/"  # Phase 0 SDK vectors (keyset, commitment, nullifier, EdDSA, merkle, ...)
+)
+
 # Patterns that indicate secrets. Each entry: "LABEL:::REGEX"
 PATTERNS=(
   "Private key (hex):::0x[a-fA-F0-9]{64}"
@@ -52,6 +58,14 @@ for f in "${FILES[@]}"; do
       break
     fi
   done
+  if [[ "$skip" == false ]]; then
+    for adir in "${ALLOWED_DIRS[@]}"; do
+      if [[ "$f" == "$adir"* ]]; then
+        skip=true
+        break
+      fi
+    done
+  fi
   if [[ "$skip" == false ]]; then
     SCAN_FILES+=("$f")
   fi

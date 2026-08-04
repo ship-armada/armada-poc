@@ -23,6 +23,7 @@ ALLOWED_FILES=(
   "config/secrets.env.template"  # Placeholder mnemonic ("word word word..."); real secret lives in gitignored secrets.env
   "relayer/test/modules/railgun-wallet.test.ts"  # Anvil's publicly-known test mnemonic — required to prove deterministic derivation
   "scripts/multicall3-bytecode.ts"  # Canonical Multicall3 public runtime bytecode (not a key) — etched onto local Anvil
+  "scripts/capture/vectors/keyset-vectors.json"  # Phase 0 keyset vectors derived from FIXED TEST SEEDS (not real secrets); the live-testnet crosscheck stores only the public 0zk address
 )
 
 # Patterns that indicate secrets. Each entry: "LABEL:::REGEX"

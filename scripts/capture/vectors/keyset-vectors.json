@@ -1,0 +1,83 @@
+{
+  "vectorType": "keyset",
+  "primitive": "key-derivation (ARMADA_SDK.md §2)",
+  "engineVersion": "9.6.0",
+  "capturedFromMainSha": "b21d4d9b2fe0e06fa44589de164ba00c54bb2b43",
+  "provisional": false,
+  "testnetCrosscheck": {
+    "address": "0zk1qy4xqtzlh3qfhrg4d8xg0mr7qzna3kd6y6udwr4y4pjljaxlm5l43rv7j6fe3z53la5zz8nztyzg59wtgeswfy33gs8a5rl6vg5glsx7lyxr3tgkuld9cutqe08",
+    "result": "byte-identical",
+    "note": "reproduced from a live testnet wallet recovery secret; secret not stored"
+  },
+  "vectors": [
+    {
+      "name": "all-ones",
+      "rootSecret": "0x0101010101010101010101010101010101010101010101010101010101010101",
+      "internalMnemonic": "absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice cage absurd amount doctor acoustic avoid letter advice comic",
+      "encryptionKey": "0x0101010101010101010101010101010101010101010101010101010101010101",
+      "keyset": {
+        "masterPublicKey": "0x247451823dfcc889991cde89847e14fc5a902ed5dc820e52537780177cd17269",
+        "nullifyingKey": "0x1fc97e2366f09719d870d2d056b606e4678d98e47018a1e13c151e7307b68a0c",
+        "spendingPublicKey": [
+          "0x1503e3c396df1e30bf3fc89d97a7bf2cd2b5e5b39e1a099a5c0862dbaa5988c2",
+          "0x0e83fbda9a2887993d4fd9368463eb8c3d9e01df47418a5214ebe57e0c9dc30d"
+        ],
+        "spendingPrivateKey": "0xa637ed80fec9ef2faa82aad19b04849c91e29d6084897059c219f6735fc53777",
+        "viewingPublicKey": "0x6c242244b7d1e35e201c8aa70747dd2a456ba96318c51c52ffb9fdb7b6bc2783",
+        "viewingPrivateKey": "0xe9c0b4b38415170876234dcfbf8451bbe97c88adfb5249a5f77ca4c9dd6730e5",
+        "railgunAddress": "0zk1qyj8g5vz8h7v3zvern0gnpr7zn794ypw6hwgyrjj2dmcq9mu69exnrv7j6fe3z53lakzggjyklg7xh3qrj92wp68m54y26afvvvv28zjl7ulmdakhsncxr5stlf",
+        "walletId": "00e781fb8fcb252a2113e4847c7ed911229100d9feb6ee126bc171f1eed506f1"
+      },
+      "derivation": {
+        "path": "rootSecret -> deriveInternalMnemonic (BIP-39 entropyToMnemonic) -> createWalletFromMnemonic(index=0)",
+        "note": "Phase-1 mnemonic-shim path (apps/armada-interface/src/lib/crypto/kdf.ts). encryptionKey does NOT affect identity."
+      }
+    },
+    {
+      "name": "counting-1..32",
+      "rootSecret": "0x0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      "internalMnemonic": "absurd avoid scissors anxiety gather lottery category door army half long cage bachelor another expect people blade school educate curtain scrub monitor lady beyond",
+      "encryptionKey": "0x0101010101010101010101010101010101010101010101010101010101010101",
+      "keyset": {
+        "masterPublicKey": "0x2e15539fe5ac8cd2a74fbcf01ce561109332e3c662ccbd492a5330a153ae07e1",
+        "nullifyingKey": "0x108a2a736cf86eab66b11baa3cd853b07dea8ce5c91fa6c0a2fc369f250c35d1",
+        "spendingPublicKey": [
+          "0x22824a635727eb1c6d24fb7dac9d008a8042a613301fde159673f20bdfa10074",
+          "0x1e56a6f6572fc84878dd7f0595b143b715215b911e5cf46dd3ee14663c7733b6"
+        ],
+        "spendingPrivateKey": "0x6555dcec7eae27f631d540f94a7ed2549ff45cee5d885a53eee01dc4e507d3a1",
+        "viewingPublicKey": "0x3e6fc88bb005f36b59d17a640e88955bf3dd454b9c465dd54af3ad85afc4a2ce",
+        "viewingPrivateKey": "0x61693d3cf5a1f0c0563b116b644402bf347460126b5689cc2043ca4752271b8b",
+        "railgunAddress": "0zk1qyhp25ulukkge548f770q889vygfxvhrce3ve02f9ffnpg2n4cr7rrv7j6fe3z53lulxljytkqzlx66e69axgr5gj4dl8h29fwwyvhw4fte6mpd0cj3vuwkxk3s",
+        "walletId": "748ef891de9ba8e55ab24b24ee1877c2f5f1ae46ad0f032cc0baf5c66b4d3ddb"
+      },
+      "derivation": {
+        "path": "rootSecret -> deriveInternalMnemonic (BIP-39 entropyToMnemonic) -> createWalletFromMnemonic(index=0)",
+        "note": "Phase-1 mnemonic-shim path (apps/armada-interface/src/lib/crypto/kdf.ts). encryptionKey does NOT affect identity."
+      }
+    },
+    {
+      "name": "fixed-pseudorandom",
+      "rootSecret": "0xa3f291c8b7e0d4569a1f2e3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a6978",
+      "internalMnemonic": "physical nest impulse hurt ask clip half total detail food olympic valve just fan spread kid tiger lesson shy foil seven pudding planet brass",
+      "encryptionKey": "0x0101010101010101010101010101010101010101010101010101010101010101",
+      "keyset": {
+        "masterPublicKey": "0x2f9418b3abead16f97087725c3a452c27cb90f5c35e50b9306802a18b1d2a706",
+        "nullifyingKey": "0x0bdf3faf3d5b4dcb151481513f5ff5958316ca6c0d95f6dfd5c8d0701301fda6",
+        "spendingPublicKey": [
+          "0x0bc089b8f899aa392dc62b0abc9a5340156c6c67e71c8dadfc44322f1ad13c84",
+          "0x0f15bc8718651654411ef26972bd6260433c219e0bc4e7213c455768e711ca73"
+        ],
+        "spendingPrivateKey": "0x2b2f0ca38e719ddc8ea7407e860fcfcfc9e30fd3159b5a32fcd59d082021d71c",
+        "viewingPublicKey": "0xd60131b7f0a731ea3bc087165760627ffb06fb30f279291b20f3c4a95ef1528b",
+        "viewingPrivateKey": "0x3fb11f8b41527f2b7976be457e848d13f4466482c046517bf080305ceada4f42",
+        "railgunAddress": "0zk1qyhegx9n404dzmuhppmjtsay2tp8ewg0ts672zunq6qz5x9362nsdrv7j6fe3z53lltqzvdh7znnr63mczr3v4mqvfllkphmxre8j2gmyreuf22779fgkwuhryy",
+        "walletId": "3957948dd7dd0c990e4cdb3b99b75e059ae0183753246ad8401aa13ca3eb2ae7"
+      },
+      "derivation": {
+        "path": "rootSecret -> deriveInternalMnemonic (BIP-39 entropyToMnemonic) -> createWalletFromMnemonic(index=0)",
+        "note": "Phase-1 mnemonic-shim path (apps/armada-interface/src/lib/crypto/kdf.ts). encryptionKey does NOT affect identity."
+      }
+    }
+  ]
+}

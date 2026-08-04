@@ -2,7 +2,7 @@
 // ABOUTME: Returns { blocked, reason } — modals disable submit + show the reason as a tooltip.
 
 import { useAtomValue } from 'jotai'
-import { shieldedUsdcAtom, syncStateAtom } from '@/state/wallet'
+import { nullifierCrossCheckAtom, shieldedUsdcAtom, syncStateAtom } from '@/state/wallet'
 
 export interface SpendableSyncGate {
   /** True when the user should not be allowed to submit a spend-flow tx yet. */
@@ -23,6 +23,7 @@ export interface SpendableSyncGate {
  * Block only on first-sync conditions:
  *   - status === 'syncing' AND shieldedUsdcAtom === null  → "wait for first sync"
  *   - status === 'failed'                                 → "sync interrupted, reload"
+ *   - nullifierCrossCheck === 'omission-detected'         → "balance stale, re-sync" (WI-5)
  *
  * Don't block when:
  *   - The wallet has already seen at least one successful scan (shieldedUsdcAtom !== null),
@@ -33,11 +34,22 @@ export interface SpendableSyncGate {
 export function useSpendableSyncGate(): SpendableSyncGate {
   const sync = useAtomValue(syncStateAtom)
   const shielded = useAtomValue(shieldedUsdcAtom)
+  const nullifierCrossCheck = useAtomValue(nullifierCrossCheckAtom)
 
   if (sync.status === 'failed') {
     return {
       blocked: true,
       reason: 'Shielded-balance sync was interrupted. Use "Try again" on the dashboard before submitting.',
+    }
+  }
+
+  // WI-5: merkleroot validation can't see an omitted Nullified event, so an already-spent note can
+  // show as unspent (inflated balance). The on-chain nullifier cross-check catches that; block here
+  // so the user re-syncs instead of submitting a spend that would revert on-chain as a double-spend.
+  if (nullifierCrossCheck === 'omission-detected') {
+    return {
+      blocked: true,
+      reason: 'Your shielded balance may be out of date — a spent note was not reported by the indexer. Use "Try again" on the dashboard to re-sync before submitting.',
     }
   }
 

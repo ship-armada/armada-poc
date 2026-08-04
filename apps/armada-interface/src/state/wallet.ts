@@ -77,3 +77,20 @@ export const syncStateAtom = atom<SyncState>({ status: 'idle', progress: 0 })
  * current subscription and re-runs `refreshShieldedBalances`. Driven by `useSyncRetry`.
  */
 export const syncRetryEpochAtom = atom<number>(0)
+
+/**
+ * Result of the on-chain nullifier cross-check (WI-5). Merkleroot validation guarantees the
+ * rebuilt commitment tree matches the chain, but nullifiers live outside that tree — a watcher
+ * that omits a `Nullified` event passes root validation yet shows an already-spent note as
+ * unspent (inflated displayed balance). After each scan completes, `useNullifierCrossCheck`
+ * queries the hub PrivacyPool's `nullifiers(...)` for the wallet's own locally-unspent notes:
+ *
+ *   'unknown'           — not yet checked (no scan completed, or wallet locked)
+ *   'ok'                — every own unspent note is also unspent on-chain
+ *   'omission-detected' — the chain marks an own "unspent" note as spent → the watcher omitted
+ *                          its nullifier → the displayed balance is stale → block spending
+ *
+ * `useSpendableSyncGate` blocks spend flows on 'omission-detected'.
+ */
+export type NullifierCrossCheckStatus = 'unknown' | 'ok' | 'omission-detected'
+export const nullifierCrossCheckAtom = atom<NullifierCrossCheckStatus>('unknown')

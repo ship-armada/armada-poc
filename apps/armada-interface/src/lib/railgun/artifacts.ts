@@ -2,6 +2,7 @@
 // ABOUTME: Ported from usdc-v2-frontend/src/lib/railgun/artifacts.ts; same DB name + store name so users with the legacy app's cache see it preserved.
 
 import type { Artifact } from '@railgun-community/shared-models'
+import { setArmadaArtifact, armadaVariantKey } from './artifactGetter'
 
 // The SDK's ArtifactStore class lives in @railgun-community/wallet — which transitively pulls
 // circomlibjs and crashes at module-load under jsdom. We dynamic-import it so vitest can load
@@ -16,10 +17,6 @@ const PRELOAD_VARIANTS = [
   { nullifiers: 2, commitments: 2 },
   { nullifiers: 2, commitments: 3 },
 ] as const
-
-function variantId(c: { nullifiers: number; commitments: number }): string {
-  return `${c.nullifiers}x${c.commitments}`
-}
 
 function variantDir(c: { nullifiers: number; commitments: number }): string {
   return `${c.nullifiers.toString().padStart(2, '0')}x${c.commitments.toString().padStart(2, '0')}`
@@ -48,17 +45,17 @@ async function originArtifactsAvailable(): Promise<boolean> {
 }
 
 /**
- * Preload the demo-critical circuit artifacts from the app's OWN origin (`/artifacts/...`) into the
- * SDK's in-memory override cache, so the first proof doesn't fetch ~10 MB from a public IPFS gateway
- * at click time mid-demo (P0-12). Fire-and-forget after engine init, off the critical path.
+ * Preload the demo-critical circuit artifacts from the app's OWN origin (`/artifacts/...`) into our
+ * ArtifactGetter registry (see artifactGetter.ts), so the first proof doesn't fetch ~10 MB from a
+ * public IPFS gateway at click time mid-demo (P0-12). Fire-and-forget after engine init, off the
+ * critical path. This is the prod counterpart to the DEV-only loadArmadaCircuits in init.ts — both
+ * feed the same getter registry.
  *
- * Silent no-op when the artifacts aren't served (the SDK's IPFS read-through cache then handles it),
- * and per-variant failures don't abort the rest. The IDB read-through dedupes across reloads, so
- * this only does real network work once per browser. (Renamed from the dead `loadTestArtifacts`.)
+ * Silent no-op when the artifacts aren't served, and per-variant failures don't abort the rest.
+ * (Renamed from the dead `loadTestArtifacts`.)
  */
 export async function preloadArtifactsFromOrigin(): Promise<void> {
   if (!(await originArtifactsAvailable())) return
-  const { overrideArtifact } = await import('@railgun-community/wallet')
   for (const c of PRELOAD_VARIANTS) {
     try {
       const dir = variantDir(c)
@@ -67,10 +64,17 @@ export async function preloadArtifactsFromOrigin(): Promise<void> {
         fetchArtifactBinary(`/artifacts/${dir}/circuit.wasm`),
         fetchArtifactJson(`/artifacts/${dir}/vkey.json`),
       ])
-      overrideArtifact(variantId(c), { zkey, wasm, vkey, dat: undefined } as Artifact)
+      // Register under the padded NNxMM key the getter looks up (armadaVariantKey), so proof
+      // generation resolves these. Bypasses the SDK's IPFS + hash-manifest path entirely.
+      setArmadaArtifact(armadaVariantKey(c.nullifiers, c.commitments), {
+        zkey,
+        wasm,
+        vkey,
+        dat: undefined,
+      } as Artifact)
     } catch {
-      // One variant failing (404 / partial deploy) must not abort the others or crash the app —
-      // the SDK's IPFS fallback covers the gap. Silent: no console in lib/railgun (secret hygiene).
+      // One variant failing (404 / partial deploy) must not abort the others or crash the app.
+      // Silent: no console in lib/railgun (secret hygiene).
     }
   }
 }

@@ -1,4 +1,4 @@
-// ABOUTME: Railgun engine bootstrap — startRailgunEngine + POI dummy + artifact store. Drives railgunEngineAtom through cold → warming → ready / failed.
+// ABOUTME: Railgun engine bootstrap — RailgunEngine.initForWallet + setEngine + POI dummy + our own ArtifactGetter. Drives railgunEngineAtom through cold → warming → ready / failed.
 // ABOUTME: Idempotent; safe to call multiple times. Engine loads the WASM proving stack (~1 MB) lazily, so we keep init off the critical path until the user needs it.
 
 // The Railgun SDK + its transitive deps (circomlibjs, ethereum-cryptography) crash on
@@ -6,11 +6,13 @@
 // in this module don't blow up before any user code runs. Production cost: one extra microtask
 // the first time initRailgunEngine() runs.
 import { getDefaultStore } from 'jotai'
-// Type-only import — erased at compile time (verbatimModuleSyntax), so it does NOT trigger the
+// Type-only imports — erased at compile time (verbatimModuleSyntax), so they do NOT trigger the
 // jsdom-crashing module-load the runtime `import()` calls below guard against.
 import type { Artifact } from '@railgun-community/shared-models'
+import type { UTXOScanDecryptBalancesCompleteEventData } from '@railgun-community/engine'
 import { createWebDatabase } from './database'
-import { createBrowserArtifactStore } from './artifacts'
+import { armadaArtifactGetter, setArmadaArtifact } from './artifactGetter'
+import { quickSyncEventsClient } from './quickSync'
 import { initializeProver } from './prover'
 import { syncStateAtom } from '@/state/wallet'
 import { trackError } from '@/lib/telemetry'
@@ -70,15 +72,16 @@ export function subscribeEngineState(listener: (s: EngineStateSnapshot) => void)
  * The flow:
  *   1. Wire SDK loggers to our own structured-log surface (no console.log of secrets — see
  *      lib/railgun/CLAUDE.md secret-handling rules).
- *   2. Create the level-js DB (IndexedDB-backed) + the artifact store (IndexedDB-backed).
- *   3. Call startRailgunEngine with our walletSource + the stores. This loads the WASM proving
- *      stack and initializes the merkle scanner.
+ *   2. Create the level-js DB (IndexedDB-backed).
+ *   3. Construct the engine via `RailgunEngine.initForWallet` + `setEngine`, injecting our own
+ *      quick-sync source (the watcher client) and `ArtifactGetter`, then replicate the internal
+ *      balance-complete listener the `startRailgunEngine` convenience would have wired.
  *   4. Install a dummy POI node interface so proof generation doesn't crash with
  *      "Cannot read properties of undefined (reading isRequired)" on local devnet where POI
  *      isn't configured.
  *
- * Test-artifact preloading (for local Anvil POC contracts) is a separate concern handled in a
- * follow-up commit; in Sepolia mode the SDK pulls artifacts from IPFS via the artifact store.
+ * Armada circuit artifacts are registered with our getter separately: `loadArmadaCircuits` (DEV,
+ * below) and `preloadArtifactsFromOrigin` (prod, artifacts.ts, called from App.tsx).
  */
 export async function initRailgunEngine(): Promise<void> {
   if (initialized) return
@@ -100,16 +103,16 @@ export async function initRailgunEngine(): Promise<void> {
 }
 
 /**
- * Load Armada circuit artifacts from the Vite dev server and inject them into
- * the Railgun SDK's in-memory cache via overrideArtifact().
+ * Load Armada circuit artifacts from the Vite dev server and register them with our own
+ * ArtifactGetter (see artifactGetter.ts) via the `register` callback.
  *
  * In local mode, artifacts are served from armada-circuits/build/ via the
  * serveCircuitArtifacts() Vite middleware at /api/circuits/<N>x<M>/.
  *
  * Only loads the shapes registered on-chain (TESTING_ARTIFACT_CONFIGS).
- * Each shape's WASM (~4MB) + ZKEY (~13MB) are fetched once and cached for
- * the session. Lazy loading is handled by the SDK — overrideArtifact just
- * primes the cache so the first proof doesn't pay the IPFS + hash-check penalty.
+ * Each shape's WASM (~4MB) + ZKEY (~13MB) are fetched once per session and held in the getter's
+ * registry so the first proof doesn't pay a fetch penalty. Because we supply the getter to
+ * initForWallet ourselves, these artifacts bypass the SDK's IPFS + hash-manifest path entirely.
  */
 
 // The shapes registered on PrivacyPool during deployment
@@ -121,7 +124,7 @@ const ARMADA_SHAPES: Array<[number, number]> = [
 ]
 
 async function loadArmadaCircuits(
-  overrideArtifact: (variant: string, artifact: Artifact) => void,
+  register: (variant: string, artifact: Artifact) => void,
 ): Promise<void> {
   // eslint-disable-next-line no-console
   console.log('[railgun] Loading Armada circuit artifacts...')
@@ -150,7 +153,7 @@ async function loadArmadaCircuits(
 
       // `dat` is the native-prover witness calculator; we use the snarkjs (wasm) path, so it's
       // unused. The SDK's Artifact type still requires the key — pass it explicitly as undefined.
-      overrideArtifact(variant, { wasm, zkey, vkey, dat: undefined })
+      register(variant, { wasm, zkey, vkey, dat: undefined })
     } catch (err) {
       // Non-fatal — the SDK will fall back to IPFS for this shape
       // eslint-disable-next-line no-console
@@ -164,8 +167,8 @@ async function loadArmadaCircuits(
 
 async function doInit(): Promise<void> {
   const [
-    { startRailgunEngine, setLoggers, setOnUTXOMerkletreeScanCallback, overrideArtifact },
-    { POI },
+    { setEngine, setLoggers, setOnUTXOMerkletreeScanCallback, onBalancesUpdate },
+    { RailgunEngine, POI, EngineEvent },
     { MerkletreeScanStatus },
   ] = await Promise.all([
     import('@railgun-community/wallet'),
@@ -190,54 +193,101 @@ async function doInit(): Promise<void> {
     err.message === 'Event topic not recognized'
 
   const debugLogging = import.meta.env.DEV
-  setLoggers(
-    debugLogging
-      ? (msg: string) => {
+  // Extracted so both the wallet-SDK logger surface (setLoggers) and the engine-level debugger
+  // (initForWallet's engineDebugger arg) route through the same filtered sink — mirroring what the
+  // startRailgunEngine convenience did internally via its non-exported createEngineDebugger.
+  const sdkLog = debugLogging
+    ? (msg: string) => {
+        // eslint-disable-next-line no-console
+        console.log('[railgun]', msg)
+      }
+    : () => {}
+  const sdkError = debugLogging
+    ? (err: Error) => {
+        if (isBenignEngineEventNoise(err)) {
           // eslint-disable-next-line no-console
-          console.log('[railgun]', msg)
+          console.debug('[railgun] (benign engine event noise)', err.message)
+          return
         }
-      : () => {},
-    debugLogging
-      ? (err: Error) => {
-          if (isBenignEngineEventNoise(err)) {
-            // eslint-disable-next-line no-console
-            console.debug('[railgun] (benign engine event noise)', err.message)
-            return
-          }
-          // eslint-disable-next-line no-console
-          console.error('[railgun]', err)
-        }
-      : (err: Error) => {
-          if (isBenignEngineEventNoise(err)) return
-          trackError('railgun.sdk', err)
-        },
-  )
+        // eslint-disable-next-line no-console
+        console.error('[railgun]', err)
+      }
+    : (err: Error) => {
+        if (isBenignEngineEventNoise(err)) return
+        trackError('railgun.sdk', err)
+      }
+  setLoggers(sdkLog, sdkError)
 
   const db = createWebDatabase(ENGINE_DB_NAME)
-  const artifactStore = await createBrowserArtifactStore()
 
-  await startRailgunEngine(
+  // Quick-sync callback (initForWallet arg 4) — the relayer-v2 watcher client. It hydrates the
+  // wallet's merkletree from our pre-indexed AccumulatedEvents instead of an O(chain-length) event
+  // scan. When VITE_INDEXER_URL is unset it returns empty → the engine falls back to the slow
+  // on-chain scan (B4), so this is safe to wire unconditionally. On-chain merkleroot validation
+  // (WI-4) keeps a malicious/buggy watcher from ever forging balances.
+  // POI / TXID-merkletree callbacks (args 5-7). POI is disabled in this deployment (see the dummy
+  // node interface below), so these stay stubbed. NOTE: the arg-6 validator is the TXID (POI) tree
+  // validator — a different concern from the UTXO merkleroot check that guards displayed balances
+  // (WI-4). Do not wire on-chain rootHistory here.
+  const quickSyncRailgunTransactionsV2Stub = async () => []
+  const txidMerklerootValidatorStub = async () => true
+  const getLatestValidatedRailgunTxidStub = async () => ({
+    txidIndex: undefined,
+    merkleroot: undefined,
+  })
+
+  // Engine-level verbose/error logging. Same sink as setLoggers above (see sdkLog/sdkError).
+  const engineDebugger = { log: sdkLog, error: sdkError, verboseScanLogging: debugLogging }
+
+  // Construct the engine ourselves (rather than via the startRailgunEngine convenience) so we can
+  // supply our own quick-sync source (arg 4) and ArtifactGetter (arg 3 — the SDK's
+  // download-just-in-time getter isn't exported). setEngine then registers this instance with the
+  // wallet-SDK singleton, so every other convenience (wallet lifecycle, balances, provider
+  // loading) keeps working unchanged against our engine.
+  const engine = await RailgunEngine.initForWallet(
     ENGINE_WALLET_SOURCE,
     db as never, // level-js export shape isn't typed; SDK accepts the leveldown-compatible API
-    debugLogging, // shouldDebug — gated on DEV (P1-27)
-    artifactStore,
-    false, // useNativeArtifacts (false = WASM for browser)
+    armadaArtifactGetter,
+    quickSyncEventsClient,
+    quickSyncRailgunTransactionsV2Stub,
+    txidMerklerootValidatorStub,
+    getLatestValidatedRailgunTxidStub,
+    engineDebugger,
     false, // skipMerkletreeScans (false = enable balance scanning)
-    undefined, // poiNodeURLs (POI disabled; see POI.init below)
-    undefined, // customPOILists
-    debugLogging, // verboseScanLogging — gated on DEV (P1-27)
+  )
+  setEngine(engine)
+
+  // Replicate the internal balance-complete listener that startRailgunEngine wires but the
+  // low-level initForWallet does not: on UTXOScanDecryptBalancesComplete, recompute each wallet's
+  // balances (onBalancesUpdate drives setOnBalanceUpdateCallback in sync.ts) and emit scan-complete
+  // (which our setOnUTXOMerkletreeScanCallback below maps to syncStateAtom → complete). Without
+  // this, shielded balances never populate and the sync banner never clears. The building blocks
+  // are exported even though the SDK's own wiring helper is not.
+  engine.on(
+    EngineEvent.UTXOScanDecryptBalancesComplete,
+    (event: UTXOScanDecryptBalancesCompleteEventData) => {
+      const { txidVersion, chain, walletIdFilter } = event
+      void (async () => {
+        let walletsToUpdate = Object.values(engine.wallets)
+        if (walletIdFilter != null) {
+          walletsToUpdate = walletsToUpdate.filter((wallet) => walletIdFilter.includes(wallet.id))
+        }
+        await Promise.all(walletsToUpdate.map((wallet) => onBalancesUpdate(txidVersion, wallet, chain)))
+        engine.emitScanEventHistoryComplete(txidVersion, chain)
+      })()
+    },
   )
 
-  // Override the SDK's IPFS artifact pipeline with Armada's own circuits.
-  // startRailgunEngine hardcodes artifactGetterDownloadJustInTime which downloads
-  // from IPFS and validates against Railgun's hash manifest. overrideArtifact()
-  // writes directly into the in-memory cache, bypassing both IPFS and hash checks.
-  // The serveCircuitArtifacts() Vite dev middleware serves armada-circuits/build for ALL
-  // networks (local + sepolia), so gate on DEV rather than network: any dev-server run gets
-  // Armada artifacts. Production builds skip this — the static-artifact path for prod sepolia
-  // is tracked separately (F4/#408) and until it lands, prod sepolia is not supported.
+  // Register Armada's own circuits with our ArtifactGetter. Because we own the getter, these
+  // bypass the SDK's IPFS + hash-manifest path entirely (the same effect overrideArtifact had, but
+  // through our getter rather than the SDK's non-exported internal one). The serveCircuitArtifacts()
+  // Vite dev middleware serves armada-circuits/build for ALL networks (local + sepolia), so gate on
+  // DEV rather than network: any dev-server run gets Armada artifacts. Production builds skip this —
+  // the static-artifact path for prod sepolia is tracked separately (F4/#408) and until it lands,
+  // prod sepolia is not supported. (Prod's own preload — preloadArtifactsFromOrigin in artifacts.ts,
+  // called from App.tsx — also feeds this same getter registry.)
   if (import.meta.env.DEV) {
-    await loadArmadaCircuits(overrideArtifact)
+    await loadArmadaCircuits(setArmadaArtifact)
   }
 
   // Wire SDK merkletree scan progress into syncStateAtom so the UI can show a banner +

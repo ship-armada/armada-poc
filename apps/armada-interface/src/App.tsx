@@ -18,6 +18,7 @@ import { useNowTicker } from '@/hooks/useNowTicker'
 import { useRailgunEngineSync } from '@/hooks/useRailgunEngineSync'
 import { useFees } from '@/hooks/useFees'
 import { useShieldedBalanceSync } from '@/hooks/useShieldedBalanceSync'
+import { useNullifierCrossCheck } from '@/hooks/useNullifierCrossCheck'
 import { useTabVisible } from '@/hooks/useTabVisible'
 import { useTxHistory } from '@/hooks/useTxHistory'
 import { useTxResume } from '@/hooks/useTxResume'
@@ -70,6 +71,9 @@ export function App() {
   // mirrors the active wallet's shielded USDC balance into shieldedUsdcAtom for BalanceHero
   // and the shield/unshield modals.
   useShieldedBalanceSync()
+  // WI-5: after each shielded scan completes, cross-check the wallet's own unspent notes against
+  // the hub PrivacyPool's on-chain nullifier set and block spending if the indexer omitted a spend.
+  useNullifierCrossCheck()
   // Poll the connected wallet's hub USDC balance into usdcBalancesAtom so the ShieldModal's
   // MAX is populated and the user can shield without typing an arbitrary number.
   useUsdcBalances()

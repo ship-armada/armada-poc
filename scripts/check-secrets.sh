@@ -24,6 +24,7 @@ ALLOWED_FILES=(
   "relayer/test/modules/railgun-wallet.test.ts"  # Anvil's publicly-known test mnemonic — required to prove deterministic derivation
   "scripts/multicall3-bytecode.ts"  # Canonical Multicall3 public runtime bytecode (not a key) — etched onto local Anvil
   "scripts/capture/vectors/keyset-vectors.json"  # Phase 0 keyset vectors derived from FIXED TEST SEEDS (not real secrets); the live-testnet crosscheck stores only the public 0zk address
+  "scripts/capture/spike-claim-as-transfer.ts"  # Phase 0 spike — publicly-known Anvil + BIP-39 test mnemonics only
 )
 
 # Directories whose entire contents are captured differential test vectors derived from FIXED TEST

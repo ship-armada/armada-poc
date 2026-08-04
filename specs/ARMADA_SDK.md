@@ -519,6 +519,10 @@ address, `feesCacheId`, TTL). Fees are bound in-band on both paths:
 
 - **Transact path:** `planTransfer` computes the fee output note to the broadcaster's 0zk
   address from the quote and includes it in the plan; the proof then commits it.
+  Phase 0 Spike 2: the broadcaster fee output note MUST be the **first** transact output — the
+  relayer verifies the *first decryptable* note (`extractFirstNoteERC20AmountMap`); with the fee
+  note placed second, verification returns 0 and the relayer rejects `FEE_INSUFFICIENT`.
+  Confirmed end-to-end (recipient-0x-absent, fee verified, claim/reclaim nullifier race).
 - **Shield path (#410):** `buildRequest` computes the relayer fee note (§4.6 Shield) with
   **grossed-up fee tiers** so the relayer nets its target amount *after* the on-chain shield
   fee is applied — the gross-up math is part of the SDK's fee model, not left to callers.

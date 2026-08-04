@@ -1,0 +1,33 @@
+{
+  "primitive": "note ciphertext V2 / ECIES (§2)",
+  "engineVersion": "9.6.0",
+  "capturedFromMainSha": "b21d4d9b2fe0e06fa44589de164ba00c54bb2b43",
+  "note": "commitmentCiphertext (AES-256-GCM envelope + blinded Curve25519 keys); receiver viewing key decrypts to the note.",
+  "receiverViewingPublicKey": "0x3e6fc88bb005f36b59d17a640e88955bf3dd454b9c465dd54af3ad85afc4a2ce",
+  "commitmentCiphertext": [
+    {
+      "ciphertext": [
+        "0x701c6a68c41d275771fa052be6423e4f2042a9d7bc1ad21013d7a18a83bdfe0c",
+        "0x9b3d12b08e6eb160e9ed7e399da6b4c476ea8a0469ae551c0ff42cfdc57b8a9b",
+        "0x1c5b2cc35bdda143e4109db6bd0ce9a891a05b451c554822312cf9e0c38f5a51",
+        "0xdb1985e403fcb68fe22e8676d7c332bbb08fe4897102f558170adf0b19a52552"
+      ],
+      "blindedSenderViewingKey": "0x84254536c39f3b31b51a4b8ab85bff5deaa4169b382c5fcdd3b543e3c78a2a66",
+      "blindedReceiverViewingKey": "0x5e07b48b065441bda1fb41d8148ee3c0ed2c0a86570badf0cd620566fd39b843",
+      "memo": "0x",
+      "annotationData": "0x3e483eccf5664582bba91805600aeb2462c0bba97be1eef91490d1fecf637172849b32db42124c39c748d2809a8fb97e7d5eaabbd31d731b675582823242"
+    },
+    {
+      "ciphertext": [
+        "0x865f01588035bb027e306fe7631c3d377c1ef462d409510dcba553ae427d48db",
+        "0xcbb406d688769d739784825c6cdb5db1bd8e13fbccbfb2612892901a06809693",
+        "0x685ea45055b75419e98da70d60fba2865ce86f30eb4a7faa2f7ed7321fd62f95",
+        "0x05e84bd0b2d0ec4e477265a4d85d8196e61169e21dafca3087b20d9bdcbb84b0"
+      ],
+      "blindedSenderViewingKey": "0xeb7bba568e28e0ad2c582658d608183bff515ec1e628d736301290a1cdc1244e",
+      "blindedReceiverViewingKey": "0xeb7bba568e28e0ad2c582658d608183bff515ec1e628d736301290a1cdc1244e",
+      "memo": "0x",
+      "annotationData": "0x0012c5aebad7ede4ae86231e5c67c931b2e5ea7b63a23c56988ec0ce4aec78008752a48f8aa16e796a6c5556188e2fa13b0ff7172b2026c912ca99f9e4da"
+    }
+  ]
+}

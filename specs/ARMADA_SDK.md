@@ -318,6 +318,13 @@ Requirements:
   (§10.1). If byte-equality with the shim path is impossible without the mnemonic detour, the
   fallback is to keep the mnemonic construction *inside* `fromRootSecret` as an implementation
   detail — the API contract (raw bytes in, canonical keyset out, reproducible) is what matters.
+  Phase 0 Spike 1 (engine 9.6.0) — CONFIRMED: `fromRootSecret` retains the BIP-32 mnemonic
+  detour (`deriveInternalMnemonic` → `createWalletFromMnemonic`) internally. It reproduces the
+  full keyset byte-for-byte across independent engine instances
+  (`scripts/capture/vectors/keyset-vectors.json`) and resolves a live testnet wallet to its
+  exact on-chain 0zk address (`0zk1…cutqe08`). Direct HKDF would yield a different keyset (the
+  documented Phase-1/Phase-2 non-interop); the detour is retained to preserve testnet identity.
+  Load-bearing requirement satisfied.
 - Baby Jubjub validity checks on all derived/imported keys: subgroup membership, non-zero
   scalars, canonical encodings. Reject, never clamp silently.
 - Recovery-path parity per TX_SIGNING v2: re-sign (deterministic EOAs, double-sign verification
@@ -735,7 +742,7 @@ implement it against the same spec later.
 | 3 | Quick-sync indexer: build now vs later | 2 (defer ok) | Define interface now, implement later |
 | 4 | Claim-envelope AEAD: AES-256-GCM vs XChaCha20-Poly1305 | 3 | AES-256-GCM (WebCrypto-native, matches backup format) |
 | 5 | Recipient directory (ENS text records, integrator-held, none) | 3+ | Ship resolver orders (1)–(3) only; directory is product work |
-| 6 | `fromRootSecret` internal path if byte-equality demands the mnemonic detour | 0/2 | Accept internal detour; API contract unchanged (§4.2) |
+| 6 | `fromRootSecret` internal path — detour vs direct-HKDF | 0 ✓ RESOLVED | Retain BIP-32 mnemonic detour internally. Spike 1 (engine 9.6.0) verified byte-reproducibility + a live testnet wallet resolving to its exact 0zk. Direct-HKDF (fresh identity) rejected — breaks testnet continuity. API contract unchanged. |
 | 7 | Per-installation counter salt scheme for multi-device claim counters | 3 | Random per-installation component mixed into `info`; document |
 | 8 | `ExternalSigner` out-of-process transport (HTTP vs socket vs enclave RPC) | Integration project | Not an SDK decision — SDK freezes the in-process interface; transport defined per integration (`specs/PAROS_INTEGRATION.md`) |
 

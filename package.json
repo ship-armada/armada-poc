@@ -54,7 +54,7 @@
     "test:mcp:e2e": "npx mocha --require ts-node/register mcp-server/test/e2e.test.ts",
     "test:mcp:all": "npx mocha --require ts-node/register 'mcp-server/test/**/*.test.ts'",
     "test:relayer": "npx mocha --require ts-node/register 'relayer/test/**/*.test.ts'",
-    "test:sdk-backend": "TS_NODE_TRANSPILE_ONLY=1 npx mocha --require ts-node/register 'test/sdk-backend/**/*.test.ts'",
+    "test:sdk-backend": "npx mocha --require ts-node/register 'test/sdk-backend/**/*.test.ts'",
     "test:forge": "forge test --offline",
     "halmos": "halmos",
     "halmos:allocation": "halmos --contract HalmosAllocationTest --match-test '^(check_allocPlusRefundEqualsCommitted|check_allocNeverExceedsCommitted|check_underSubscribedFullAllocation|check_zeroCommittedReturnsZero)'",
@@ -114,7 +114,7 @@
     "verify:etherscan:sepolia:clientB": "hardhat run scripts/verify_sepolia.ts --network sepoliaClientB"
   },
   "dependencies": {
-    "@armada/sdk": "github:ship-armada/armada-sdk#41899328d1b0f084e4e63e5efb454ed3ffcbb3a2",
+    "@armada/sdk": "github:ship-armada/armada-sdk#65bce0d372edf741dacd0eb432146412b4f3e28c",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
     "@nomicfoundation/hardhat-ethers": "^3.1.3",

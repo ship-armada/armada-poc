@@ -27,8 +27,10 @@ import { IdempotencyStore } from "./modules/idempotency-store";
 import { CctpDeliveryStore } from "./modules/cctp-delivery-store";
 import { CCTPRelayModule } from "./modules/cctp-relay";
 import { IrisRelayModule } from "./modules/iris-relay";
+import { deriveBroadcasterIdentity } from "./modules/broadcaster-fee-verifier";
 import type { PrivacyPoolDeployment, CCTPDeployment, RelayerHealth } from "./types";
 import { getNetworkConfig } from "../config/networks";
+import { selectedBackend } from "../lib/sdk/shielded-identity";
 import { installBisectingGetLogs } from "./lib/rpc-bisecting";
 import { NonceCoordinator } from "./lib/nonce-coordinator";
 
@@ -259,6 +261,22 @@ async function main() {
     }
   }
 
+  // Under SDK_BACKEND=armada, route broadcaster-fee verification through @armada/sdk's native
+  // decode API instead of the stock engine helper. Derive the broadcaster identity from the SAME
+  // mnemonic as the stock 0zk wallet so both backends verify against the same address. Presence of
+  // this field in the verifier context flips the path; stock remains the default when unset.
+  const armadaBroadcaster =
+    selectedBackend() === "armada"
+      ? await deriveBroadcasterIdentity(
+          armadaRelayerSettings.railgunWalletMnemonic.trim(),
+        )
+      : undefined;
+  if (armadaBroadcaster) {
+    console.log(
+      "[armada] SDK_BACKEND=armada — broadcaster-fee verification via @armada/sdk decode API",
+    );
+  }
+
   // Initialize privacy relay. Multi-chain — receives requests from any configured chain,
   // dispatches via the right provider, fee-verifies via the right path.
   console.log("[armada] Initializing privacy relay...");
@@ -271,6 +289,7 @@ async function main() {
       privacyPoolAddress: hubAddresses.privacyPool,
       hubChainId: netConfig.hub.chainId,
       usdcAddress: hubAddresses.usdc,
+      ...(armadaBroadcaster ? { armadaBroadcaster } : {}),
     },
     { wrappersByChain, wallet: railgunWallet.getWallet() },
     counters,

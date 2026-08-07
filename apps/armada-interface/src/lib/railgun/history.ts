@@ -12,6 +12,8 @@ import {
 import { lifecycleFor } from '@/lib/tx/lifecycles'
 import type { TxKind, TxRecord } from '@/lib/tx/types'
 import { getHubBlockTimestamps, getHubChainDescriptor } from './network'
+import { sdkReadPathEnabled, syncSdkHistory } from './shadow-sdk'
+import type { HistoryEntry } from '@armada/sdk'
 
 // Defer the SDK import to runtime — same jsdom-init-crash mitigation as wallet.ts / sync.ts.
 type RailgunSdk = typeof import('@railgun-community/wallet')
@@ -394,11 +396,118 @@ export interface HistoryScanResult {
  * pure-async (SDK + math, no side effects) lets tests stub `scanWalletHistory` with a fixture
  * and assert the mapping + checkpoint math without an IDB harness.
  */
+/* ───────────── @armada/sdk history mapper (read-path cutover) ───────────── */
+
+/**
+ * Map an @armada/sdk `HistoryEntry` → `TxRecord`. Simpler than the engine mapper: the SDK classifies
+ * yield deposit/withdraw natively (no adapter-address heuristic), and carries recipient + fee + memo
+ * inline. `value` is a signed wallet delta (negative = outflow); `timestampMs` is resolved by the
+ * caller from `blockNumber`. Returns null only if a future SDK category isn't handled here.
+ */
+export function historyEntryToTxRecord(
+  entry: HistoryEntry,
+  walletId: string,
+  ctx: HistoryMapContext,
+  timestampMs: number,
+): TxRecord | null {
+  const sourceTxHash = `0x${entry.txid.replace(/^0x/, '')}` as const
+  const walletContext = walletContextFor(walletId, ctx.hubChainId)
+  const abs = entry.value < 0n ? -entry.value : entry.value
+  const broadcasterFee = entry.broadcasterFee ?? 0n
+  const artifacts = { sourceTxHash }
+  const times = { updatedSeq: 0, createdAt: timestampMs, updatedAt: timestampMs } as const
+
+  switch (entry.category) {
+    case 'shield': {
+      const stages = terminalizeStages('shield')
+      return {
+        id: syntheticTxId(entry.txid, entry.category), kind: 'shield', executionState: 'completed',
+        stage: stages.stage, stagesCompleted: stages.stagesCompleted, ...times, artifacts, walletContext,
+        meta: { amount: entry.value + (entry.shieldFee ?? 0n), feeCacheId: '', fromChainId: ctx.hubChainId },
+      }
+    }
+    case 'transfer-received': {
+      const stages = terminalizeStages('transfer-shielded-received')
+      return {
+        id: syntheticTxId(entry.txid, entry.category), kind: 'transfer-shielded-received', executionState: 'completed',
+        stage: stages.stage, stagesCompleted: stages.stagesCompleted, ...times, artifacts, walletContext,
+        meta: { amount: entry.value, ...(entry.memo ? { memoText: entry.memo } : {}) },
+      }
+    }
+    case 'transfer-sent': {
+      const stages = terminalizeStages('transfer-shielded')
+      const recipientAmount = entry.sentOutputs?.reduce((a, o) => a + o.value, 0n) ?? abs - broadcasterFee
+      return {
+        id: syntheticTxId(entry.txid, entry.category), kind: 'transfer-shielded', executionState: 'completed',
+        stage: stages.stage, stagesCompleted: stages.stagesCompleted, ...times, artifacts, walletContext,
+        meta: {
+          amount: recipientAmount, feeCacheId: '',
+          recipient: entry.sentOutputs?.[0]?.recipientRailgunAddress ?? 'unknown',
+          broadcasterFeeAmount: broadcasterFee, broadcasterRailgunAddress: '',
+        },
+      }
+    }
+    case 'unshield': {
+      const stages = terminalizeStages('unshield-local')
+      return {
+        id: syntheticTxId(entry.txid, entry.category), kind: 'unshield-local', executionState: 'completed',
+        stage: stages.stage, stagesCompleted: stages.stagesCompleted, ...times, artifacts, walletContext,
+        meta: {
+          amount: abs - broadcasterFee - (entry.unshieldFee ?? 0n), feeCacheId: '',
+          recipient: entry.recipient ?? 'unknown',
+          broadcasterFeeAmount: broadcasterFee, broadcasterRailgunAddress: '',
+        },
+      }
+    }
+    case 'yield-deposit': {
+      const stages = terminalizeStages('yield-deposit')
+      return {
+        id: syntheticTxId(entry.txid, entry.category), kind: 'yield-deposit', executionState: 'completed',
+        stage: stages.stage, stagesCompleted: stages.stagesCompleted, ...times, artifacts, walletContext,
+        meta: { amount: abs, feeCacheId: '', broadcasterFeeAmount: broadcasterFee, broadcasterRailgunAddress: '' },
+      }
+    }
+    case 'yield-withdraw': {
+      const stages = terminalizeStages('yield-withdraw')
+      return {
+        id: syntheticTxId(entry.txid, entry.category), kind: 'yield-withdraw', executionState: 'completed',
+        stage: stages.stage, stagesCompleted: stages.stagesCompleted, ...times, artifacts, walletContext,
+        meta: { amount: entry.value, feeCacheId: '', shares: 0n, broadcasterFeeAmount: 0n, broadcasterRailgunAddress: '' },
+      }
+    }
+    default:
+      return null
+  }
+}
+
+/** SDK-sourced history scan (read-path cutover) — mirrors `runHistoryScan`'s contract. */
+async function runSdkHistoryScan(
+  walletId: string,
+  ctx: HistoryMapContext,
+  fromBlock: number | undefined,
+): Promise<HistoryScanResult> {
+  const entries = await syncSdkHistory(fromBlock)
+  const blocks = [...new Set(entries.map(e => e.blockNumber))]
+  const timestamps = blocks.length > 0 ? await getHubBlockTimestamps(blocks) : new Map<number, number>()
+
+  const records: TxRecord[] = []
+  let highest: number | null = null
+  for (const entry of entries) {
+    const seconds = timestamps.get(entry.blockNumber)
+    const record = historyEntryToTxRecord(entry, walletId, ctx, seconds !== undefined ? seconds * 1000 : 0)
+    if (record) records.push(record)
+    if (highest === null || entry.blockNumber > highest) highest = entry.blockNumber
+  }
+  records.sort((a, b) => b.updatedAt - a.updatedAt)
+  return { records, highestBlock: highest, itemCount: entries.length }
+}
+
 export async function runHistoryScan(
   walletId: string,
   ctx: HistoryMapContext,
   fromBlock: number | undefined,
 ): Promise<HistoryScanResult> {
+  if (sdkReadPathEnabled()) return runSdkHistoryScan(walletId, ctx, fromBlock)
   const items = await scanWalletHistory(walletId, fromBlock)
   // The SDK doesn't populate `item.timestamp` on every chain (observed on local Anvil and some
   // public RPC providers) — without backfill, downstream rows render the Unix epoch ("Dec 31,

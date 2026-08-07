@@ -2,7 +2,7 @@
 // ABOUTME: balance settles and reports parity (address + balance + history) via telemetry. Dev-gated; no behavior change.
 
 import { useEffect, useRef } from 'react'
-import { runShadowDifferential } from '../lib/railgun/shadow-sdk'
+import { runShadowDifferential, closeShadowSdk } from '../lib/railgun/shadow-sdk'
 import { isUnlocked } from '../lib/railgun/keyManager'
 import { track } from '../lib/telemetry'
 
@@ -19,7 +19,13 @@ export function useShadowDifferential(engineUsdcBalance: bigint | undefined): vo
   const lastRun = useRef<bigint | null>(null)
 
   useEffect(() => {
-    if (!SHADOW_ENABLED || engineUsdcBalance === undefined || !isUnlocked()) return
+    if (!SHADOW_ENABLED) return
+    if (engineUsdcBalance === undefined || !isUnlocked()) {
+      // Locked or not yet synced — tear down the persistent shadow instance (idempotent).
+      lastRun.current = null
+      void closeShadowSdk()
+      return
+    }
     if (lastRun.current === engineUsdcBalance) return
     lastRun.current = engineUsdcBalance
 

@@ -18,8 +18,6 @@ import { useNowTicker } from '@/hooks/useNowTicker'
 import { useRailgunEngineSync } from '@/hooks/useRailgunEngineSync'
 import { useFees } from '@/hooks/useFees'
 import { useShieldedBalanceSync } from '@/hooks/useShieldedBalanceSync'
-import { useShadowDifferential } from '@/hooks/useShadowDifferential'
-import { useBalances } from '@/hooks/useBalances'
 import { useNullifierCrossCheck } from '@/hooks/useNullifierCrossCheck'
 import { useTabVisible } from '@/hooks/useTabVisible'
 import { useTxHistory } from '@/hooks/useTxHistory'
@@ -73,9 +71,6 @@ export function App() {
   // mirrors the active wallet's shielded USDC balance into shieldedUsdcAtom for BalanceHero
   // and the shield/unshield modals.
   useShieldedBalanceSync()
-  // Phase A read-path shadow: run @armada/sdk alongside the engine and telemetry-report parity
-  // (0zk address + shielded USDC + history). Dev-gated, observe-only — no behavior change.
-  useShadowDifferential(useBalances().shielded ?? undefined)
   // WI-5: after each shielded scan completes, cross-check the wallet's own unspent notes against
   // the hub PrivacyPool's on-chain nullifier set and block spending if the indexer omitted a spend.
   useNullifierCrossCheck()

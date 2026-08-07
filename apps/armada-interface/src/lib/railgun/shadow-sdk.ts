@@ -124,6 +124,25 @@ export async function runShadowDifferential(engineUsdcBalance: bigint): Promise<
   }
 }
 
+/**
+ * Read-path cutover flag. When set, the app sources its shielded **USDC** balance from the SDK
+ * (`syncSdkUsdcBalance`) instead of the stock engine — the engine still scans (fallback + yield
+ * shares), and the redundant shadow comparison is skipped. Off by default; the engine drives.
+ */
+export function sdkReadPathEnabled(): boolean {
+  return import.meta.env.VITE_SDK_READ_PATH === '1'
+}
+
+/** Sync the persistent SDK wallet and return its shielded USDC balance (spendable + pending). */
+export async function syncSdkUsdcBalance(): Promise<bigint> {
+  const { wallet } = await ensureInstance()
+  await wallet.sync()
+  const cfg = shadowConfig()
+  const usdcHash = getTokenDataHash(getTokenDataERC20(cfg.pool.usdcAddress))
+  const usdc = (await wallet.balances()).find(b => b.tokenHash === usdcHash)
+  return usdc ? usdc.spendable + usdc.pending : 0n
+}
+
 /** Close the persistent instance (call on wallet lock). Idempotent. */
 export async function closeShadowSdk(): Promise<void> {
   if (instance !== null) {

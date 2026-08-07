@@ -11,7 +11,7 @@ import {
   type ArtifactSource,
   type HistoryEntry,
 } from '@armada/sdk'
-import { getCachedDeployments, getUsdcAddress } from '../../config/deployments'
+import { getCachedDeployments, getUsdcAddress, loadYieldDeployment } from '../../config/deployments'
 import { getNetworkConfig } from '../../config/network'
 import * as keyManager from './keyManager'
 
@@ -43,11 +43,23 @@ export interface ShadowComparison {
   readonly syncedThrough: number
 }
 
+/** The shielded yield-vault share token (ayUSDC), if a yield deployment exists. */
+async function vaultTokenAddress(): Promise<`0x${string}` | undefined> {
+  const yieldDeployment = await loadYieldDeployment()
+  return yieldDeployment?.contracts.armadaYieldVault as `0x${string}` | undefined
+}
+
 /** Assemble the SDK config from the same deployment + network config the engine uses. */
-function shadowConfig(): {
-  pool: { chainId: number; poolAddress: `0x${string}`; deployBlock: number; usdcAddress: `0x${string}` }
+async function shadowConfig(): Promise<{
+  pool: {
+    chainId: number
+    poolAddress: `0x${string}`
+    deployBlock: number
+    usdcAddress: `0x${string}`
+    additionalTokens?: `0x${string}`[]
+  }
   rpc: { urls: string[] }
-} {
+}> {
   const deployments = getCachedDeployments()
   if (deployments === null) throw new Error('shadow-sdk: deployments not loaded')
   const hub = getNetworkConfig().hub
@@ -56,12 +68,15 @@ function shadowConfig(): {
   if (!poolAddress || !usdcAddress) {
     throw new Error('shadow-sdk: hub deployment missing privacyPool or usdc')
   }
+  // Scan the yield-vault share token too, so the SDK can report shielded ayUSDC shares.
+  const vault = await vaultTokenAddress()
   return {
     pool: {
       chainId: hub.chainId,
       poolAddress,
       deployBlock: deployments.hub.deployBlock ?? 0,
       usdcAddress,
+      ...(vault ? { additionalTokens: [vault] } : {}),
     },
     rpc: { urls: [...hub.rpcUrls] },
   }
@@ -83,7 +98,7 @@ async function ensureInstance(): Promise<{ sdk: ArmadaSdk; wallet: ShadowWallet;
 
   if (instance !== null) await instance.sdk.close()
 
-  const cfg = shadowConfig()
+  const cfg = await shadowConfig()
   const sdk = await createArmadaSdk({
     ...cfg,
     storage: new IndexedDBStorageAdapter(SHADOW_DB_NAME),
@@ -104,7 +119,7 @@ async function ensureInstance(): Promise<{ sdk: ArmadaSdk; wallet: ShadowWallet;
  */
 export async function runShadowDifferential(engineUsdcBalance: bigint): Promise<ShadowComparison> {
   const { wallet, address: engineAddress } = await ensureInstance()
-  const cfg = shadowConfig()
+  const cfg = await shadowConfig()
 
   const { syncedThrough } = await wallet.sync()
   const usdcHash = getTokenDataHash(getTokenDataERC20(cfg.pool.usdcAddress))
@@ -126,9 +141,9 @@ export async function runShadowDifferential(engineUsdcBalance: bigint): Promise<
 }
 
 /**
- * Read-path cutover flag. When set, the app sources its shielded **USDC** balance from the SDK
- * (`syncSdkUsdcBalance`) instead of the stock engine — the engine still scans (fallback + yield
- * shares), and the redundant shadow comparison is skipped. Off by default; the engine drives.
+ * Read-path cutover flag. When set, the app sources ALL shielded read state — USDC balance, yield
+ * shares, and tx history — from the SDK instead of the stock engine; the engine still scans as a
+ * fallback and the redundant shadow comparison is skipped. Off by default; the engine drives.
  */
 export function sdkReadPathEnabled(): boolean {
   return import.meta.env.VITE_SDK_READ_PATH === '1'
@@ -138,10 +153,21 @@ export function sdkReadPathEnabled(): boolean {
 export async function syncSdkUsdcBalance(): Promise<bigint> {
   const { wallet } = await ensureInstance()
   await wallet.sync()
-  const cfg = shadowConfig()
+  const cfg = await shadowConfig()
   const usdcHash = getTokenDataHash(getTokenDataERC20(cfg.pool.usdcAddress))
   const usdc = (await wallet.balances()).find(b => b.tokenHash === usdcHash)
   return usdc ? usdc.spendable + usdc.pending : 0n
+}
+
+/** Sync the persistent SDK wallet and return its shielded yield-vault shares (ayUSDC). 0 if no vault. */
+export async function syncSdkYieldShares(): Promise<bigint> {
+  const vault = await vaultTokenAddress()
+  if (vault === undefined) return 0n
+  const { wallet } = await ensureInstance()
+  await wallet.sync()
+  const vaultHash = getTokenDataHash(getTokenDataERC20(vault))
+  const shares = (await wallet.balances()).find(b => b.tokenHash === vaultHash)
+  return shares ? shares.spendable + shares.pending : 0n
 }
 
 /** Sync + reconstruct the SDK wallet's tx history (optionally only entries at/after `sinceBlock`). */

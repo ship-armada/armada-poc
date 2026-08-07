@@ -1,4 +1,4 @@
-// ABOUTME: Unit test for sdk-read's syncTracked — asserts each wallet.sync() emits a railgun.sdkSync
+// ABOUTME: Unit test for sdk-read's syncTracked — asserts each wallet.sync() emits an sdk.sync
 // ABOUTME: telemetry line carrying the exact resume window, so resume-vs-rescan stays observable.
 
 import { describe, it, expect, vi } from 'vitest'
@@ -17,12 +17,12 @@ import { syncTracked } from './sdk-read'
 import { track } from '@/lib/telemetry'
 
 describe('syncTracked', () => {
-  it('emits railgun.sdkSync with the exact { fromBlock, syncedThrough, scanned } sync returned', async () => {
+  it('emits sdk.sync with the exact { fromBlock, syncedThrough, scanned } sync returned', async () => {
     // WHY: fromBlock and syncedThrough are both numbers, so a field swap wouldn't be caught by
     // types — but it would make the resume-vs-rescan signal lie. Pin the mapping.
     const wallet = { sync: vi.fn(async () => ({ fromBlock: 501, syncedThrough: 520, scanned: true })) }
     await syncTracked(wallet)
-    expect(track).toHaveBeenCalledWith('railgun.sdkSync', {
+    expect(track).toHaveBeenCalledWith('sdk.sync', {
       fromBlock: 501,
       syncedThrough: 520,
       scanned: true,
@@ -33,7 +33,7 @@ describe('syncTracked', () => {
     // WHY: the cheap-path signal — a warm reload with no new blocks. fromBlock stays checkpoint+1.
     const wallet = { sync: vi.fn(async () => ({ fromBlock: 521, syncedThrough: 520, scanned: false })) }
     await syncTracked(wallet)
-    expect(track).toHaveBeenCalledWith('railgun.sdkSync', {
+    expect(track).toHaveBeenCalledWith('sdk.sync', {
       fromBlock: 521,
       syncedThrough: 520,
       scanned: false,

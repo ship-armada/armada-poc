@@ -109,7 +109,7 @@ async function ensureInstance(): Promise<{ sdk: ArmadaSdk; wallet: ReadWallet; a
  */
 export async function syncTracked(wallet: Pick<ReadWallet, 'sync'>): Promise<void> {
   const { fromBlock, syncedThrough, scanned } = await wallet.sync()
-  track('railgun.sdkSync', { fromBlock, syncedThrough, scanned })
+  track('sdk.sync', { fromBlock, syncedThrough, scanned })
 }
 
 /** Sync the persistent SDK wallet and return its shielded USDC balance (spendable + pending). */

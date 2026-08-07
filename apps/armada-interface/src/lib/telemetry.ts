@@ -43,6 +43,10 @@ export type EventRegistry = {
   //   'fell-back'  — attempted but failed → engine slow-scans (paired with a railgun.quickSync error)
   'railgun.quicksync':        { outcome: 'served' | 'no-indexer' | 'fell-back'; pages?: number; commitments?: number; unshields?: number; nullifiers?: number; throughBlock?: number; reason?: string }
 
+  // Read-path shadow differential — @armada/sdk scanned alongside the engine (Phase A). Booleans +
+  // balances only; no raw 0zk addresses (privacy). `addressMatch`/`balanceMatch` false = a parity gap.
+  'railgun.shadow':           { addressMatch: boolean; balanceMatch: boolean; sdkBalance: string; engineBalance: string; historyCount: number; syncedThrough: number; error?: string }
+
   'tx.submitted':             { id: string; kind: TxKind }
   'tx.transition':            { id: string; kind: TxKind; from: TxStage; to: TxStage; executionState: TxRecord['executionState'] }
   'tx.failed':                { id: string; kind: TxKind; errorCode?: string }

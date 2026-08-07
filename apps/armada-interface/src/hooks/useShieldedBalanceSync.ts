@@ -16,6 +16,7 @@ import {
   refreshShieldedBalances,
   subscribeBalanceUpdates,
 } from '@/lib/railgun/sync'
+import { closeShadowSdk, sdkReadPathEnabled, syncSdkUsdcBalance } from '@/lib/railgun/shadow-sdk'
 import { trackError } from '@/lib/telemetry'
 
 /**
@@ -50,6 +51,8 @@ export function useShieldedBalanceSync(): void {
       setShieldedUsdc(null)
       setYieldShares(null)
       setSyncState({ status: 'idle', progress: 0 })
+      // Under the read-path flag, this hook owns the SDK instance — tear it down on lock.
+      if (sdkReadPathEnabled()) void closeShadowSdk()
       return
     }
 
@@ -68,9 +71,14 @@ export function useShieldedBalanceSync(): void {
         const vaultAddress = yieldDeployment?.contracts.armadaYieldVault
 
         // Query USDC + (optional) yield-vault shares in parallel. Promise.allSettled so one
-        // chain hiccup doesn't blank the other atom.
+        // chain hiccup doesn't blank the other atom. Under the read-path cutover flag, USDC comes
+        // from the @armada/sdk instance instead of the engine (yield shares stay engine-sourced).
         const [usdcResult, sharesResult] = await Promise.allSettled([
-          usdcAddress ? getShieldedERC20Balance(walletId, usdcAddress) : Promise.resolve(0n),
+          sdkReadPathEnabled()
+            ? syncSdkUsdcBalance()
+            : usdcAddress
+              ? getShieldedERC20Balance(walletId, usdcAddress)
+              : Promise.resolve(0n),
           vaultAddress ? getShieldedERC20Balance(walletId, vaultAddress) : Promise.resolve(0n),
         ])
 

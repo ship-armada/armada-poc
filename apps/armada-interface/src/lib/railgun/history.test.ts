@@ -418,3 +418,47 @@ describe('walletContext on synthesized records', () => {
     expect(r!.walletContext.sourceChainId).toBe(HUB_CHAIN_ID)
   })
 })
+
+// ── @armada/sdk read-path mapper (historyEntryToTxRecord) ──────────────────
+import { historyEntryToTxRecord } from './history'
+import type { HistoryEntry } from '@armada/sdk'
+
+const SDK_CTX = { hubChainId: 31337 }
+const sdkEntry = (over: Partial<HistoryEntry>): HistoryEntry => ({
+  txid: '0xabc',
+  blockNumber: 100,
+  category: 'shield',
+  tokenAddress: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+  value: 1_000_000n,
+  ...over,
+})
+
+describe('historyEntryToTxRecord (@armada/sdk read path)', () => {
+  it('shield → shield, amount includes the shield fee', () => {
+    const r = historyEntryToTxRecord(sdkEntry({ category: 'shield', value: 995_000n, shieldFee: 5_000n }), 'w', SDK_CTX, 5000)
+    expect(r).toMatchObject({ kind: 'shield', id: 'synth:0xabc:shield', createdAt: 5000, meta: { amount: 1_000_000n } })
+  })
+
+  it('transfer-sent → transfer-shielded, recipient + broadcaster fee split from sentOutputs', () => {
+    const r = historyEntryToTxRecord(
+      sdkEntry({ category: 'transfer-sent', value: -500_000n, broadcasterFee: 20_000n, sentOutputs: [{ recipientRailgunAddress: '0zk_bob', value: 480_000n }] }),
+      'w', SDK_CTX, 5000,
+    )
+    expect(r).toMatchObject({ kind: 'transfer-shielded', meta: { amount: 480_000n, broadcasterFeeAmount: 20_000n, recipient: '0zk_bob' } })
+  })
+
+  it('transfer-received → received, memo passed through', () => {
+    const r = historyEntryToTxRecord(sdkEntry({ category: 'transfer-received', value: 250_000n, memo: 'hi' }), 'w', SDK_CTX, 5000)
+    expect(r).toMatchObject({ kind: 'transfer-shielded-received', meta: { amount: 250_000n, memoText: 'hi' } })
+  })
+
+  it('unshield → unshield-local, recipient + net amount (minus fees)', () => {
+    const r = historyEntryToTxRecord(sdkEntry({ category: 'unshield', value: -500_000n, broadcasterFee: 10_000n, unshieldFee: 2_500n, recipient: '0xrecipient' }), 'w', SDK_CTX, 5000)
+    expect(r).toMatchObject({ kind: 'unshield-local', meta: { amount: 487_500n, recipient: '0xrecipient', broadcasterFeeAmount: 10_000n } })
+  })
+
+  it('yield deposit + withdraw map natively (no adapter heuristic)', () => {
+    expect(historyEntryToTxRecord(sdkEntry({ category: 'yield-deposit', value: -900_000n }), 'w', SDK_CTX, 5000)).toMatchObject({ kind: 'yield-deposit', meta: { amount: 900_000n } })
+    expect(historyEntryToTxRecord(sdkEntry({ category: 'yield-withdraw', value: 950_000n }), 'w', SDK_CTX, 5000)).toMatchObject({ kind: 'yield-withdraw', meta: { amount: 950_000n } })
+  })
+})

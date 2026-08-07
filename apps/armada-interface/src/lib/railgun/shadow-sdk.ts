@@ -9,6 +9,7 @@ import {
   type ArmadaSdk,
   type ProverAdapter,
   type ArtifactSource,
+  type HistoryEntry,
 } from '@armada/sdk'
 import { getCachedDeployments, getUsdcAddress } from '../../config/deployments'
 import { getNetworkConfig } from '../../config/network'
@@ -141,6 +142,13 @@ export async function syncSdkUsdcBalance(): Promise<bigint> {
   const usdcHash = getTokenDataHash(getTokenDataERC20(cfg.pool.usdcAddress))
   const usdc = (await wallet.balances()).find(b => b.tokenHash === usdcHash)
   return usdc ? usdc.spendable + usdc.pending : 0n
+}
+
+/** Sync + reconstruct the SDK wallet's tx history (optionally only entries at/after `sinceBlock`). */
+export async function syncSdkHistory(sinceBlock?: number): Promise<HistoryEntry[]> {
+  const { wallet } = await ensureInstance()
+  await wallet.sync()
+  return wallet.history(sinceBlock !== undefined ? { sinceBlock } : {})
 }
 
 /** Close the persistent instance (call on wallet lock). Idempotent. */

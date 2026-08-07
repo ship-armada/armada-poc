@@ -6,6 +6,8 @@ Status: planning (2026-08). Read alongside `.claude/PLAN_ARMADA_INTERFACE.md` (t
 
 The SDK, relayer, and interface are all **pre-production**. Optimize for long-term-clean solutions; make whatever changes are needed to get there. **Never lock into a Railgun-inherited shape for short-term compatibility ease.** End goal: remove `@railgun-community/*` as a dependency **entirely**. The SDK is meant to be consumed by future apps, so its public API must be **SDK-owned**, not a Railgun passthrough.
 
+**No dual-format / dual-SDK maintenance.** Do not run the Railgun shape and the SDK shape in parallel to smooth a transition — migrate **totally** and cut over. This governs both the watcher's quick-sync (native shape only; the engine-format endpoint is deleted, not kept alive next to it) and the interface (SDK-native only). Coordinate cutovers so nothing keeps the Railgun shape breathing.
+
 The interface is **alpha** — re-platform onto the SDK's native model; do NOT build engine-compat shims.
 
 ## Native-not-ported rules (HARD)

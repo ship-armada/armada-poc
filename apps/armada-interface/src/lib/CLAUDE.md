@@ -21,7 +21,7 @@ Pure logic — **no React imports allowed.** These modules are unit-testable wit
 | `railgun/init.ts` | `startRailgunEngine` + POI dummy + level-js DB + IndexedDB artifact store. Idempotent. | Working |
 | `railgun/network.ts` | Patches the SDK's `NETWORK_CONFIG.Hardhat` entry with our PrivacyPool address; loads the hub provider. | Working |
 | `railgun/prover.ts` | Proof generation entry points (shield/unshield/transfer). **Stub.** | Stub |
-| `railgun/sync.ts` | SDK balance-update event multiplexer + `refreshShieldedBalances` + `getShieldedERC20Balance` helpers. | Working |
+| `railgun/sync.ts` | Engine balance-update event multiplexer + `refreshShieldedBalances` scan trigger. Shielded reads come from `railgun/shadow-sdk.ts` (@armada/sdk). | Working |
 | `tx/` | Tx lifecycle model — see `tx/CLAUDE.md`. | Working (types) + Stub (poller integration) |
 
 ## Conventions

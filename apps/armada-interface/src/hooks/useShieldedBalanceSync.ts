@@ -10,23 +10,21 @@ import {
   syncStateAtom,
   yieldSharesAtom,
 } from '@/state/wallet'
-import { loadDeployments, loadYieldDeployment } from '@/config/deployments'
 import {
-  getShieldedERC20Balance,
   refreshShieldedBalances,
   subscribeBalanceUpdates,
 } from '@/lib/railgun/sync'
-import { closeShadowSdk, sdkReadPathEnabled, syncSdkUsdcBalance, syncSdkYieldShares } from '@/lib/railgun/shadow-sdk'
+import { closeShadowSdk, syncSdkUsdcBalance, syncSdkYieldShares } from '@/lib/railgun/shadow-sdk'
 import { trackError } from '@/lib/telemetry'
 
 /**
  * Subscribe to balance updates while the wallet is unlocked. On unlock:
- *   1. Resolve hub USDC + (optional) yield vault token addresses from the deployment manifests
- *   2. Subscribe to SDK balance-update events (lazily installs the global SDK callback)
- *   3. Trigger an initial `refreshShieldedBalances` so the first scan starts
- *   4. On each event (or initial query), re-fetch BOTH shielded USDC and ayUSDC shares
+ *   1. Subscribe to SDK balance-update events (lazily installs the global SDK callback)
+ *   2. Trigger an initial `refreshShieldedBalances` so the first scan starts
+ *   3. On each event (or initial query), re-fetch BOTH shielded USDC and ayUSDC shares from the
+ *      @armada/sdk read instance (which resolves the token set from the deployment internally)
  *
- * On lock or unmount, unsubscribes and zeroes both atoms.
+ * On lock or unmount, unsubscribes, zeroes both atoms, and closes the SDK read instance.
  *
  * The `latestWalletIdRef` guards against stale-closure writes if the wallet flips while a
  * balance query is in flight — only the most recent walletId is allowed to write atoms.
@@ -51,8 +49,8 @@ export function useShieldedBalanceSync(): void {
       setShieldedUsdc(null)
       setYieldShares(null)
       setSyncState({ status: 'idle', progress: 0 })
-      // Under the read-path flag, this hook owns the SDK instance — tear it down on lock.
-      if (sdkReadPathEnabled()) void closeShadowSdk()
+      // This hook owns the @armada/sdk read instance — tear it down on lock.
+      void closeShadowSdk()
       return
     }
 
@@ -63,27 +61,11 @@ export function useShieldedBalanceSync(): void {
 
     async function refreshAll(): Promise<void> {
       try {
-        const [deployments, yieldDeployment] = await Promise.all([
-          loadDeployments(),
-          loadYieldDeployment(),
-        ])
-        const usdcAddress = deployments.hub.cctp.usdc
-        const vaultAddress = yieldDeployment?.contracts.armadaYieldVault
-
-        // Query USDC + (optional) yield-vault shares in parallel. Promise.allSettled so one
-        // chain hiccup doesn't blank the other atom. Under the read-path cutover flag, BOTH come
-        // from the @armada/sdk instance instead of the engine.
+        // Query shielded USDC + yield-vault shares from the @armada/sdk read instance in parallel.
+        // Promise.allSettled so one chain hiccup doesn't blank the other atom.
         const [usdcResult, sharesResult] = await Promise.allSettled([
-          sdkReadPathEnabled()
-            ? syncSdkUsdcBalance()
-            : usdcAddress
-              ? getShieldedERC20Balance(walletId, usdcAddress)
-              : Promise.resolve(0n),
-          sdkReadPathEnabled()
-            ? syncSdkYieldShares()
-            : vaultAddress
-              ? getShieldedERC20Balance(walletId, vaultAddress)
-              : Promise.resolve(0n),
+          syncSdkUsdcBalance(),
+          syncSdkYieldShares(),
         ])
 
         if (cancelled || latestWalletIdRef.current !== walletId) return

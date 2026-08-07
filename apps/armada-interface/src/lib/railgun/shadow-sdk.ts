@@ -1,5 +1,5 @@
-// ABOUTME: Read-path shadow differential — runs @armada/sdk alongside the stock Railgun engine for the
-// ABOUTME: unlocked wallet and compares 0zk address + USDC balance + history, WITHOUT changing app behavior.
+// ABOUTME: The @armada/sdk shielded read path — a persistent IndexedDB-backed SDK instance that syncs the
+// ABOUTME: unlocked wallet and reports its 0zk address, USDC balance, yield-vault shares, and tx history.
 
 import {
   createArmadaSdk,
@@ -28,19 +28,6 @@ const readOnlyArtifacts: ArtifactSource = {
   resolve: async () => {
     throw new Error('shadow-sdk: read-only shadow does not resolve artifacts')
   },
-}
-
-export interface ShadowComparison {
-  /** The SDK-derived 0zk equals the engine's — the load-bearing identity-parity check. */
-  readonly addressMatch: boolean
-  /** The SDK-scanned USDC balance equals the engine's. */
-  readonly balanceMatch: boolean
-  readonly sdkAddress: string
-  readonly engineAddress: string
-  readonly sdkUsdcBalance: bigint
-  readonly engineUsdcBalance: bigint
-  readonly historyCount: number
-  readonly syncedThrough: number
 }
 
 /** The shielded yield-vault share token (ayUSDC), if a yield deployment exists. */
@@ -110,34 +97,6 @@ async function ensureInstance(): Promise<{ sdk: ArmadaSdk; wallet: ShadowWallet;
   })
   instance = { sdk, wallet, address: engineAddress }
   return instance
-}
-
-/**
- * Sync the persistent SDK wallet (incremental, from its IndexedDB-persisted checkpoint) and compare
- * 0zk address + USDC balance + history count to the engine's. Reuses the instance across runs; the
- * caller reports the comparison. Read-only — never mutates app state.
- */
-export async function runShadowDifferential(engineUsdcBalance: bigint): Promise<ShadowComparison> {
-  const { wallet, address: engineAddress } = await ensureInstance()
-  const cfg = await shadowConfig()
-
-  const { syncedThrough } = await wallet.sync()
-  const usdcHash = getTokenDataHash(getTokenDataERC20(cfg.pool.usdcAddress))
-  const balances = await wallet.balances()
-  const usdc = balances.find(b => b.tokenHash === usdcHash)
-  const sdkUsdcBalance = usdc ? usdc.spendable + usdc.pending : 0n
-  const history = await wallet.history()
-
-  return {
-    addressMatch: wallet.railgunAddress === engineAddress,
-    balanceMatch: sdkUsdcBalance === engineUsdcBalance,
-    sdkAddress: wallet.railgunAddress,
-    engineAddress,
-    sdkUsdcBalance,
-    engineUsdcBalance,
-    historyCount: history.length,
-    syncedThrough,
-  }
 }
 
 /**

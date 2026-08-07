@@ -4,16 +4,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 
-// Mock the SDK + deployment boundaries so importing the hook doesn't pull the Railgun engine into
-// jsdom. The locked branch under test runs synchronously and never reaches these.
+// Mock the SDK boundary so importing the hook doesn't pull the Railgun engine into jsdom. The
+// locked branch under test runs synchronously and never reaches the SDK read path.
 vi.mock('@/lib/railgun/sync', () => ({
   subscribeBalanceUpdates: vi.fn(async () => () => {}),
   refreshShieldedBalances: vi.fn(async () => {}),
-  getShieldedERC20Balance: vi.fn(async () => 0n),
 }))
-vi.mock('@/config/deployments', () => ({
-  loadDeployments: vi.fn(async () => ({ hub: { cctp: { usdc: '0xusdc' } } })),
-  loadYieldDeployment: vi.fn(async () => null),
+vi.mock('@/lib/railgun/shadow-sdk', () => ({
+  closeShadowSdk: vi.fn(async () => {}),
+  syncSdkUsdcBalance: vi.fn(async () => 0n),
+  syncSdkYieldShares: vi.fn(async () => 0n),
 }))
 
 import { useShieldedBalanceSync } from './useShieldedBalanceSync'

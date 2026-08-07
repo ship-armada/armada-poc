@@ -1,18 +1,14 @@
-// ABOUTME: Shielded-balance sync — fan-out wrapper around the SDK's single global onBalanceUpdate callback + refresh/query helpers.
+// ABOUTME: Shielded-balance sync — fan-out wrapper around the SDK's single global onBalanceUpdate callback + a refresh trigger.
 // ABOUTME: Pure lib (no React). A bridge hook subscribes and mirrors balances into atoms; reset state for tests via resetSyncState().
 
 import { getHubChainDescriptor, loadHubNetwork } from './network'
 
-// Railgun SDK + shared-models imports are deferred — same jsdom-init-crash mitigation as
-// lib/railgun/wallet.ts. One dynamic import per session.
+// Railgun SDK import is deferred — same jsdom-init-crash mitigation as lib/railgun/wallet.ts.
+// One dynamic import per session.
 type RailgunSdk = typeof import('@railgun-community/wallet')
-type SharedModels = typeof import('@railgun-community/shared-models')
 
 async function railgunSdk(): Promise<RailgunSdk> {
   return import('@railgun-community/wallet')
-}
-async function sharedModels(): Promise<SharedModels> {
-  return import('@railgun-community/shared-models')
 }
 
 /**
@@ -23,7 +19,7 @@ export interface BalanceUpdateEvent {
   readonly chain: { type: 0; id: number }
   readonly railgunWalletID: string
   // Other SDK fields exist (txidVersion, balanceBucket, erc20Amounts, nftAmounts) but
-  // consumers should re-query via getShieldedERC20Balance — the event is purely a "something
+  // consumers should re-query via the @armada/sdk read path — the event is purely a "something
   // changed, refresh your view" signal in our usage.
 }
 
@@ -74,32 +70,6 @@ export async function refreshShieldedBalances(walletId: string): Promise<void> {
   await loadHubNetwork() // idempotent; needed in case caller hasn't pre-loaded
   const { refreshBalances } = await railgunSdk()
   await refreshBalances(getHubChainDescriptor(), [walletId])
-}
-
-/**
- * Query the current shielded balance for a specific ERC-20 token on the hub chain. The number
- * reflects the most recent scan; pair with `subscribeBalanceUpdates` + `refreshShieldedBalances`
- * to keep it fresh. Returns 0n if the wallet has no UTXOs for this token.
- */
-export async function getShieldedERC20Balance(
-  walletId: string,
-  tokenAddress: string,
-): Promise<bigint> {
-  const [{ balanceForERC20Token, walletForID }, { TXIDVersion, NetworkName }] = await Promise.all([
-    railgunSdk(),
-    sharedModels(),
-  ])
-  const wallet = walletForID(walletId)
-  // V2_PoseidonMerkle is what our PrivacyPool contracts implement — V3 (poseidon merkle
-  // accumulator + token vault) isn't deployed. NetworkName.Hardhat is the patched entry from
-  // network.ts whether mode is local or sepolia.
-  return balanceForERC20Token(
-    TXIDVersion.V2_PoseidonMerkle,
-    wallet,
-    NetworkName.Hardhat,
-    tokenAddress,
-    false, // onlySpendable — include all balances (mempool + confirmed)
-  )
 }
 
 /** Reset module-scope state — for tests + dev hot-reload scenarios. */

@@ -1,4 +1,4 @@
-// ABOUTME: Drives chain-driven history recovery on wallet unlock — calls the SDK's getWalletTransactionHistory, maps items to TxRecord, persists via the existing OCC-protected storage, and advances a per-wallet checkpoint so subsequent scans only walk the delta.
+// ABOUTME: Drives chain-driven history recovery on wallet unlock — reconstructs history from the @armada/sdk scan, maps entries to TxRecord, persists via the existing OCC-protected storage, and advances a per-wallet checkpoint so subsequent scans only walk the delta.
 // ABOUTME: Mount once at App root. Idempotent across re-mounts (effect re-runs only on walletId / epoch change). Shares the scan path with useIncomingTransferDetector (Phase 9.4) via lib/railgun/history.ts::runHistoryScan.
 
 import { useEffect, useRef } from 'react'
@@ -20,7 +20,7 @@ import {
   readHistoryCheckpoint,
   writeHistoryCheckpoint,
 } from '@/lib/railgun/history-checkpoint'
-import { loadDeployments, loadYieldDeployment } from '@/config/deployments'
+import { loadDeployments } from '@/config/deployments'
 import { track, trackError } from '@/lib/telemetry'
 
 /**
@@ -131,9 +131,8 @@ async function runScanAndPersist(args: {
 }
 
 /**
- * Resolve the mapping context (hub chain id + adapter address) from the deployment manifests.
- * Returns null if the hub manifest can't be loaded — without it we don't know the chain id
- * to stamp on records.
+ * Resolve the mapping context (hub chain id) from the deployment manifest. Returns null if the
+ * hub manifest can't be loaded — without it we don't know the chain id to stamp on records.
  *
  * `hub.deployBlock` is the floor for the SDK's `startingBlock` when no checkpoint exists. The
  * SDK falls back to block 0 if undefined, which on Sepolia means thousands of empty getLogs
@@ -144,14 +143,10 @@ async function resolveScanInputs(): Promise<{
   hubDeployBlock: number | undefined
 } | null> {
   try {
-    const [deployments, yieldDeployment] = await Promise.all([
-      loadDeployments(),
-      loadYieldDeployment(),
-    ])
+    const deployments = await loadDeployments()
     return {
       ctx: {
         hubChainId: deployments.hub.chainId,
-        adapterAddress: yieldDeployment?.contracts.armadaYieldAdapter,
       },
       hubDeployBlock: deployments.hub.deployBlock,
     }

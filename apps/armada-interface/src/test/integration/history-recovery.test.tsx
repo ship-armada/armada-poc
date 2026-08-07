@@ -1,15 +1,9 @@
 // ABOUTME: Phase 9 integration sweep — exercises useHistoryRecovery + useIncomingTransferDetector together: cold-unlock scan, dedup against authored records, balance-event-triggered incremental scan, and checkpoint advancement.
-// ABOUTME: Mocks at the SDK boundary (subscribeBalanceUpdates + scanWalletHistory) + storage; hooks + state atoms run unmodified to catch cross-hook regressions the per-hook unit tests can't.
+// ABOUTME: Mocks at the SDK boundary (subscribeBalanceUpdates + runHistoryScan) + storage; hooks + state atoms run unmodified to catch cross-hook regressions the per-hook unit tests can't.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, waitFor, act } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
-import {
-  TransactionHistoryItemCategory,
-  RailgunWalletBalanceBucket,
-  TXIDVersion,
-  type TransactionHistoryItem,
-} from '@railgun-community/shared-models'
 import {
   activeRailgunWalletIdAtom,
   shieldedWalletsAtom,
@@ -17,6 +11,7 @@ import {
 import { txListAtom } from '@/state/tx'
 import { historyRecoveryAtom } from '@/state/history'
 import type { TxRecord } from '@/lib/tx/types'
+import type { HistoryScanResult } from '@/lib/railgun/history'
 
 const HUB_DEPLOY_BLOCK = 100_000
 
@@ -28,9 +23,11 @@ const hoisted = vi.hoisted(() => {
     | ((event: { chain: { type: 0; id: number }; railgunWalletID: string }) => void)
     | null = null
   return {
-    scanWalletHistory: vi.fn<(walletId: string, fromBlock?: number) => Promise<TransactionHistoryItem[]>>(
-      async () => [],
-    ),
+    runHistoryScan: vi.fn(async (): Promise<HistoryScanResult> => ({
+      records: [],
+      highestBlock: null,
+      itemCount: 0,
+    })),
     putTxIfFresh: vi.fn<(record: TxRecord) => Promise<boolean>>(async () => true),
     subscribe: vi.fn(async (listener: typeof balanceListener) => {
       balanceListener = listener
@@ -51,29 +48,13 @@ const hoisted = vi.hoisted(() => {
   }
 })
 
+// Replace the scan entry point so we feed deterministic HistoryScanResults, but keep the real
+// historyEntryToTxRecord mapper for building fixtures (so ids + sourceTxHash are authentic).
 vi.mock('@/lib/railgun/history', async () => {
   const actual = await vi.importActual<typeof import('@/lib/railgun/history')>(
     '@/lib/railgun/history',
   )
-  return {
-    ...actual,
-    scanWalletHistory: hoisted.scanWalletHistory,
-    runHistoryScan: async (
-      walletId: string,
-      ctx: import('@/lib/railgun/history').HistoryMapContext,
-      fromBlock: number | undefined,
-    ) => {
-      const items = await hoisted.scanWalletHistory(walletId, fromBlock)
-      const records = actual.historyItemsToTxRecords(items, walletId, ctx)
-      let highest: number | null = null
-      for (const item of items) {
-        if (item.blockNumber !== undefined && item.blockNumber !== null) {
-          if (highest === null || item.blockNumber > highest) highest = item.blockNumber
-        }
-      }
-      return { records, highestBlock: highest, itemCount: items.length }
-    },
-  }
+  return { ...actual, runHistoryScan: hoisted.runHistoryScan }
 })
 
 vi.mock('@/lib/tx/storage', () => ({
@@ -94,6 +75,7 @@ vi.mock('@/config/deployments', () => ({
 
 import { useHistoryRecovery } from '@/hooks/useHistoryRecovery'
 import { useIncomingTransferDetector } from '@/hooks/useIncomingTransferDetector'
+import { historyEntryToTxRecord } from '@/lib/railgun/history'
 
 function Harness() {
   useHistoryRecovery()
@@ -101,93 +83,32 @@ function Harness() {
   return null
 }
 
-function shieldItem(
-  txid: string,
-  blockNumber: number,
-  amount: bigint,
-): TransactionHistoryItem {
-  return {
-    txidVersion: TXIDVersion.V2_PoseidonMerkle,
-    txid,
-    version: 0,
-    timestamp: blockNumber,
-    blockNumber,
-    receiveERC20Amounts: [{
-      tokenAddress: '0xusdc',
-      amount,
-      senderAddress: null,
-      memoText: null,
-      shieldFee: undefined,
-      hasValidPOIForActiveLists: true,
-      balanceBucket: RailgunWalletBalanceBucket.Spendable,
-    }],
-    transferERC20Amounts: [],
-    changeERC20Amounts: [],
-    unshieldERC20Amounts: [],
-    receiveNFTAmounts: [],
-    transferNFTAmounts: [],
-    unshieldNFTAmounts: [],
-    category: TransactionHistoryItemCategory.ShieldERC20s,
-  }
+/* Fixture builders — synthesize TxRecords via the real SDK mapper so ids + sourceTxHash are
+   authentic. `txid` drives both the synthetic id and the `0x<txid>` sourceTxHash used for dedup. */
+
+function shieldRecord(txid: string, blockNumber: number, amount: bigint): TxRecord {
+  return historyEntryToTxRecord(
+    { txid, blockNumber, category: 'shield', tokenAddress: '0xusdc', value: amount },
+    'rg-1', { hubChainId: 31337 }, blockNumber * 1000,
+  )!
 }
 
-function transferReceiveItem(
-  txid: string,
-  blockNumber: number,
-  amount: bigint,
-): TransactionHistoryItem {
-  return {
-    txidVersion: TXIDVersion.V2_PoseidonMerkle,
-    txid,
-    version: 0,
-    timestamp: blockNumber,
-    blockNumber,
-    receiveERC20Amounts: [{
-      tokenAddress: '0xusdc',
-      amount,
-      senderAddress: '0xsomeoneelse',
-      memoText: null,
-      shieldFee: undefined,
-      hasValidPOIForActiveLists: true,
-      balanceBucket: RailgunWalletBalanceBucket.Spendable,
-    }],
-    transferERC20Amounts: [],
-    changeERC20Amounts: [],
-    unshieldERC20Amounts: [],
-    receiveNFTAmounts: [],
-    transferNFTAmounts: [],
-    unshieldNFTAmounts: [],
-    category: TransactionHistoryItemCategory.TransferReceiveERC20s,
-  }
+function receiveRecord(txid: string, blockNumber: number, amount: bigint): TxRecord {
+  return historyEntryToTxRecord(
+    { txid, blockNumber, category: 'transfer-received', tokenAddress: '0xusdc', value: amount },
+    'rg-1', { hubChainId: 31337 }, blockNumber * 1000,
+  )!
 }
 
-function unshieldItem(
-  txid: string,
-  blockNumber: number,
-  amount: bigint,
-): TransactionHistoryItem {
-  return {
-    txidVersion: TXIDVersion.V2_PoseidonMerkle,
-    txid,
-    version: 0,
-    timestamp: blockNumber,
-    blockNumber,
-    receiveERC20Amounts: [],
-    transferERC20Amounts: [],
-    changeERC20Amounts: [],
-    unshieldERC20Amounts: [{
-      tokenAddress: '0xusdc',
-      amount,
-      recipientAddress: '0xrecipient',
-      memoText: null,
-      hasValidPOIForActiveLists: true,
-      balanceBucket: RailgunWalletBalanceBucket.Spendable,
-    }],
-    receiveNFTAmounts: [],
-    transferNFTAmounts: [],
-    unshieldNFTAmounts: [],
-    category: TransactionHistoryItemCategory.UnshieldERC20s,
-  }
+function unshieldRecord(txid: string, blockNumber: number, amount: bigint): TxRecord {
+  return historyEntryToTxRecord(
+    { txid, blockNumber, category: 'unshield', tokenAddress: '0xusdc', value: -amount, recipient: '0xrecipient' },
+    'rg-1', { hubChainId: 31337 }, blockNumber * 1000,
+  )!
+}
+
+function scanResult(records: TxRecord[], highestBlock: number | null): HistoryScanResult {
+  return { records, highestBlock, itemCount: records.length }
 }
 
 function unlockedStore() {
@@ -201,8 +122,8 @@ function unlockedStore() {
 
 beforeEach(() => {
   window.localStorage.clear()
-  hoisted.scanWalletHistory.mockReset()
-  hoisted.scanWalletHistory.mockResolvedValue([])
+  hoisted.runHistoryScan.mockReset()
+  hoisted.runHistoryScan.mockResolvedValue(scanResult([], null))
   hoisted.putTxIfFresh.mockReset()
   hoisted.putTxIfFresh.mockResolvedValue(true)
   hoisted.subscribe.mockClear()
@@ -213,10 +134,10 @@ describe('Phase 9 — chain history recovery + incoming detector integration', (
     // WHY: end-to-end happy path. Fresh device (no checkpoint) + unlocked wallet should produce
     // a single scan from the deploy block, surface records in the atom, write the checkpoint,
     // and the banner state should settle on idle once persistence completes.
-    hoisted.scanWalletHistory.mockResolvedValue([
-      shieldItem('a', 100_001, 1_000_000n),
-      shieldItem('b', 100_010, 2_000_000n),
-    ])
+    hoisted.runHistoryScan.mockResolvedValue(scanResult([
+      shieldRecord('a', 100_001, 1_000_000n),
+      shieldRecord('b', 100_010, 2_000_000n),
+    ], 100_010))
     const store = unlockedStore()
     render(
       <Provider store={store}>
@@ -226,7 +147,9 @@ describe('Phase 9 — chain history recovery + incoming detector integration', (
     await waitFor(() => {
       expect(store.get(txListAtom).length).toBe(2)
     })
-    expect(hoisted.scanWalletHistory).toHaveBeenCalledWith('rg-1', HUB_DEPLOY_BLOCK)
+    expect(hoisted.runHistoryScan).toHaveBeenCalledWith(
+      'rg-1', expect.objectContaining({ hubChainId: 31337 }), HUB_DEPLOY_BLOCK,
+    )
     expect(store.get(historyRecoveryAtom).state).toBe('idle')
     const cp = window.localStorage.getItem('armada.shielded.historyScanBlock.rg-1')
     expect(cp).not.toBeNull()
@@ -238,7 +161,7 @@ describe('Phase 9 — chain history recovery + incoming detector integration', (
     // Mid-session balance event from the SDK must drive a fresh scan whose new record lands in
     // the active activity feed without user action.
     // First scan: nothing.
-    hoisted.scanWalletHistory.mockResolvedValueOnce([])
+    hoisted.runHistoryScan.mockResolvedValueOnce(scanResult([], null))
     const store = unlockedStore()
     render(
       <Provider store={store}>
@@ -246,14 +169,14 @@ describe('Phase 9 — chain history recovery + incoming detector integration', (
       </Provider>,
     )
     await waitFor(() => {
-      expect(hoisted.scanWalletHistory).toHaveBeenCalledTimes(1)
+      expect(hoisted.runHistoryScan).toHaveBeenCalledTimes(1)
     })
     expect(store.get(txListAtom).length).toBe(0)
 
     // Simulate an incoming transfer: queue the SDK response then fire the balance event.
-    hoisted.scanWalletHistory.mockResolvedValueOnce([
-      transferReceiveItem('rcv-1', 100_005, 5_000_000n),
-    ])
+    hoisted.runHistoryScan.mockResolvedValueOnce(scanResult([
+      receiveRecord('rcv-1', 100_005, 5_000_000n),
+    ], 100_005))
     await act(async () => {
       hoisted.fireBalanceEvent('rg-1')
     })
@@ -269,7 +192,7 @@ describe('Phase 9 — chain history recovery + incoming detector integration', (
     )
     const newRecord = store.get(txListAtom)[0]!
     expect(newRecord.kind).toBe('transfer-shielded-received')
-    expect(newRecord.id).toBe('synth:rcv-1:TransferReceiveERC20s')
+    expect(newRecord.id).toBe('synth:rcv-1:transfer-received')
   })
 
   it('authored outgoing record blocks the synth-row duplicate of the same on-chain hash', async () => {
@@ -292,12 +215,12 @@ describe('Phase 9 — chain history recovery + incoming detector integration', (
     const store = unlockedStore()
     store.set(txListAtom, [authored])
 
-    hoisted.scanWalletHistory.mockResolvedValue([
-      // Same txid as the authored record. Without dedup we'd see 2 rows for one event.
-      shieldItem('abc', 100_001, 1_000_000n),
+    hoisted.runHistoryScan.mockResolvedValue(scanResult([
+      // Same txid as the authored record (sourceTxHash 0xabc). Without dedup we'd see 2 rows.
+      shieldRecord('abc', 100_001, 1_000_000n),
       // Unrelated tx. Must synthesize.
-      shieldItem('xyz', 100_002, 2_000_000n),
-    ])
+      shieldRecord('xyz', 100_002, 2_000_000n),
+    ], 100_002))
 
     render(
       <Provider store={store}>
@@ -311,8 +234,8 @@ describe('Phase 9 — chain history recovery + incoming detector integration', (
     })
     const ids = store.get(txListAtom).map(r => r.id).sort()
     expect(ids).toContain('01J-authored')
-    expect(ids).toContain('synth:xyz:ShieldERC20s')
-    expect(ids).not.toContain('synth:abc:ShieldERC20s')
+    expect(ids).toContain('synth:xyz:shield')
+    expect(ids).not.toContain('synth:abc:shield')
   })
 
   it('reconciles a terminated-but-confirmed authored record to completed, without a synth duplicate', async () => {
@@ -337,7 +260,7 @@ describe('Phase 9 — chain history recovery + incoming detector integration', (
     const store = unlockedStore()
     store.set(txListAtom, [expired])
 
-    hoisted.scanWalletHistory.mockResolvedValue([shieldItem('abc', 100_001, 1_000_000n)])
+    hoisted.runHistoryScan.mockResolvedValue(scanResult([shieldRecord('abc', 100_001, 1_000_000n)], 100_001))
 
     render(
       <Provider store={store}>
@@ -388,7 +311,7 @@ describe('Phase 9 — chain history recovery + incoming detector integration', (
     const store = unlockedStore()
     store.set(txListAtom, [failedXchain])
     // The hub burn surfaces as an unshield history item carrying the same txid → sourceTxHash 0xburn.
-    hoisted.scanWalletHistory.mockResolvedValue([unshieldItem('burn', 100_001, 1_000_000n)])
+    hoisted.runHistoryScan.mockResolvedValue(scanResult([unshieldRecord('burn', 100_001, 1_000_000n)], 100_001))
 
     render(
       <Provider store={store}>
@@ -433,7 +356,7 @@ describe('Phase 9 — chain history recovery + incoming detector integration', (
     const store = unlockedStore()
     store.set(txListAtom, [completedShieldXchain])
     // The hub mint surfaces as a Shield history item carrying the mint txid → sourceTxHash 0xhubmint.
-    hoisted.scanWalletHistory.mockResolvedValue([shieldItem('hubmint', 100_001, 1_000_000n)])
+    hoisted.runHistoryScan.mockResolvedValue(scanResult([shieldRecord('hubmint', 100_001, 1_000_000n)], 100_001))
 
     render(
       <Provider store={store}>
@@ -463,8 +386,8 @@ describe('Phase 9 — chain history recovery + incoming detector integration', (
       </Provider>,
     )
     await waitFor(() => {
-      expect(hoisted.scanWalletHistory).toHaveBeenCalled()
+      expect(hoisted.runHistoryScan).toHaveBeenCalled()
     })
-    expect(hoisted.scanWalletHistory).toHaveBeenCalledWith('rg-1', 500_001)
+    expect(hoisted.runHistoryScan).toHaveBeenCalledWith('rg-1', expect.anything(), 500_001)
   })
 })

@@ -1,60 +1,40 @@
 // ABOUTME: Tests for useHistoryRecovery — triggers a scan on unlock, persists synthesized records, advances the checkpoint, is idempotent across re-mounts, and re-runs on epoch bump.
-// ABOUTME: Stubs the SDK history call + deployments loaders + tx/storage at the import boundary so no real IDB / SDK runtime is involved.
+// ABOUTME: Stubs runHistoryScan + deployments loader + tx/storage at the import boundary so no real IDB / SDK runtime is involved; fixtures are built with the real historyEntryToTxRecord mapper.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, waitFor, act } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
-import {
-  TransactionHistoryItemCategory,
-  RailgunWalletBalanceBucket,
-  TXIDVersion,
-  type TransactionHistoryItem,
-} from '@railgun-community/shared-models'
 import {
   activeRailgunWalletIdAtom,
   shieldedWalletsAtom,
 } from '@/state/wallet'
 import { txListAtom } from '@/state/tx'
 import { historyRecoveryAtom, historyRecoveryEpochAtom } from '@/state/history'
+import type { TxRecord } from '@/lib/tx/types'
+import type { HistoryScanResult } from '@/lib/railgun/history'
 
 const HUB_DEPLOY_BLOCK = 100_000
 
 const hoisted = vi.hoisted(() => ({
-  scanWalletHistory: vi.fn<(walletId: string, fromBlock?: number) => Promise<TransactionHistoryItem[]>>(
-    async () => [],
-  ),
+  runHistoryScan: vi.fn(async (): Promise<HistoryScanResult> => ({
+    records: [],
+    highestBlock: null,
+    itemCount: 0,
+  })),
   putTxIfFresh: vi.fn<(record: unknown) => Promise<boolean>>(async () => true),
   loadDeployments: vi.fn(async () => ({
     hub: { chainId: 31337, deployBlock: HUB_DEPLOY_BLOCK },
     clients: [],
   })),
-  loadYieldDeployment: vi.fn(async () => null),
 }))
 
-// Replace the SDK call so we feed deterministic fixtures, but keep the mapper logic real.
+// Replace the scan entry point so we feed deterministic HistoryScanResults, but keep the real
+// historyEntryToTxRecord mapper for building fixtures (so ids + sourceTxHash are authentic).
 vi.mock('@/lib/railgun/history', async () => {
   const actual = await vi.importActual<typeof import('@/lib/railgun/history')>(
     '@/lib/railgun/history',
   )
-  return {
-    ...actual,
-    scanWalletHistory: hoisted.scanWalletHistory,
-    runHistoryScan: async (
-      walletId: string,
-      ctx: import('@/lib/railgun/history').HistoryMapContext,
-      fromBlock: number | undefined,
-    ) => {
-      const items = await hoisted.scanWalletHistory(walletId, fromBlock)
-      const records = actual.historyItemsToTxRecords(items, walletId, ctx)
-      let highest: number | null = null
-      for (const item of items) {
-        if (item.blockNumber !== undefined && item.blockNumber !== null) {
-          if (highest === null || item.blockNumber > highest) highest = item.blockNumber
-        }
-      }
-      return { records, highestBlock: highest, itemCount: items.length }
-    },
-  }
+  return { ...actual, runHistoryScan: hoisted.runHistoryScan }
 })
 
 vi.mock('@/lib/tx/storage', () => ({
@@ -66,44 +46,28 @@ vi.mock('@/lib/tx/storage', () => ({
 
 vi.mock('@/config/deployments', () => ({
   loadDeployments: hoisted.loadDeployments,
-  loadYieldDeployment: hoisted.loadYieldDeployment,
 }))
 
 import { useHistoryRecovery } from './useHistoryRecovery'
+import { historyEntryToTxRecord } from '@/lib/railgun/history'
 
 function Harness() {
   useHistoryRecovery()
   return null
 }
 
-function shieldItem(
-  txid: string,
-  blockNumber: number,
-  amount: bigint,
-): TransactionHistoryItem {
-  return {
-    txidVersion: TXIDVersion.V2_PoseidonMerkle,
-    txid,
-    version: 0,
-    timestamp: 1_700_000_000,
-    blockNumber,
-    receiveERC20Amounts: [{
-      tokenAddress: '0xusdc',
-      amount,
-      senderAddress: null,
-      memoText: null,
-      shieldFee: undefined,
-      hasValidPOIForActiveLists: true,
-      balanceBucket: RailgunWalletBalanceBucket.Spendable,
-    }],
-    transferERC20Amounts: [],
-    changeERC20Amounts: [],
-    unshieldERC20Amounts: [],
-    receiveNFTAmounts: [],
-    transferNFTAmounts: [],
-    unshieldNFTAmounts: [],
-    category: TransactionHistoryItemCategory.ShieldERC20s,
-  }
+/** Build a synthesized shield TxRecord via the real SDK mapper — `txid` drives id + sourceTxHash. */
+function shieldRecord(txid: string, blockNumber: number, amount: bigint): TxRecord {
+  return historyEntryToTxRecord(
+    { txid, blockNumber, category: 'shield', tokenAddress: '0xusdc', value: amount },
+    'rg-1',
+    { hubChainId: 31337 },
+    1_700_000_000_000,
+  )!
+}
+
+function scanResult(records: TxRecord[], highestBlock: number | null): HistoryScanResult {
+  return { records, highestBlock, itemCount: records.length }
 }
 
 function makeStore(opts: { unlocked: boolean }) {
@@ -121,8 +85,8 @@ function makeStore(opts: { unlocked: boolean }) {
 
 beforeEach(() => {
   window.localStorage.clear()
-  hoisted.scanWalletHistory.mockReset()
-  hoisted.scanWalletHistory.mockResolvedValue([])
+  hoisted.runHistoryScan.mockReset()
+  hoisted.runHistoryScan.mockResolvedValue(scanResult([], null))
   hoisted.putTxIfFresh.mockReset()
   hoisted.putTxIfFresh.mockResolvedValue(true)
 })
@@ -137,17 +101,17 @@ describe('useHistoryRecovery', () => {
     )
     // Give microtasks a chance to flush — there's no scan, so nothing to wait on.
     await Promise.resolve()
-    expect(hoisted.scanWalletHistory).not.toHaveBeenCalled()
+    expect(hoisted.runHistoryScan).not.toHaveBeenCalled()
     expect(store.get(historyRecoveryAtom).state).toBe('idle')
   })
 
   it('scans on unlock and writes synthesized records to txListAtom', async () => {
     // WHY: this is the primary use case — empty IDB on a fresh device, the SDK returns the
     // wallet's chain history, we mirror it into the activity feed.
-    hoisted.scanWalletHistory.mockResolvedValue([
-      shieldItem('txA', 100_001, 1_000_000n),
-      shieldItem('txB', 100_002, 2_000_000n),
-    ])
+    hoisted.runHistoryScan.mockResolvedValue(scanResult([
+      shieldRecord('txA', 100_001, 1_000_000n),
+      shieldRecord('txB', 100_002, 2_000_000n),
+    ], 100_002))
     const store = makeStore({ unlocked: true })
     render(
       <Provider store={store}>
@@ -157,22 +121,27 @@ describe('useHistoryRecovery', () => {
     await waitFor(() => {
       expect(store.get(txListAtom).length).toBe(2)
     })
-    expect(hoisted.scanWalletHistory).toHaveBeenCalledTimes(1)
+    expect(hoisted.runHistoryScan).toHaveBeenCalledTimes(1)
     // First-ever scan uses the hub deploy block as the floor.
-    expect(hoisted.scanWalletHistory).toHaveBeenCalledWith('rg-1', HUB_DEPLOY_BLOCK)
+    expect(hoisted.runHistoryScan).toHaveBeenCalledWith(
+      'rg-1',
+      expect.objectContaining({ hubChainId: 31337 }),
+      HUB_DEPLOY_BLOCK,
+    )
     expect(store.get(historyRecoveryAtom).state).toBe('idle')
     expect(store.get(historyRecoveryAtom).lastRecordCount).toBe(2)
   })
 
   it('persists checkpoint at the highest block scanned', async () => {
-    // WHY: the next scan must resume past `highest + 1`. A missing checkpoint means we re-walk
-    // the full hub-deploy-onward history every unlock — wasteful but correct. An incorrect
-    // checkpoint (e.g. min instead of max) would silently skip rows.
-    hoisted.scanWalletHistory.mockResolvedValue([
-      shieldItem('a', 100_001, 1n),
-      shieldItem('b', 100_005, 2n),
-      shieldItem('c', 100_003, 3n),
-    ])
+    // WHY: the next scan must resume past `highest + 1`. The hook persists the scan's
+    // `highestBlock` verbatim as the checkpoint; a missing checkpoint means we re-walk the full
+    // hub-deploy-onward history every unlock — wasteful but correct. (The max-block computation
+    // itself is covered by runHistoryScan's own unit test.)
+    hoisted.runHistoryScan.mockResolvedValue(scanResult([
+      shieldRecord('a', 100_001, 1n),
+      shieldRecord('b', 100_005, 2n),
+      shieldRecord('c', 100_003, 3n),
+    ], 100_005))
     const store = makeStore({ unlocked: true })
     render(
       <Provider store={store}>
@@ -202,15 +171,15 @@ describe('useHistoryRecovery', () => {
       </Provider>,
     )
     await waitFor(() => {
-      expect(hoisted.scanWalletHistory).toHaveBeenCalled()
+      expect(hoisted.runHistoryScan).toHaveBeenCalled()
     })
-    expect(hoisted.scanWalletHistory).toHaveBeenCalledWith('rg-1', 200_001)
+    expect(hoisted.runHistoryScan).toHaveBeenCalledWith('rg-1', expect.anything(), 200_001)
   })
 
   it('re-runs the scan when historyRecoveryEpochAtom bumps', async () => {
     // WHY: Settings "Re-scan history" must force a fresh scan within the same session. The
     // ref-based dedup must allow epoch changes through.
-    hoisted.scanWalletHistory.mockResolvedValue([])
+    hoisted.runHistoryScan.mockResolvedValue(scanResult([], null))
     const store = makeStore({ unlocked: true })
     render(
       <Provider store={store}>
@@ -218,13 +187,13 @@ describe('useHistoryRecovery', () => {
       </Provider>,
     )
     await waitFor(() => {
-      expect(hoisted.scanWalletHistory).toHaveBeenCalledTimes(1)
+      expect(hoisted.runHistoryScan).toHaveBeenCalledTimes(1)
     })
     await act(async () => {
       store.set(historyRecoveryEpochAtom, 1)
     })
     await waitFor(() => {
-      expect(hoisted.scanWalletHistory).toHaveBeenCalledTimes(2)
+      expect(hoisted.runHistoryScan).toHaveBeenCalledTimes(2)
     })
   })
 
@@ -250,12 +219,12 @@ describe('useHistoryRecovery', () => {
       artifacts: { sourceTxHash: AUTHORED_HASH as `0x${string}` },
       walletContext: { evmAddress: '0xabc', railgunWalletId: 'rg-1', sourceChainId: 31337 },
     }])
-    hoisted.scanWalletHistory.mockResolvedValue([
-      // Same txid as the authored record — must be skipped.
-      shieldItem('abc123', 100_001, 1_000_000n),
+    hoisted.runHistoryScan.mockResolvedValue(scanResult([
+      // Same txid as the authored record (sourceTxHash 0xabc123) — must be skipped.
+      shieldRecord('abc123', 100_001, 1_000_000n),
       // Different tx — must be synthesized.
-      shieldItem('def456', 100_002, 2_000_000n),
-    ])
+      shieldRecord('def456', 100_002, 2_000_000n),
+    ], 100_002))
     render(
       <Provider store={store}>
         <Harness />
@@ -267,14 +236,14 @@ describe('useHistoryRecovery', () => {
     })
     const ids = store.get(txListAtom).map(r => r.id).sort()
     expect(ids).toContain('01J-authored')
-    expect(ids).toContain('synth:def456:ShieldERC20s')
-    expect(ids).not.toContain('synth:abc123:ShieldERC20s')
+    expect(ids).toContain('synth:def456:shield')
+    expect(ids).not.toContain('synth:abc123:shield')
   })
 
   it('flips state to "failed" with the error message when the SDK throws', async () => {
     // WHY: the banner reads `state === 'failed'` to surface a retry CTA. A silent failure
     // would leave the user staring at an empty activity feed with no signal.
-    hoisted.scanWalletHistory.mockRejectedValue(new Error('rpc unreachable'))
+    hoisted.runHistoryScan.mockRejectedValue(new Error('rpc unreachable'))
     const store = makeStore({ unlocked: true })
     render(
       <Provider store={store}>

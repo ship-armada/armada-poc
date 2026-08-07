@@ -14,7 +14,7 @@ import {
   refreshShieldedBalances,
   subscribeBalanceUpdates,
 } from '@/lib/railgun/sync'
-import { closeShadowSdk, syncSdkUsdcBalance, syncSdkYieldShares } from '@/lib/railgun/shadow-sdk'
+import { closeSdkRead, syncSdkUsdcBalance, syncSdkYieldShares } from '@/lib/railgun/sdk-read'
 import { trackError } from '@/lib/telemetry'
 
 /**
@@ -50,7 +50,7 @@ export function useShieldedBalanceSync(): void {
       setYieldShares(null)
       setSyncState({ status: 'idle', progress: 0 })
       // This hook owns the @armada/sdk read instance — tear it down on lock.
-      void closeShadowSdk()
+      void closeSdkRead()
       return
     }
 

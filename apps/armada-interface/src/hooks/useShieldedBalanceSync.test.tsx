@@ -10,8 +10,8 @@ vi.mock('@/lib/railgun/sync', () => ({
   subscribeBalanceUpdates: vi.fn(async () => () => {}),
   refreshShieldedBalances: vi.fn(async () => {}),
 }))
-vi.mock('@/lib/railgun/shadow-sdk', () => ({
-  closeShadowSdk: vi.fn(async () => {}),
+vi.mock('@/lib/railgun/sdk-read', () => ({
+  closeSdkRead: vi.fn(async () => {}),
   syncSdkUsdcBalance: vi.fn(async () => 0n),
   syncSdkYieldShares: vi.fn(async () => 0n),
 }))

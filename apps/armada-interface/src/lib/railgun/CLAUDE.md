@@ -17,9 +17,9 @@ Wrappers around `@railgun-community/wallet` / `@railgun-community/engine` for sh
 | `database.ts` | `createWebDatabase` — IndexedDB-backed LevelDB instance the engine uses for persistence. | Working |
 | `artifacts.ts` | IndexedDB-backed ArtifactStore that caches ZK circuit artifacts across reloads. | Working |
 | `prover.ts` | Lazy-initialise the proving engine; expose proof generation entry points. | Stub |
-| `sync.ts` | Subscribe + multiplex engine balance-update events; `refreshShieldedBalances` scan trigger. The event is a "something changed" signal — the actual shielded reads come from `shadow-sdk.ts`. Bridge hook lives in `hooks/useShieldedBalanceSync.ts`. | Working |
-| `shadow-sdk.ts` | The `@armada/sdk` shielded read path — a persistent IndexedDB-backed SDK instance (`ensureInstance`/`closeShadowSdk`) exposing `syncSdkUsdcBalance`, `syncSdkYieldShares`, `syncSdkHistory`. Sources all shielded balance + history reads; gated behind `sdkReadPathEnabled()` (`VITE_SDK_READ_PATH`, default on) until the engine history path is removed. | Working |
-| `history.ts` | V1 Phase 9 — wraps the SDK's `getWalletTransactionHistory` and maps `TransactionHistoryItem` → `TxRecord` for chain-driven recovery. Exports `runHistoryScan` (high-level), `historyItemToTxRecord` (pure mapper), `syntheticTxId` (deterministic id encoding). Yield ops detected via the configured adapter address. | Working |
+| `sync.ts` | Subscribe + multiplex engine balance-update events; `refreshShieldedBalances` scan trigger. The event is a "something changed" signal — the actual shielded reads come from `sdk-read.ts`. Bridge hook lives in `hooks/useShieldedBalanceSync.ts`. | Working |
+| `sdk-read.ts` | The `@armada/sdk` shielded read path — a persistent IndexedDB-backed SDK instance (`ensureInstance`/`closeSdkRead`) exposing `syncSdkUsdcBalance`, `syncSdkYieldShares`, `syncSdkHistory`. Sole source of all shielded balance + history reads. | Working |
+| `history.ts` | Chain-driven history recovery — `runHistoryScan` syncs the `@armada/sdk` wallet, maps each `HistoryEntry` → `TxRecord` (`historyEntryToTxRecord`, pure), backfills block timestamps, and returns a checkpoint candidate. `syntheticTxId` encodes deterministic ids. Yield ops classified natively by the SDK. | Working |
 | `history-checkpoint.ts` | Per-wallet localStorage checkpoint (`armada.shielded.historyScanBlock.<walletId>`) so incremental scans only walk the delta since the last `block`. Wiped on Settings → Reset wallet and Settings → Re-scan history. | Working |
 
 ## Secret-handling rules (HARD)
@@ -64,7 +64,7 @@ V2 redesign accepted "deterministic re-sign from EVM wallet" as the primary reco
 
 A deterministic-re-sign wallet identity is purely a function of the EOA signature — there is no local bit that distinguishes "first ever creation" from "re-creation after the user cleared local storage on a wallet that already has chain activity." Both produce the same root_secret → same SDK walletId.
 
-Consequence: if first-time enrollment seeded the SDK's `creationBlockNumbers` at the *current* head (the obvious "fast path" choice), then a user who cleared local storage and re-signed would have their prior shields, transacts, unshields, and yield deposits silently amputated from `getWalletTransactionHistory` AND from balance — the SDK's merkletree scan starts at `creationBlockNumbers` and never walks back.
+Consequence: if first-time enrollment seeded the SDK's `creationBlockNumbers` at the *current* head (the obvious "fast path" choice), then a user who cleared local storage and re-signed would have their prior shields, transacts, unshields, and yield deposits silently amputated from the `@armada/sdk` wallet history AND from balance — the merkletree scan starts at `creationBlockNumbers` and never walks back.
 
 **The fix:** `resolveCreationBlock()` always picks `hub.deployBlock` (falling back to current head only when older manifests omit it). Trade-off: every first-sign-in on a device pays the full chain scan cost (~10–30s on Sepolia, longer on mainnet at scale). Trade-off accepted because the alternatives have worse properties:
 

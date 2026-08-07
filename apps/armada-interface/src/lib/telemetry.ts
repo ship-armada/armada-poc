@@ -43,9 +43,12 @@ export type EventRegistry = {
   //   'fell-back'  — attempted but failed → engine slow-scans (paired with a railgun.quickSync error)
   'railgun.quicksync':        { outcome: 'served' | 'no-indexer' | 'fell-back'; pages?: number; commitments?: number; unshields?: number; nullifiers?: number; throughBlock?: number; reason?: string }
 
-  // Read-path shadow differential — @armada/sdk scanned alongside the engine (Phase A). Booleans +
-  // balances only; no raw 0zk addresses (privacy). `addressMatch`/`balanceMatch` false = a parity gap.
-  'railgun.shadow':           { addressMatch: boolean; balanceMatch: boolean; sdkBalance: string; engineBalance: string; historyCount: number; syncedThrough: number; error?: string }
+  // @armada/sdk read-instance sync outcome — one line per wallet.sync() so resume-vs-rescan is
+  // observable. Named `sdk.*` (not `railgun.*`, which is reserved for stock-engine events) because
+  // this is the in-house SDK. Block numbers + a boolean only (no addresses/amounts). `fromBlock` =
+  // the resume point (checkpoint + 1): a low value ≈ deploy block means a cold rescan, a high value
+  // means it resumed from the IndexedDB checkpoint. `scanned` false = head hadn't advanced (no work).
+  'sdk.sync':                 { fromBlock: number; syncedThrough: number; scanned: boolean }
 
   'tx.submitted':             { id: string; kind: TxKind }
   'tx.transition':            { id: string; kind: TxKind; from: TxStage; to: TxStage; executionState: TxRecord['executionState'] }

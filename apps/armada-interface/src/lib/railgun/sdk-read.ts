@@ -14,6 +14,7 @@ import {
 import { getCachedDeployments, getUsdcAddress, loadYieldDeployment } from '../../config/deployments'
 import { getNetworkConfig } from '../../config/network'
 import * as keyManager from './keyManager'
+import { track } from '../telemetry'
 
 // Read-only: it only syncs + reads. Proving/artifacts are never exercised, so they throw if
 // something unexpectedly reaches the spend path — a loud signal rather than silent wrong behavior.
@@ -101,10 +102,20 @@ async function ensureInstance(): Promise<{ sdk: ArmadaSdk; wallet: ReadWallet; a
   return instance
 }
 
+/**
+ * Sync the wallet and emit a telemetry line so resume-vs-rescan is observable in the console. A low
+ * `fromBlock` (≈ deploy block) means a cold rescan; a high one means it resumed from the IndexedDB
+ * checkpoint. `scanned: false` = the head hadn't advanced, so no getLogs work was done.
+ */
+export async function syncTracked(wallet: Pick<ReadWallet, 'sync'>): Promise<void> {
+  const { fromBlock, syncedThrough, scanned } = await wallet.sync()
+  track('sdk.sync', { fromBlock, syncedThrough, scanned })
+}
+
 /** Sync the persistent SDK wallet and return its shielded USDC balance (spendable + pending). */
 export async function syncSdkUsdcBalance(): Promise<bigint> {
   const { wallet } = await ensureInstance()
-  await wallet.sync()
+  await syncTracked(wallet)
   const cfg = await readPathConfig()
   const usdcHash = getTokenDataHash(getTokenDataERC20(cfg.pool.usdcAddress))
   const usdc = (await wallet.balances()).find(b => b.tokenHash === usdcHash)
@@ -116,7 +127,7 @@ export async function syncSdkYieldShares(): Promise<bigint> {
   const vault = await vaultTokenAddress()
   if (vault === undefined) return 0n
   const { wallet } = await ensureInstance()
-  await wallet.sync()
+  await syncTracked(wallet)
   const vaultHash = getTokenDataHash(getTokenDataERC20(vault))
   const shares = (await wallet.balances()).find(b => b.tokenHash === vaultHash)
   return shares ? shares.spendable + shares.pending : 0n
@@ -125,7 +136,7 @@ export async function syncSdkYieldShares(): Promise<bigint> {
 /** Sync + reconstruct the SDK wallet's tx history (optionally only entries at/after `sinceBlock`). */
 export async function syncSdkHistory(sinceBlock?: number): Promise<HistoryEntry[]> {
   const { wallet } = await ensureInstance()
-  await wallet.sync()
+  await syncTracked(wallet)
   return wallet.history(sinceBlock !== undefined ? { sinceBlock } : {})
 }
 

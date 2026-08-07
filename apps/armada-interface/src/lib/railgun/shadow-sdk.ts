@@ -141,12 +141,13 @@ export async function runShadowDifferential(engineUsdcBalance: bigint): Promise<
 }
 
 /**
- * Read-path cutover flag. When set, the app sources ALL shielded read state — USDC balance, yield
- * shares, and tx history — from the SDK instead of the stock engine; the engine still scans as a
- * fallback and the redundant shadow comparison is skipped. Off by default; the engine drives.
+ * Read-path cutover flag. The SDK is the default source of ALL shielded read state — USDC balance,
+ * yield shares, and tx history; the redundant shadow comparison is skipped. Set
+ * `VITE_SDK_READ_PATH=0` to fall back to the stock engine (escape hatch retained until the engine
+ * read code is deleted). Any other value (or unset) → the SDK drives.
  */
 export function sdkReadPathEnabled(): boolean {
-  return import.meta.env.VITE_SDK_READ_PATH === '1'
+  return import.meta.env.VITE_SDK_READ_PATH !== '0'
 }
 
 /** Sync the persistent SDK wallet and return its shielded USDC balance (spendable + pending). */

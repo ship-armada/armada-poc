@@ -307,9 +307,16 @@ describe('runHistoryScan — timestamp backfill', () => {
   }))
 
   beforeEach(() => {
+    // These cases exercise the ENGINE fallback path (getWalletTransactionHistory + timestamp
+    // backfill). The SDK read path is the default, so pin it off for this block.
+    vi.stubEnv('VITE_SDK_READ_PATH', '0')
     hoistedScan.getWalletTransactionHistory.mockReset()
     hoistedScan.getHubBlockTimestamps.mockReset()
     hoistedScan.getHubBlockTimestamps.mockResolvedValue(new Map())
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
   })
 
   function withoutTimestamp(txid: string, blockNumber: number, amount: bigint): TransactionHistoryItem {

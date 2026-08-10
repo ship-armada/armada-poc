@@ -76,7 +76,7 @@ const SHIELD_DATA_COMPONENTS = [
 
 // ── Struct converters (single source so the hash and the calldata never drift) ────────────────
 
-/** Build a hub `ShieldRequest` struct from a `createShieldRequest()` output for `tokenAddress`. */
+/** Build a hub `ShieldRequest` struct from a `createShieldRequestSdk()` output for `tokenAddress`. */
 export function toShieldRequestStruct(
   data: ShieldRequestData,
   tokenAddress: `0x${string}`,
@@ -91,7 +91,7 @@ export function toShieldRequestStruct(
   }
 }
 
-/** Build a `ShieldData` struct (CCTP payload) from a `createShieldRequest()` output. */
+/** Build a `ShieldData` struct (CCTP payload) from a `createShieldRequestSdk()` output. */
 export function toShieldDataStruct(
   data: ShieldRequestData,
   integrator: `0x${string}`,

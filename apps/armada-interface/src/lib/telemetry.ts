@@ -51,13 +51,6 @@ export type EventRegistry = {
   // means it resumed from the IndexedDB checkpoint. `scanned` false = head hadn't advanced (no work).
   'sdk.sync':                 { fromBlock: number; syncedThrough: number; scanned: boolean }
 
-  // Shield write-path differential (Phase B) — one line per shield build when the differential is
-  // enabled: @armada/sdk builds the same note (same shieldPrivateKey + engine's random) and we
-  // compare the deterministic COMMITMENT fields (npk/value/shieldKey) to the engine's. The
-  // encryptedBundle is excluded — fresh AES-GCM IV per call, so not byte-reproducible by design.
-  // `match` false = a shield-build parity gap; observe-only (the SDK note is never submitted).
-  'sdk.shieldDiff':           { npkMatch: boolean; valueMatch: boolean; shieldKeyMatch: boolean; match: boolean }
-
   'tx.submitted':             { id: string; kind: TxKind }
   'tx.transition':            { id: string; kind: TxKind; from: TxStage; to: TxStage; executionState: TxRecord['executionState'] }
   'tx.failed':                { id: string; kind: TxKind; errorCode?: string }

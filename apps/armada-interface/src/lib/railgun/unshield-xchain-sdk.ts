@@ -6,6 +6,14 @@ import { transactionToTuple, encodeCctpBinding } from '@armada/sdk'
 import { getSdkWallet } from './sdk-read'
 
 /**
+ * Write-path cutover flag. When set, the cross-chain unshield handler builds + submits via
+ * `@armada/sdk` (`buildXchainUnshieldSdk`) instead of the stock engine. Off by default; the engine drives.
+ */
+export function sdkXchainUnshieldEnabled(): boolean {
+  return import.meta.env.VITE_SDK_XCHAIN_UNSHIELD === '1'
+}
+
+/**
  * PrivacyPool.atomicCrossChainUnshield ABI — the proved Transaction struct wrapped with the CCTP
  * destination + recipient + maxFee + per-tx nonce. The Transaction tuple is passed POSITIONALLY
  * (via `transactionToTuple`, which applies the G2-coordinate swap), so viem encodes by order.

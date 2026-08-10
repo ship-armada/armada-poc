@@ -17,6 +17,7 @@ import {
 import { refreshShieldedBalances } from '@/lib/railgun/sync'
 import { buildYieldAdaptTransaction, type BroadcasterFeeRecipient } from '@/lib/railgun/yield'
 import { runYieldDifferential, yieldDifferentialEnabled } from '@/lib/railgun/yield-differential'
+import { buildYieldAdaptSdk, sdkYieldEnabled } from '@/lib/railgun/yield-sdk'
 import { submitRelay } from '@/lib/relayer'
 import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
 import { advance, markFailed } from '@/lib/tx/reducer'
@@ -99,6 +100,27 @@ async function runBuildProof(
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   const progress = createProofProgressWriter(record, ctx.signal)
+
+  if (sdkYieldEnabled()) {
+    // @armada/sdk cutover: plan (unshield USDC → adapter + re-shield-bundle adaptParams) → prove
+    // off-thread → encode lendAndShield, and stash the calldata so submit-relayer dispatches it
+    // without re-proving. Survives a reload (persisted in the record).
+    const bf = broadcasterFeeFromRecord(record, usdcAddress)
+    const { to, data } = await buildYieldAdaptSdk({
+      mode: 'lend',
+      amount: record.meta.amount,
+      unshieldToken: usdcAddress as `0x${string}`,
+      shieldOutputToken: vaultAddress as `0x${string}`,
+      adapterAddress: adapterAddress as `0x${string}`,
+      railgunAddress,
+      broadcasterFee: bf ? { amount: bf.amount, recipientAddress: bf.recipientAddress } : null,
+      onProgress: progress.write,
+    })
+    if (ctx.signal.aborted) throw new Error('cancelled')
+    await ctx.upsert(advance(progress.latest(), 'submit-relayer', { yieldTx: { to, data, value: '0' } }))
+    return
+  }
+
   const built = await buildYieldAdaptTransaction({
     walletId,
     encryptionKey,

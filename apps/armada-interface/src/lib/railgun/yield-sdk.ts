@@ -30,6 +30,14 @@ const as0x = (hex: string): `0x${string}` => {
   return hex as `0x${string}`
 }
 
+/**
+ * Write-path cutover flag. When set, the yield handlers build + submit via `@armada/sdk`
+ * (`buildYieldAdaptSdk`) instead of the stock engine. Off by default; the engine drives.
+ */
+export function sdkYieldEnabled(): boolean {
+  return import.meta.env.VITE_SDK_YIELD === '1'
+}
+
 /** A re-shield destination bound into adaptParams: npk (poseidon(mpk, random)) + the shield ECIES bundle. */
 interface ReshieldBundle {
   readonly npk: `0x${string}`

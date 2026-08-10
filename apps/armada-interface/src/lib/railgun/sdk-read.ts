@@ -4,6 +4,7 @@
 import {
   createArmadaSdk,
   IndexedDBStorageAdapter,
+  LocalSigner,
   getTokenDataERC20,
   getTokenDataHash,
   type ArmadaSdk,
@@ -79,8 +80,12 @@ async function ensureInstance(): Promise<{ sdk: ArmadaSdk; wallet: ReadWallet; a
     prover: createInterfaceProver(),
     artifacts: createInterfaceArtifactSource(),
   })
+  // Attach a spend signer so the instance is write-capable (planTransfer/prove) — not just view-only.
+  // Derived from the same in-memory rootSecret the viewing key comes from, so it adds no new secret
+  // exposure; it only signs during prove(). Reads never invoke it.
   const wallet = await sdk.wallet.fromRootSecret(keyManager.getRootSecret(), {
     creationBlock: keyManager.getCreationBlock() ?? 0,
+    signer: await LocalSigner.fromRootSecret(keyManager.getRootSecret()),
   })
   instance = { sdk, wallet, address: engineAddress }
   return instance

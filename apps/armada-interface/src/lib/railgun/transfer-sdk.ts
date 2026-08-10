@@ -11,6 +11,16 @@ export interface SdkTransferInputs {
   /** Broadcaster (relayer) fee note, or null for direct user submission (no fee output). */
   readonly broadcasterFee: { readonly amount: bigint; readonly recipientAddress: string } | null
   readonly poolAddress: `0x${string}`
+  /** ZK-proof progress (0–1); the worker prover emits coarse start/end phases. */
+  readonly onProgress?: (fraction: number) => void
+}
+
+/**
+ * Write-path cutover flag. When set, the transfer handler builds + submits the transfer via
+ * `@armada/sdk` (`buildTransferSdk`) instead of the stock engine. Off by default; the engine drives.
+ */
+export function sdkTransferEnabled(): boolean {
+  return import.meta.env.VITE_SDK_TRANSFER === '1'
 }
 
 /**
@@ -40,7 +50,10 @@ export async function buildTransferSdk(
     outputs: [{ to0zk: inputs.recipient, amount: inputs.amount }],
     fee,
   })
-  const handle = await wallet.prove(plan)
+  const handle = await wallet.prove(
+    plan,
+    inputs.onProgress ? { onProgress: (p) => inputs.onProgress?.(p.fraction) } : undefined,
+  )
   const { to, data } = buildTransactCalldata([handle.toTransactionData()], inputs.poolAddress)
   return { to, data }
 }

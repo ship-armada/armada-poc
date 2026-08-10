@@ -2,7 +2,7 @@
 // ABOUTME: Same handler covers Withdraw modal (destination ≠ hub) and Send-External tab (destination ≠ hub) — same contract path, different UI entry.
 
 import { ethers } from 'ethers'
-import { encodeFunctionData, keccak256, toBytes } from 'viem'
+import { keccak256, toBytes } from 'viem'
 import { getPublicClient, sendTransaction } from 'wagmi/actions'
 import { asTxError, waitForReceiptOrFail } from '@/lib/tx/receipt'
 import { simulateOrThrow } from '@/lib/tx/simulate'
@@ -14,17 +14,11 @@ import { getChainById, getNetworkConfig } from '@/config/network'
 import { ensureChain } from '@/lib/network-switch'
 import { createProvider } from '@/lib/rpc'
 import {
-  getSdkEncryptionKey as kmGetSdkEncryptionKey,
   getWalletId as kmGetWalletId,
   isUnlocked as kmIsUnlocked,
 } from '@/lib/railgun/keyManager'
 import { refreshShieldedBalances } from '@/lib/railgun/sync'
-import {
-  buildXchainUnshieldTransaction,
-  type BroadcasterFeeRecipient,
-} from '@/lib/railgun/unshield'
-import { runXchainUnshieldDifferential, xchainUnshieldDifferentialEnabled } from '@/lib/railgun/unshield-xchain-differential'
-import { buildXchainUnshieldSdk, sdkXchainUnshieldEnabled } from '@/lib/railgun/unshield-xchain-sdk'
+import { buildXchainUnshieldSdk } from '@/lib/railgun/unshield-xchain-sdk'
 import {
   extractCctpMessageFromReceipt,
   messageReceivedTopic,
@@ -54,71 +48,6 @@ import { scanCctpDeliveryWindow, matchesXchainDelivery } from './scan'
 import { createProofProgressWriter } from '@/lib/tx/progress'
 import type { StageHandler } from '@/lib/tx/executor'
 import type { TxError, TxRecord } from '@/lib/tx/types'
-
-/**
- * PrivacyPool.atomicCrossChainUnshield ABI — same Transaction struct as transact(), wrapped with
- * the CCTP destination + recipient + caller-restriction + maxFee. The destination router on the
- * client chain ATOMICALLY receives the CCTP USDC and forwards it to `finalRecipient` in one
- * `relayWithHook` call, so the user sees a single tx on each chain.
- */
-const PRIVACY_POOL_XCHAIN_UNSHIELD_ABI = [
-  {
-    type: 'function',
-    name: 'atomicCrossChainUnshield',
-    stateMutability: 'nonpayable',
-    inputs: [
-      // The Transaction struct — we extract this from the SDK's transact() calldata.
-      { name: '_transaction', type: 'tuple', components: [
-        { name: 'proof', type: 'tuple', components: [
-          { name: 'a', type: 'tuple', components: [
-            { name: 'x', type: 'uint256' },
-            { name: 'y', type: 'uint256' },
-          ] },
-          { name: 'b', type: 'tuple', components: [
-            { name: 'x', type: 'uint256[2]' },
-            { name: 'y', type: 'uint256[2]' },
-          ] },
-          { name: 'c', type: 'tuple', components: [
-            { name: 'x', type: 'uint256' },
-            { name: 'y', type: 'uint256' },
-          ] },
-        ] },
-        { name: 'merkleRoot', type: 'bytes32' },
-        { name: 'nullifiers', type: 'bytes32[]' },
-        { name: 'commitments', type: 'bytes32[]' },
-        { name: 'boundParams', type: 'tuple', components: [
-          { name: 'treeNumber', type: 'uint16' },
-          { name: 'minGasPrice', type: 'uint72' },
-          { name: 'unshield', type: 'uint8' },
-          { name: 'chainID', type: 'uint64' },
-          { name: 'adaptContract', type: 'address' },
-          { name: 'adaptParams', type: 'bytes32' },
-          { name: 'commitmentCiphertext', type: 'tuple[]', components: [
-            { name: 'ciphertext', type: 'bytes32[4]' },
-            { name: 'blindedSenderViewingKey', type: 'bytes32' },
-            { name: 'blindedReceiverViewingKey', type: 'bytes32' },
-            { name: 'annotationData', type: 'bytes' },
-            { name: 'memo', type: 'bytes' },
-          ] },
-        ] },
-        { name: 'unshieldPreimage', type: 'tuple', components: [
-          { name: 'npk', type: 'bytes32' },
-          { name: 'token', type: 'tuple', components: [
-            { name: 'tokenType', type: 'uint8' },
-            { name: 'tokenAddress', type: 'address' },
-            { name: 'tokenSubID', type: 'uint256' },
-          ] },
-          { name: 'value', type: 'uint120' },
-        ] },
-      ] },
-      { name: 'destinationDomain', type: 'uint32' },
-      { name: 'finalRecipient', type: 'address' },
-      { name: 'maxFee', type: 'uint256' },
-      { name: 'uniqueNonce', type: 'bytes32' },
-    ],
-    outputs: [],
-  },
-] as const
 
 /**
  * Per-transaction CCTP delivery marker (issue #287). Derived deterministically from the record's ulid
@@ -185,11 +114,9 @@ export const unshieldXchainHandler: StageHandler<'unshield-xchain'> = {
 /** A6 — null when wallet-override, otherwise the broadcaster context from meta. */
 function broadcasterFeeFromRecord(
   record: TxRecord<'unshield-xchain'>,
-  tokenAddress: string,
-): BroadcasterFeeRecipient | null {
+): { amount: bigint; recipientAddress: string } | null {
   if (record.meta.useWalletOverride) return null
   return {
-    tokenAddress,
     amount: record.meta.broadcasterFeeAmount,
     recipientAddress: record.meta.broadcasterRailgunAddress,
   }
@@ -202,12 +129,8 @@ async function runBuildProof(
   if (!kmIsUnlocked()) {
     throw new Error('Cross-chain withdraw requires an unlocked shielded wallet.')
   }
-  const walletId = kmGetWalletId()
-  const encryptionKey = kmGetSdkEncryptionKey()
   const deployments = await loadDeployments()
-  const tokenAddress = deployments.hub.cctp.usdc
   const privacyPoolAddress = deployments.hub.contracts.privacyPool
-  const hubChainId = getNetworkConfig().hub.chainId
 
   // Resolve the CCTP destination tuple. It is bound into the proof AND passed as the on-chain
   // atomicCrossChainUnshield args below; both MUST match or the hub rejects with
@@ -229,81 +152,22 @@ async function runBuildProof(
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   const progress = createProofProgressWriter(record, ctx.signal)
-
-  if (sdkXchainUnshieldEnabled()) {
-    // @armada/sdk cutover: plan (unshield to pool + CCTP-binding adaptParams) → prove off-thread →
-    // encode atomicCrossChainUnshield, and stash the calldata so submit-relayer dispatches it without
-    // re-proving. Survives a reload (persisted in the record), unlike the engine's in-memory proof cache.
-    const bf = broadcasterFeeFromRecord(record, tokenAddress)
-    const { to, data } = await buildXchainUnshieldSdk({
-      amount: record.meta.amount,
-      broadcasterFee: bf ? { amount: bf.amount, recipientAddress: bf.recipientAddress } : null,
-      privacyPoolAddress: privacyPoolAddress as `0x${string}`,
-      finalRecipient: record.meta.recipient as `0x${string}`,
-      destinationDomain,
-      maxFee,
-      uniqueNonce: deliveryNonce(record.id), // issue #287 — unique per-tx marker echoed into the CCTP hookData
-      onProgress: progress.write,
-    })
-    if (ctx.signal.aborted) throw new Error('cancelled')
-    await ctx.upsert(advance(progress.latest(), 'submit-relayer', { unshieldTx: { to, data, value: '0' } }))
-    return
-  }
-
-  const built = await buildXchainUnshieldTransaction({
-    walletId,
-    encryptionKey,
-    tokenAddress,
-    privacyPoolAddress,
+  // Plan (unshield to pool + CCTP-binding adaptParams) → prove off-thread → encode
+  // atomicCrossChainUnshield, and stash the calldata so submit-relayer dispatches it without
+  // re-proving. Survives a reload (persisted in the record). The CCTP destinationCaller is pinned to
+  // remoteHookRouters[destinationDomain] by PrivacyPool (issue #64) — it is not passed here.
+  const { to, data } = await buildXchainUnshieldSdk({
     amount: record.meta.amount,
-    broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
-    finalRecipient: record.meta.recipient,
+    broadcasterFee: broadcasterFeeFromRecord(record),
+    privacyPoolAddress: privacyPoolAddress as `0x${string}`,
+    finalRecipient: record.meta.recipient as `0x${string}`,
     destinationDomain,
     maxFee,
-    hubChainId,
+    uniqueNonce: deliveryNonce(record.id), // issue #287 — unique per-tx marker echoed into the CCTP hookData
     onProgress: progress.write,
   })
-
   if (ctx.signal.aborted) throw new Error('cancelled')
-
-  // The CCTP destinationCaller is pinned to remoteHookRouters[destinationDomain] by PrivacyPool
-  // (issue #64) — it is not passed here.
-  const calldata = encodeAtomicCrossChainUnshield(
-    built.transaction,
-    destinationDomain,
-    record.meta.recipient as `0x${string}`,
-    maxFee,
-    deliveryNonce(record.id), // issue #287 — unique per-tx marker echoed into the CCTP hookData
-  )
-
-  // Pre-cutover differential (opt-in, observe-only): build this cross-chain unshield with @armada/sdk and
-  // simulate it against the pool — telemetry-reports whether the SDK proof + adaptParams binding verifies
-  // on-chain. Fire-and-forget; never blocks or fails the unshield (the engine build above is what submits).
-  const evmFrom = record.walletContext.evmAddress
-  if (xchainUnshieldDifferentialEnabled() && evmFrom) {
-    const bf = broadcasterFeeFromRecord(record, tokenAddress)
-    void runXchainUnshieldDifferential({
-      amount: record.meta.amount,
-      broadcasterFee: bf ? { amount: bf.amount, recipientAddress: bf.recipientAddress } : null,
-      privacyPoolAddress: privacyPoolAddress as `0x${string}`,
-      finalRecipient: record.meta.recipient as `0x${string}`,
-      destinationDomain,
-      maxFee,
-      uniqueNonce: deliveryNonce(record.id),
-      from: evmFrom as `0x${string}`,
-      chainId: hubChainId,
-    })
-  }
-
-  // Advance from the LIVE record (progress bumps incremented updatedSeq). Persist the encoded
-  // calldata so submit-relayer dispatches it without re-proving.
-  await ctx.upsert(advance(progress.latest(), 'submit-relayer', {
-    unshieldTx: {
-      to: privacyPoolAddress as `0x${string}`,
-      data: calldata,
-      value: '0',
-    },
-  }))
+  await ctx.upsert(advance(progress.latest(), 'submit-relayer', { unshieldTx: { to, data, value: '0' } }))
 }
 
 async function runSubmitAndBurn(
@@ -696,27 +560,4 @@ async function runWaitForDelivery(
   if (kmIsUnlocked()) {
     void refreshShieldedBalances(kmGetWalletId()).catch(() => {})
   }
-}
-
-function encodeAtomicCrossChainUnshield(
-  transactionStruct: unknown,
-  destinationDomain: number,
-  finalRecipient: `0x${string}`,
-  maxFee: bigint,
-  uniqueNonce: `0x${string}`,
-): `0x${string}` {
-  return encodeFunctionData({
-    abi: PRIVACY_POOL_XCHAIN_UNSHIELD_ABI,
-    functionName: 'atomicCrossChainUnshield',
-    args: [
-      // The decoded transaction struct from the SDK — viem encodes by name matching the ABI's
-      // component names. Cast through unknown since the struct shape is dynamic at this seam.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      transactionStruct as any,
-      destinationDomain,
-      finalRecipient,
-      maxFee,
-      uniqueNonce,
-    ],
-  })
 }

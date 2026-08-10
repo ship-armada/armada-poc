@@ -532,12 +532,27 @@ export interface ArtifactsShieldXchain extends ArtifactsXchain {
   approveSkipped?: boolean
 }
 
+export interface ArtifactsTransfer extends ArtifactsCommon {
+  /**
+   * The shielded-transfer `transact()` calldata built during build-proof (@armada/sdk plan → prove →
+   * serialize), so submit-relayer dispatches it without re-running the ~20-30s proof. Unlike the
+   * engine's in-memory proof cache (which a reload wipes), this survives a reload — it's persisted in
+   * the record. `value` is '0' (a shielded tx carries no native value); stringified for IDB.
+   */
+  transferTx?: {
+    to: `0x${string}`
+    data: `0x${string}`
+    value: string
+  }
+}
+
 export type ArtifactsFor<K extends TxKind> =
   K extends 'unshield-xchain' ? ArtifactsXchain
   : K extends 'shield' ? ArtifactsShield
   : K extends 'shield-xchain' ? ArtifactsShieldXchain
   : K extends 'yield-deposit' ? ArtifactsYield
   : K extends 'yield-withdraw' ? ArtifactsYield
+  : K extends 'transfer-shielded' ? ArtifactsTransfer
   : ArtifactsCommon
 
 /* Ownership / session context — captured at submit. Required for history

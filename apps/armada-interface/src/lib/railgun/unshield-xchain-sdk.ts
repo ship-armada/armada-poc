@@ -1,26 +1,14 @@
 // ABOUTME: SDK-backed cross-chain unshield builder — planTransfer(unshield to pool + CCTP-binding adaptParams)
-// ABOUTME: → prove → toTransactionData → transactionToTuple → encode atomicCrossChainUnshield. @armada/sdk analogue of buildXchainUnshieldTransaction.
+// ABOUTME: → prove → toTransactionData → transactionToTuple → encode atomicCrossChainUnshield calldata.
 
 import { encodeFunctionData } from 'viem'
 import { transactionToTuple, encodeCctpBinding } from '@armada/sdk'
 import { getSdkWallet } from './sdk-read'
 
 /**
- * Write-path cutover flag. The cross-chain unshield handler builds + submits via `@armada/sdk`
- * (`buildXchainUnshieldSdk`) by default; set `VITE_SDK_XCHAIN_UNSHIELD=0` to fall back to the stock
- * engine (escape hatch, retained until the engine cross-chain unshield builder is deleted).
- */
-export function sdkXchainUnshieldEnabled(): boolean {
-  return import.meta.env.VITE_SDK_XCHAIN_UNSHIELD !== '0'
-}
-
-/**
  * PrivacyPool.atomicCrossChainUnshield ABI — the proved Transaction struct wrapped with the CCTP
  * destination + recipient + maxFee + per-tx nonce. The Transaction tuple is passed POSITIONALLY
  * (via `transactionToTuple`, which applies the G2-coordinate swap), so viem encodes by order.
- *
- * NOTE: duplicated from features/unshield-xchain/handler.ts during the differential phase; at the
- * cutover the handler drops its engine copy and imports this module's builder instead.
  */
 const PRIVACY_POOL_XCHAIN_UNSHIELD_ABI = [
   {

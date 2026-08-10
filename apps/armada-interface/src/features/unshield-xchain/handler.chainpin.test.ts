@@ -18,9 +18,9 @@ vi.mock('@/lib/tx/receipt', async (importActual) => {
   return { ...actual, waitForReceiptOrFail: waitForReceiptMock }
 })
 
-// Mock the Railgun SDK wrapper so importing the handler doesn't transitively load circomlibjs.
-vi.mock('@/lib/railgun/unshield', () => ({
-  buildXchainUnshieldTransaction: vi.fn(),
+// Mock the SDK builder so importing the handler doesn't transitively load the @armada/sdk prover.
+vi.mock('@/lib/railgun/unshield-xchain-sdk', () => ({
+  buildXchainUnshieldSdk: vi.fn(),
 }))
 vi.mock('@/lib/railgun/sync', () => ({ refreshShieldedBalances: vi.fn(async () => {}) }))
 vi.mock('@/lib/railgun/keyManager', () => ({

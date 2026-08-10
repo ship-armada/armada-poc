@@ -6,11 +6,12 @@ import { transactionToTuple, encodeCctpBinding } from '@armada/sdk'
 import { getSdkWallet } from './sdk-read'
 
 /**
- * Write-path cutover flag. When set, the cross-chain unshield handler builds + submits via
- * `@armada/sdk` (`buildXchainUnshieldSdk`) instead of the stock engine. Off by default; the engine drives.
+ * Write-path cutover flag. The cross-chain unshield handler builds + submits via `@armada/sdk`
+ * (`buildXchainUnshieldSdk`) by default; set `VITE_SDK_XCHAIN_UNSHIELD=0` to fall back to the stock
+ * engine (escape hatch, retained until the engine cross-chain unshield builder is deleted).
  */
 export function sdkXchainUnshieldEnabled(): boolean {
-  return import.meta.env.VITE_SDK_XCHAIN_UNSHIELD === '1'
+  return import.meta.env.VITE_SDK_XCHAIN_UNSHIELD !== '0'
 }
 
 /**

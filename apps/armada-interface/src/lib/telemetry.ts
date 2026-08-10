@@ -51,6 +51,12 @@ export type EventRegistry = {
   // means it resumed from the IndexedDB checkpoint. `scanned` false = head hadn't advanced (no work).
   'sdk.sync':                 { fromBlock: number; syncedThrough: number; scanned: boolean }
 
+  // @armada/sdk write-path differential — one line per SDK unshield build+simulate (opt-in
+  // VITE_SHADOW_SDK). `simulated` true = the pool's on-chain verifier accepted the SDK-built
+  // calldata (the arbiter, since a proof-carrying tx can't be byte-compared to the engine's).
+  // Observe-only: the engine still submits. Retired at the unshield cutover.
+  'sdk.unshieldDiff':         { simulated: boolean }
+
   'tx.submitted':             { id: string; kind: TxKind }
   'tx.transition':            { id: string; kind: TxKind; from: TxStage; to: TxStage; executionState: TxRecord['executionState'] }
   'tx.failed':                { id: string; kind: TxKind; errorCode?: string }

@@ -16,11 +16,12 @@ export interface SdkTransferInputs {
 }
 
 /**
- * Write-path cutover flag. When set, the transfer handler builds + submits the transfer via
- * `@armada/sdk` (`buildTransferSdk`) instead of the stock engine. Off by default; the engine drives.
+ * Write-path cutover flag. The transfer handler builds + submits via `@armada/sdk` (`buildTransferSdk`)
+ * by default; set `VITE_SDK_TRANSFER=0` to fall back to the stock engine (escape hatch, retained until
+ * the engine transfer builder is deleted).
  */
 export function sdkTransferEnabled(): boolean {
-  return import.meta.env.VITE_SDK_TRANSFER === '1'
+  return import.meta.env.VITE_SDK_TRANSFER !== '0'
 }
 
 /**

@@ -16,11 +16,12 @@ export interface SdkUnshieldInputs {
 }
 
 /**
- * Write-path cutover flag. When set, the unshield handler builds + submits the unshield via
- * `@armada/sdk` (`buildUnshieldSdk`) instead of the stock engine. Off by default; the engine drives.
+ * Write-path cutover flag. The unshield handler builds + submits via `@armada/sdk` (`buildUnshieldSdk`)
+ * by default; set `VITE_SDK_UNSHIELD=0` to fall back to the stock engine (escape hatch, retained until
+ * the engine unshield builder is deleted).
  */
 export function sdkUnshieldEnabled(): boolean {
-  return import.meta.env.VITE_SDK_UNSHIELD === '1'
+  return import.meta.env.VITE_SDK_UNSHIELD !== '0'
 }
 
 /**

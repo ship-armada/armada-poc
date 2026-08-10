@@ -23,6 +23,7 @@ import {
   buildXchainUnshieldTransaction,
   type BroadcasterFeeRecipient,
 } from '@/lib/railgun/unshield'
+import { runXchainUnshieldDifferential, xchainUnshieldDifferentialEnabled } from '@/lib/railgun/unshield-xchain-differential'
 import {
   extractCctpMessageFromReceipt,
   messageReceivedTopic,
@@ -252,6 +253,25 @@ async function runBuildProof(
     maxFee,
     deliveryNonce(record.id), // issue #287 — unique per-tx marker echoed into the CCTP hookData
   )
+
+  // Pre-cutover differential (opt-in, observe-only): build this cross-chain unshield with @armada/sdk and
+  // simulate it against the pool — telemetry-reports whether the SDK proof + adaptParams binding verifies
+  // on-chain. Fire-and-forget; never blocks or fails the unshield (the engine build above is what submits).
+  const evmFrom = record.walletContext.evmAddress
+  if (xchainUnshieldDifferentialEnabled() && evmFrom) {
+    const bf = broadcasterFeeFromRecord(record, tokenAddress)
+    void runXchainUnshieldDifferential({
+      amount: record.meta.amount,
+      broadcasterFee: bf ? { amount: bf.amount, recipientAddress: bf.recipientAddress } : null,
+      privacyPoolAddress: privacyPoolAddress as `0x${string}`,
+      finalRecipient: record.meta.recipient as `0x${string}`,
+      destinationDomain,
+      maxFee,
+      uniqueNonce: deliveryNonce(record.id),
+      from: evmFrom as `0x${string}`,
+      chainId: hubChainId,
+    })
+  }
 
   // Advance from the LIVE record (progress bumps incremented updatedSeq). Persist the encoded
   // calldata so submit-relayer dispatches it without re-proving.

@@ -16,15 +16,6 @@ export interface SdkTransferInputs {
 }
 
 /**
- * Write-path cutover flag. The transfer handler builds + submits via `@armada/sdk` (`buildTransferSdk`)
- * by default; set `VITE_SDK_TRANSFER=0` to fall back to the stock engine (escape hatch, retained until
- * the engine transfer builder is deleted).
- */
-export function sdkTransferEnabled(): boolean {
-  return import.meta.env.VITE_SDK_TRANSFER !== '0'
-}
-
-/**
  * Build a shielded-transfer transaction via `@armada/sdk`: the wallet plans the transfer over its
  * spendable notes, proves it (Groth16), and the proved struct is serialized into `transact(...)`
  * calldata. Returns `{ to, data }` (value is always 0 — a shielded tx carries no native value).

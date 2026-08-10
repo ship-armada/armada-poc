@@ -51,12 +51,6 @@ export type EventRegistry = {
   // means it resumed from the IndexedDB checkpoint. `scanned` false = head hadn't advanced (no work).
   'sdk.sync':                 { fromBlock: number; syncedThrough: number; scanned: boolean }
 
-  // Transfer write-path differential (Phase B, opt-in) — one line per transfer when enabled: @armada/sdk
-  // builds the transfer (plan→prove→calldata) and we SIMULATE it against the pool. `simulated:true` = the
-  // on-chain verifier accepted the SDK proof + nullifiers + root (a proof-carrying tx can't be byte-compared
-  // to the engine). Observe-only — the SDK tx is simulated, never submitted.
-  'sdk.transferDiff':         { simulated: boolean }
-
   'tx.submitted':             { id: string; kind: TxKind }
   'tx.transition':            { id: string; kind: TxKind; from: TxStage; to: TxStage; executionState: TxRecord['executionState'] }
   'tx.failed':                { id: string; kind: TxKind; errorCode?: string }

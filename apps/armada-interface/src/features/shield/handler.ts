@@ -22,6 +22,7 @@ import {
   createShieldRequest,
   generateRandomShieldPrivateKey,
 } from '@/lib/railgun/shield'
+import { runShieldDifferential, shieldDifferentialEnabled } from '@/lib/railgun/shield-differential'
 import { signUsdcPermit } from '@/lib/wallet/permit'
 import { buildGaslessShieldCalldata } from '@/lib/wallet/gasless-shield'
 import {
@@ -186,6 +187,17 @@ async function runBuildProof(
     usdcAddress,
     shieldPrivateKey,
   )
+  // Phase B write-path differential (observe-only): rebuild this note with @armada/sdk from the
+  // same key + random and telemetry-report commitment parity. Fire-and-forget — never blocks or
+  // fails the shield; the engine-built request below is still what gets submitted.
+  if (shieldDifferentialEnabled()) {
+    void runShieldDifferential(request, {
+      railgunAddress,
+      amount: shieldValue,
+      tokenAddress: usdcAddress,
+      shieldPrivateKeyHex: shieldPrivateKey,
+    })
+  }
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   // Phase C — gasless path: build the relayer fee note (a second shield note to the relayer's 0zk),

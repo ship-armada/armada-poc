@@ -272,6 +272,20 @@ export default defineConfig({
       },
     }),
   ],
+  worker: {
+    // The Groth16 prover Web Worker (lib/railgun/prover.worker.ts) runs snarkjs off the main thread.
+    // snarkjs needs the same wasm + Node-polyfill treatment as the main bundle. `plugins` is a factory
+    // (Vite instantiates fresh plugin instances per worker build); `format: 'es'` matches the module worker.
+    format: 'es',
+    plugins: () => [
+      wasm(),
+      topLevelAwait(),
+      nodePolyfills({
+        include: ['buffer', 'process', 'util', 'stream', 'events', 'assert', 'crypto'],
+        globals: { Buffer: true, global: true, process: true },
+      }),
+    ],
+  },
   build: {
     // Bump the browser baseline above Vite's default 'modules' target
     // (chrome87 / edge88 / firefox78 / safari14 — early 2020). The default trips

@@ -1,5 +1,5 @@
-// ABOUTME: The @armada/sdk shielded read path — a persistent IndexedDB-backed SDK instance that syncs the
-// ABOUTME: unlocked wallet and reports its 0zk address, USDC balance, yield-vault shares, and tx history.
+// ABOUTME: The persistent @armada/sdk instance — IndexedDB-backed, syncs the unlocked wallet and reports
+// ABOUTME: its 0zk address / balances / history (reads), and is write-capable (real prover + artifacts) for proving.
 
 import {
   createArmadaSdk,
@@ -7,29 +7,13 @@ import {
   getTokenDataERC20,
   getTokenDataHash,
   type ArmadaSdk,
-  type ProverAdapter,
-  type ArtifactSource,
   type HistoryEntry,
 } from '@armada/sdk'
 import { getCachedDeployments, getUsdcAddress, loadYieldDeployment } from '../../config/deployments'
 import { getNetworkConfig } from '../../config/network'
 import * as keyManager from './keyManager'
+import { createInterfaceArtifactSource, createInterfaceProver } from './sdk-prover'
 import { track } from '../telemetry'
-
-// Read-only: it only syncs + reads. Proving/artifacts are never exercised, so they throw if
-// something unexpectedly reaches the spend path — a loud signal rather than silent wrong behavior.
-const readOnlyProver: ProverAdapter = {
-  prove: async () => {
-    throw new Error('sdk-read: read-only read path does not prove')
-  },
-  verify: async () => false,
-  close: async () => {},
-}
-const readOnlyArtifacts: ArtifactSource = {
-  resolve: async () => {
-    throw new Error('sdk-read: read-only read path does not resolve artifacts')
-  },
-}
 
 /** The shielded yield-vault share token (ayUSDC), if a yield deployment exists. */
 async function vaultTokenAddress(): Promise<`0x${string}` | undefined> {
@@ -92,8 +76,8 @@ async function ensureInstance(): Promise<{ sdk: ArmadaSdk; wallet: ReadWallet; a
   const sdk = await createArmadaSdk({
     ...cfg,
     storage: new IndexedDBStorageAdapter(READ_DB_NAME),
-    prover: readOnlyProver,
-    artifacts: readOnlyArtifacts,
+    prover: createInterfaceProver(),
+    artifacts: createInterfaceArtifactSource(),
   })
   const wallet = await sdk.wallet.fromRootSecret(keyManager.getRootSecret(), {
     creationBlock: keyManager.getCreationBlock() ?? 0,

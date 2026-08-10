@@ -23,6 +23,11 @@ export function hasArmadaArtifact(variant: string): boolean {
   return armadaArtifacts.has(variant)
 }
 
+/** Look up a registered circuit artifact by padded shape key. Used by the @armada/sdk ArtifactSource. */
+export function getArmadaArtifact(variant: string): Artifact | undefined {
+  return armadaArtifacts.get(variant)
+}
+
 /** Drop all registered artifacts. For hot-reload + test isolation. */
 export function clearArmadaArtifacts(): void {
   armadaArtifacts.clear()

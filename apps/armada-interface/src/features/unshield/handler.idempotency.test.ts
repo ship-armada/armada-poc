@@ -14,12 +14,9 @@ vi.mock('@/lib/relayer', async (importActual) => {
   return { ...actual, submitRelay: submitRelayMock }
 })
 
-// populate must NOT re-run on resume — the SDK proof cache is gone after a reload.
-const populateMock = vi.hoisted(() => vi.fn(() => { throw new Error('populateUnshieldTransaction must not be called on idempotent re-entry') }))
-vi.mock('@/lib/railgun/unshield', async (importActual) => {
-  const actual = await importActual<typeof import('@/lib/railgun/unshield')>()
-  return { ...actual, populateUnshieldTransaction: populateMock }
-})
+// The SDK unshield builder must NOT run on a submit re-entry — the calldata was stashed in build-proof.
+const buildUnshieldMock = vi.hoisted(() => vi.fn(() => { throw new Error('buildUnshieldSdk must not be called on idempotent re-entry') }))
+vi.mock('@/lib/railgun/unshield-sdk', () => ({ buildUnshieldSdk: buildUnshieldMock }))
 
 const pollMock = vi.hoisted(() => vi.fn(async () => ({ status: 'done' as const, value: { status: 'confirmed' as const } })))
 const pollStatusOnceMock = vi.hoisted(() => vi.fn(async () => null))
@@ -81,7 +78,7 @@ describe('unshieldLocalHandler submit idempotency (P0-1 relayer path)', () => {
   beforeEach(() => {
     sendTransactionMock.mockClear()
     submitRelayMock.mockClear()
-    populateMock.mockClear()
+    buildUnshieldMock.mockClear()
     pollMock.mockClear()
   })
 
@@ -92,7 +89,7 @@ describe('unshieldLocalHandler submit idempotency (P0-1 relayer path)', () => {
     // No re-broadcast, no re-prove.
     expect(submitRelayMock).not.toHaveBeenCalled()
     expect(sendTransactionMock).not.toHaveBeenCalled()
-    expect(populateMock).not.toHaveBeenCalled()
+    expect(buildUnshieldMock).not.toHaveBeenCalled()
     // It resumed via the relayer status poll and completed.
     expect(pollMock).toHaveBeenCalledOnce()
     const last = upserts.at(-1)

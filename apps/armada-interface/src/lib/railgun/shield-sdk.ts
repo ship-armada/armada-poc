@@ -1,18 +1,8 @@
-// ABOUTME: SDK-backed shield-request builder (Phase B write-path cutover) — builds the ShieldRequest via
-// ABOUTME: @armada/sdk in the interface's ShieldRequestData shape, gated by VITE_SDK_WRITE_PATH.
+// ABOUTME: The shield-request builder — builds the on-chain ShieldRequest via @armada/sdk in the
+// ABOUTME: interface's ShieldRequestData shape. Consumed by both shield handlers (hub + cross-chain).
 
 import { buildShieldRequest, initPoseidonPromise } from '@armada/sdk'
 import type { ShieldRequestData } from './shield'
-
-/**
- * Write-path cutover flag. Both shield handlers build their `ShieldRequest` via `@armada/sdk`
- * (`createShieldRequestSdk`) by default; set `VITE_SDK_WRITE_PATH=0` to fall back to the stock engine
- * (escape hatch, retained until the engine shield builder is deleted). Each migrated write path checks
- * this same flag — unmigrated ones ignore it and stay on the engine regardless.
- */
-export function sdkShieldEnabled(): boolean {
-  return import.meta.env.VITE_SDK_WRITE_PATH !== '0'
-}
 
 function hexToBytes(hex: string): Uint8Array {
   const clean = hex.startsWith('0x') ? hex.slice(2) : hex
@@ -30,8 +20,9 @@ function as0x(hex: string): `0x${string}` {
 
 /**
  * Build a single hub `ShieldRequest` via `@armada/sdk`, returned in the interface's `ShieldRequestData`
- * shape so the handler's downstream tuple assembly is unchanged. Drop-in for the engine's
- * `createShieldRequest` (verified byte-identical on the commitment fields by the shield differential).
+ * shape (npk/value/encryptedBundle/shieldKey/random) that the handlers assemble into the on-chain
+ * tuple. The note construction is chain-agnostic — cross-chain shield reuses it and only differs in
+ * the downstream CCTP wrapping.
  */
 export async function createShieldRequestSdk(
   railgunAddress: string,

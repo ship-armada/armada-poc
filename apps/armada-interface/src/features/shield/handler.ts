@@ -19,11 +19,10 @@ import {
 } from '@/lib/railgun/keyManager'
 import { refreshShieldedBalances } from '@/lib/railgun/sync'
 import {
-  createShieldRequest,
   generateRandomShieldPrivateKey,
+  type ShieldRequestData,
 } from '@/lib/railgun/shield'
-import { runShieldDifferential, shieldDifferentialEnabled } from '@/lib/railgun/shield-differential'
-import { createShieldRequestSdk, sdkShieldEnabled } from '@/lib/railgun/shield-sdk'
+import { createShieldRequestSdk } from '@/lib/railgun/shield-sdk'
 import { signUsdcPermit } from '@/lib/wallet/permit'
 import { buildGaslessShieldCalldata } from '@/lib/wallet/gasless-shield'
 import {
@@ -182,22 +181,7 @@ async function runBuildProof(
     )
   }
   const shieldPrivateKey = generateRandomShieldPrivateKey()
-  // Phase B write-path cutover: under VITE_SDK_WRITE_PATH the ShieldRequest is built by @armada/sdk;
-  // otherwise the stock engine (default). Both return the same ShieldRequestData shape.
-  const request = sdkShieldEnabled()
-    ? await createShieldRequestSdk(railgunAddress, shieldValue, usdcAddress, shieldPrivateKey)
-    : await createShieldRequest(railgunAddress, shieldValue, usdcAddress, shieldPrivateKey)
-  // Pre-cutover differential (observe-only): while the engine still builds the submitted request,
-  // rebuild it with @armada/sdk from the same key + random and telemetry-report commitment parity.
-  // Fire-and-forget — never blocks or fails the shield. Skipped once the SDK path is the primary.
-  if (!sdkShieldEnabled() && shieldDifferentialEnabled()) {
-    void runShieldDifferential(request, {
-      railgunAddress,
-      amount: shieldValue,
-      tokenAddress: usdcAddress,
-      shieldPrivateKeyHex: shieldPrivateKey,
-    })
-  }
+  const request = await createShieldRequestSdk(railgunAddress, shieldValue, usdcAddress, shieldPrivateKey)
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   // Phase C — gasless path: build the relayer fee note (a second shield note to the relayer's 0zk),
@@ -232,7 +216,7 @@ async function runBuildProof(
 async function buildGaslessArtifacts(
   record: TxRecord<'shield'>,
   ctx: Parameters<typeof shieldHandler.run>[1],
-  userNote: Awaited<ReturnType<typeof createShieldRequest>>,
+  userNote: ShieldRequestData,
   usdcAddress: string,
 ): Promise<{
   permitV: number
@@ -264,9 +248,7 @@ async function buildGaslessArtifacts(
 
   // Build the relayer fee note to the relayer's published 0zk. value = the quoted fee.
   const feeShieldPrivateKey = generateRandomShieldPrivateKey()
-  const feeNote = sdkShieldEnabled()
-    ? await createShieldRequestSdk(record.meta.broadcasterRailgunAddress, record.meta.feeAmount, usdcAddress, feeShieldPrivateKey)
-    : await createShieldRequest(record.meta.broadcasterRailgunAddress, record.meta.feeAmount, usdcAddress, feeShieldPrivateKey)
+  const feeNote = await createShieldRequestSdk(record.meta.broadcasterRailgunAddress, record.meta.feeAmount, usdcAddress, feeShieldPrivateKey)
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   // Bind the exact array the wrapper will shield: [userNote, feeNote].

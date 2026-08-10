@@ -1,11 +1,5 @@
-// ABOUTME: Shield request builder — generates an ephemeral shieldPrivateKey + constructs ShieldNoteERC20 via the Railgun engine (Poseidon NPK + ECIES bundle).
-// ABOUTME: Pure SDK-side logic; the contract call lives in features/shield/handler.ts. Dynamic imports avoid jsdom's circomlibjs crash.
-
-// `@railgun-community/engine` ships circomlibjs at module-load and crashes under jsdom; defer.
-type RailgunEngine = typeof import('@railgun-community/engine')
-async function railgunEngine(): Promise<RailgunEngine> {
-  return import('@railgun-community/engine')
-}
+// ABOUTME: Shield primitives — the ephemeral shieldPrivateKey generator + the ShieldRequestData shape.
+// ABOUTME: The note itself is built by shield-sdk.ts (createShieldRequestSdk) via @armada/sdk; the contract call lives in features/shield/handler.ts.
 
 /**
  * Generate a fresh ephemeral `shieldPrivateKey` per deposit — 32 random bytes as 64-char lowercase
@@ -60,63 +54,3 @@ export interface ShieldRequestData {
   readonly random: string
 }
 
-function toBytes32Hex(input: string | bigint): `0x${string}` {
-  const hex = typeof input === 'bigint'
-    ? input.toString(16)
-    : input.startsWith('0x') ? input.slice(2) : input
-  if (hex.length > 64) throw new Error(`toBytes32Hex: value too long (${hex.length} hex chars)`)
-  return `0x${hex.padStart(64, '0')}` as `0x${string}`
-}
-
-/**
- * Build a single ShieldRequest for the given recipient + amount on the hub chain.
- *
- * The engine's `ShieldNoteERC20` owns the cryptographic machinery (Poseidon NPK over the random,
- * ECIES-encrypted bundle of the random + viewing keys). We just feed inputs and re-format the
- * outputs to bytes32-hex.
- *
- * NOTE: only the hub-side direct shield is supported today. Cross-chain shield (PrivacyPoolClient
- * → CCTP → hub) will get its own variant in a later commit; the engine call is the same but the
- * contract surface differs.
- */
-export async function createShieldRequest(
-  railgunAddress: string,
-  amount: bigint,
-  tokenAddress: string,
-  shieldPrivateKeyHex: string,
-): Promise<ShieldRequestData> {
-  if (!railgunAddress.startsWith('0zk')) {
-    throw new Error('createShieldRequest: recipient must be a 0zk address')
-  }
-  if (amount <= 0n) {
-    throw new Error('createShieldRequest: amount must be positive')
-  }
-  if (!/^[0-9a-fA-F]{64}$/.test(shieldPrivateKeyHex)) {
-    throw new Error('createShieldRequest: shieldPrivateKey must be 64 hex chars (no 0x)')
-  }
-
-  const { RailgunEngine, ShieldNoteERC20, ByteUtils } = await railgunEngine()
-  const { masterPublicKey, viewingPublicKey } = RailgunEngine.decodeAddress(railgunAddress)
-
-  // 16 random bytes — the per-note salt the engine binds into NPK + ciphertext.
-  const random = ByteUtils.randomHex(16)
-  const shieldNote = new ShieldNoteERC20(masterPublicKey, random, amount, tokenAddress)
-
-  const shieldRequest = await shieldNote.serialize(
-    ByteUtils.hexToBytes(shieldPrivateKeyHex),
-    viewingPublicKey,
-  )
-
-  // The engine returns these as BigNumberish-ish strings; normalize to bytes32 hex.
-  return {
-    npk: toBytes32Hex(shieldRequest.preimage.npk.toString()),
-    value: BigInt(shieldRequest.preimage.value.toString()),
-    encryptedBundle: [
-      toBytes32Hex(shieldRequest.ciphertext.encryptedBundle[0].toString()),
-      toBytes32Hex(shieldRequest.ciphertext.encryptedBundle[1].toString()),
-      toBytes32Hex(shieldRequest.ciphertext.encryptedBundle[2].toString()),
-    ] as const,
-    shieldKey: toBytes32Hex(shieldRequest.ciphertext.shieldKey.toString()),
-    random,
-  }
-}

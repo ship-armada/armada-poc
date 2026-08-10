@@ -92,6 +92,14 @@ async function ensureInstance(): Promise<{ sdk: ArmadaSdk; wallet: ReadWallet; a
 }
 
 /**
+ * The persistent, write-capable SDK wallet for the unlocked identity (ensures the instance). Used by
+ * the write-path builders (`planTransfer` / `prove`). Reads use the sync helpers below.
+ */
+export async function getSdkWallet(): Promise<ReadWallet> {
+  return (await ensureInstance()).wallet
+}
+
+/**
  * Sync the wallet and emit a telemetry line so resume-vs-rescan is observable in the console. A low
  * `fromBlock` (≈ deploy block) means a cold rescan; a high one means it resumed from the IndexedDB
  * checkpoint. `scanned: false` = the head hadn't advanced, so no getLogs work was done.

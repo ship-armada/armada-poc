@@ -19,6 +19,7 @@ import {
   populateTransferTransaction,
   type BroadcasterFeeRecipient,
 } from '@/lib/railgun/transfer'
+import { runTransferDifferential, transferDifferentialEnabled } from '@/lib/railgun/transfer-differential'
 import { submitRelay } from '@/lib/relayer'
 import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
 import { advance, markFailed } from '@/lib/tx/reducer'
@@ -103,6 +104,23 @@ async function runBuildProof(
     broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
     onProgress: progress.write,
   })
+
+  // Phase B write-path differential (opt-in, observe-only): build this transfer with @armada/sdk and
+  // simulate it against the pool — telemetry-reports whether the SDK proof verifies on-chain. Fire-and-
+  // forget; never blocks or fails the transfer (the engine proof above is what actually submits).
+  const evmFrom = record.walletContext.evmAddress
+  const poolAddress = deployments.hub.contracts.privacyPool
+  if (transferDifferentialEnabled() && evmFrom && poolAddress) {
+    const bf = broadcasterFeeFromRecord(record, tokenAddress)
+    void runTransferDifferential({
+      recipient: record.meta.recipient,
+      amount: record.meta.amount,
+      broadcasterFee: bf ? { amount: bf.amount, recipientAddress: bf.recipientAddress } : null,
+      poolAddress: poolAddress as `0x${string}`,
+      from: evmFrom as `0x${string}`,
+      chainId: deployments.hub.chainId,
+    })
+  }
 
   if (ctx.signal.aborted) throw new Error('cancelled')
 

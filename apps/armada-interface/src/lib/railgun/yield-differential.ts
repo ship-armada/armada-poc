@@ -33,11 +33,13 @@ export async function runYieldDifferential(
       track('sdk.yieldDiff', { mode: inputs.mode, simulated: true })
     } catch (simErr) {
       // The SDK built calldata but the adapter rejected it — the load-bearing failure signal.
+      // trackError computes `message` from the error itself (the decoded revert reason) and spreads
+      // props AFTER it, so props must NOT carry `scope`/`message` or they clobber the real revert.
       track('sdk.yieldDiff', { mode: inputs.mode, simulated: false })
-      trackError('sdk.yieldDiff.simulate', simErr, { scope: 'shielded.yield', mode: inputs.mode, message: 'sdk yield failed on-chain simulation' })
+      trackError('sdk.yieldDiff.simulate', simErr, { mode: inputs.mode })
     }
   } catch (err) {
     // The SDK build itself failed (plan/prove/bundle/encode) — never surfaced to the yield flow.
-    trackError('sdk.yieldDiff.build', err, { scope: 'shielded.yield', mode: inputs.mode, message: 'sdk yield build failed' })
+    trackError('sdk.yieldDiff.build', err, { mode: inputs.mode })
   }
 }

@@ -24,6 +24,7 @@ import {
   type BroadcasterFeeRecipient,
 } from '@/lib/railgun/unshield'
 import { runXchainUnshieldDifferential, xchainUnshieldDifferentialEnabled } from '@/lib/railgun/unshield-xchain-differential'
+import { buildXchainUnshieldSdk, sdkXchainUnshieldEnabled } from '@/lib/railgun/unshield-xchain-sdk'
 import {
   extractCctpMessageFromReceipt,
   messageReceivedTopic,
@@ -228,6 +229,27 @@ async function runBuildProof(
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   const progress = createProofProgressWriter(record, ctx.signal)
+
+  if (sdkXchainUnshieldEnabled()) {
+    // @armada/sdk cutover: plan (unshield to pool + CCTP-binding adaptParams) → prove off-thread →
+    // encode atomicCrossChainUnshield, and stash the calldata so submit-relayer dispatches it without
+    // re-proving. Survives a reload (persisted in the record), unlike the engine's in-memory proof cache.
+    const bf = broadcasterFeeFromRecord(record, tokenAddress)
+    const { to, data } = await buildXchainUnshieldSdk({
+      amount: record.meta.amount,
+      broadcasterFee: bf ? { amount: bf.amount, recipientAddress: bf.recipientAddress } : null,
+      privacyPoolAddress: privacyPoolAddress as `0x${string}`,
+      finalRecipient: record.meta.recipient as `0x${string}`,
+      destinationDomain,
+      maxFee,
+      uniqueNonce: deliveryNonce(record.id), // issue #287 — unique per-tx marker echoed into the CCTP hookData
+      onProgress: progress.write,
+    })
+    if (ctx.signal.aborted) throw new Error('cancelled')
+    await ctx.upsert(advance(progress.latest(), 'submit-relayer', { unshieldTx: { to, data, value: '0' } }))
+    return
+  }
+
   const built = await buildXchainUnshieldTransaction({
     walletId,
     encryptionKey,

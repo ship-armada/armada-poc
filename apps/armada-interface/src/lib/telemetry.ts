@@ -51,6 +51,12 @@ export type EventRegistry = {
   // means it resumed from the IndexedDB checkpoint. `scanned` false = head hadn't advanced (no work).
   'sdk.sync':                 { fromBlock: number; syncedThrough: number; scanned: boolean }
 
+  // @armada/sdk yield write-path differential — one line per SDK build+simulate (opt-in VITE_SHADOW_SDK).
+  // `simulated` true = the adapter's on-chain verifier accepted the SDK-built lendAndShield/redeemAndShield
+  // calldata (the arbiter — a proof-carrying tx can't be byte-compared, and it exercises the
+  // adaptParams↔re-shield-bundle binding). Observe-only; retired at the yield cutover.
+  'sdk.yieldDiff':            { mode: 'lend' | 'redeem'; simulated: boolean }
+
   'tx.submitted':             { id: string; kind: TxKind }
   'tx.transition':            { id: string; kind: TxKind; from: TxStage; to: TxStage; executionState: TxRecord['executionState'] }
   'tx.failed':                { id: string; kind: TxKind; errorCode?: string }

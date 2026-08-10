@@ -20,6 +20,7 @@ import {
   type BroadcasterFeeRecipient,
 } from '@/lib/railgun/unshield'
 import { runUnshieldDifferential, unshieldDifferentialEnabled } from '@/lib/railgun/unshield-differential'
+import { buildUnshieldSdk, sdkUnshieldEnabled } from '@/lib/railgun/unshield-sdk'
 import { submitRelay } from '@/lib/relayer'
 import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
 import { advance, markFailed } from '@/lib/tx/reducer'
@@ -100,14 +101,33 @@ async function runBuildProof(
   if (!kmIsUnlocked()) {
     throw new Error('Unshield requires an unlocked shielded wallet.')
   }
-  const walletId = kmGetWalletId()
-  const encryptionKey = kmGetSdkEncryptionKey()
   const deployments = await loadDeployments()
   const tokenAddress = deployments.hub.cctp.usdc
+  const bf = broadcasterFeeFromRecord(record, tokenAddress)
 
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   const progress = createProofProgressWriter(record, ctx.signal)
+
+  if (sdkUnshieldEnabled()) {
+    // @armada/sdk cutover: build (plan → prove off-thread → serialize) the transact calldata now and
+    // stash it, so submit-relayer dispatches it without re-proving — and, unlike the engine's in-memory
+    // proof cache, it survives a reload (persisted in the record).
+    const { to, data } = await buildUnshieldSdk({
+      recipient: record.meta.recipient as `0x${string}`,
+      amount: record.meta.amount,
+      broadcasterFee: bf ? { amount: bf.amount, recipientAddress: bf.recipientAddress } : null,
+      poolAddress: deployments.hub.contracts.privacyPool as `0x${string}`,
+      onProgress: progress.write,
+    })
+    if (ctx.signal.aborted) throw new Error('cancelled')
+    await ctx.upsert(advance(progress.latest(), 'submit-relayer', { unshieldTx: { to, data, value: '0' } }))
+    return
+  }
+
+  // Engine path (default).
+  const walletId = kmGetWalletId()
+  const encryptionKey = kmGetSdkEncryptionKey()
   await generateUnshieldProofForRecipient({
     walletId,
     encryptionKey,
@@ -116,17 +136,17 @@ async function runBuildProof(
     amount: record.meta.amount,
     // A6: null when wallet-override is set → SDK builds a proof without a broadcaster output
     // (sendWithPublicWallet=true on the SDK side, no extra unshield commitment to the relayer).
-    broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
+    broadcasterFee: bf,
     onProgress: progress.write,
   })
 
-  // Phase B write-path differential (opt-in, observe-only): build this unshield with @armada/sdk and
-  // simulate it against the pool — telemetry-reports whether the SDK proof verifies on-chain. Fire-and-
-  // forget; never blocks or fails the unshield (the engine proof above is what actually submits).
+  // Pre-cutover differential (opt-in, observe-only): build this unshield with @armada/sdk and simulate
+  // it against the pool — telemetry-reports whether the SDK proof verifies on-chain. Fire-and-forget;
+  // never blocks or fails the unshield (the engine proof above is what submits). Moot once the SDK path
+  // is primary above.
   const evmFrom = record.walletContext.evmAddress
   const poolAddress = deployments.hub.contracts.privacyPool
   if (unshieldDifferentialEnabled() && evmFrom && poolAddress) {
-    const bf = broadcasterFeeFromRecord(record, tokenAddress)
     void runUnshieldDifferential({
       recipient: record.meta.recipient as `0x${string}`,
       amount: record.meta.amount,
@@ -160,20 +180,27 @@ async function runSubmitAndConfirm(
   // and would throw anyway — the SDK's in-memory proof cache doesn't survive a reload. (P0-1)
   let populated: Awaited<ReturnType<typeof populateUnshieldTransaction>> | undefined
   if (!existingHash) {
-    const walletId = kmGetWalletId()
-    const deployments = await loadDeployments()
-    const tokenAddress = deployments.hub.cctp.usdc
-    // Re-populate must use the EXACT same args as the proof (the SDK's in-memory proof cache is
-    // keyed by them; mismatched broadcasterFee throws "proof not found"). Reading from meta keeps
-    // the values immutable across resumes-after-crash.
-    populated = await populateUnshieldTransaction({
-      walletId,
-      tokenAddress,
-      recipient: record.meta.recipient,
-      amount: record.meta.amount,
-      broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
-    })
-    if (ctx.signal.aborted) throw new Error('cancelled')
+    const stashed = record.artifacts.unshieldTx
+    if (stashed) {
+      // SDK cutover: the transact calldata was built + persisted in build-proof, so it survives a
+      // reload (the engine's in-memory proof cache does not). Dispatch it directly.
+      populated = { to: stashed.to, data: stashed.data, value: BigInt(stashed.value) }
+    } else {
+      const walletId = kmGetWalletId()
+      const deployments = await loadDeployments()
+      const tokenAddress = deployments.hub.cctp.usdc
+      // Re-populate must use the EXACT same args as the proof (the SDK's in-memory proof cache is
+      // keyed by them; mismatched broadcasterFee throws "proof not found"). Reading from meta keeps
+      // the values immutable across resumes-after-crash.
+      populated = await populateUnshieldTransaction({
+        walletId,
+        tokenAddress,
+        recipient: record.meta.recipient,
+        amount: record.meta.amount,
+        broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
+      })
+      if (ctx.signal.aborted) throw new Error('cancelled')
+    }
   }
 
   // A6 wallet-override path — bypass the relayer entirely and submit through the user's EVM

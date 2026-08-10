@@ -5,12 +5,13 @@ import { buildShieldRequest, initPoseidonPromise } from '@armada/sdk'
 import type { ShieldRequestData } from './shield'
 
 /**
- * Write-path cutover flag. When set, the shield handler builds its `ShieldRequest` via `@armada/sdk`
- * (`createShieldRequestSdk`) instead of the stock engine. Off by default; the engine drives. Each
- * migrated write path checks this same flag — unmigrated ones ignore it and stay on the engine.
+ * Write-path cutover flag. Both shield handlers build their `ShieldRequest` via `@armada/sdk`
+ * (`createShieldRequestSdk`) by default; set `VITE_SDK_WRITE_PATH=0` to fall back to the stock engine
+ * (escape hatch, retained until the engine shield builder is deleted). Each migrated write path checks
+ * this same flag — unmigrated ones ignore it and stay on the engine regardless.
  */
 export function sdkShieldEnabled(): boolean {
-  return import.meta.env.VITE_SDK_WRITE_PATH === '1'
+  return import.meta.env.VITE_SDK_WRITE_PATH !== '0'
 }
 
 function hexToBytes(hex: string): Uint8Array {

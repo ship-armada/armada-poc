@@ -19,6 +19,7 @@ import {
   populateUnshieldTransaction,
   type BroadcasterFeeRecipient,
 } from '@/lib/railgun/unshield'
+import { runUnshieldDifferential, unshieldDifferentialEnabled } from '@/lib/railgun/unshield-differential'
 import { submitRelay } from '@/lib/relayer'
 import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
 import { advance, markFailed } from '@/lib/tx/reducer'
@@ -118,6 +119,23 @@ async function runBuildProof(
     broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
     onProgress: progress.write,
   })
+
+  // Phase B write-path differential (opt-in, observe-only): build this unshield with @armada/sdk and
+  // simulate it against the pool — telemetry-reports whether the SDK proof verifies on-chain. Fire-and-
+  // forget; never blocks or fails the unshield (the engine proof above is what actually submits).
+  const evmFrom = record.walletContext.evmAddress
+  const poolAddress = deployments.hub.contracts.privacyPool
+  if (unshieldDifferentialEnabled() && evmFrom && poolAddress) {
+    const bf = broadcasterFeeFromRecord(record, tokenAddress)
+    void runUnshieldDifferential({
+      recipient: record.meta.recipient as `0x${string}`,
+      amount: record.meta.amount,
+      broadcasterFee: bf ? { amount: bf.amount, recipientAddress: bf.recipientAddress } : null,
+      poolAddress: poolAddress as `0x${string}`,
+      from: evmFrom as `0x${string}`,
+      chainId: deployments.hub.chainId,
+    })
+  }
 
   if (ctx.signal.aborted) throw new Error('cancelled')
 

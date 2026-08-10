@@ -4,9 +4,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { Artifact } from '@railgun-community/shared-models'
 
-// Stub the snarkjs prover so importing this module doesn't pull the proving stack into the test.
+// Stub the worker prover so importing this module doesn't pull the proving stack (or a Worker) into
+// the test. createInterfaceProver is lazy, so createWorkerProver isn't invoked until first prove().
 vi.mock('@armada/sdk', () => ({
-  createSnarkjsProver: () => ({ prove: async () => ({}), verify: async () => false, close: async () => {} }),
+  createWorkerProver: () => ({ prove: async () => ({}), verify: async () => false, close: async () => {} }),
 }))
 
 import { createInterfaceArtifactSource, createInterfaceProver } from './sdk-prover'

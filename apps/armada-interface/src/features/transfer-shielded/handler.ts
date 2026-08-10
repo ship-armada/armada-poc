@@ -9,18 +9,11 @@ import { ensureChain } from '@/lib/network-switch'
 import { waitForReceiptOrFail } from '@/lib/tx/receipt'
 import { simulateOrThrow } from '@/lib/tx/simulate'
 import {
-  getSdkEncryptionKey as kmGetSdkEncryptionKey,
   getWalletId as kmGetWalletId,
   isUnlocked as kmIsUnlocked,
 } from '@/lib/railgun/keyManager'
 import { refreshShieldedBalances } from '@/lib/railgun/sync'
-import {
-  generateTransferProofForRecipient,
-  populateTransferTransaction,
-  type BroadcasterFeeRecipient,
-} from '@/lib/railgun/transfer'
-import { runTransferDifferential, transferDifferentialEnabled } from '@/lib/railgun/transfer-differential'
-import { buildTransferSdk, sdkTransferEnabled } from '@/lib/railgun/transfer-sdk'
+import { buildTransferSdk } from '@/lib/railgun/transfer-sdk'
 import { submitRelay } from '@/lib/relayer'
 import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
 import { advance, markFailed } from '@/lib/tx/reducer'
@@ -71,11 +64,9 @@ export const transferShieldedHandler: StageHandler<'transfer-shielded'> = {
 /** A6 — see comment in features/unshield/handler.ts::broadcasterFeeFromRecord. */
 function broadcasterFeeFromRecord(
   record: TxRecord<'transfer-shielded'>,
-  tokenAddress: string,
-): BroadcasterFeeRecipient | null {
+): { amount: bigint; recipientAddress: string } | null {
   if (record.meta.useWalletOverride) return null
   return {
-    tokenAddress,
     amount: record.meta.broadcasterFeeAmount,
     recipientAddress: record.meta.broadcasterRailgunAddress,
   }
@@ -89,63 +80,22 @@ async function runBuildProof(
     throw new Error('Private send requires an unlocked shielded wallet.')
   }
   const deployments = await loadDeployments()
-  const tokenAddress = deployments.hub.cctp.usdc
-  const bf = broadcasterFeeFromRecord(record, tokenAddress)
+  const bf = broadcasterFeeFromRecord(record)
 
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   const progress = createProofProgressWriter(record, ctx.signal)
-
-  if (sdkTransferEnabled()) {
-    // @armada/sdk cutover: build (plan → prove off-thread → serialize) the transact calldata now and
-    // stash it, so submit-relayer dispatches it without re-proving — and, unlike the engine's in-memory
-    // proof cache, it survives a reload (persisted in the record).
-    const { to, data } = await buildTransferSdk({
-      recipient: record.meta.recipient,
-      amount: record.meta.amount,
-      broadcasterFee: bf ? { amount: bf.amount, recipientAddress: bf.recipientAddress } : null,
-      poolAddress: deployments.hub.contracts.privacyPool as `0x${string}`,
-      onProgress: progress.write,
-    })
-    if (ctx.signal.aborted) throw new Error('cancelled')
-    await ctx.upsert(advance(progress.latest(), 'submit-relayer', { transferTx: { to, data, value: '0' } }))
-    return
-  }
-
-  // Engine path (default).
-  const walletId = kmGetWalletId()
-  const encryptionKey = kmGetSdkEncryptionKey()
-  await generateTransferProofForRecipient({
-    walletId,
-    encryptionKey,
-    tokenAddress,
+  // Build (plan → prove off-thread → serialize) the transact calldata and stash it, so submit-relayer
+  // dispatches it without re-proving — and, persisted in the record, it survives a reload.
+  const { to, data } = await buildTransferSdk({
     recipient: record.meta.recipient,
     amount: record.meta.amount,
     broadcasterFee: bf,
+    poolAddress: deployments.hub.contracts.privacyPool as `0x${string}`,
     onProgress: progress.write,
   })
-
-  // Pre-cutover differential (opt-in, observe-only): build this transfer with @armada/sdk and simulate
-  // it against the pool — telemetry-reports whether the SDK proof verifies on-chain. Fire-and-forget;
-  // never blocks or fails the transfer (the engine proof above is what submits). Moot once the SDK path
-  // is primary above.
-  const evmFrom = record.walletContext.evmAddress
-  const poolAddress = deployments.hub.contracts.privacyPool
-  if (transferDifferentialEnabled() && evmFrom && poolAddress) {
-    void runTransferDifferential({
-      recipient: record.meta.recipient,
-      amount: record.meta.amount,
-      broadcasterFee: bf ? { amount: bf.amount, recipientAddress: bf.recipientAddress } : null,
-      poolAddress: poolAddress as `0x${string}`,
-      from: evmFrom as `0x${string}`,
-      chainId: deployments.hub.chainId,
-    })
-  }
-
   if (ctx.signal.aborted) throw new Error('cancelled')
-
-  const next = advance(progress.latest(), 'submit-relayer')
-  await ctx.upsert(next)
+  await ctx.upsert(advance(progress.latest(), 'submit-relayer', { transferTx: { to, data, value: '0' } }))
 }
 
 async function runSubmitAndConfirm(
@@ -158,29 +108,17 @@ async function runSubmitAndConfirm(
   const hubChainId = getNetworkConfig().hub.chainId
   const existingHash = record.artifacts.sourceTxHash
 
-  // Re-populate the proof calldata only when we still need to broadcast. On re-entry (Retry /
-  // resume-on-reload) the hash is already persisted; re-populating is pointless and would throw
-  // anyway — the SDK's in-memory proof cache doesn't survive a reload. (P0-1)
-  let populated: Awaited<ReturnType<typeof populateTransferTransaction>> | undefined
+  // The transact calldata was built + persisted in build-proof (`artifacts.transferTx`), so it
+  // survives a reload — dispatch it directly. On re-entry with a hash already broadcast, skip.
+  let populated: { to: `0x${string}`; data: `0x${string}`; value: bigint } | undefined
   if (!existingHash) {
     const stashed = record.artifacts.transferTx
-    if (stashed) {
-      // SDK cutover: the transact calldata was built + persisted in build-proof, so it survives a
-      // reload (the engine's in-memory proof cache does not). Dispatch it directly.
-      populated = { to: stashed.to, data: stashed.data, value: BigInt(stashed.value) }
-    } else {
-      const walletId = kmGetWalletId()
-      const deployments = await loadDeployments()
-      const tokenAddress = deployments.hub.cctp.usdc
-      populated = await populateTransferTransaction({
-        walletId,
-        tokenAddress,
-        recipient: record.meta.recipient,
-        amount: record.meta.amount,
-        broadcasterFee: broadcasterFeeFromRecord(record, tokenAddress),
-      })
-      if (ctx.signal.aborted) throw new Error('cancelled')
+    if (!stashed) {
+      // build-proof always stashes the calldata; its absence means the build never completed —
+      // fail honestly (resume's INTERRUPTED path) rather than silently re-proving here.
+      throw new Error('Transfer calldata missing — start a new transaction.')
     }
+    populated = { to: stashed.to, data: stashed.data, value: BigInt(stashed.value) }
   }
 
   // A6 wallet-override path — submit through the user's EVM wallet instead of the relayer.

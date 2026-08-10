@@ -16,15 +16,6 @@ export interface SdkUnshieldInputs {
 }
 
 /**
- * Write-path cutover flag. The unshield handler builds + submits via `@armada/sdk` (`buildUnshieldSdk`)
- * by default; set `VITE_SDK_UNSHIELD=0` to fall back to the stock engine (escape hatch, retained until
- * the engine unshield builder is deleted).
- */
-export function sdkUnshieldEnabled(): boolean {
-  return import.meta.env.VITE_SDK_UNSHIELD !== '0'
-}
-
-/**
  * Build an unshield transaction via `@armada/sdk`: the wallet plans a transfer whose only public
  * output is the unshield (recipient EVM address, no shielded outputs), proves it (Groth16), and the
  * proved struct is serialized into `transact(...)` calldata. Returns `{ to, data }` (value is always

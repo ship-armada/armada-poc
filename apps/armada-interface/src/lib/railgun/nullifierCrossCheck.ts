@@ -138,7 +138,7 @@ export async function checkOwnNullifiersOnChain(walletId: string): Promise<Nulli
 
     return await detectOmittedNullifiers(notes, (batch) => queryNullifiersSpent(reader, batch))
   } catch (err) {
-    trackError('railgun.nullifierCrossCheck', err)
+    trackError('shielded.nullifierCrossCheck', err)
     return { checked: 0, omissionDetected: false }
   }
 }

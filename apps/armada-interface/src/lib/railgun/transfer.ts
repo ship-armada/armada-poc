@@ -69,7 +69,7 @@ export async function generateTransferProofForRecipient(opts: {
   onProgress?: (fraction: number) => void
 }): Promise<void> {
   if (!opts.recipient.startsWith('0zk')) {
-    throw new Error('generateTransferProofForRecipient: recipient must be a 0zk Railgun address')
+    throw new Error('generateTransferProofForRecipient: recipient must be a 0zk address')
   }
   await loadHubNetwork()
   const [{ generateTransferProof }, { TXIDVersion, NetworkName }] = await Promise.all([

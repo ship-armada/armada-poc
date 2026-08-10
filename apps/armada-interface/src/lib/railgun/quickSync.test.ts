@@ -98,7 +98,7 @@ describe('quickSyncEventsClient', () => {
     expect(result.unshieldEvents).toHaveLength(1)
     expect(result.nullifierEvents).toHaveLength(1)
     expect(hoisted.trackError).not.toHaveBeenCalled()
-    expect(hoisted.track).toHaveBeenCalledWith('railgun.quicksync', {
+    expect(hoisted.track).toHaveBeenCalledWith('shielded.quicksync', {
       outcome: 'served',
       pages: 2,
       commitments: 2,
@@ -113,7 +113,7 @@ describe('quickSyncEventsClient', () => {
     const result = await quickSyncEventsClient(V2, HUB_CHAIN, 0)
     expect(result).toEqual({ commitmentEvents: [], unshieldEvents: [], nullifierEvents: [] })
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(hoisted.track).toHaveBeenCalledWith('railgun.quicksync', { outcome: 'no-indexer' })
+    expect(hoisted.track).toHaveBeenCalledWith('shielded.quicksync', { outcome: 'no-indexer' })
   })
 
   it('returns empty when the requested chain is not the hub', async () => {
@@ -148,7 +148,7 @@ describe('quickSyncEventsClient', () => {
     const result = await quickSyncEventsClient(V2, HUB_CHAIN, 0)
     expect(result).toEqual({ commitmentEvents: [], unshieldEvents: [], nullifierEvents: [] })
     expect(hoisted.trackError).toHaveBeenCalled()
-    expect(hoisted.track).toHaveBeenCalledWith('railgun.quicksync', {
+    expect(hoisted.track).toHaveBeenCalledWith('shielded.quicksync', {
       outcome: 'fell-back',
       reason: 'fetch-error',
     })
@@ -159,7 +159,7 @@ describe('quickSyncEventsClient', () => {
     const result = await quickSyncEventsClient(V2, HUB_CHAIN, 0)
     expect(result.commitmentEvents).toEqual([])
     expect(hoisted.trackError).toHaveBeenCalled()
-    expect(hoisted.track).toHaveBeenCalledWith('railgun.quicksync', {
+    expect(hoisted.track).toHaveBeenCalledWith('shielded.quicksync', {
       outcome: 'fell-back',
       reason: 'http-503',
       pages: 0,

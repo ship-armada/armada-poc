@@ -40,12 +40,13 @@ export type EventRegistry = {
   // fallback are observable in dev and prod. Counts + block numbers only (never addresses/amounts).
   //   'served'     — hit the watcher; commitments>0 means events actually flowed
   //   'no-indexer' — VITE_INDEXER_URL unset → engine slow-scans (normal; the B4 fallback)
-  //   'fell-back'  — attempted but failed → engine slow-scans (paired with a railgun.quickSync error)
-  'railgun.quicksync':        { outcome: 'served' | 'no-indexer' | 'fell-back'; pages?: number; commitments?: number; unshields?: number; nullifiers?: number; throughBlock?: number; reason?: string }
+  //   'fell-back'  — attempted but failed → engine slow-scans (paired with a shielded.quicksync error)
+  'shielded.quicksync':       { outcome: 'served' | 'no-indexer' | 'fell-back'; pages?: number; commitments?: number; unshields?: number; nullifiers?: number; throughBlock?: number; reason?: string }
 
   // @armada/sdk read-instance sync outcome — one line per wallet.sync() so resume-vs-rescan is
-  // observable. Named `sdk.*` (not `railgun.*`, which is reserved for stock-engine events) because
-  // this is the in-house SDK. Block numbers + a boolean only (no addresses/amounts). `fromBlock` =
+  // observable. Named `sdk.*` because this is the in-house SDK; stock-engine / shielded-pool telemetry
+  // uses `shielded.*`. We never emit `railgun` in any event name or scope (it would confuse the
+  // telemetry stream — see the naming convention). Block numbers + a boolean only. `fromBlock` =
   // the resume point (checkpoint + 1): a low value ≈ deploy block means a cold rescan, a high value
   // means it resumed from the IndexedDB checkpoint. `scanned` false = head hadn't advanced (no work).
   'sdk.sync':                 { fromBlock: number; syncedThrough: number; scanned: boolean }

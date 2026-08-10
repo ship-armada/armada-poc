@@ -250,7 +250,7 @@ async function buildGaslessArtifacts(
     record.meta.broadcasterRailgunAddress === undefined
   ) {
     throw new Error(
-      'Shield gasless mode requires feeAmount + wrapperAddress + permitDeadline + broadcasterRailgunAddress in meta.',
+      'Shield gasless mode requires feeAmount + wrapperAddress + permitDeadline + the broadcaster 0zk address in meta.',
     )
   }
   const ownerCaptured = record.walletContext.evmAddress

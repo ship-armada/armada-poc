@@ -45,7 +45,7 @@ export const armadaArtifactGetter: ArtifactGetter = {
     const key = armadaVariantKey(nullifiers, commitments)
     if (!armadaArtifacts.has(key)) {
       throw new Error(
-        `[railgun.artifactGetter] no Armada artifact registered for ${key}; ` +
+        `[shielded.artifactGetter] no Armada artifact registered for ${key}; ` +
           'ensure the circuit loader ran before proof generation',
       )
     }
@@ -56,7 +56,7 @@ export const armadaArtifactGetter: ArtifactGetter = {
     const artifact = armadaArtifacts.get(key)
     if (!artifact) {
       throw new Error(
-        `[railgun.artifactGetter] no Armada artifact registered for ${key}; ` +
+        `[shielded.artifactGetter] no Armada artifact registered for ${key}; ` +
           'ensure the circuit loader ran before proof generation',
       )
     }
@@ -67,7 +67,7 @@ export const armadaArtifactGetter: ArtifactGetter = {
   // asks for a POI artifact, that's a misconfiguration — fail loudly rather than return garbage.
   getArtifactsPOI: async (maxInputs: number, maxOutputs: number): Promise<Artifact> => {
     throw new Error(
-      `[railgun.artifactGetter] POI artifacts unavailable (POI disabled): POI_${maxInputs}x${maxOutputs}`,
+      `[shielded.artifactGetter] POI artifacts unavailable (POI disabled): POI_${maxInputs}x${maxOutputs}`,
     )
   },
 }

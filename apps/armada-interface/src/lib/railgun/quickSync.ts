@@ -100,11 +100,11 @@ async function fetchPage(url: string): Promise<Response> {
  * NEVER throws: a throw out of this callback would abort engine init. Genuine failures (as opposed
  * to the config-driven early returns) are surfaced via telemetry so a broken indexer is diagnosable.
  *
- * OBSERVABILITY: emits one `railgun.quicksync` telemetry line per attempt (dev + prod console) so
+ * OBSERVABILITY: emits one `shielded.quicksync` telemetry line per attempt (dev + prod console) so
  * activation vs fallback is visible without reading the Network tab —
  * `{ outcome: 'served', commitments, … }` (commitments>0 ⇒ the watcher delivered events),
- * `{ outcome: 'no-indexer' }`, or `{ outcome: 'fell-back', reason }` (paired with a railgun.quickSync
- * error). Grep the console for `railgun.quicksync`.
+ * `{ outcome: 'no-indexer' }`, or `{ outcome: 'fell-back', reason }` (paired with a shielded.quicksync
+ * error). Grep the console for `shielded.quicksync`.
  */
 export const quickSyncEventsClient: QuickSyncEvents = async (
   txidVersion,
@@ -119,7 +119,7 @@ export const quickSyncEventsClient: QuickSyncEvents = async (
   if (!indexerUrl) {
     // The common B4 case — no watcher configured. One info line so "quick sync off → slow scan"
     // is visible rather than inferred from the absence of network requests.
-    track('railgun.quicksync', { outcome: 'no-indexer' })
+    track('shielded.quicksync', { outcome: 'no-indexer' })
     return emptyEvents()
   }
 
@@ -138,15 +138,15 @@ export const quickSyncEventsClient: QuickSyncEvents = async (
       const url = `${base}/v1/quick-sync/${hubChainId}?startingBlock=${cursor}`
       const res = await fetchPage(url)
       if (!res.ok) {
-        trackError('railgun.quickSync', new Error(`quick-sync HTTP ${res.status}`))
-        track('railgun.quicksync', { outcome: 'fell-back', reason: `http-${res.status}`, pages })
+        trackError('shielded.quicksync', new Error(`quick-sync HTTP ${res.status}`))
+        track('shielded.quicksync', { outcome: 'fell-back', reason: `http-${res.status}`, pages })
         return emptyEvents()
       }
 
       const json: unknown = await res.json()
       if (!isValidPage(json)) {
-        trackError('railgun.quickSync', new Error('quick-sync page failed shape validation'))
-        track('railgun.quicksync', { outcome: 'fell-back', reason: 'invalid-page', pages })
+        trackError('shielded.quicksync', new Error('quick-sync page failed shape validation'))
+        track('shielded.quicksync', { outcome: 'fell-back', reason: 'invalid-page', pages })
         return emptyEvents()
       }
 
@@ -164,7 +164,7 @@ export const quickSyncEventsClient: QuickSyncEvents = async (
     }
 
     // Activation signal: `commitments` > 0 means the watcher actually delivered events.
-    track('railgun.quicksync', {
+    track('shielded.quicksync', {
       outcome: 'served',
       pages,
       commitments: acc.commitmentEvents.length,
@@ -175,8 +175,8 @@ export const quickSyncEventsClient: QuickSyncEvents = async (
     return acc
   } catch (err) {
     // Fetch abort / network error / JSON parse failure → slow-scan fallback. Never rethrow.
-    trackError('railgun.quickSync', err)
-    track('railgun.quicksync', { outcome: 'fell-back', reason: 'fetch-error' })
+    trackError('shielded.quicksync', err)
+    track('shielded.quicksync', { outcome: 'fell-back', reason: 'fetch-error' })
     return emptyEvents()
   }
 }

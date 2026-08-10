@@ -127,7 +127,7 @@ async function loadArmadaCircuits(
   register: (variant: string, artifact: Artifact) => void,
 ): Promise<void> {
   // eslint-disable-next-line no-console
-  console.log('[railgun] Loading Armada circuit artifacts...')
+  console.log('[shielded] Loading Armada circuit artifacts...')
 
   for (const [n, m] of ARMADA_SHAPES) {
     const variant = `${n.toString().padStart(2, '0')}x${m.toString().padStart(2, '0')}`
@@ -143,7 +143,7 @@ async function loadArmadaCircuits(
 
       if (!wasmRes.ok || !zkeyRes.ok || !vkeyRes.ok) {
         // eslint-disable-next-line no-console
-        console.warn(`[railgun] Skipping ${variant}: artifacts not available (WASM:${wasmRes.status} ZKEY:${zkeyRes.status})`)
+        console.warn(`[shielded] Skipping ${variant}: artifacts not available (WASM:${wasmRes.status} ZKEY:${zkeyRes.status})`)
         continue
       }
 
@@ -157,12 +157,12 @@ async function loadArmadaCircuits(
     } catch (err) {
       // Non-fatal — the SDK will fall back to IPFS for this shape
       // eslint-disable-next-line no-console
-      console.warn(`[railgun] Failed to load ${variant}:`, err)
+      console.warn(`[shielded] Failed to load ${variant}:`, err)
     }
   }
 
   // eslint-disable-next-line no-console
-  console.log('[railgun] Armada circuit artifacts loaded')
+  console.log('[shielded] Armada circuit artifacts loaded')
 }
 
 async function doInit(): Promise<void> {
@@ -199,22 +199,22 @@ async function doInit(): Promise<void> {
   const sdkLog = debugLogging
     ? (msg: string) => {
         // eslint-disable-next-line no-console
-        console.log('[railgun]', msg)
+        console.log('[shielded]', msg)
       }
     : () => {}
   const sdkError = debugLogging
     ? (err: Error) => {
         if (isBenignEngineEventNoise(err)) {
           // eslint-disable-next-line no-console
-          console.debug('[railgun] (benign engine event noise)', err.message)
+          console.debug('[shielded] (benign engine event noise)', err.message)
           return
         }
         // eslint-disable-next-line no-console
-        console.error('[railgun]', err)
+        console.error('[shielded]', err)
       }
     : (err: Error) => {
         if (isBenignEngineEventNoise(err)) return
-        trackError('railgun.sdk', err)
+        trackError('shielded.engine', err)
       }
   setLoggers(sdkLog, sdkError)
 

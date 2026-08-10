@@ -50,7 +50,7 @@ async function ensureRailgunReady(): Promise<void> {
     // Surface but don't block — wallet creation/load doesn't strictly need the network.
     // Balance scans + tx submission will fail downstream until the user fixes the underlying
     // problem (RPC down, contracts not deployed, etc.).
-    trackError('railgun.network.load', err, { scope: 'shielded.unlock', message: 'hub network load failed' })
+    trackError('shielded.network.load', err, { scope: 'shielded.unlock', message: 'hub network load failed' })
   }
 }
 
@@ -344,7 +344,7 @@ async function applyRootSecret(
       // the cached id belonged to a different identity and this rootSecret's sdkEncryptionKey
       // can't decrypt it). Recreate the wallet — same rootSecret deterministically yields the
       // same walletId per the BIP-39 mnemonic shim, so this is idempotent.
-      trackError('railgun.wallet.loadByID', err, {
+      trackError('shielded.wallet.loadByID', err, {
         scope: 'shielded.unlock',
         message: 'load failed, recreating',
       })
@@ -634,7 +634,7 @@ export async function resetWallet(_id: string): Promise<void> {
     await deleteWalletByID(id)
   } catch (err) {
     // Surface but don't block — the wallet may already be absent.
-    trackError('railgun.wallet.deleteByID', err, { scope: 'shielded.reset', message: 'delete failed' })
+    trackError('shielded.wallet.deleteByID', err, { scope: 'shielded.reset', message: 'delete failed' })
   }
   clearStoredWalletIdentity()
   // Drop the history-scan checkpoint so a future re-enrollment on this device walks chain

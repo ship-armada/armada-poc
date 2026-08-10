@@ -132,7 +132,7 @@ export function App() {
     // Fire-and-forget, sequenced after init, off the critical path — failures fall back to IPFS.
     void initRailgunEngine()
       .then(() => preloadArtifactsFromOrigin())
-      .catch((err) => trackError('railgun.artifacts.preload', err))
+      .catch((err) => trackError('shielded.artifacts.preload', err))
   }, [mode])
   // Sticky flag: true when this device boot started with NO persisted walletId. Drives whether
   // we offer the bidirectional Onboarding ↔ Unlock fork. A returning user (had a wallet at boot)

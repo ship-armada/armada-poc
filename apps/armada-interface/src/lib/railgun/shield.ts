@@ -86,7 +86,7 @@ export async function createShieldRequest(
   shieldPrivateKeyHex: string,
 ): Promise<ShieldRequestData> {
   if (!railgunAddress.startsWith('0zk')) {
-    throw new Error('createShieldRequest: railgunAddress must start with 0zk')
+    throw new Error('createShieldRequest: recipient must be a 0zk address')
   }
   if (amount <= 0n) {
     throw new Error('createShieldRequest: amount must be positive')

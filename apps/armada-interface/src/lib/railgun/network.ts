@@ -86,7 +86,7 @@ function patchNetworkConfig(
 
   const target = networkConfig[RAILGUN_NETWORK_KEY]
   if (!target) {
-    throw new Error(`[railgun.network] SDK NETWORK_CONFIG is missing the "${RAILGUN_NETWORK_KEY}" entry`)
+    throw new Error(`[shielded.network] SDK NETWORK_CONFIG is missing the "${RAILGUN_NETWORK_KEY}" entry`)
   }
 
   target.proxyContract = privacyPoolAddress
@@ -133,7 +133,7 @@ export async function loadHubNetwork(): Promise<void> {
   const hubChain = getNetworkConfig().hub
   const privacyPool = deployments.hub.contracts.privacyPool
   if (!privacyPool) {
-    throw new Error('[railgun.network] hub deployment is missing contracts.privacyPool')
+    throw new Error('[shielded.network] hub deployment is missing contracts.privacyPool')
   }
 
   // We don't currently surface a yield adapter through the new app's deployment schema; pass
@@ -156,13 +156,13 @@ export async function loadHubNetwork(): Promise<void> {
   // to scan events from an empty contract.
   const primaryRpc = hubChain.rpcUrls[0]
   if (!primaryRpc) {
-    throw new Error('[railgun.network] hub chain has no configured RPC URLs')
+    throw new Error('[shielded.network] hub chain has no configured RPC URLs')
   }
   const provider = timeoutProvider(primaryRpc)
   const code = await provider.getCode(privacyPool)
   if (!code || code === '0x') {
     throw new Error(
-      `[railgun.network] no PrivacyPool code at ${privacyPool} on ${primaryRpc}. ` +
+      `[shielded.network] no PrivacyPool code at ${privacyPool} on ${primaryRpc}. ` +
         'Run `npm run chains` + `npm run setup` from the repo root.',
     )
   }

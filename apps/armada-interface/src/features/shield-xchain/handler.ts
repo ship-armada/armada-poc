@@ -24,6 +24,8 @@ import {
   createShieldRequest,
   generateRandomShieldPrivateKey,
 } from '@/lib/railgun/shield'
+import { createShieldRequestSdk, sdkShieldEnabled } from '@/lib/railgun/shield-sdk'
+import { runShieldDifferential, shieldDifferentialEnabled } from '@/lib/railgun/shield-differential'
 import { extractCctpMessageFromReceipt, messageReceivedTopic } from '@/lib/cctp'
 import { cctpMaxFeeForKind, submitRelay, fetchCctpDeliveryStatus } from '@/lib/relayer'
 import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
@@ -194,12 +196,20 @@ async function runBuildProof(
     )
   }
   const shieldPrivateKey = generateRandomShieldPrivateKey()
-  const request = await createShieldRequest(
-    railgunAddress,
-    shieldValue,
-    hubUsdcAddress,
-    shieldPrivateKey,
-  )
+  // Phase B write-path cutover (same flag as hub shield). The cross-chain note-build is identical to
+  // the hub shield — only the CCTP wrapping below differs — so it shares slice 1's commitment-parity
+  // guarantee. Under VITE_SDK_WRITE_PATH the ShieldRequest is built by @armada/sdk; else the engine.
+  const request = sdkShieldEnabled()
+    ? await createShieldRequestSdk(railgunAddress, shieldValue, hubUsdcAddress, shieldPrivateKey)
+    : await createShieldRequest(railgunAddress, shieldValue, hubUsdcAddress, shieldPrivateKey)
+  if (!sdkShieldEnabled() && shieldDifferentialEnabled()) {
+    void runShieldDifferential(request, {
+      railgunAddress,
+      amount: shieldValue,
+      tokenAddress: hubUsdcAddress,
+      shieldPrivateKeyHex: shieldPrivateKey,
+    })
+  }
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   // Phase C — gasless path: build the relayer fee note (a second note carried across CCTP, minted
@@ -268,12 +278,9 @@ async function buildGaslessXchainArtifacts(
 
   // Fee note is HUB-usdc denominated — the commitment is minted on the hub after CCTP delivery.
   const feeShieldPrivateKey = generateRandomShieldPrivateKey()
-  const feeNote = await createShieldRequest(
-    record.meta.broadcasterRailgunAddress,
-    record.meta.feeAmount,
-    hubUsdcAddress,
-    feeShieldPrivateKey,
-  )
+  const feeNote = sdkShieldEnabled()
+    ? await createShieldRequestSdk(record.meta.broadcasterRailgunAddress, record.meta.feeAmount, hubUsdcAddress, feeShieldPrivateKey)
+    : await createShieldRequest(record.meta.broadcasterRailgunAddress, record.meta.feeAmount, hubUsdcAddress, feeShieldPrivateKey)
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   // Gasless cross-chain shields carry no integrator (address(0)).

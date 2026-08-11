@@ -36,12 +36,6 @@ export type EventRegistry = {
   'shielded.schema-migration': { from: number; to: number }
   // User pressed "Try Again" on a failed initial balance sync. No identifiers — just the action.
   'shielded.syncRetry':       Record<string, never>
-  // Watcher quick-sync outcome — one line per hub scan's quick-sync attempt so activation +
-  // fallback are observable in dev and prod. Counts + block numbers only (never addresses/amounts).
-  //   'served'     — hit the watcher; commitments>0 means events actually flowed
-  //   'no-indexer' — VITE_INDEXER_URL unset → engine slow-scans (normal; the B4 fallback)
-  //   'fell-back'  — attempted but failed → engine slow-scans (paired with a shielded.quicksync error)
-  'shielded.quicksync':       { outcome: 'served' | 'no-indexer' | 'fell-back'; pages?: number; commitments?: number; unshields?: number; nullifiers?: number; throughBlock?: number; reason?: string }
 
   // @armada/sdk read-instance sync outcome — one line per wallet.sync() so resume-vs-rescan is
   // observable. Named `sdk.*` because this is the in-house SDK; stock-engine / shielded-pool telemetry
@@ -50,6 +44,14 @@ export type EventRegistry = {
   // the resume point (checkpoint + 1): a low value ≈ deploy block means a cold rescan, a high value
   // means it resumed from the IndexedDB checkpoint. `scanned` false = head hadn't advanced (no work).
   'sdk.sync':                 { fromBlock: number; syncedThrough: number; scanned: boolean }
+
+  // @armada/sdk quick-sync outcome — emitted once per sync WHEN an indexer (watcher) is configured,
+  // so an operator can confirm it's actually serving vs silently degrading to RPC. Forwarded from the
+  // SDK's `sync.quicksync` telemetry via `sdk-telemetry.ts`. Block numbers + booleans only.
+  //   'served'                — the indexer batch verified against the on-chain root (tailCovered =
+  //                             the indexer lagged head and RPC covered the remainder)
+  //   'root-mismatch-fallback'— the indexer batch failed root-verify → discarded, range RPC-rescanned
+  'sdk.quicksync':            { outcome: 'served' | 'root-mismatch-fallback'; fromBlock: number; head: number; tailCovered: boolean }
 
   'tx.submitted':             { id: string; kind: TxKind }
   'tx.transition':            { id: string; kind: TxKind; from: TxStage; to: TxStage; executionState: TxRecord['executionState'] }

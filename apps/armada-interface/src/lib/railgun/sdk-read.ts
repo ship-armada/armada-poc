@@ -15,6 +15,7 @@ import { getNetworkConfig } from '../../config/network'
 import * as keyManager from './keyManager'
 import { createInterfaceArtifactSource, createInterfaceProver } from './sdk-prover'
 import { emitBalanceChange, emitScanStatus } from './balance-bus'
+import { sdkTelemetrySink } from './sdk-telemetry'
 import { track } from '../telemetry'
 
 /** The shielded yield-vault share token (ayUSDC), if a yield deployment exists. */
@@ -86,6 +87,9 @@ async function ensureInstance(): Promise<{ sdk: ArmadaSdk; wallet: ReadWallet; a
     storage: new IndexedDBStorageAdapter(READ_DB_NAME),
     prover: createInterfaceProver(),
     artifacts: createInterfaceArtifactSource(),
+    // Quick-sync observability: the SDK emits its `sync.quicksync` outcome (served / tail-covered /
+    // root-mismatch-fallback) through this sink, which the interface surfaces as `sdk.quicksync`.
+    telemetry: sdkTelemetrySink,
   })
   // Attach a spend signer so the instance is write-capable (planTransfer/prove) — not just view-only.
   // Derived from the same in-memory rootSecret the viewing key comes from, so it adds no new secret

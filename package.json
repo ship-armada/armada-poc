@@ -114,7 +114,7 @@
     "verify:etherscan:sepolia:clientB": "hardhat run scripts/verify_sepolia.ts --network sepoliaClientB"
   },
   "dependencies": {
-    "@armada/sdk": "github:ship-armada/armada-sdk#d6e4a9b9b93a278d461711b156f79ba9e6a3e534",
+    "@armada/sdk": "github:ship-armada/armada-sdk#fcfa8f4b47f61ebbd347145f62563aa8da74af86",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@nomicfoundation/hardhat-chai-matchers": "^2.1.0",
     "@nomicfoundation/hardhat-ethers": "^3.1.3",

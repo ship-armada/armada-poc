@@ -15,7 +15,6 @@ import { useAutoLock } from '@/hooks/useAutoLock'
 import { useHistoryRecovery } from '@/hooks/useHistoryRecovery'
 import { useIncomingTransferDetector } from '@/hooks/useIncomingTransferDetector'
 import { useNowTicker } from '@/hooks/useNowTicker'
-import { useRailgunEngineSync } from '@/hooks/useRailgunEngineSync'
 import { useFees } from '@/hooks/useFees'
 import { useShieldedBalanceSync } from '@/hooks/useShieldedBalanceSync'
 import { useShieldedSyncPoll } from '@/hooks/useShieldedSyncPoll'
@@ -37,7 +36,6 @@ import '@/features/yield-withdraw'
 import { startEngine } from '@/lib/tx/executor'
 import { trackError } from '@/lib/telemetry'
 import { appModeForWalletStatus, type GuardMode } from '@/lib/app-mode'
-import { initRailgunEngine } from '@/lib/railgun/init'
 import { preloadArtifactsFromOrigin } from '@/lib/railgun/artifacts'
 import { runSchemaMigrationIfNeeded } from '@/lib/railgun/schema-migration'
 import { clearStoredWalletIdentity, readStoredWalletId } from '@/lib/railgun/wallet'
@@ -64,10 +62,6 @@ export function App() {
   // SignEnrollment step, UnshieldModal's recipient pre-fill, useShieldedWallet.enroll). Mounted
   // before the onboarding/unlock guard so the atom is correct even before the user reaches /app.
   useWallet()
-  // Mirror lib/railgun/init's engine lifecycle into railgunEngineAtom so the UI can render
-  // a "warming up…" indicator. No-op until the first call to initRailgunEngine (currently
-  // triggered by enroll/unlock); future commits may pre-warm on app mount.
-  useRailgunEngineSync()
   // Subscribe to SDK balance-update events + drive initial scan whenever the wallet unlocks;
   // mirrors the active wallet's shielded USDC balance into shieldedUsdcAtom for BalanceHero
   // and the shield/unshield modals.
@@ -104,7 +98,7 @@ export function App() {
   // v2 schema migration: drops legacy localStorage keys + IndexedDB databases on first run of
   // the v2 schema. Synchronous portion (localStorage) is done by the time the awaited promise
   // resolves; async portion (IDB drops) is awaited before we transition out of `pre-migration`
-  // so the Railgun engine init below doesn't race against `armada-shielded` being deleted.
+  // so the SDK read instance (opened lazily on unlock) doesn't race against the legacy DBs being deleted.
   // Idempotent — `runSchemaMigrationIfNeeded` short-circuits when the on-disk version is current,
   // making StrictMode's double-mount safe.
   useEffect(() => {
@@ -125,18 +119,12 @@ export function App() {
     // Start the tx execution engine. Idempotent + module-scope, so this runs
     // safely under StrictMode's double-mount and never spawns a second engine.
     startEngine()
-    // Opportunistically pre-warm the Railgun engine — loads the WASM proving stack + IDB DB +
-    // artifact store in the background while the user is still onboarding or browsing. Without
-    // this, the first proof-generating tx pays a 1-2s warmup before the SDK can do anything.
-    // Idempotent: a later enroll/unlock call also goes through ensureRailgunReady() which is a
-    // no-op once initialized.
-    //
-    // After init resolves, preload the demo-critical circuit artifacts from our own origin into
-    // the SDK cache (P0-12) so the first proof doesn't fetch ~10 MB from IPFS at click time.
-    // Fire-and-forget, sequenced after init, off the critical path — failures fall back to IPFS.
-    void initRailgunEngine()
-      .then(() => preloadArtifactsFromOrigin())
-      .catch((err) => trackError('shielded.artifacts.preload', err))
+    // Preload the demo-critical circuit artifacts from our own origin into the @armada/sdk artifact
+    // registry (P0-12) so the first proof doesn't fetch ~10 MB from IPFS at click time. Fire-and-forget,
+    // off the critical path — failures fall back to the SDK's default artifact fetch.
+    void preloadArtifactsFromOrigin().catch((err) =>
+      trackError('shielded.artifacts.preload', err),
+    )
   }, [mode])
   // Sticky flag: true when this device boot started with NO persisted walletId. Drives whether
   // we offer the bidirectional Onboarding ↔ Unlock fork. A returning user (had a wallet at boot)

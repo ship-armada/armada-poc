@@ -32,7 +32,7 @@ src/
 ├── index.css                @import tailwindcss + @armada/ui tokens.css + global.css
 ├── config/                  env-driven config — network, wagmi, deployments, relayer
 ├── lib/                     pure logic, no React (rpc, cache, format, revert, wagmi-adapter, telemetry, relayer, cctp)
-│   ├── railgun/             SDK wrappers (wallet, init, network, keyManager, artifacts, database) — Phase 1 lifecycle wired; prover + sync still stubbed
+│   ├── railgun/             @armada/sdk wrappers (wallet, keyManager, sdk-read, sdk-prover, sync, balance-bus, network, artifacts) — stock engine fully removed
 │   └── tx/                  lifecycle model — types, lifecycles, reducer, storage, poller
 ├── state/                   Jotai atoms (tx, wallet, fees, visibility, ui)
 ├── hooks/                   per-concern hooks (useWallet, useShieldedWallet, useBalances, useYieldRate, useFees, useTx, useTxHistory, useTabVisible)

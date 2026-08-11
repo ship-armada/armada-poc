@@ -30,20 +30,8 @@ const hoisted = vi.hoisted(() => {
     signTypedData: vi.fn(async () => deterministicSig),
     openConnectModal: vi.fn(),
     disconnect: vi.fn(),
-    // Railgun SDK is mocked at the dynamic-import boundary inside lib/railgun/wallet.ts.
-    createRailgunWallet: vi.fn(async () => ({ id: 'sdk-wallet-id-A', railgunAddress: '0zk1A' })),
-    loadWalletByID: vi.fn(async () => ({ id: 'sdk-wallet-id-A', railgunAddress: '0zk1A' })),
-    unloadWalletByID: vi.fn(),
-    deleteWalletByID: vi.fn(),
   }
 })
-
-vi.mock('@railgun-community/wallet', () => ({
-  createRailgunWallet: hoisted.createRailgunWallet,
-  loadWalletByID: hoisted.loadWalletByID,
-  unloadWalletByID: hoisted.unloadWalletByID,
-  deleteWalletByID: hoisted.deleteWalletByID,
-}))
 
 // wallet.ts derives the 0zk address via the SDK's `deriveKeyset`; the real one needs ed25519/poseidon
 // crypto that jsdom can't run, and this test exercises the record/atom lifecycle, not keyset crypto.
@@ -56,20 +44,15 @@ vi.mock('@armada/sdk', async (importActual) => {
   }
 })
 
-vi.mock('@/lib/railgun/init', () => ({
-  initRailgunEngine: vi.fn(async () => {}),
-  isRailgunEngineInitialized: vi.fn(() => true),
-  getRailgunInitError: vi.fn(() => null),
-  resetInitState: vi.fn(),
-}))
-
-vi.mock('@/lib/railgun/network', () => ({
-  loadHubNetwork: vi.fn(async () => {}),
-  isHubNetworkLoaded: vi.fn(() => true),
-  resetNetworkLoaderState: vi.fn(),
-  getHubChainDescriptor: vi.fn(() => ({ type: 0 as const, id: 31337 })),
-  getCurrentHubBlock: vi.fn(async () => 100),
-}))
+// network.ts is pure ethers now; stub only `getCurrentHubBlock` (wallet.ts calls it on signIn and
+// the real one would hit an RPC jsdom can't reach). Keep the rest real.
+vi.mock('@/lib/railgun/network', async (importActual) => {
+  const actual = await importActual<typeof import('@/lib/railgun/network')>()
+  return {
+    ...actual,
+    getCurrentHubBlock: vi.fn(async () => 100),
+  }
+})
 
 vi.mock('wagmi/actions', () => ({
   signTypedData: hoisted.signTypedData,
@@ -169,10 +152,6 @@ beforeEach(() => {
   hoisted.signTypedData.mockResolvedValue(hoisted.deterministicSig)
   hoisted.openConnectModal.mockReset()
   hoisted.disconnect.mockReset()
-  hoisted.createRailgunWallet.mockClear()
-  hoisted.loadWalletByID.mockClear()
-  hoisted.unloadWalletByID.mockClear()
-  hoisted.deleteWalletByID.mockClear()
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -278,9 +257,7 @@ describe('V2 shielded-wallet lifecycle integration', () => {
     const errObj = captured as { kind?: string; reason?: string } | undefined
     expect(errObj?.kind).toBe('NonDeterministicSignerError')
     expect(errObj?.reason).toBe('first-sign-mismatch')
-    // The SDK must NOT have been touched — no identity bound.
-    expect(hoisted.createRailgunWallet).not.toHaveBeenCalled()
-    expect(hoisted.loadWalletByID).not.toHaveBeenCalled()
+    // No identity bound — signIn threw before deriving the keyset / unlocking the key manager.
     expect(isUnlocked()).toBe(false)
   })
 

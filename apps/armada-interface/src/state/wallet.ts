@@ -1,4 +1,4 @@
-// ABOUTME: Jotai atoms for wallet state — EVM connection (mirrored from wagmi) + plural Railgun shielded wallets + Railgun engine warmup.
+// ABOUTME: Jotai atoms for wallet state — EVM connection (mirrored from wagmi) + plural shielded wallets + shielded balance sync.
 // ABOUTME: EVM state sourced from wagmi hooks. Plural-wallet schema is future-proofing per reviewer #5; v1 only ever populates one entry.
 
 import { atom } from 'jotai'
@@ -30,11 +30,6 @@ export const shieldedWalletAtom = atom<{ status: 'locked' | 'unlocked' | 'missin
   return { status: active.status, railgunAddress: active.railgunAddress }
 })
 
-/** Railgun proving engine state. Used by the UI to indicate "warming up…" before first-tx readiness. */
-export type RailgunEngineState = 'cold' | 'warming' | 'ready' | 'failed'
-
-export const railgunEngineAtom = atom<{ state: RailgunEngineState; error?: string }>({ state: 'cold' })
-
 /**
  * Unshielded USDC balance per chain id (raw 6-decimal units). Empty map until balances hook fetches.
  */
@@ -54,15 +49,16 @@ export const yieldSharesAtom = atom<bigint | null>(null)
 export const autoLockDeadlineAtom = atom<number | null>(null)
 
 /**
- * Shielded balance sync state. Reflects the Railgun engine's UTXO merkletree scan progress.
+ * Shielded balance sync state. Reflects the @armada/sdk wallet's commitment-scan progress.
  *
- *   idle      — no scan has been triggered yet (engine not running, or no wallet unlocked)
+ *   idle      — no scan has been triggered yet (no wallet unlocked)
  *   syncing   — a scan is in progress; `progress` runs 0..1
  *   complete  — most recent scan finished successfully
- *   failed    — the scan reported MerkletreeScanStatus.Incomplete (RPC failures, etc.)
+ *   failed    — the scan reported an error (RPC failures, etc.) or couldn't start
  *
- * Written by the SDK's setOnUTXOMerkletreeScanCallback handler in lib/railgun/init.ts and
- * consumed by the SyncBanner UI + per-modal "block submit while sync is incomplete" gates.
+ * Driven by the SDK wallet's scan events (scan:started/progress/complete/error), forwarded through
+ * the scan-status bus (lib/railgun/balance-bus.ts) and written by `useShieldedBalanceSync`. Consumed
+ * by the SyncBanner UI + per-modal "block submit while sync is incomplete" gates.
  */
 export interface SyncState {
   readonly status: 'idle' | 'syncing' | 'complete' | 'failed'

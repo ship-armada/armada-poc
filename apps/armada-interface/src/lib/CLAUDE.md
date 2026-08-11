@@ -18,10 +18,8 @@ Pure logic — **no React imports allowed.** These modules are unit-testable wit
 | `railgun/keyManager.ts` | Module-scope unlocked-state singleton: `rootSecret`, `walletId`, `sdkEncryptionKey`, `historyEncryptionKey` (Phase 7), `evmAddress` + `account` binding, address, checksum. Getters throw when locked; `clear()` zeroizes secret buffers. | Working |
 | `crypto/cache-cipher.ts` | V2 Phase 7 — AES-256-GCM `wrap` / `unwrap` envelope helpers used by `lib/tx/storage` for at-rest encryption of tx records under `historyEncryptionKey`. BigInt round-trip via JSON sentinel. | Working |
 | `crypto/determinism.ts` | V2 Phase 2a — typed `NonDeterministicSignerError` + `verifySignatureDeterminism(reSign, firstSig)` used by `useShieldedWallet.signIn` to double-sign on first-ever sign-in for an EVM address. | Working |
-| `railgun/init.ts` | `startRailgunEngine` + POI dummy + level-js DB + IndexedDB artifact store. Idempotent. | Working |
-| `railgun/network.ts` | Patches the SDK's `NETWORK_CONFIG.Hardhat` entry with our PrivacyPool address; loads the hub provider. | Working |
-| `railgun/prover.ts` | Proof generation entry points (shield/unshield/transfer). **Stub.** | Stub |
-| `railgun/sync.ts` | Facade over the SDK-native `railgun/balance-bus.ts` (scan/balance/note event fan-out) + `refreshShieldedBalances` (`railgun/sdk-read.ts` `wallet.sync()`). Shielded reads come from `railgun/sdk-read.ts` (@armada/sdk). | Working |
+| `railgun/network.ts` | Pure-ethers hub-chain RPC helpers — `timeoutProvider`, `getCurrentHubBlock`, `getHubBlockTimestamps`. No engine coupling. | Working |
+| `railgun/sync.ts` | Facade over the SDK-native `railgun/balance-bus.ts` (scan/balance/note fan-out + scan-status → `syncStateAtom`) + `refreshShieldedBalances` (`railgun/sdk-read.ts` `wallet.sync()`). Shielded reads come from `railgun/sdk-read.ts` (@armada/sdk). | Working |
 | `tx/` | Tx lifecycle model — see `tx/CLAUDE.md`. | Working (types) + Stub (poller integration) |
 
 ## Conventions

@@ -33,7 +33,41 @@ export async function subscribeBalanceUpdates(listener: Listener): Promise<() =>
   }
 }
 
+/**
+ * Scan-progress status — drives the sync banner / gate (`syncStateAtom`). Mapped from the SDK's scan
+ * events: `scan:started` → syncing/0, `scan:progress` → syncing/fraction, `scan:complete` → complete/1,
+ * `scan:error` → failed. Carried on a separate channel from the balance ping because it needs the
+ * progress fraction + status (the balance bus is a bare trigger).
+ */
+export interface SyncStatusEvent {
+  readonly status: 'syncing' | 'complete' | 'failed'
+  readonly progress: number // 0..1
+}
+
+type StatusListener = (event: SyncStatusEvent) => void
+const statusListeners = new Set<StatusListener>()
+
+/** Fan a scan-status change out to every listener. Called by sdk-read's scan `wallet.on(...)` forwarders. */
+export function emitScanStatus(event: SyncStatusEvent): void {
+  for (const listener of statusListeners) {
+    try {
+      listener(event)
+    } catch {
+      /* swallow — one bad listener mustn't break the others */
+    }
+  }
+}
+
+/** Subscribe to scan-status changes. Returns an unsubscribe fn. */
+export function subscribeScanStatus(listener: StatusListener): () => void {
+  statusListeners.add(listener)
+  return () => {
+    statusListeners.delete(listener)
+  }
+}
+
 /** Reset module-scope state — for tests + dev hot-reload scenarios. */
 export function resetSyncState(): void {
   listeners.clear()
+  statusListeners.clear()
 }

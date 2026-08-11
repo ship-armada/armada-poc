@@ -4,7 +4,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { NonDeterministicSignerError } from '@/lib/crypto/determinism'
-import { railgunEngineAtom } from '@/state/wallet'
 
 // Mocks for the lib + wagmi + RainbowKit surfaces SignEnrollmentStep depends on. Keep these
 // before the OnboardingFlowV2 import so vi.mock hoists into place.
@@ -40,9 +39,6 @@ function renderFlow(opts?: { onDone?: () => void; onRestore?: () => void }) {
   const onDone = opts?.onDone ?? vi.fn()
   const onRestore = opts?.onRestore
   const store = createStore()
-  // The engine atom defaults to 'cold'; SignEnrollmentStep reads it to render warming-up copy.
-  // We hand it a ready-shaped value so the Sign button isn't blocked by an unrelated state.
-  store.set(railgunEngineAtom, { state: 'ready', error: null })
   render(
     <Provider store={store}>
       <OnboardingFlowV2 onDone={onDone} onRestore={onRestore} />

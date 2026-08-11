@@ -30,23 +30,6 @@
   width: 100%;
 }
 
-.retryLink {
-  margin: 0;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--semantic-color-text-link);
-  text-decoration: underline;
-  cursor: pointer;
-  font: inherit;
-  line-height: var(--primitives-lineHeight-normal);
-}
-
-.retryLink:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
 .actions {
   display: flex;
   flex-direction: column;

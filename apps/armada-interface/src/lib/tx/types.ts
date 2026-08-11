@@ -408,8 +408,8 @@ export interface ArtifactsXchain extends ArtifactsCommon {
 
 /**
  * Shield-specific artifacts. The `build-proof` stage stashes its outputs here so the next stage
- * (and any post-reload resume) can submit the on-chain shield tx without re-signing RAILGUN_SHIELD
- * or re-computing the engine-side request. `value` is stringified for IDB serializability.
+ * (and any post-reload resume) can submit the on-chain shield tx without re-generating the random
+ * shield key or re-building the ShieldRequest. `value` is stringified for IDB serializability.
  */
 export interface ArtifactsShield extends ArtifactsCommon {
   privacyPoolAddress?: string

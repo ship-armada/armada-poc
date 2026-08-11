@@ -1,4 +1,4 @@
-// ABOUTME: Tests for lib/crypto/kdf — HKDF derivation determinism, anti-phish checksum, internal mnemonic shim, AES-GCM backup round-trip, IC-2 canary.
+// ABOUTME: Tests for lib/crypto/kdf — HKDF derivation determinism, anti-phish checksum, AES-GCM backup round-trip, IC-2 canary.
 
 import { describe, it, expect } from 'vitest'
 import {
@@ -7,7 +7,6 @@ import {
   deriveViewingKeyBytes,
   deriveSdkEncryptionKeyHex,
   deriveHistoryEncryptionKey,
-  deriveInternalMnemonic,
   antiPhishChecksumBytes,
   formatChecksumDisplay,
   assertEntropyFloor,
@@ -27,8 +26,6 @@ import {
  * from dominating the suite runtime. The encryption shape is bit-identical regardless.
  */
 const TEST_OPTS: EncryptOptions = { iterations: 1000 }
-import { validateMnemonic } from '@scure/bip39'
-import { wordlist } from '@scure/bip39/wordlists/english'
 
 /** Deterministic 65-byte signature fixture. */
 function fixedSignature(seed: number = 0): Uint8Array {
@@ -127,27 +124,6 @@ describe('deriveHistoryEncryptionKey', () => {
   it('rejects bad input lengths (assertRootSecret)', () => {
     expect(() => deriveHistoryEncryptionKey(new Uint8Array(31))).toThrow()
     expect(() => deriveHistoryEncryptionKey(new Uint8Array(33))).toThrow()
-  })
-})
-
-describe('deriveInternalMnemonic', () => {
-  it('returns a 24-word BIP-39 mnemonic', () => {
-    const root = deriveRootSecret(fixedSignature())
-    const m = deriveInternalMnemonic(root)
-    const words = m.split(' ')
-    expect(words.length).toBe(24)
-    expect(validateMnemonic(m, wordlist)).toBe(true)
-  })
-
-  it('is deterministic from root_secret', () => {
-    const root = deriveRootSecret(fixedSignature())
-    expect(deriveInternalMnemonic(root)).toBe(deriveInternalMnemonic(root))
-  })
-
-  it('two different root_secrets produce two different mnemonics', () => {
-    const a = deriveInternalMnemonic(deriveRootSecret(fixedSignature(0)))
-    const b = deriveInternalMnemonic(deriveRootSecret(fixedSignature(1)))
-    expect(a).not.toBe(b)
   })
 })
 

@@ -20,8 +20,7 @@ export interface SdkTransferInputs {
  * spendable notes, proves it (Groth16), and the proved struct is serialized into `transact(...)`
  * calldata. Returns `{ to, data }` (value is always 0 — a shielded tx carries no native value).
  *
- * Proving runs on the instance's prover (same-thread today; worker follow-on). The caller decides
- * whether to submit the result or (differential) only simulate it.
+ * Proving runs on the instance's off-thread worker prover. Returns `{ to, data }` for the caller to submit.
  */
 export async function buildTransferSdk(
   inputs: SdkTransferInputs,

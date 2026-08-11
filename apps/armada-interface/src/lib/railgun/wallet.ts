@@ -105,9 +105,9 @@ function writeMap(key: string, value: unknown): void {
 
 /**
  * Read the cached walletId for a specific (EVM address, account) tuple. Returns null when no
- * sign-in has happened for that pair on this device. Used by the sign-in fast path to skip
- * `createRailgunWallet` and call `loadWalletByID` directly, preserving the SDK's merkle scan
- * cursor + UTXO set across reloads.
+ * sign-in has happened for that pair on this device. The sign-in fast path uses it to reuse the
+ * existing walletId (the tx-history key + scan checkpoint) rather than treating a returning user
+ * as newly created — preserving history + the SDK's scan cursor across reloads.
  */
 export function readStoredWalletIdFor(
   evmAddress: `0x${string}`,
@@ -195,9 +195,10 @@ export function clearStoredWalletIdentity(): void {
 
 /**
  * Shared post-derivation pipeline used by the three rootSecret-bearing entry points
- * (enrollFromSignature / unlockFromRootSecret / unlockFromBackup). Runs IC-2 canaries,
- * fast-paths `loadWalletByID` if a cached id matches, else (re)creates the SDK wallet, persists
- * walletId + checksum to localStorage, and hands the live key material to the keyManager.
+ * (enrollFromSignature / unlockFromRootSecret / unlockFromBackup). Runs IC-2 canaries, resolves the
+ * walletId (reusing a cached id for a returning user, else deriving a fresh one), derives the 0zk
+ * address, persists walletId + checksum to localStorage, and hands the live key material to the
+ * keyManager. The SDK read/write instance is created lazily on first use (sdk-read.ts).
  *
  * Telemetry is the caller's responsibility — `applyRootSecret` reports back via `newlyCreated`
  * so each caller can emit the right `shielded.created` vs `shielded.unlock` semantics. (Why not

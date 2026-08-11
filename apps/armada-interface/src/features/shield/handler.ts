@@ -93,9 +93,10 @@ const PRIVACY_POOL_SHIELD_ABI = [
  * always produces the ShieldRequest from the user's signature, and `submit-relayer` then either
  * routes through the user's EVM wallet (direct) or the relayer-mediated wrapper (gasless).
  *
- *   1. `build-proof`    — sign 'RAILGUN_SHIELD' → derive shieldPrivateKey → build ShieldRequest.
- *                         When gasless: ALSO sign an EIP-2612 USDC permit for `amount + fee` to
- *                         the wrapper address. Both prompts surface to the user in succession.
+ *   1. `build-proof`    — generate a random shieldPrivateKey → build ShieldRequest (no signature —
+ *                         see lib/railgun/shield.ts for why the shield key is random, not derived).
+ *                         When gasless: sign an EIP-2612 USDC permit for `amount + fee` to the
+ *                         wrapper address — the only wallet prompt on this path.
  *   2. `submit-relayer` — direct path: approve USDC + writeContract(PrivacyPool.shield).
  *                         gasless path: encode `gaslessShield(...)` calldata + POST /relay +
  *                         poll /status. No EVM wallet prompts after build-proof on this branch.
@@ -458,8 +459,8 @@ async function runDirectSubmit(
 /**
  * Phase B3 gasless-shield path: encode `gaslessShield(...)` calldata from the permit signature
  * + ShieldRequest captured in build-proof, POST to /relay, poll /status. Zero EVM wallet
- * prompts here — the user already signed both the RAILGUN_SHIELD message and the USDC permit
- * during build-proof, so this stage is purely network-side work.
+ * prompts here — the user already signed the USDC permit during build-proof (the shield key is
+ * random, so there's no signature for it), so this stage is purely network-side work.
  */
 async function runGaslessSubmit(
   record: TxRecord<'shield'>,

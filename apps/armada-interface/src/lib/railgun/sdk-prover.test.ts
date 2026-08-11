@@ -2,7 +2,6 @@
 // ABOUTME: the artifactGetter registry to the SDK's {wasm,zkey,vkey} shape, and fails loudly when unloaded.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { Artifact } from '@railgun-community/shared-models'
 
 // Stub the worker prover so importing this module doesn't pull the proving stack (or a Worker) into
 // the test. createInterfaceProver is lazy, so createWorkerProver isn't invoked until first prove().
@@ -11,10 +10,10 @@ vi.mock('@armada/sdk', () => ({
 }))
 
 import { createInterfaceArtifactSource, createInterfaceProver } from './sdk-prover'
-import { setArmadaArtifact, clearArmadaArtifacts } from './artifactGetter'
+import { setArmadaArtifact, clearArmadaArtifacts, type ArmadaArtifact } from './artifactGetter'
 
-const artifact = (wasm: Uint8Array | undefined): Artifact =>
-  ({ zkey: new Uint8Array([2]), wasm, vkey: { protocol: 'groth16' }, dat: undefined }) as Artifact
+const artifact = (wasm: Uint8Array | undefined): ArmadaArtifact =>
+  ({ zkey: new Uint8Array([2]), wasm, vkey: { protocol: 'groth16' } })
 
 describe('createInterfaceArtifactSource', () => {
   beforeEach(() => {

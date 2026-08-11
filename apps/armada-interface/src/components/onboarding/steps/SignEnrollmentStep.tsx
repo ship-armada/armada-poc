@@ -4,15 +4,12 @@
 import { useState } from 'react'
 import { useAccount } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { useAtomValue } from 'jotai'
 import { Button, Text } from '@armada/ui'
 import {
   isNonDeterministicSignerError,
   type NonDeterministicSignerErrorReason,
 } from '@/lib/crypto/determinism'
 import { normalizeEnrollmentError } from '@/lib/railgun/enrollmentErrors'
-import { retryRailgunEngineInit } from '@/lib/railgun/init'
-import { railgunEngineAtom } from '@/state/wallet'
 import styles from './SignEnrollmentStep.module.css'
 
 export interface SignEnrollmentStepProps {
@@ -39,16 +36,8 @@ export function SignEnrollmentStep({
 }: SignEnrollmentStepProps) {
   const { isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
-  const engine = useAtomValue(railgunEngineAtom)
   const [submitting, setSubmitting] = useState(false)
-  const [retryingEngine, setRetryingEngine] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  // While submitting, the parent's enroll() runs initRailgunEngine first (engine state goes
-  // cold → warming → ready), then signTypedData. Surface the warming step explicitly so the
-  // user doesn't think MetaMask is hung — engine init can take a couple seconds on a cold
-  // load (WASM proving stack + artifact store + merkle scan setup).
-  const warming = submitting && engine.state === 'warming'
 
   async function handleSign() {
     setError(null)
@@ -74,10 +63,9 @@ export function SignEnrollmentStep({
   // Two-button states: not-connected → open RainbowKit; connected → trigger sign.
   // We intentionally do not auto-fire the sign after connect; the user explicitly clicks twice
   // so the wallet prompts (connect + sign) don't feel chained or surprising.
-  const submittingLabel = warming ? 'Warming up engine…' : 'Waiting for signature…'
   const primaryLabel = isConnected
     ? submitting
-      ? submittingLabel
+      ? 'Waiting for signature…'
       : 'Sign message'
     : 'Connect wallet'
   const primaryDisabled = isConnected ? submitting : !openConnectModal
@@ -106,26 +94,6 @@ export function SignEnrollmentStep({
         <p role="alert" className={styles.error}>
           {error}
         </p>
-      ) : null}
-      {engine.state === 'failed' ? (
-        <button
-          type="button"
-          className={styles.retryLink}
-          disabled={submitting || retryingEngine}
-          onClick={async () => {
-            setRetryingEngine(true)
-            setError(null)
-            try {
-              await retryRailgunEngineInit()
-            } catch (err) {
-              setError(normalizeEnrollmentError(err).message)
-            } finally {
-              setRetryingEngine(false)
-            }
-          }}
-        >
-          {retryingEngine ? 'Retrying engine setup…' : 'Retry engine setup'}
-        </button>
       ) : null}
       <div className={styles.actions}>
         <Button

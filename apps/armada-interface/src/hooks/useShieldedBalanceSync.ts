@@ -13,15 +13,17 @@ import {
 import {
   refreshShieldedBalances,
   subscribeBalanceUpdates,
+  subscribeScanStatus,
 } from '@/lib/railgun/sync'
 import { closeSdkRead, syncSdkUsdcBalance, syncSdkYieldShares } from '@/lib/railgun/sdk-read'
 import { trackError } from '@/lib/telemetry'
 
 /**
  * Subscribe to balance updates while the wallet is unlocked. On unlock:
- *   1. Subscribe to SDK balance-update events (lazily installs the global SDK callback)
- *   2. Trigger an initial `refreshShieldedBalances` so the first scan starts
- *   3. On each event (or initial query), re-fetch BOTH shielded USDC and ayUSDC shares from the
+ *   1. Subscribe to SDK scan-status events → drive `syncStateAtom` (the sync gate/banner)
+ *   2. Subscribe to SDK balance-update events (lazily installs the global SDK callback)
+ *   3. Trigger an initial `refreshShieldedBalances` so the first scan starts
+ *   4. On each event (or initial query), re-fetch BOTH shielded USDC and ayUSDC shares from the
  *      @armada/sdk read instance (which resolves the token set from the deployment internally)
  *
  * On lock or unmount, unsubscribes, zeroes both atoms, and closes the SDK read instance.
@@ -57,7 +59,16 @@ export function useShieldedBalanceSync(): void {
     const walletId = active.id
     latestWalletIdRef.current = walletId
     let unsubscribe: (() => void) | null = null
+    let unsubscribeScan: (() => void) | null = null
     let cancelled = false
+
+    // Drive the sync gate/banner (`syncStateAtom`) off the SDK wallet's scan lifecycle — the
+    // SDK-native replacement for the stock engine's merkletree-scan callback. scan:started → syncing,
+    // scan:progress → the running fraction, scan:complete → complete, scan:error → failed.
+    unsubscribeScan = subscribeScanStatus((status) => {
+      if (cancelled || latestWalletIdRef.current !== walletId) return
+      setSyncState(status)
+    })
 
     async function refreshAll(): Promise<void> {
       try {
@@ -112,6 +123,7 @@ export function useShieldedBalanceSync(): void {
     return () => {
       cancelled = true
       if (unsubscribe) unsubscribe()
+      if (unsubscribeScan) unsubscribeScan()
     }
   }, [active?.id, active?.status, retryEpoch, setShieldedUsdc, setYieldShares, setSyncState])
 }

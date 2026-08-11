@@ -13,7 +13,7 @@ import { useShieldedWallet } from '@/hooks/useShieldedWallet'
 import { useRelayerHealth } from '@/hooks/useRelayerHealth'
 import { loadDeployments, type ResolvedDeployments } from '@/config/deployments'
 import { getNetworkConfig, isLocalMode, isRelayerConfigured, type ChainIdentity } from '@/config/network'
-import { railgunEngineAtom, shieldedUsdcAtom } from '@/state/wallet'
+import { shieldedUsdcAtom } from '@/state/wallet'
 import { formatUsdcAmount, truncateAddress } from '@/lib/format'
 import styles from './Debug.module.css'
 
@@ -155,8 +155,7 @@ async function queryChainBalance(
 }
 
 export function Debug() {
-  // Read-only consumers — Sign step gates on these, here we just surface them for inspection.
-  const engine = useAtomValue(railgunEngineAtom)
+  // Read-only consumer — surface the synced shielded balance for inspection.
   const shielded = useAtomValue(shieldedUsdcAtom)
   const { address: evmAddress } = useWallet()
   const { state: shieldedState } = useShieldedWallet()
@@ -168,7 +167,6 @@ export function Debug() {
   const [refreshing, setRefreshing] = useState(false)
   const [drippingChainId, setDrippingChainId] = useState<number | null>(null)
   const [dripError, setDripError] = useState<string | null>(null)
-  const [resettingEngine, setResettingEngine] = useState(false)
 
   // Relayer health pill next to the URL. Polled only when a relayer is actually configured —
   // hosted builds without VITE_RELAYER_URL set `isRelayerConfigured()` to false and would
@@ -226,20 +224,6 @@ export function Debug() {
     void refreshBalances()
   }, [refreshBalances])
 
-  const handleResetEngine = useCallback(async () => {
-    setResettingEngine(true)
-    try {
-      // Reset the module-scope init flags then trigger a re-init. The Jotai atom mirror will
-      // re-track lifecycle (cold → warming → ready/failed). Doesn't clear IDB / artifact cache;
-      // for a hard reset the user can wipe site data via devtools.
-      const { resetInitState, initRailgunEngine } = await import('@/lib/railgun/init')
-      resetInitState()
-      await initRailgunEngine()
-    } finally {
-      setResettingEngine(false)
-    }
-  }, [])
-
   const handleDrip = useCallback(
     async (chainId: number) => {
       if (!evmAddress) {
@@ -281,20 +265,6 @@ export function Debug() {
         <h3 className={styles.sectionTitle}>Network</h3>
         <dl className={styles.kv}>
           <dt>Mode</dt><dd>{localMode ? 'local' : 'sepolia'}</dd>
-          <dt>Engine state</dt>
-          <dd>
-            <span className={styles.copyRow}>
-              <span>{engine.state}{engine.error ? ` — ${engine.error}` : ''}</span>
-              <Button
-                variant="secondary"
-                size="sm"
-                showIcon={false}
-                label={resettingEngine ? 'Resetting…' : 'Reset'}
-                onClick={() => void handleResetEngine()}
-                disabled={resettingEngine || engine.state === 'warming'}
-              />
-            </span>
-          </dd>
           <dt>Hub chain</dt><dd>{getNetworkConfig().hub.name} ({getNetworkConfig().hub.chainId})</dd>
           <dt>Client chains</dt><dd>{getNetworkConfig().clients.map(c => `${c.name} (${c.chainId})`).join(', ')}</dd>
           <dt>Relayer URL</dt>

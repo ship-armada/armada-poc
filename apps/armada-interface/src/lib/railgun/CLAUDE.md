@@ -1,6 +1,8 @@
 # lib/railgun/
 
-Wrappers around `@railgun-community/wallet` / `@railgun-community/engine` for shielded wallet lifecycle, proof generation, and tree sync.
+Shielded-wallet lifecycle, proof generation, and tree sync — built entirely on `@armada/sdk`. (The
+stock `@railgun-community/*` engine has been fully removed; the `railgun/` directory name is retained
+as an internal identifier only — see the naming rule below.)
 
 ## Files
 
@@ -8,17 +10,13 @@ Wrappers around `@railgun-community/wallet` / `@railgun-community/engine` for sh
 |---|---|---|
 | `wallet.ts` | V2 signature-derived signIn + unlock-by-paste + unlock-by-backup + lock + reset. Per-(EVM address, account) localStorage map (`armada.shielded.walletIds` / `armada.shielded.checksums`) drives the cached fast-path. Records the unlock binding on `keyManager` for Phase 4 account-switch detection. | Working |
 | `schema-migration.ts` | V2 schema-version bootstrap migration. On cold boot, if `armada.shielded.schemaVersion < 2`, wipes legacy localStorage keys + drops the `armada-shielded` + `armada-interface` IndexedDB DBs. Idempotent. | Working |
-| `keyManager.ts` | Module-scope unlocked-state singleton — owns the live `rootSecret`, walletId, `sdkEncryptionKey`, `historyEncryptionKey` (Phase 7), railgun address, checksum, evmAddress + account binding. Zeroizes the `rootSecret` + `historyEncryptionKey` buffers on `clear()`. | Working |
-| `init.ts` | Boots the engine via low-level `RailgunEngine.initForWallet` + `setEngine` (not the `startRailgunEngine` convenience) so we can inject our own quick-sync source (arg 4) and `ArtifactGetter` (arg 3). Replicates the internal balance-complete listener the convenience wired. POI dummy + level-js DB. Idempotent. | Working |
-| `artifactGetter.ts` | The `ArtifactGetter` we supply to `initForWallet` (the SDK's download-just-in-time getter isn't exported). Serves Armada circuits from an in-memory registry that `loadArmadaCircuits` (DEV, init.ts) + `preloadArtifactsFromOrigin` (prod, artifacts.ts) populate. | Working |
-| `quickSync.ts` | The `QuickSyncEvents` callback wired into the engine — paginates `GET /v1/quick-sync/:hubChainId` on the relayer-v2 watcher and returns `AccumulatedEvents`. Degrades to empty (→ engine slow scan) when `indexerUrl` is unset, on a non-hub chain, a non-V2 txid version, or any fetch/parse/validation failure. Never throws. Emits a `shielded.quicksync` telemetry line per attempt (`served` / `no-indexer` / `fell-back`) — grep the console to verify activation vs fallback. | Working |
-| `nullifierCrossCheck.ts` | WI-5 safety net: after a scan, queries the hub PrivacyPool's `nullifiers(...)` for the wallet's own unspent notes (`wallet.TXOs`), batched into one Multicall3 `aggregate3` eth_call (`lib/multicall3.ts`). Catches a watcher that omits a `Nullified` event (which merkleroot validation can't see). Fails open on RPC error. Bridge hook: `hooks/useNullifierCrossCheck.ts`; gate: `hooks/useSpendableSyncGate.ts`. | Working |
-| `network.ts` | Patches the SDK's `NETWORK_CONFIG.Hardhat` entry to point at our PrivacyPool deployment; loads the hub provider via `loadProvider`. Exports `timeoutProvider` (reused by the nullifier cross-check). | Working |
-| `database.ts` | `createWebDatabase` — IndexedDB-backed LevelDB instance the engine uses for persistence. | Working |
-| `artifacts.ts` | IndexedDB-backed ArtifactStore that caches ZK circuit artifacts across reloads. | Working |
-| `prover.ts` | Lazy-initialise the proving engine; expose proof generation entry points. | Stub |
-| `balance-bus.ts` | SDK-native balance-change bus — a leaf module (imports nothing) that fans out the `@armada/sdk` wallet's `scan:complete` / `balance:updated` / `note:received` events to app listeners. `sdk-read.ts` installs `wallet.on(...)` forwarders into it; consumers subscribe via `sync.ts`. The event is a "something changed" ping — reads come from `sdk-read.ts`. | Working |
-| `sync.ts` | Thin facade: re-exports the balance bus (`subscribeBalanceUpdates` / `resetSyncState`) + `refreshShieldedBalances` (from `sdk-read.ts`) so consumers keep one import surface. `hooks/useShieldedBalanceSync.ts` reads on each ping; `hooks/useShieldedSyncPoll.ts` drives the periodic `wallet.sync()`. | Working |
+| `keyManager.ts` | Module-scope unlocked-state singleton — owns the live `rootSecret`, walletId, `sdkEncryptionKey`, `historyEncryptionKey` (Phase 7), shielded (0zk) address, checksum, evmAddress + account binding. Zeroizes the `rootSecret` + `historyEncryptionKey` buffers on `clear()`. | Working |
+| `artifactGetter.ts` | In-memory ZK-circuit artifact registry keyed by padded circuit shape (`NNxMM`). `preloadArtifactsFromOrigin` (artifacts.ts) populates it; the `@armada/sdk` ArtifactSource (`sdk-prover.ts`) resolves circuits from it. Owns the local `ArmadaArtifact` type. | Working |
+| `nullifierCrossCheck.ts` | WI-5 safety net: after a scan, queries the hub PrivacyPool's `nullifiers(...)` for the wallet's own unspent notes (`wallet.spendableNullifiers()`), batched into one Multicall3 `aggregate3` eth_call (`lib/multicall3.ts`). Catches a watcher that omits a `Nullified` event (which merkleroot validation can't see). Fails open on RPC error. Bridge hook: `hooks/useNullifierCrossCheck.ts`; gate: `hooks/useSpendableSyncGate.ts`. | Working |
+| `network.ts` | Pure-ethers hub-chain RPC helpers: `timeoutProvider` (timeout-bounded JsonRpcProvider, reused by the nullifier cross-check + history backfill), `getCurrentHubBlock` (creation-block seed), `getHubBlockTimestamps` (history timestamp backfill). No engine coupling. | Working |
+| `artifacts.ts` | Preloads the demo-critical ZK circuit artifacts (zkey/wasm/vkey) from the app's own origin (`/artifacts/...`) into the `artifactGetter` registry, so the first proof doesn't fetch from IPFS. | Working |
+| `balance-bus.ts` | SDK-native leaf module (imports nothing) with two channels: a balance-change bus (fans the `@armada/sdk` wallet's `scan:complete` / `balance:updated` / `note:received` events out as "something changed" pings) and a scan-status bus (`emitScanStatus` / `subscribeScanStatus` — carries scan lifecycle + progress fraction that drives `syncStateAtom`). `sdk-read.ts` installs the `wallet.on(...)` forwarders; consumers subscribe via `sync.ts`. | Working |
+| `sync.ts` | Thin facade: re-exports the balance bus (`subscribeBalanceUpdates` / `subscribeScanStatus` / `resetSyncState`) + `refreshShieldedBalances` (from `sdk-read.ts`) so consumers keep one import surface. `hooks/useShieldedBalanceSync.ts` reads on each ping + drives `syncStateAtom` off scan status; `hooks/useShieldedSyncPoll.ts` drives the periodic `wallet.sync()`. | Working |
 | `sdk-read.ts` | The `@armada/sdk` shielded read path — a persistent IndexedDB-backed SDK instance (`ensureInstance`/`closeSdkRead`) exposing `syncSdkUsdcBalance`, `syncSdkYieldShares`, `syncSdkHistory`. Sole source of all shielded balance + history reads. | Working |
 | `history.ts` | Chain-driven history recovery — `runHistoryScan` syncs the `@armada/sdk` wallet, maps each `HistoryEntry` → `TxRecord` (`historyEntryToTxRecord`, pure), backfills block timestamps, and returns a checkpoint candidate. `syntheticTxId` encodes deterministic ids. Yield ops classified natively by the SDK. | Working |
 | `history-checkpoint.ts` | Per-wallet localStorage checkpoint (`armada.shielded.historyScanBlock.<walletId>`) so incremental scans only walk the delta since the last `block`. Wiped on Settings → Reset wallet and Settings → Re-scan history. | Working |
@@ -36,19 +34,30 @@ Privacy apps routinely leak through carelessly-written telemetry and dev logs. B
    - JS makes zeroization imperfect (V8 may move buffers), but the discipline still meaningfully reduces leak surface.
 
 3. **Encryption at rest.** Be precise about what the SDK encrypts vs. what it doesn't (verified against `@railgun-community/engine` 9.5.1):
-   - **SDK wallet blob — encrypted.** Only the mnemonic / wallet record is written via `putEncrypted(sdkEncryptionKey)` (`sdkEncryptionKey` = HKDF-Expand from `rootSecret`) in `armada-shielded` IDB. Salt + IV handled by the SDK.
-   - **Decrypted note plaintext — NOT encrypted.** The engine writes decrypted receive commitments — `TransactNote.serialize()` plaintext (value, recipient/sender 0zk address, memo) — with a plain `db.put` under the `wallet:<id>:<chain>` namespace (`wallet/abstract-wallet.js`). This is decrypted-at-rest while the wallet exists in IDB. **Mitigation (WS7.2 Option A):** `lockWallet` calls `walletForID(id).clearDecryptedBalancesAllTXIDVersions(chain)` on every lock, so the plaintext does not persist while the wallet is locked; the next unlock re-decrypts locally from the public merkletree (no network rescan). This does NOT cover abrupt termination (a tab kill skips the lock path). Full at-rest encryption of the `wallet:` namespace is the deferred Option B (an encrypting leveldown wrapper) — see plan WS7.2.
+   - **Shielded reads run through the `@armada/sdk` read instance** (`sdk-read.ts`), which persists its
+     scan state in its own IndexedDB database (`armada-sdk-shadow`), separate from the historical stock-engine
+     `armada-shielded` DB. The wallet blob (mnemonic / wallet record) is written encrypted under `sdkEncryptionKey`
+     (HKDF-Expand from `rootSecret`); the SDK handles salt + IV.
+   - **Decrypted note plaintext — NOT encrypted at rest.** The SDK writes decrypted receive-commitment plaintext
+     (value, recipient/sender 0zk address, memo) into `armada-sdk-shadow` while the instance exists. The former
+     engine-era mitigation (a `clearDecryptedBalances`-on-lock call) no longer exists — `lockWallet` now only
+     clears the in-memory `keyManager`, and the persistent read instance is torn down (`closeSdkRead`) on lock and
+     its whole database is deleted (`deleteSdkReadStorage`) on Settings → Reset. Full at-rest encryption of the
+     SDK's decrypted namespace remains deferred (WS7.2 Option B — an encrypting storage-adapter wrapper).
    - **Tx history (V2 Phase 7) — encrypted.** Every `TxRecord` persisted by `lib/tx/storage.ts` is wrapped via `lib/crypto/cache-cipher.ts` as AES-256-GCM (`{ nonce: hex, ciphertext: hex }`) under `historyEncryptionKey` (HKDF-Expand from `rootSecret`, info=`'armada-tx-history:v1'`). Foreign-wallet records throw on `unwrap` and get silently skipped at hydration. The envelope deliberately carries no plaintext walletId — isolation is purely key-based.
 
 4. **Session-bound unlock.** Decrypted key material is held in memory for the active session only. **15-minute inactivity timeout** auto-locks (zeroizes). Lock also fires on tab unload (`beforeunload`), after a **5-minute tab-hidden grace period** (`visibilitychange`), and on EVM-account switch (V2 Phase 4 — `useWallet` compares wagmi's address against `keyManager.getEvmAddress()` and locks on mismatch). Reload requires re-signing.
 
 5. **No raw secret in URL, in clipboard for longer than necessary, or in error messages.** Export UX (Settings → Export recovery) shows the recovery secret in a confirm-gated modal and clears it on close. The EIP-712 signature itself is also subject to discipline (V2 Phase 2b): no transmission, no persistence, no logging, zeroize after HKDF derivation. The future ESLint rule for mechanical enforcement is deferred to v2 (see `specs/TX_SIGNING_V2_AMENDMENT.md`).
 
-## Warmup state
+## Proving warmup
 
-`prover.ts::initProver()` updates `railgunEngineAtom` through `'cold' → 'warming' → 'ready'` (or `'failed'`). Callers can observe state via the atom; the UI shows a "warming up…" indicator during first use.
-
-`initProver()` is idempotent — calling twice while warming or after ready is a no-op. Engine init is heavy (WASM artifacts ~1MB+); the executor's first stage handler that needs proofs should await readiness before proceeding.
+Proving runs on an off-main-thread Web Worker created lazily by `sdk-prover.ts::createInterfaceProver`
+— the worker (snarkjs + `@armada/sdk/prover`) is spawned on the FIRST `prove()` call, so read-only
+sessions never pay for it, and it is terminated on `close()`. There is no separate engine-init step and
+no atom-observable warmup state anymore (the old `railgunEngineAtom` / `prover.ts::initProver` were removed
+with the stock engine). The circuit artifacts the worker needs are preloaded into the `artifactGetter`
+registry on app mount by `artifacts.ts::preloadArtifactsFromOrigin`.
 
 ## Spec compliance gaps tracked for v2
 

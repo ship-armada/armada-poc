@@ -14,7 +14,7 @@ import { getCachedDeployments, getUsdcAddress, loadYieldDeployment } from '../..
 import { getNetworkConfig } from '../../config/network'
 import * as keyManager from './keyManager'
 import { createInterfaceArtifactSource, createInterfaceProver } from './sdk-prover'
-import { emitBalanceChange } from './balance-bus'
+import { emitBalanceChange, emitScanStatus } from './balance-bus'
 import { track } from '../telemetry'
 
 /** The shielded yield-vault share token (ayUSDC), if a yield deployment exists. */
@@ -94,10 +94,17 @@ async function ensureInstance(): Promise<{ sdk: ArmadaSdk; wallet: ReadWallet; a
     creationBlock: keyManager.getCreationBlock() ?? 0,
     signer: await LocalSigner.fromRootSecret(keyManager.getRootSecret()),
   })
-  // Forward the wallet's scan/balance/note events onto the app balance bus — the SDK-native
-  // replacement for the stock engine's global balance callback. The wallet (and its listeners) is
-  // discarded on `closeSdkRead`, so no explicit teardown is needed.
-  wallet.on('scan:complete', () => emitBalanceChange({ reason: 'scan' }))
+  // Forward the wallet's scan/balance/note events onto the app buses — the SDK-native replacement for
+  // the stock engine's global balance callback + merkletree-scan callback. Scan lifecycle drives the
+  // sync banner/gate (scan-status bus); scan-complete/balance/note ping the balance bus (re-read
+  // trigger). The wallet (and its listeners) is discarded on `closeSdkRead`, so no teardown is needed.
+  wallet.on('scan:started', () => emitScanStatus({ status: 'syncing', progress: 0 }))
+  wallet.on('scan:progress', (e) => emitScanStatus({ status: 'syncing', progress: e.fraction }))
+  wallet.on('scan:complete', () => {
+    emitScanStatus({ status: 'complete', progress: 1 })
+    emitBalanceChange({ reason: 'scan' })
+  })
+  wallet.on('scan:error', () => emitScanStatus({ status: 'failed', progress: 0 }))
   wallet.on('balance:updated', () => emitBalanceChange({ reason: 'balance' }))
   wallet.on('note:received', () => emitBalanceChange({ reason: 'note' }))
   instance = { sdk, wallet, address: engineAddress }

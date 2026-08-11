@@ -43,9 +43,9 @@ describe('preloadArtifactsFromOrigin', () => {
 
     await preloadArtifactsFromOrigin()
 
-    expect(setArmadaArtifactMock).toHaveBeenCalledTimes(3)
+    expect(setArmadaArtifactMock).toHaveBeenCalledTimes(4)
     // Padded NNxMM keys — the format the getter looks up.
-    expect(setArmadaArtifactMock.mock.calls.map(c => c[0])).toEqual(['01x02', '02x02', '02x03'])
+    expect(setArmadaArtifactMock.mock.calls.map(c => c[0])).toEqual(['01x02', '01x03', '02x02', '02x03'])
   })
 
   it('is a silent no-op when artifacts are not served (HEAD 404)', async () => {
@@ -64,8 +64,8 @@ describe('preloadArtifactsFromOrigin', () => {
     })
 
     await expect(preloadArtifactsFromOrigin()).resolves.toBeUndefined()
-    // 1x2 and 2x3 succeed; 2x2 fails → 2 registrations, no throw.
-    expect(setArmadaArtifactMock).toHaveBeenCalledTimes(2)
-    expect(setArmadaArtifactMock.mock.calls.map(c => c[0])).toEqual(['01x02', '02x03'])
+    // 1x2, 1x3 and 2x3 succeed; 2x2 fails → 3 registrations, no throw.
+    expect(setArmadaArtifactMock).toHaveBeenCalledTimes(3)
+    expect(setArmadaArtifactMock.mock.calls.map(c => c[0])).toEqual(['01x02', '01x03', '02x03'])
   })
 })

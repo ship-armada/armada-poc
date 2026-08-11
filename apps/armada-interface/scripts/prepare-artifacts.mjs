@@ -8,9 +8,9 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dest = path.resolve(__dirname, '../public/artifacts')
 
-// Keep in sync with PRELOAD_VARIANTS in src/lib/railgun/artifacts.ts. 08x04 is deliberately
+// Keep in sync with PRELOAD_VARIANTS in src/lib/shielded/artifacts.ts. 08x04 is deliberately
 // excluded — it's ~30 MB and rarely hit; the SDK fetches it from IPFS on the rare occasion.
-const VARIANTS = ['01x02', '02x02', '02x03']
+const VARIANTS = ['01x02', '01x03', '02x02', '02x03']
 const REQUIRED_FILES = ['circuit.wasm', 'zkey', 'vkey.json']
 
 const missing = []

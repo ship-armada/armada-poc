@@ -8,6 +8,7 @@ import { setArmadaArtifact, armadaVariantKey } from './artifactGetter'
 // hit; the SDK's default artifact fetch covers it when it is.
 const PRELOAD_VARIANTS = [
   { nullifiers: 1, commitments: 2 },
+  { nullifiers: 1, commitments: 3 }, // 1-input redeem/transfer with a broadcaster-fee output
   { nullifiers: 2, commitments: 2 },
   { nullifiers: 2, commitments: 3 },
 ] as const

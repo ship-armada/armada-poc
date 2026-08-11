@@ -36,12 +36,6 @@ export type EventRegistry = {
   'shielded.schema-migration': { from: number; to: number }
   // User pressed "Try Again" on a failed initial balance sync. No identifiers — just the action.
   'shielded.syncRetry':       Record<string, never>
-  // Watcher quick-sync outcome — one line per hub scan's quick-sync attempt so activation +
-  // fallback are observable in dev and prod. Counts + block numbers only (never addresses/amounts).
-  //   'served'     — hit the watcher; commitments>0 means events actually flowed
-  //   'no-indexer' — VITE_INDEXER_URL unset → engine slow-scans (normal; the B4 fallback)
-  //   'fell-back'  — attempted but failed → engine slow-scans (paired with a shielded.quicksync error)
-  'shielded.quicksync':       { outcome: 'served' | 'no-indexer' | 'fell-back'; pages?: number; commitments?: number; unshields?: number; nullifiers?: number; throughBlock?: number; reason?: string }
 
   // @armada/sdk read-instance sync outcome — one line per wallet.sync() so resume-vs-rescan is
   // observable. Named `sdk.*` because this is the in-house SDK; stock-engine / shielded-pool telemetry

@@ -1,5 +1,5 @@
 // ABOUTME: Unit tests for the @armada/sdk history adapter — synthetic-id encoding + historyEntryToTxRecord category mapping.
-// ABOUTME: Hand-rolls HistoryEntry fixtures so no @railgun-community runtime is touched.
+// ABOUTME: Hand-rolls HistoryEntry fixtures so the mapper is tested purely, without an SDK scan / RPC runtime.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { HistoryEntry } from '@armada/sdk'

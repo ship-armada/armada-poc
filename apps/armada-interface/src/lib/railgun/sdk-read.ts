@@ -70,10 +70,14 @@ type ReadWallet = Awaited<ReturnType<ArmadaSdk['wallet']['fromRootSecret']>>
 // incremental). Recreated when the unlocked wallet changes; closed on lock via `closeSdkRead`.
 let instance: { sdk: ArmadaSdk; wallet: ReadWallet; address: string } | null = null
 
-// Separate IDB database from the engine's (`armada-shielded`) so the SDK read instance keeps its
-// own scan state. The value retains the legacy `-shadow` name so existing users' persisted scan
-// state isn't orphaned by the rename (a changed name would force a full re-scan on next unlock).
-const READ_DB_NAME = 'armada-sdk-shadow'
+// IndexedDB database name for the SDK read instance's scan state, partitioned by the (hub chain id,
+// PrivacyPool address) pair that uniquely identifies a scan context. Chain id alone is insufficient:
+// two deployments on the same chain (different pool address — e.g. switching deployment instances)
+// must not share scan state, and the SDK's scan-state key is chain-agnostic (the 0zk address is the
+// same across chains), so a shared DB would let their checkpoints clobber each other.
+function dbNameFor(cfg: Awaited<ReturnType<typeof readPathConfig>>): string {
+  return `armada-shielded-scan-${cfg.pool.chainId}-${cfg.pool.poolAddress.toLowerCase()}`
+}
 
 async function ensureInstance(): Promise<{ sdk: ArmadaSdk; wallet: ReadWallet; address: string }> {
   const engineAddress = keyManager.getRailgunAddress()
@@ -84,7 +88,7 @@ async function ensureInstance(): Promise<{ sdk: ArmadaSdk; wallet: ReadWallet; a
   const cfg = await readPathConfig()
   const sdk = await createArmadaSdk({
     ...cfg,
-    storage: new IndexedDBStorageAdapter(READ_DB_NAME),
+    storage: new IndexedDBStorageAdapter(dbNameFor(cfg)),
     prover: createInterfaceProver(),
     artifacts: createInterfaceArtifactSource(),
     // Quick-sync observability: the SDK emits its `sync.quicksync` outcome (served / tail-covered /
@@ -202,9 +206,17 @@ export async function closeSdkRead(): Promise<void> {
  */
 export async function deleteSdkReadStorage(): Promise<void> {
   await closeSdkRead()
+  let name: string
+  try {
+    // Deletes only the current deployment's DB (the (chain, pool) the app is pointed at) — other
+    // deployments are separate scan contexts and keep their own state.
+    name = dbNameFor(await readPathConfig())
+  } catch {
+    return // deployments not loaded → nothing was ever opened, so nothing to delete
+  }
   await new Promise<void>((resolve) => {
     try {
-      const req = indexedDB.deleteDatabase(READ_DB_NAME)
+      const req = indexedDB.deleteDatabase(name)
       req.onsuccess = () => resolve()
       req.onerror = () => resolve()
       req.onblocked = () => resolve()

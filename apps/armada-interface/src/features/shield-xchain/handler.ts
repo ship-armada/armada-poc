@@ -91,9 +91,9 @@ const PRIVACY_POOL_CLIENT_SHIELD_ABI = [
 
 /**
  * Stage map for `shield-xchain`:
- *   1. `build-proof`              — sign RAILGUN_SHIELD, derive shieldPrivateKey, build the
- *                                    ShieldRequest off-chain (keyed to the HUB USDC address — the
- *                                    shield commitment lives on the hub once delivered).
+ *   1. `build-proof`              — generate a random shieldPrivateKey, build the ShieldRequest
+ *                                    off-chain (keyed to the HUB USDC address — the shield commitment
+ *                                    lives on the hub once delivered). No signature (random key).
  *   2. `submit-relayer`           — on the CLIENT chain: ensure USDC allowance for the
  *                                    PrivacyPoolClient, then call crossChainShield. The contract
  *                                    handles depositForBurnWithHook internally, emitting a CCTP
@@ -112,7 +112,7 @@ const PRIVACY_POOL_CLIENT_SHIELD_ABI = [
  */
 export const shieldXchainHandler: StageHandler<'shield-xchain'> = {
   kind: 'shield-xchain',
-  // Iris/hub polling can be resumed; pre-receipt stages can't (RAILGUN_SHIELD sig + on-chain submit).
+  // Iris/hub polling can be resumed; pre-receipt stages can't (ephemeral shield build + any permit sig + on-chain submit).
   resumableFrom: ['submit-relayer', 'iris-attestation-pending'],
 
   async run(record, ctx) {
@@ -167,8 +167,8 @@ async function runBuildProof(
 
   if (ctx.signal.aborted) throw new Error('cancelled')
 
-  // RAILGUN_SHIELD is chain-agnostic (plain personal_sign of a constant string), but for UX we
-  // still want the wallet on the source client chain so the prompt shows the right network and
+  // The shield key is random (no signature), but for UX we still want the wallet on the source
+  // client chain so any build-proof prompt (the gasless EIP-2612 permit) shows the right network and
   // the subsequent submit-relayer step doesn't have to switch a second time. Same pattern the
   // same-chain shield handler uses with meta.fromChainId.
   await ensureChain(record.meta.fromChainId)
@@ -458,8 +458,8 @@ async function runDirectSubmit(
  * client chain id, wait for the source-chain receipt, then continue with the same CCTP nonce
  * extraction + hub-block snapshot the direct path uses.
  *
- * Zero EVM wallet prompts in this stage — the user already signed RAILGUN_SHIELD + USDC permit
- * during build-proof. The relayer broadcasts on the user's behalf and pays gas in the source
+ * Zero EVM wallet prompts in this stage — the user already signed the USDC permit during
+ * build-proof. The relayer broadcasts on the user's behalf and pays gas in the source
  * chain's native token; the wrapper pulls `amount + fee` USDC from the user via the permit
  * and reimburses the relayer.
  */

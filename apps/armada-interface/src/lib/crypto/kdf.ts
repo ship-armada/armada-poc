@@ -5,8 +5,6 @@ import { hkdf } from '@noble/hashes/hkdf'
 import { expand as hkdfExpand } from '@noble/hashes/hkdf'
 import { sha256 } from '@noble/hashes/sha2'
 import { gcm } from '@noble/ciphers/aes'
-import { entropyToMnemonic } from '@scure/bip39'
-import { wordlist } from '@scure/bip39/wordlists/english'
 import { bytesToHexNoPrefix, hexToBytesNoPrefix } from './hex'
 
 // ============================================================================
@@ -63,8 +61,10 @@ export function deriveRootSecret(signatureBytes: Uint8Array): Uint8Array {
  * a 32-byte pseudorandom key.
  *
  * Note: these are 32-byte HKDF outputs, NOT yet reduced to a Baby Jubjub scalar. The field-element
- * conversion (mod r vs mod l) is pending Andrew's confirmation and lands in Phase 2. In Phase 1
- * these bytes are not handed to Railgun directly — see `deriveInternalMnemonic` for the shim.
+ * conversion (mod r vs mod l) is pending Andrew's confirmation and lands in Phase 2. These bytes
+ * are not the identity keys the SDK actually spends with (`@armada/sdk` derives those from
+ * `root_secret` via `deriveKeyset`); the interface computes them only to run the IC-2 entropy-floor
+ * canary (`assertEntropyFloor` in wallet.ts).
  */
 export function deriveSpendingKeyBytes(rootSecret: Uint8Array): Uint8Array {
   assertRootSecret(rootSecret)
@@ -116,23 +116,6 @@ const HKDF_INFO_WALLET_ID_V1 = utf8('armada-wallet-id:v1')
 export function deriveWalletId(rootSecret: Uint8Array): string {
   assertRootSecret(rootSecret)
   return bytesToHexNoPrefix(hkdfExpand(sha256, rootSecret, HKDF_INFO_WALLET_ID_V1, 16))
-}
-
-/**
- * Convert the 32-byte root_secret into a 24-word BIP-39 mnemonic for SDK consumption only.
- *
- * Phase 1 compromise: the Railgun wallet SDK's public entry point is mnemonic-based. We derive
- * a deterministic mnemonic from root_secret and feed it to `createRailgunWallet`. The mnemonic
- * is NEVER displayed, NEVER exported, NEVER returned to UI code. Callers are expected to zeroize
- * the returned string by going out of scope quickly — JS strings are immutable so explicit
- * zeroization isn't possible, but limiting the lifetime helps. Phase 2 removes this entirely.
- *
- * 24 words = 256 bits, matching root_secret's full entropy (vs the legacy 12-word/128-bit form).
- */
-export function deriveInternalMnemonic(rootSecret: Uint8Array): string {
-  assertRootSecret(rootSecret)
-  // BIP-39 with 32 bytes of entropy = 24 words. @scure/bip39 handles the checksum.
-  return entropyToMnemonic(rootSecret, wordlist)
 }
 
 // ============================================================================

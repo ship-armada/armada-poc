@@ -155,31 +155,34 @@ export async function refreshShieldedBalances(_walletId?: string): Promise<void>
   await syncTracked(wallet)
 }
 
-/** Sync the persistent SDK wallet and return its shielded USDC balance (spendable + pending). */
-export async function syncSdkUsdcBalance(): Promise<bigint> {
+// Reads below deliberately DO NOT call `syncTracked` — they read the current scan state only. Syncing
+// is driven solely by `refreshShieldedBalances` (the 15s poll, post-tx refresh, and the initial unlock
+// scan). These reads are invoked from the balance-bus event handlers, which fire BECAUSE a sync just
+// completed — re-syncing there would be circular and produce a self-sustaining sync cascade (a sync
+// emits `scan:complete` → a balance read that re-syncs → another `scan:complete` → …).
+
+/** Read the current shielded USDC balance (spendable + pending) from the scan state. Does not sync. */
+export async function readSdkUsdcBalance(): Promise<bigint> {
   const { wallet } = await ensureInstance()
-  await syncTracked(wallet)
   const cfg = await readPathConfig()
   const usdcHash = getTokenDataHash(getTokenDataERC20(cfg.pool.usdcAddress))
   const usdc = (await wallet.balances()).find(b => b.tokenHash === usdcHash)
   return usdc ? usdc.spendable + usdc.pending : 0n
 }
 
-/** Sync the persistent SDK wallet and return its shielded yield-vault shares (ayUSDC). 0 if no vault. */
-export async function syncSdkYieldShares(): Promise<bigint> {
+/** Read the current shielded yield-vault shares (ayUSDC) from the scan state. 0 if no vault. Does not sync. */
+export async function readSdkYieldShares(): Promise<bigint> {
   const vault = await vaultTokenAddress()
   if (vault === undefined) return 0n
   const { wallet } = await ensureInstance()
-  await syncTracked(wallet)
   const vaultHash = getTokenDataHash(getTokenDataERC20(vault))
   const shares = (await wallet.balances()).find(b => b.tokenHash === vaultHash)
   return shares ? shares.spendable + shares.pending : 0n
 }
 
-/** Sync + reconstruct the SDK wallet's tx history (optionally only entries at/after `sinceBlock`). */
-export async function syncSdkHistory(sinceBlock?: number): Promise<HistoryEntry[]> {
+/** Reconstruct the SDK wallet's tx history from the current scan state (optionally only entries at/after `sinceBlock`). Does not sync. */
+export async function readSdkHistory(sinceBlock?: number): Promise<HistoryEntry[]> {
   const { wallet } = await ensureInstance()
-  await syncTracked(wallet)
   return wallet.history(sinceBlock !== undefined ? { sinceBlock } : {})
 }
 

@@ -15,16 +15,17 @@ import {
   subscribeBalanceUpdates,
   subscribeScanStatus,
 } from '@/lib/railgun/sync'
-import { closeSdkRead, syncSdkUsdcBalance, syncSdkYieldShares } from '@/lib/railgun/sdk-read'
+import { closeSdkRead, readSdkUsdcBalance, readSdkYieldShares } from '@/lib/railgun/sdk-read'
 import { trackError } from '@/lib/telemetry'
 
 /**
  * Subscribe to balance updates while the wallet is unlocked. On unlock:
- *   1. Subscribe to SDK scan-status events → drive `syncStateAtom` (the sync gate/banner)
+ *   1. Subscribe to SDK scan-status events → drive `syncStateAtom` for the INITIAL load only
+ *      (background polls don't revert it — see the subscription below)
  *   2. Subscribe to SDK balance-update events (lazily installs the global SDK callback)
  *   3. Trigger an initial `refreshShieldedBalances` so the first scan starts
- *   4. On each event (or initial query), re-fetch BOTH shielded USDC and ayUSDC shares from the
- *      @armada/sdk read instance (which resolves the token set from the deployment internally)
+ *   4. On each event (or initial query), READ (not sync) BOTH shielded USDC and ayUSDC shares from
+ *      the @armada/sdk scan state (which resolves the token set from the deployment internally)
  *
  * On lock or unmount, unsubscribes, zeroes both atoms, and closes the SDK read instance.
  *
@@ -62,21 +63,31 @@ export function useShieldedBalanceSync(): void {
     let unsubscribeScan: (() => void) | null = null
     let cancelled = false
 
-    // Drive the sync gate/banner (`syncStateAtom`) off the SDK wallet's scan lifecycle — the
-    // SDK-native replacement for the stock engine's merkletree-scan callback. scan:started → syncing,
-    // scan:progress → the running fraction, scan:complete → complete, scan:error → failed.
+    // Drive the INITIAL-load sync gate/banner (`syncStateAtom`) off the SDK wallet's scan lifecycle:
+    // scan:started → syncing, scan:progress → the running fraction, scan:complete → complete,
+    // scan:error → failed. `syncStateAtom` tracks the initial load ONLY. After the first `complete`,
+    // the 15s poll keeps syncing the chain in the background, but those routine scan:started/complete
+    // blips are ignored here — otherwise the full "Loading your private balance" UI (BalanceHero /
+    // SyncBanner) would flicker to the progress display on every poll. A fresh unlock or a "Try Again"
+    // retry re-runs this effect with `initialSyncComplete` reset, which re-arms the display.
+    let initialSyncComplete = false
     unsubscribeScan = subscribeScanStatus((status) => {
       if (cancelled || latestWalletIdRef.current !== walletId) return
+      if (initialSyncComplete) return // steady state: background syncs must not revert the UI
       setSyncState(status)
+      if (status.status === 'complete') initialSyncComplete = true
     })
 
     async function refreshAll(): Promise<void> {
       try {
-        // Query shielded USDC + yield-vault shares from the @armada/sdk read instance in parallel.
+        // READ shielded USDC + yield-vault shares from the @armada/sdk scan state in parallel — no
+        // sync. This runs from the balance-bus subscription, which fires BECAUSE a sync just
+        // completed; re-syncing here would be circular (a sync emits scan:complete → this read →
+        // another sync → …). Syncing is driven only by the poll + post-tx refresh + initial scan.
         // Promise.allSettled so one chain hiccup doesn't blank the other atom.
         const [usdcResult, sharesResult] = await Promise.allSettled([
-          syncSdkUsdcBalance(),
-          syncSdkYieldShares(),
+          readSdkUsdcBalance(),
+          readSdkYieldShares(),
         ])
 
         if (cancelled || latestWalletIdRef.current !== walletId) return

@@ -7,10 +7,10 @@ import type { HistoryEntry } from '@armada/sdk'
 // Mock the two runtime deps of runHistoryScan so it can be unit-tested without an SDK/RPC. The
 // pure mapper + id tests below don't touch these.
 const hoisted = vi.hoisted(() => ({
-  syncSdkHistory: vi.fn(async (): Promise<HistoryEntry[]> => []),
+  readSdkHistory: vi.fn(async (): Promise<HistoryEntry[]> => []),
   getHubBlockTimestamps: vi.fn(async () => new Map<number, number>()),
 }))
-vi.mock('./sdk-read', () => ({ syncSdkHistory: hoisted.syncSdkHistory }))
+vi.mock('./sdk-read', () => ({ readSdkHistory: hoisted.readSdkHistory }))
 vi.mock('./network', () => ({ getHubBlockTimestamps: hoisted.getHubBlockTimestamps }))
 
 import { historyEntryToTxRecord, isSyntheticTxId, runHistoryScan, syntheticTxId } from './history'
@@ -78,7 +78,7 @@ describe('historyEntryToTxRecord (@armada/sdk read path)', () => {
 
 describe('runHistoryScan (@armada/sdk scan)', () => {
   beforeEach(() => {
-    hoisted.syncSdkHistory.mockReset()
+    hoisted.readSdkHistory.mockReset()
     hoisted.getHubBlockTimestamps.mockReset()
     hoisted.getHubBlockTimestamps.mockResolvedValue(new Map())
   })
@@ -87,7 +87,7 @@ describe('runHistoryScan (@armada/sdk scan)', () => {
     // WHY: the checkpoint must be the MAX block seen (the resume point); a min/first bug silently
     // skips rows on the next incremental scan. Timestamps come from a bulk block lookup because the
     // SDK doesn't stamp every chain — without it rows render the Unix epoch ("Dec 31, 1969").
-    hoisted.syncSdkHistory.mockResolvedValue([
+    hoisted.readSdkHistory.mockResolvedValue([
       sdkEntry({ txid: 'a', blockNumber: 100_001, value: 1n }),
       sdkEntry({ txid: 'b', blockNumber: 100_005, value: 2n }),
       sdkEntry({ txid: 'c', blockNumber: 100_003, value: 3n }),
@@ -98,7 +98,7 @@ describe('runHistoryScan (@armada/sdk scan)', () => {
       [100_003, 1_700_000_150],
     ]))
     const result = await runHistoryScan('w', SDK_CTX, 100_000)
-    expect(hoisted.syncSdkHistory).toHaveBeenCalledWith(100_000)
+    expect(hoisted.readSdkHistory).toHaveBeenCalledWith(100_000)
     expect(result.highestBlock).toBe(100_005)
     expect(result.itemCount).toBe(3)
     // Sorted by updatedAt (=timestamp) descending, so the latest-block row is first.
@@ -110,7 +110,7 @@ describe('runHistoryScan (@armada/sdk scan)', () => {
   it('leaves createdAt at 0 for entries whose block timestamp is unavailable (graceful degrade)', async () => {
     // WHY: a flaky RPC shouldn't crash the scan — the row still renders, just sorted to the bottom
     // with the epoch default. Strictly better than failing the whole recovery for the user.
-    hoisted.syncSdkHistory.mockResolvedValue([sdkEntry({ txid: 'a', blockNumber: 100_001, value: 1n })])
+    hoisted.readSdkHistory.mockResolvedValue([sdkEntry({ txid: 'a', blockNumber: 100_001, value: 1n })])
     hoisted.getHubBlockTimestamps.mockResolvedValue(new Map())
     const result = await runHistoryScan('w', SDK_CTX, undefined)
     expect(result.records[0]!.createdAt).toBe(0)
@@ -118,7 +118,7 @@ describe('runHistoryScan (@armada/sdk scan)', () => {
 
   it('skips the block-timestamp lookup entirely when the scan is empty', async () => {
     // WHY: no entries → no blocks → no reason to pay for an RPC round-trip.
-    hoisted.syncSdkHistory.mockResolvedValue([])
+    hoisted.readSdkHistory.mockResolvedValue([])
     const result = await runHistoryScan('w', SDK_CTX, undefined)
     expect(hoisted.getHubBlockTimestamps).not.toHaveBeenCalled()
     expect(result).toEqual({ records: [], highestBlock: null, itemCount: 0 })

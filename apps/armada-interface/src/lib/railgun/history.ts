@@ -4,7 +4,7 @@
 import { lifecycleFor } from '@/lib/tx/lifecycles'
 import type { TxKind, TxRecord } from '@/lib/tx/types'
 import { getHubBlockTimestamps } from './network'
-import { syncSdkHistory } from './sdk-read'
+import { readSdkHistory } from './sdk-read'
 import type { HistoryEntry } from '@armada/sdk'
 
 /**
@@ -183,7 +183,7 @@ export async function runHistoryScan(
   ctx: HistoryMapContext,
   fromBlock: number | undefined,
 ): Promise<HistoryScanResult> {
-  const entries = await syncSdkHistory(fromBlock)
+  const entries = await readSdkHistory(fromBlock)
   const blocks = [...new Set(entries.map(e => e.blockNumber))]
   const timestamps = blocks.length > 0 ? await getHubBlockTimestamps(blocks) : new Map<number, number>()
 

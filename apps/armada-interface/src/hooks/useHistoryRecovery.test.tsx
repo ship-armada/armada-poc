@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, waitFor, act } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import {
-  activeRailgunWalletIdAtom,
+  activeShieldedWalletIdAtom,
   shieldedWalletsAtom,
 } from '@/state/wallet'
 import { txListAtom } from '@/state/tx'
@@ -76,10 +76,10 @@ function makeStore(opts: { unlocked: boolean }) {
     'rg-1': {
       id: 'rg-1',
       status: opts.unlocked ? 'unlocked' : 'locked',
-      railgunAddress: '0zk-test',
+      shieldedAddress: '0zk-test',
     },
   })
-  store.set(activeRailgunWalletIdAtom, opts.unlocked ? 'rg-1' : null)
+  store.set(activeShieldedWalletIdAtom, opts.unlocked ? 'rg-1' : null)
   return store
 }
 
@@ -217,7 +217,7 @@ describe('useHistoryRecovery', () => {
       updatedAt: 1,
       meta: { amount: 1_000_000n, feeCacheId: 'fc', fromChainId: 31337 },
       artifacts: { sourceTxHash: AUTHORED_HASH as `0x${string}` },
-      walletContext: { evmAddress: '0xabc', railgunWalletId: 'rg-1', sourceChainId: 31337 },
+      walletContext: { evmAddress: '0xabc', shieldedWalletId: 'rg-1', sourceChainId: 31337 },
     }])
     hoisted.runHistoryScan.mockResolvedValue(scanResult([
       // Same txid as the authored record (sourceTxHash 0xabc123) — must be skipped.

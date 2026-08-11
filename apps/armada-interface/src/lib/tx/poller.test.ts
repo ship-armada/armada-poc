@@ -166,7 +166,7 @@ describe('pollBudgetMs (P1-25)', () => {
       updatedAt: Date.now(),
       meta: { amount: 1n, feeCacheId: 'c', fromChainId: 31337 },
       artifacts: { sourceTxHash: '0xfeed' },
-      walletContext: { evmAddress: '0xabc', railgunWalletId: 'rw-1', sourceChainId: 31337 },
+      walletContext: { evmAddress: '0xabc', shieldedWalletId: 'rw-1', sourceChainId: 31337 },
     } as TxRecord
   }
 

@@ -28,7 +28,7 @@ vi.mock('@/lib/railgun/keyManager', () => ({
   // isUnlocked false → handler skips the post-confirm balance refresh (keeps the test self-contained).
   isUnlocked: () => false,
   getWalletId: () => 'rw-1',
-  getRailgunAddress: () => '0zk1example',
+  getShieldedAddress: () => '0zk1example',
 }))
 
 import { shieldHandler } from './handler'
@@ -67,7 +67,7 @@ function shieldRecordWithHash(): TxRecord<'shield'> {
         shieldKey: '0x00',
       },
     },
-    walletContext: { evmAddress: '0xabc', railgunWalletId: 'rw-1', sourceChainId: 31337 },
+    walletContext: { evmAddress: '0xabc', shieldedWalletId: 'rw-1', sourceChainId: 31337 },
   } as TxRecord<'shield'>
 }
 

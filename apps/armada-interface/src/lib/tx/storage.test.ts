@@ -48,7 +48,7 @@ function fixture(id: string, walletId: string, updatedSeq: number = 1): TxRecord
     artifacts: {},
     walletContext: {
       evmAddress: '0xabc',
-      railgunWalletId: walletId,
+      shieldedWalletId: walletId,
       sourceChainId: 31337,
     },
   } as TxRecord<'shield'>
@@ -67,7 +67,7 @@ function unlock(walletId: string, historyKeySeed: number = 1) {
     rootSecret,
     walletId,
     sdkEncryptionKey: 'ff'.repeat(32),
-    railgunAddress: '0zk1example',
+    shieldedAddress: '0zk1example',
     checksum: 'a3f2 91c8 b7e0',
     creationBlock: null,
     evmAddress: null,
@@ -236,7 +236,7 @@ describe('encrypted reads (loadAllTx)', () => {
   })
 
   it('post-decrypt walletId filter excludes records matching a key but bound to a different walletId', async () => {
-    // Defensive case: same historyEncryptionKey but different walletContext.railgunWalletId
+    // Defensive case: same historyEncryptionKey but different walletContext.shieldedWalletId
     // (e.g. a malicious or buggy write). The decrypt succeeds; the walletId mismatch filters it.
     unlock('rg-1', 1)
     const mine = fixture('mine', 'rg-1')

@@ -10,6 +10,7 @@ import {
   computeFeeBreakdown,
   feeModelForKind,
   submitRelay,
+  fetchFees,
   fetchCctpDeliveryStatus,
   RelayerError,
   _fetchWithTimeout,
@@ -23,7 +24,7 @@ function quoteWith(overrides: Partial<FeeSchedule['fees']> = {}): FeeSchedule {
     cacheId: 'test-cache',
     expiresAt: Date.now() + 60_000,
     chainId: 31337,
-    broadcasterRailgunAddress: '0zk1test',
+    broadcasterShieldedAddress: '0zk1test',
     fees: {
       transfer: '0',
       unshield: '0',
@@ -648,5 +649,46 @@ describe('fetchCctpDeliveryStatus (T-M7 Option B)', () => {
     const ctrl = new AbortController()
     fetchMock.mockImplementationOnce(() => { ctrl.abort(); return Promise.reject(new DOMException('aborted', 'AbortError')) })
     await expect(fetchCctpDeliveryStatus(HASH, ctrl.signal)).rejects.toThrow()
+  })
+})
+
+describe('fetchFees — relayer wire-field normalization', () => {
+  const fetchMock = vi.fn()
+  const ORIGINAL_FETCH = globalThis.fetch
+
+  beforeEach(() => {
+    fetchMock.mockReset()
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+  })
+  afterAll(() => {
+    globalThis.fetch = ORIGINAL_FETCH
+  })
+
+  // WHY: the relayer's /fees wire contract names the broadcaster 0zk field `broadcasterRailgunAddress`
+  // (its BROADCASTER_RAILGUN_ADDRESS env var), but the interface uses the SDK-aligned
+  // `broadcasterShieldedAddress` everywhere. fetchFees is the one boundary that must remap it — a
+  // regression here silently feeds an undefined broadcaster address into every relayer-mediated proof.
+  const wireBody = (broadcasterKey: string) => ({
+    cacheId: 'c', expiresAt: 0, chainId: 31337,
+    [broadcasterKey]: '0zk1broadcaster',
+    fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0', shield: '0', shieldXchain: '0' },
+  })
+
+  it('maps the relayer wire `broadcasterRailgunAddress` → `broadcasterShieldedAddress`', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(wireBody('broadcasterRailgunAddress')), { status: 200 }))
+    const schedule = await fetchFees()
+    expect(schedule.broadcasterShieldedAddress).toBe('0zk1broadcaster')
+  })
+
+  it('also accepts a future relayer already sending `broadcasterShieldedAddress`', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(wireBody('broadcasterShieldedAddress')), { status: 200 }))
+    const schedule = await fetchFees()
+    expect(schedule.broadcasterShieldedAddress).toBe('0zk1broadcaster')
+  })
+
+  it('defaults to empty string when neither wire name is present', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(wireBody('somethingElse')), { status: 200 }))
+    const schedule = await fetchFees()
+    expect(schedule.broadcasterShieldedAddress).toBe('')
   })
 })

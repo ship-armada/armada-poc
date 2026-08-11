@@ -99,11 +99,11 @@ export async function buildXchainUnshieldSdk(
   const fee = inputs.broadcasterFee
     ? {
         schedule: { transfer: inputs.broadcasterFee.amount.toString() },
-        broadcasterRailgunAddress: inputs.broadcasterFee.recipientAddress,
+        broadcasterShieldedAddress: inputs.broadcasterFee.recipientAddress,
         feesCacheId: '',
         expiresAt: 0,
       }
-    : { schedule: { transfer: '0' }, broadcasterRailgunAddress: '', feesCacheId: '', expiresAt: 0 }
+    : { schedule: { transfer: '0' }, broadcasterShieldedAddress: '', feesCacheId: '', expiresAt: 0 }
 
   const adaptParams = encodeCctpBinding(inputs.finalRecipient, inputs.destinationDomain, inputs.maxFee)
   const plan = await wallet.planTransfer({

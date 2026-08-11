@@ -1,5 +1,5 @@
 // ABOUTME: Aggregated balance view — unshielded USDC per chain, shielded USDC, shielded yield shares.
-// ABOUTME: Stub: reads atoms only. Real implementation polls per-chain ERC20.balanceOf + subscribes to Railgun balance events.
+// ABOUTME: Stub: reads atoms only. Real implementation polls per-chain ERC20.balanceOf + subscribes to shielded balance events.
 
 import { useAtomValue } from 'jotai'
 import { shieldedUsdcAtom, usdcBalancesAtom, yieldSharesAtom } from '@/state/wallet'

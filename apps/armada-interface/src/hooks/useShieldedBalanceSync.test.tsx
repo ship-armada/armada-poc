@@ -14,7 +14,7 @@ const h = vi.hoisted(() => ({
   readSdkYieldShares: vi.fn(async () => 0n),
 }))
 
-// Mock the SDK boundary so importing the hook doesn't pull the Railgun SDK into jsdom, and so we can
+// Mock the SDK boundary so importing the hook doesn't pull the SDK into jsdom, and so we can
 // capture the scan-status + balance-update listeners the hook subscribes.
 vi.mock('@/lib/railgun/sync', () => ({
   subscribeBalanceUpdates: vi.fn(async (cb: () => void) => {
@@ -36,7 +36,7 @@ vi.mock('@/lib/railgun/sdk-read', () => ({
 import { useShieldedBalanceSync } from './useShieldedBalanceSync'
 import {
   shieldedWalletsAtom,
-  activeRailgunWalletIdAtom,
+  activeShieldedWalletIdAtom,
   shieldedUsdcAtom,
   syncStateAtom,
 } from '@/state/wallet'
@@ -49,7 +49,7 @@ function Harness() {
 function unlockedStore() {
   const store = createStore()
   store.set(shieldedWalletsAtom, { w1: { id: 'w1', status: 'unlocked' } })
-  store.set(activeRailgunWalletIdAtom, 'w1')
+  store.set(activeShieldedWalletIdAtom, 'w1')
   return store
 }
 
@@ -69,7 +69,7 @@ describe('useShieldedBalanceSync — W-1 sync reset', () => {
     store.set(syncStateAtom, { status: 'complete', progress: 1 })
     store.set(shieldedUsdcAtom, 5_000_000n)
     store.set(shieldedWalletsAtom, {})
-    store.set(activeRailgunWalletIdAtom, null)
+    store.set(activeShieldedWalletIdAtom, null)
 
     render(
       <Provider store={store}>

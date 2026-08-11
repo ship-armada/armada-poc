@@ -25,12 +25,12 @@ function as0x(hex: string): `0x${string}` {
  * the downstream CCTP wrapping.
  */
 export async function createShieldRequestSdk(
-  railgunAddress: string,
+  shieldedAddress: string,
   amount: bigint,
   tokenAddress: string,
   shieldPrivateKeyHex: string,
 ): Promise<ShieldRequestData> {
-  if (!railgunAddress.startsWith('0zk')) {
+  if (!shieldedAddress.startsWith('0zk')) {
     throw new Error('createShieldRequestSdk: recipient must be a 0zk address')
   }
   if (amount <= 0n) {
@@ -38,7 +38,7 @@ export async function createShieldRequestSdk(
   }
   await initPoseidonPromise
   const { shieldRequest, random } = await buildShieldRequest(
-    { railgunAddress, amount, tokenAddress },
+    { shieldedAddress, amount, tokenAddress },
     hexToBytes(shieldPrivateKeyHex),
   )
   return {

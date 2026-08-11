@@ -24,7 +24,7 @@ export async function deriveShieldedAddress(
     // Lazy import so the stock path never loads the SDK (or triggers its WASM init). deriveKeyset
     // initialises poseidon internally (WASM, or a byte-identical JS fallback if not yet ready).
     const { deriveKeyset } = await import('@armada/sdk');
-    return (await deriveKeyset(rootSecret)).railgunAddress;
+    return (await deriveKeyset(rootSecret)).shieldedAddress;
   }
   // TODO(Phase 2 integration): wire the stock-engine 0zk derivation through this facade too, so both
   // backends run side-by-side. For now the parity seam compares the armada backend to the

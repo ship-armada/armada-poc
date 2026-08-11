@@ -4,7 +4,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { Settings } from './Settings'
-import { activeRailgunWalletIdAtom, shieldedWalletsAtom } from '@/state/wallet'
+import { activeShieldedWalletIdAtom, shieldedWalletsAtom } from '@/state/wallet'
 import { preferencesAtom, DEFAULT_PREFERENCES } from '@/state/preferences'
 
 function renderSettings(opts?: { walletUnlocked?: boolean; noWallet?: boolean }) {
@@ -14,10 +14,10 @@ function renderSettings(opts?: { walletUnlocked?: boolean; noWallet?: boolean })
       'rg-1': {
         id: 'rg-1',
         status: opts?.walletUnlocked ? 'unlocked' : 'locked',
-        railgunAddress: '0zk-test',
+        shieldedAddress: '0zk-test',
       },
     })
-    store.set(activeRailgunWalletIdAtom, 'rg-1')
+    store.set(activeShieldedWalletIdAtom, 'rg-1')
   }
   render(
     <Provider store={store}>

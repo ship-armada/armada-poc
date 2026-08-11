@@ -4,15 +4,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { ResetWalletDialog } from './ResetWalletDialog'
-import { activeRailgunWalletIdAtom, shieldedWalletsAtom } from '@/state/wallet'
+import { activeShieldedWalletIdAtom, shieldedWalletsAtom } from '@/state/wallet'
 
 function renderDialog() {
   const store = createStore()
   // Seed an active wallet so reset() actually calls into the lib stub.
   store.set(shieldedWalletsAtom, {
-    'rg-1': { id: 'rg-1', status: 'unlocked', railgunAddress: '0zk-test' },
+    'rg-1': { id: 'rg-1', status: 'unlocked', shieldedAddress: '0zk-test' },
   })
-  store.set(activeRailgunWalletIdAtom, 'rg-1')
+  store.set(activeShieldedWalletIdAtom, 'rg-1')
   const onClose = vi.fn()
   render(
     <Provider store={store}>

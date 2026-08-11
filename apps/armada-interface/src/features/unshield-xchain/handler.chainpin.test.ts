@@ -71,7 +71,7 @@ function overrideRecordWithHash(): TxRecord<'unshield-xchain'> {
       recipient: '0x3333333333333333333333333333333333333333',
       toChainId: 31338,
       broadcasterFeeAmount: 0n,
-      broadcasterRailgunAddress: '0zk1relayer',
+      broadcasterShieldedAddress: '0zk1relayer',
       useWalletOverride: true,
     },
     // A record at submit-relayer always carries the encoded calldata persisted at build-proof —
@@ -84,7 +84,7 @@ function overrideRecordWithHash(): TxRecord<'unshield-xchain'> {
         value: '0',
       },
     },
-    walletContext: { evmAddress: '0xabc', railgunWalletId: 'rw-1', sourceChainId: 31337 },
+    walletContext: { evmAddress: '0xabc', shieldedWalletId: 'rw-1', sourceChainId: 31337 },
   } as TxRecord<'unshield-xchain'>
 }
 

@@ -9,13 +9,13 @@ export interface FeeSchedule {
   expiresAt: number
   chainId: number
   /**
-   * Relayer's Railgun (`0zk...`) address. Clients direct the broadcaster-fee output of their
+   * Relayer's shielded (`0zk...`) address. Clients direct the broadcaster-fee output of their
    * SNARK proof here so the relayer is paid in the same atomic tx. Sourced verbatim from the
    * relayer's `BROADCASTER_RAILGUN_ADDRESS` env var. Empty string is allowed in Phase A1 (no
    * handler consumes this yet); the build-proof stage will start asserting non-empty once
    * relayer-mediated submit ships in A3.
    */
-  broadcasterRailgunAddress: string
+  broadcasterShieldedAddress: string
   /** USDC raw values (6 decimals) as strings — JSON can't carry bigints. Callers BigInt() on use. */
   fees: {
     transfer: string
@@ -426,7 +426,16 @@ export async function fetchFees(
     headers: { Accept: 'application/json' },
   }, signal, 15_000)
   if (!res.ok) throw await parseError(res)
-  return (await res.json()) as FeeSchedule
+  // Wire-boundary normalization: the relayer's /fees contract still names the broadcaster 0zk field
+  // `broadcasterRailgunAddress` (its `BROADCASTER_RAILGUN_ADDRESS` env var). The interface uses the
+  // SDK-aligned `broadcasterShieldedAddress` everywhere downstream, so map it here. Tolerant of either
+  // wire name so a future relayer rename doesn't break us.
+  const raw = (await res.json()) as Omit<FeeSchedule, 'broadcasterShieldedAddress'> & {
+    broadcasterRailgunAddress?: string
+    broadcasterShieldedAddress?: string
+  }
+  const { broadcasterRailgunAddress, broadcasterShieldedAddress, ...rest } = raw
+  return { ...rest, broadcasterShieldedAddress: broadcasterShieldedAddress ?? broadcasterRailgunAddress ?? '' }
 }
 
 /**

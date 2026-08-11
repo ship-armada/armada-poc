@@ -69,7 +69,7 @@ describe('isShieldedAddress', () => {
 describe('validateShieldedAddressStrict', () => {
   it('rejects obviously-malformed input via the fast pre-filter (no SDK load)', async () => {
     // WHY: the shape pre-filter short-circuits before the dynamic SDK import, so junk input is
-    // rejected cheaply (and the test doesn't drag the jsdom-hostile Railgun SDK into the run).
+    // rejected cheaply (and the test doesn't drag the jsdom-hostile SDK into the run).
     expect(await validateShieldedAddressStrict('not-an-address')).toBe(false)
     expect(await validateShieldedAddressStrict('0x1234')).toBe(false)
     expect(await validateShieldedAddressStrict('0zkshort')).toBe(false)

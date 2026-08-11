@@ -38,8 +38,8 @@ export function WalletConnector() {
   // representations of one identity). When locked or never-unlocked, the trigger stays
   // single-row so the user isn't shown a stale shielded address from a prior session.
   const shieldedDisplay =
-    shielded.state?.status === 'unlocked' && shielded.state.railgunAddress
-      ? truncateAddressEnds(shielded.state.railgunAddress, 6, 4)
+    shielded.state?.status === 'unlocked' && shielded.state.shieldedAddress
+      ? truncateAddressEnds(shielded.state.shieldedAddress, 6, 4)
       : undefined
 
   return (

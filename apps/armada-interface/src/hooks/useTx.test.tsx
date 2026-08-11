@@ -21,7 +21,7 @@ const storage = vi.hoisted(() => ({ putTxIfFresh: vi.fn(async () => true) }))
 vi.mock('@/lib/tx/storage', () => storage)
 
 import { useTx } from './useTx'
-import { activeRailgunWalletIdAtom } from '@/state/wallet'
+import { activeShieldedWalletIdAtom } from '@/state/wallet'
 import { txListAtom } from '@/state/tx'
 
 function makeWrapper(store: ReturnType<typeof createStore>) {
@@ -42,7 +42,7 @@ describe('useTx.submit follower-tab guard (P1-26)', () => {
   it('refuses submit on a follower tab: toasts, persists nothing, dispatches nothing, returns null', async () => {
     executor.getIsLeader.mockReturnValue(false)
     const store = createStore()
-    store.set(activeRailgunWalletIdAtom, 'rw-1')
+    store.set(activeShieldedWalletIdAtom, 'rw-1')
     const { result } = renderHook(() => useTx({ kind: 'shield' }), { wrapper: makeWrapper(store) })
 
     const id = await result.current.submit(SHIELD_META)
@@ -57,7 +57,7 @@ describe('useTx.submit follower-tab guard (P1-26)', () => {
   it('on the leader tab: persists the record, dispatches the executor, returns the id', async () => {
     executor.getIsLeader.mockReturnValue(true)
     const store = createStore()
-    store.set(activeRailgunWalletIdAtom, 'rw-1')
+    store.set(activeShieldedWalletIdAtom, 'rw-1')
     const { result } = renderHook(() => useTx({ kind: 'shield' }), { wrapper: makeWrapper(store) })
 
     const id = await result.current.submit(SHIELD_META)

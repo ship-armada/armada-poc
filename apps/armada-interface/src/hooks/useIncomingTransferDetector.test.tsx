@@ -1,17 +1,17 @@
 // ABOUTME: Tests for useIncomingTransferDetector — subscribes on unlock, bumps historyRecoveryEpochAtom on each matching balance event, ignores events for other wallets, cleans up on lock/unmount.
-// ABOUTME: Stubs subscribeBalanceUpdates so we can drive synthetic events without a Railgun SDK runtime.
+// ABOUTME: Stubs subscribeBalanceUpdates so we can drive synthetic events without a SDK runtime.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, waitFor, act } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import {
-  activeRailgunWalletIdAtom,
+  activeShieldedWalletIdAtom,
   shieldedWalletsAtom,
 } from '@/state/wallet'
 import { historyRecoveryEpochAtom } from '@/state/history'
 
 const hoisted = vi.hoisted(() => {
-  let captured: ((event: { chain: { type: 0; id: number }; railgunWalletID: string }) => void) | null = null
+  let captured: ((event: { chain: { type: 0; id: number }; shieldedWalletID: string }) => void) | null = null
   const subscribe = vi.fn(async (listener: typeof captured) => {
     captured = listener
     return () => {
@@ -20,7 +20,7 @@ const hoisted = vi.hoisted(() => {
   })
   return {
     subscribe,
-    fire(event: { chain: { type: 0; id: number }; railgunWalletID: string }) {
+    fire(event: { chain: { type: 0; id: number }; shieldedWalletID: string }) {
       if (captured) captured(event)
     },
     isSubscribed: () => captured !== null,
@@ -44,10 +44,10 @@ function makeStore(opts: { unlocked: boolean }) {
     'rg-1': {
       id: 'rg-1',
       status: opts.unlocked ? 'unlocked' : 'locked',
-      railgunAddress: '0zk-test',
+      shieldedAddress: '0zk-test',
     },
   })
-  store.set(activeRailgunWalletIdAtom, opts.unlocked ? 'rg-1' : null)
+  store.set(activeShieldedWalletIdAtom, opts.unlocked ? 'rg-1' : null)
   return store
 }
 
@@ -90,9 +90,9 @@ describe('useIncomingTransferDetector', () => {
 
       // Three rapid events within the window — no bump yet.
       act(() => {
-        hoisted.fire({ chain: { type: 0, id: 31337 }, railgunWalletID: 'rg-1' })
-        hoisted.fire({ chain: { type: 0, id: 31337 }, railgunWalletID: 'rg-1' })
-        hoisted.fire({ chain: { type: 0, id: 31337 }, railgunWalletID: 'rg-1' })
+        hoisted.fire({ chain: { type: 0, id: 31337 }, shieldedWalletID: 'rg-1' })
+        hoisted.fire({ chain: { type: 0, id: 31337 }, shieldedWalletID: 'rg-1' })
+        hoisted.fire({ chain: { type: 0, id: 31337 }, shieldedWalletID: 'rg-1' })
       })
       expect(store.get(historyRecoveryEpochAtom)).toBe(0)
 
@@ -104,7 +104,7 @@ describe('useIncomingTransferDetector', () => {
 
       // A later, separate event bumps again after its own window.
       act(() => {
-        hoisted.fire({ chain: { type: 0, id: 31337 }, railgunWalletID: 'rg-1' })
+        hoisted.fire({ chain: { type: 0, id: 31337 }, shieldedWalletID: 'rg-1' })
       })
       act(() => {
         vi.advanceTimersByTime(2_000)
@@ -128,7 +128,7 @@ describe('useIncomingTransferDetector', () => {
       expect(hoisted.isSubscribed()).toBe(true)
     })
     await act(async () => {
-      hoisted.fire({ chain: { type: 0, id: 31337 }, railgunWalletID: 'rg-other' })
+      hoisted.fire({ chain: { type: 0, id: 31337 }, shieldedWalletID: 'rg-other' })
     })
     expect(store.get(historyRecoveryEpochAtom)).toBe(0)
   })
@@ -150,7 +150,7 @@ describe('useIncomingTransferDetector', () => {
       store.set(shieldedWalletsAtom, {
         'rg-1': { id: 'rg-1', status: 'locked' },
       })
-      store.set(activeRailgunWalletIdAtom, null)
+      store.set(activeShieldedWalletIdAtom, null)
     })
     rerender(
       <Provider store={store}>

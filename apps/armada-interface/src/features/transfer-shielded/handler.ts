@@ -68,7 +68,7 @@ function broadcasterFeeFromRecord(
   if (record.meta.useWalletOverride) return null
   return {
     amount: record.meta.broadcasterFeeAmount,
-    recipientAddress: record.meta.broadcasterRailgunAddress,
+    recipientAddress: record.meta.broadcasterShieldedAddress,
   }
 }
 

@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const h = vi.hoisted(() => ({
-  railgunAddress: '0zk1qexampleaddressvalue00000000000000000000000000000000000000000000',
+  shieldedAddress: '0zk1qexampleaddressvalue00000000000000000000000000000000000000000000',
   deriveKeyset: vi.fn(),
   deleteSdkReadStorage: vi.fn(async () => {}),
 }))
@@ -25,7 +25,7 @@ import {
   resetWallet,
   MismatchedRecoverySecretError,
 } from './wallet'
-import { isUnlocked, getWalletId, getRailgunAddress, clear as clearKeyManager } from './keyManager'
+import { isUnlocked, getWalletId, getShieldedAddress, clear as clearKeyManager } from './keyManager'
 import { encryptBackup, deriveRootSecret, deriveWalletId } from '@/lib/crypto/kdf'
 
 const SAMPLE_EVM = '0xabcdef0123456789abcdef0123456789abcdef01' as `0x${string}`
@@ -66,7 +66,7 @@ beforeEach(() => {
   clearKeyManager()
   window.localStorage.clear()
   h.deriveKeyset.mockReset()
-  h.deriveKeyset.mockResolvedValue({ railgunAddress: h.railgunAddress })
+  h.deriveKeyset.mockResolvedValue({ shieldedAddress: h.shieldedAddress })
   h.deleteSdkReadStorage.mockClear()
 })
 
@@ -79,7 +79,7 @@ describe('enrollFromSignature', () => {
     expect(state.id).toBe(expectedWalletId())
     expect(state.id).toMatch(/^[0-9a-f]{32}$/) // 16-byte HKDF wallet id
     expect(state.status).toBe('unlocked')
-    expect(state.railgunAddress).toBe(h.railgunAddress)
+    expect(state.shieldedAddress).toBe(h.shieldedAddress)
     expect(state.checksum).toMatch(/^[0-9a-f]{4} [0-9a-f]{4} [0-9a-f]{4}$/)
     expect(state.unlockedAt).toBeTypeOf('number')
     expect(h.deriveKeyset).toHaveBeenCalledTimes(1)
@@ -89,7 +89,7 @@ describe('enrollFromSignature', () => {
     await enrollFromSignature(fixedSig(), { evmAddress: SAMPLE_EVM, account: 0n })
     expect(isUnlocked()).toBe(true)
     expect(getWalletId()).toBe(expectedWalletId())
-    expect(getRailgunAddress()).toBe(h.railgunAddress)
+    expect(getShieldedAddress()).toBe(h.shieldedAddress)
     expect(readStoredMap('armada.shielded.walletIds')[SAMPLE_EVM_LC]?.['0']).toBe(expectedWalletId())
   })
 
@@ -170,7 +170,7 @@ describe('unlockFromRootSecret', () => {
     const root = deriveRootSecret(fixedSig())
     const state = await unlockFromRootSecret(root, { evmAddress: SAMPLE_EVM, account: 0n })
     expect(state.id).toBe(deriveWalletId(root))
-    expect(state.railgunAddress).toBe(h.railgunAddress)
+    expect(state.shieldedAddress).toBe(h.shieldedAddress)
     expect(isUnlocked()).toBe(true)
     expect(readStoredMap('armada.shielded.checksums')[SAMPLE_EVM_LC]?.['0']).toBe(state.checksum)
   })

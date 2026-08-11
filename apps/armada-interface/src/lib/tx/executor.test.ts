@@ -25,7 +25,7 @@ function makeRecord(overrides: Partial<TxRecord> = {}): TxRecord {
     artifacts: {},
     walletContext: {
       evmAddress: '0xabc',
-      railgunWalletId: 'rw-1',
+      shieldedWalletId: 'rw-1',
       sourceChainId: 31337,
     },
     ...overrides,
@@ -40,7 +40,7 @@ function unlockForTest(walletId = 'rw-1'): void {
     rootSecret: new Uint8Array(32),
     walletId,
     sdkEncryptionKey: 'ff'.repeat(32),
-    railgunAddress: '0zk1example',
+    shieldedAddress: '0zk1example',
     checksum: 'a3f2 91c8 b7e0',
     creationBlock: null,
     evmAddress: null,
@@ -271,7 +271,7 @@ describe('resumeForWallet (P0-2)', () => {
   // module-scope Set with no test reset, so reusing an id would early-return.
   function recordFor(walletId: string, overrides: Partial<TxRecord> = {}): TxRecord {
     return makeRecord({
-      walletContext: { evmAddress: '0xabc', railgunWalletId: walletId, sourceChainId: 31337 },
+      walletContext: { evmAddress: '0xabc', shieldedWalletId: walletId, sourceChainId: 31337 },
       ...overrides,
     })
   }

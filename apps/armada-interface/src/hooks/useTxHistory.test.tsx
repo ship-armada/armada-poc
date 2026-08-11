@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { txListAtom } from '@/state/tx'
-import { activeRailgunWalletIdAtom, shieldedWalletsAtom } from '@/state/wallet'
+import { activeShieldedWalletIdAtom, shieldedWalletsAtom } from '@/state/wallet'
 import type { TxRecord } from '@/lib/tx/types'
 
 const hoisted = vi.hoisted(() => ({
@@ -31,7 +31,7 @@ function fixture(id: string, walletId: string): TxRecord<'shield'> {
     artifacts: {},
     walletContext: {
       evmAddress: '0xabc',
-      railgunWalletId: walletId,
+      shieldedWalletId: walletId,
       sourceChainId: 31337,
     },
   } as TxRecord<'shield'>
@@ -46,10 +46,10 @@ function mount(activeWalletId: string | null, status: 'locked' | 'unlocked' = 'u
   const store = createStore()
   if (activeWalletId) {
     store.set(shieldedWalletsAtom, {
-      [activeWalletId]: { id: activeWalletId, status, railgunAddress: '0zk-test' },
+      [activeWalletId]: { id: activeWalletId, status, shieldedAddress: '0zk-test' },
     })
   }
-  store.set(activeRailgunWalletIdAtom, activeWalletId)
+  store.set(activeShieldedWalletIdAtom, activeWalletId)
   const result = render(
     <Provider store={store}>
       <Harness />
@@ -66,9 +66,9 @@ function setActiveWallet(
   status: 'locked' | 'unlocked' = 'unlocked',
 ) {
   store.set(shieldedWalletsAtom, {
-    [walletId]: { id: walletId, status, railgunAddress: '0zk-test' },
+    [walletId]: { id: walletId, status, shieldedAddress: '0zk-test' },
   })
-  store.set(activeRailgunWalletIdAtom, walletId)
+  store.set(activeShieldedWalletIdAtom, walletId)
 }
 
 beforeEach(() => {
@@ -103,7 +103,7 @@ describe('useTxHistory', () => {
   })
 
   it('hydrates when the wallet flips from locked → unlocked (no walletId change)', async () => {
-    // WHY: the original cold-load failure. activeRailgunWalletIdAtom is set at boot from the
+    // WHY: the original cold-load failure. activeShieldedWalletIdAtom is set at boot from the
     // cached walletId, but the wallet is locked until sign-in completes. The effect now
     // depends on lock STATUS, not just id — sign-in flips the status, the effect re-runs.
     hoisted.mockLoadAllTx.mockResolvedValueOnce([fixture('a', 'rg-1')])
@@ -136,7 +136,7 @@ describe('useTxHistory', () => {
       expect(store.get(txListAtom).map(r => r.id)).toEqual(['c'])
     })
     // Critical assertion: no spillover from rg-1.
-    expect(store.get(txListAtom).every(r => r.walletContext.railgunWalletId === 'rg-2')).toBe(true)
+    expect(store.get(txListAtom).every(r => r.walletContext.shieldedWalletId === 'rg-2')).toBe(true)
   })
 
   it('clears txListAtom when the active walletId goes null (lock)', async () => {
@@ -145,7 +145,7 @@ describe('useTxHistory', () => {
     await waitFor(() => {
       expect(store.get(txListAtom)).toHaveLength(1)
     })
-    store.set(activeRailgunWalletIdAtom, null)
+    store.set(activeShieldedWalletIdAtom, null)
     store.set(shieldedWalletsAtom, {})
     await waitFor(() => {
       expect(store.get(txListAtom)).toEqual([])

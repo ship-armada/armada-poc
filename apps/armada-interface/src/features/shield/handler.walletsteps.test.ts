@@ -27,7 +27,7 @@ vi.mock('@/lib/tx/simulate', () => ({ simulateOrThrow: simulateMock }))
 vi.mock('@/lib/railgun/keyManager', () => ({
   isUnlocked: () => false,
   getWalletId: () => 'rw-1',
-  getRailgunAddress: () => '0zk1example',
+  getShieldedAddress: () => '0zk1example',
 }))
 
 import { maxUint256 } from 'viem'
@@ -64,7 +64,7 @@ function freshShieldRecord(): TxRecord<'shield'> {
         shieldKey: `0x${'00'.repeat(32)}`,
       },
     },
-    walletContext: { evmAddress: '0xabc', railgunWalletId: 'rw-1', sourceChainId: 31337 },
+    walletContext: { evmAddress: '0xabc', shieldedWalletId: 'rw-1', sourceChainId: 31337 },
   } as TxRecord<'shield'>
 }
 

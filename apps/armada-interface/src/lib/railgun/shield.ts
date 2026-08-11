@@ -11,7 +11,7 @@
  *   of `shieldPrivateKey`). The sender's key is never re-needed after the shield is built —
  *   randomness is correct.
  * - Railgun's deterministic convention enables "sender-side history recovery from EVM wallet
- *   alone" across Railgun wallets. We don't use that recovery path (our identity layer is
+ *   alone" across shielded wallets. We don't use that recovery path (our identity layer is
  *   `root_secret`-derived with a non-deterministic enrollment, so EVM-only recovery isn't
  *   available regardless), so the convention has no value for our app.
  * - Eliminates one wallet prompt per deposit; the engine's own `relay-adapt-helper` already

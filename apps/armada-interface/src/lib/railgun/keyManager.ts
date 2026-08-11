@@ -1,4 +1,4 @@
-// ABOUTME: Module-scope private state for the unlocked wallet — root_secret, walletId, sdkEncryptionKey, railgunAddress, checksum.
+// ABOUTME: Module-scope private state for the unlocked wallet — root_secret, walletId, sdkEncryptionKey, shieldedAddress, checksum.
 // ABOUTME: Never exposed to React state, atoms, or localStorage. Cleared on lock; best-effort fill(0) on the root_secret buffer.
 
 import { antiPhishChecksumBytes, formatChecksumDisplay } from '@/lib/crypto/kdf'
@@ -13,10 +13,10 @@ interface UnlockedState {
   /** Display-format anti-phish checksum ("a3f2 91c8 b7e0"). */
   checksum: string
   /** The 0zk… address returned by the SDK. */
-  railgunAddress: string
+  shieldedAddress: string
   /**
    * Hub-chain block at which the wallet was first enrolled. Captured at true first-enrollment,
-   * preserved across backups via the encrypted payload, and threaded into the Railgun SDK's
+   * preserved across backups via the encrypted payload, and threaded into the SDK's
    * `creationBlockNumbers` on every wallet recreation so the merkletree scan starts at the
    * correct tree position rather than at chain head (which would silently truncate the user's
    * commitment scan to the recent past).
@@ -87,9 +87,9 @@ export function getSdkEncryptionKey(): string {
   return unlocked.sdkEncryptionKey
 }
 
-export function getRailgunAddress(): string {
+export function getShieldedAddress(): string {
   if (!unlocked) throw new Error('keyManager: wallet is locked')
-  return unlocked.railgunAddress
+  return unlocked.shieldedAddress
 }
 
 export function getChecksum(): string {

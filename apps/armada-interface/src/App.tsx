@@ -45,7 +45,7 @@ import {
   devMockBalanceAtom,
 } from '@/state/devMockBalance'
 import {
-  activeRailgunWalletIdAtom,
+  activeShieldedWalletIdAtom,
   shieldedWalletAtom,
   shieldedWalletsAtom,
 } from '@/state/wallet'
@@ -92,7 +92,7 @@ export function App() {
 
   const wallet = useAtomValue(shieldedWalletAtom)
   const setShieldedWallets = useSetAtom(shieldedWalletsAtom)
-  const setActiveWalletId = useSetAtom(activeRailgunWalletIdAtom)
+  const setActiveWalletId = useSetAtom(activeShieldedWalletIdAtom)
   const [mode, setMode] = useState<GuardMode>('pre-migration')
 
   // v2 schema migration: drops legacy localStorage keys + IndexedDB databases on first run of
@@ -134,8 +134,8 @@ export function App() {
 
   // Cold-boot hydration + initial mode derivation, in one pass to avoid a race between
   // separate effects (the mode effect would otherwise read a stale `wallet.status` before the
-  // hydration setState landed). Source of truth on cold boot is localStorage — the Railgun
-  // SDK persists wallet IDB and we persist the walletId on enroll, but Jotai atoms reset to
+  // hydration setState landed). Source of truth on cold boot is localStorage — the SDK
+  // persists wallet IDB and we persist the walletId on enroll, but Jotai atoms reset to
   // defaults on every page load.
   //
   // Three cases:

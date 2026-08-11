@@ -19,7 +19,7 @@ const sampleRecord: TxRecord<'shield'> = {
   artifacts: {},
   walletContext: {
     evmAddress: '0xabc',
-    railgunWalletId: 'rg-1',
+    shieldedWalletId: 'rg-1',
     sourceChainId: 31337,
   },
 }

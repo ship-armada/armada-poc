@@ -6,7 +6,7 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { BalanceHero } from './BalanceHero'
 import {
-  activeRailgunWalletIdAtom,
+  activeShieldedWalletIdAtom,
   shieldedUsdcAtom,
   syncStateAtom,
   yieldSharesAtom,
@@ -41,7 +41,7 @@ function completedDeposit(amount: bigint): TxRecord {
     stagesCompleted: ['hub-confirmed'],
     meta: { amount, feeCacheId: 'f', fromChainId: 1 },
     artifacts: {},
-    walletContext: { evmAddress: '0xabc', railgunWalletId: 'rg', sourceChainId: 1 },
+    walletContext: { evmAddress: '0xabc', shieldedWalletId: 'rg', sourceChainId: 1 },
     createdAt: 0,
     updatedAt: 0,
     updatedSeq: 1,
@@ -57,7 +57,7 @@ function renderWith(values: {
   const store = createStore()
   // V2 Phase 6: BalanceHero's `usePrivateUsdcDisplay` reads activeTxListAtom (scoped to active
   // walletId). Test fixtures use 'rg' as the walletId; seed the active id to match.
-  store.set(activeRailgunWalletIdAtom, 'rg')
+  store.set(activeShieldedWalletIdAtom, 'rg')
   store.set(shieldedUsdcAtom, values.shielded)
   store.set(yieldSharesAtom, values.yieldShares)
   if (values.txs) store.set(txListAtom, [...values.txs])

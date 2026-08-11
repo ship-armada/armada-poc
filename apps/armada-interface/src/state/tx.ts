@@ -4,7 +4,7 @@
 import { atom } from 'jotai'
 import type { TxExecutionState, TxKind, TxRecord } from '@/lib/tx/types'
 import { NON_TERMINAL_STATES, isTerminalState } from '@/lib/tx/types'
-import { activeRailgunWalletIdAtom } from './wallet'
+import { activeShieldedWalletIdAtom } from './wallet'
 
 /**
  * All tx records — pending and terminal — for every shielded wallet this device has ever
@@ -16,7 +16,7 @@ import { activeRailgunWalletIdAtom } from './wallet'
 export const txListAtom = atom<TxRecord[]>([])
 
 /**
- * Records scoped to the currently-active Railgun wallet — drives all UI consumers. When the
+ * Records scoped to the currently-active shielded wallet — drives all UI consumers. When the
  * active wallet is null (locked or never-unlocked), returns [] so leaking-prior-history is
  * structurally impossible.
  *
@@ -24,9 +24,9 @@ export const txListAtom = atom<TxRecord[]>([])
  * atom rarely contains foreign records to begin with. This filter is the second perimeter.
  */
 export const activeTxListAtom = atom((get) => {
-  const activeId = get(activeRailgunWalletIdAtom)
+  const activeId = get(activeShieldedWalletIdAtom)
   if (!activeId) return []
-  return get(txListAtom).filter(t => t.walletContext.railgunWalletId === activeId)
+  return get(txListAtom).filter(t => t.walletContext.shieldedWalletId === activeId)
 })
 
 /**

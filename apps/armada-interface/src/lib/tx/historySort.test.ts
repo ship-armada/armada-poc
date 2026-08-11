@@ -17,7 +17,7 @@ function rec(overrides: Partial<TxRecord>): TxRecord {
     updatedAt: 0,
     meta: { amount: 1n, feeCacheId: '', fromChainId: 31337 },
     artifacts: {},
-    walletContext: { evmAddress: '0xabc', railgunWalletId: 'rw-1', sourceChainId: 31337 },
+    walletContext: { evmAddress: '0xabc', shieldedWalletId: 'rw-1', sourceChainId: 31337 },
     ...overrides,
   } as TxRecord
 }

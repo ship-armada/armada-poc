@@ -1,11 +1,11 @@
-// ABOUTME: Railgun wallet hook — signIn (signature-derived, deterministic v2 primary) + paste/backup unlock + lock/reset/exportBackup.
+// ABOUTME: shielded wallet hook — signIn (signature-derived, deterministic v2 primary) + paste/backup unlock + lock/reset/exportBackup.
 // ABOUTME: Plural-wallet schema (state/wallet.ts) is future-proofing; v1 UX is singular and the hook hides that.
 
 import { useAtomValue, useSetAtom } from 'jotai'
 import { useCallback } from 'react'
 import { signTypedData } from 'wagmi/actions'
 import {
-  activeRailgunWalletIdAtom,
+  activeShieldedWalletIdAtom,
   activeShieldedWalletAtom,
   evmAddressAtom,
   shieldedWalletsAtom,
@@ -44,15 +44,15 @@ import { track, trackError } from '@/lib/telemetry'
 /**
  * Hook surface: typed lifecycle actions that wrap `lib/railgun/wallet`. Side effects per call:
  * 1. Calls the lib function (which writes the keyManager singleton)
- * 2. Mirrors the resulting `ShieldedWalletState` into `shieldedWalletsAtom` + `activeRailgunWalletIdAtom`
+ * 2. Mirrors the resulting `ShieldedWalletState` into `shieldedWalletsAtom` + `activeShieldedWalletIdAtom`
  * 3. Emits a `track(...)` event on success, `trackError(...)` on failure
  */
 export function useShieldedWallet() {
   const active = useAtomValue(activeShieldedWalletAtom)
-  const activeId = useAtomValue(activeRailgunWalletIdAtom)
+  const activeId = useAtomValue(activeShieldedWalletIdAtom)
   const evmAddress = useAtomValue(evmAddressAtom)
   const setWallets = useSetAtom(shieldedWalletsAtom)
-  const setActiveId = useSetAtom(activeRailgunWalletIdAtom)
+  const setActiveId = useSetAtom(activeShieldedWalletIdAtom)
 
   /**
    * Primary unlock path (v2 amendment): build the deterministic EIP-712 message for the given

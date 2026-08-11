@@ -66,11 +66,11 @@ function unshieldRecordWithHash(): TxRecord<'unshield-local'> {
       feeCacheId: 'c',
       recipient: '0x3333333333333333333333333333333333333333',
       broadcasterFeeAmount: 0n,
-      broadcasterRailgunAddress: '0zk1relayer',
+      broadcasterShieldedAddress: '0zk1relayer',
       useWalletOverride: false,
     },
     artifacts: { sourceTxHash: '0xfeed' },
-    walletContext: { evmAddress: '0xabc', railgunWalletId: 'rw-1', sourceChainId: 31337 },
+    walletContext: { evmAddress: '0xabc', shieldedWalletId: 'rw-1', sourceChainId: 31337 },
   } as TxRecord<'unshield-local'>
 }
 

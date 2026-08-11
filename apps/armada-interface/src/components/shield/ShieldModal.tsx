@@ -264,7 +264,7 @@ export function ShieldModal() {
             feeAmount: liveFee,
             wrapperAddress: hubWrapperAddress,
             permitDeadline: Math.floor(Date.now() / 1000) + PERMIT_DEADLINE_WINDOW_SEC,
-            broadcasterRailgunAddress: activeQuote.broadcasterRailgunAddress,
+            broadcasterShieldedAddress: activeQuote.broadcasterShieldedAddress,
           })
         } else {
           submittedId = await txShield.submit({
@@ -300,7 +300,7 @@ export function ShieldModal() {
             feeAmount: liveFee,
             wrapperAddress: clientWrapperAddress,
             permitDeadline: Math.floor(Date.now() / 1000) + PERMIT_DEADLINE_WINDOW_SEC,
-            broadcasterRailgunAddress: activeQuote.broadcasterRailgunAddress,
+            broadcasterShieldedAddress: activeQuote.broadcasterShieldedAddress,
           })
         } else {
           submittedId = await txShieldXchain.submit({

@@ -62,12 +62,12 @@ describe('buildYieldAdaptSdk', () => {
       unshieldToken: USDC,
       shieldOutputToken: VAULT,
       adapterAddress: ADAPTER,
-      railgunAddress: '0zk_user',
+      shieldedAddress: '0zk_user',
       broadcasterFee: { amount: 20_000n, recipientAddress: '0zk_relayer' },
     })
     // Re-shield destination is the USER's 0zk in the OUTPUT token (ayUSDC shares).
     expect(hoisted.buildShieldRequest).toHaveBeenCalledTimes(1)
-    expect(hoisted.buildShieldRequest.mock.calls[0]![0]).toEqual({ railgunAddress: '0zk_user', amount: 0n, tokenAddress: VAULT })
+    expect(hoisted.buildShieldRequest.mock.calls[0]![0]).toEqual({ shieldedAddress: '0zk_user', amount: 0n, tokenAddress: VAULT })
     // Deposit binding over (npk, bundle, shieldKey).
     expect(hoisted.encodeYieldDepositBinding).toHaveBeenCalledWith(BigInt(NPK), BUNDLE, SHIELD_KEY)
     // Unshield goes TO the adapter (adaptContract = adapter), token = USDC, plus the SDK fee leg.
@@ -75,7 +75,7 @@ describe('buildYieldAdaptSdk', () => {
       outputs: [],
       unshield: { recipient: ADAPTER, amount: 5_000_000n, adaptContract: ADAPTER, adaptParams: '0xdepositbinding' },
       tokenAddress: USDC,
-      fee: { schedule: { transfer: '20000' }, broadcasterRailgunAddress: '0zk_relayer', feesCacheId: '', expiresAt: 0 },
+      fee: { schedule: { transfer: '20000' }, broadcasterShieldedAddress: '0zk_relayer', feesCacheId: '', expiresAt: 0 },
     })
     // lendAndShield(transaction tuple, npk, shieldCiphertext).
     expect(hoisted.encodeFunctionData).toHaveBeenCalledWith('lendAndShield', [['TUPLE'], NPK, { encryptedBundle: BUNDLE, shieldKey: SHIELD_KEY }])
@@ -93,12 +93,12 @@ describe('buildYieldAdaptSdk', () => {
       unshieldToken: VAULT,
       shieldOutputToken: USDC,
       adapterAddress: ADAPTER,
-      railgunAddress: '0zk_user',
+      shieldedAddress: '0zk_user',
       broadcasterFee: { amount: 15_000n, recipientAddress: '0zk_relayer' },
     })
     // Two bundles: user (USDC out) + relayer fee note (USDC out).
     expect(hoisted.buildShieldRequest).toHaveBeenCalledTimes(2)
-    expect(hoisted.buildShieldRequest.mock.calls[1]![0]).toEqual({ railgunAddress: '0zk_relayer', amount: 0n, tokenAddress: USDC })
+    expect(hoisted.buildShieldRequest.mock.calls[1]![0]).toEqual({ shieldedAddress: '0zk_relayer', amount: 0n, tokenAddress: USDC })
     // Redeem binding covers user + fee bundle + feeAmount.
     expect(hoisted.encodeYieldRedeemBinding).toHaveBeenCalledWith(BigInt(NPK), BUNDLE, SHIELD_KEY, BigInt(FEE_NPK), BUNDLE, SHIELD_KEY, 15_000n)
     // Redeem plans with NO SDK fee leg (fee is contract-side), token = shares (ayUSDC).
@@ -106,7 +106,7 @@ describe('buildYieldAdaptSdk', () => {
       outputs: [],
       unshield: { recipient: ADAPTER, amount: 3_000_000n, adaptContract: ADAPTER, adaptParams: '0xredeembinding' },
       tokenAddress: VAULT,
-      fee: { schedule: { transfer: '0' }, broadcasterRailgunAddress: '', feesCacheId: '', expiresAt: 0 },
+      fee: { schedule: { transfer: '0' }, broadcasterShieldedAddress: '', feesCacheId: '', expiresAt: 0 },
     })
     expect(hoisted.encodeFunctionData).toHaveBeenCalledWith('redeemAndShield', [['TUPLE'], NPK, { encryptedBundle: BUNDLE, shieldKey: SHIELD_KEY }, FEE_NPK, { encryptedBundle: BUNDLE, shieldKey: SHIELD_KEY }, 15_000n])
     expect(r.feeShieldRandom).toBe('r-fee') // #312 — surfaced for the relayer's npk-reconstruction check
@@ -120,7 +120,7 @@ describe('buildYieldAdaptSdk', () => {
       unshieldToken: VAULT,
       shieldOutputToken: USDC,
       adapterAddress: ADAPTER,
-      railgunAddress: '0zk_user',
+      shieldedAddress: '0zk_user',
       broadcasterFee: null,
     })
     // Only the user bundle; the fee slots are zeroed and feeAmount is 0.

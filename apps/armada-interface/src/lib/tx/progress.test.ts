@@ -19,7 +19,7 @@ function record(): TxRecord<'shield'> {
     updatedAt: Date.now(),
     meta: { amount: 1_000_000n, feeCacheId: 'c', fromChainId: 31337 },
     artifacts: {},
-    walletContext: { evmAddress: '0xabc', railgunWalletId: 'rw-1', sourceChainId: 31337 },
+    walletContext: { evmAddress: '0xabc', shieldedWalletId: 'rw-1', sourceChainId: 31337 },
   } as TxRecord<'shield'>
 }
 

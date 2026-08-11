@@ -7,7 +7,7 @@ import { useAccount, useDisconnect, useWalletClient } from 'wagmi'
 import { toast } from 'sonner'
 import type { JsonRpcSigner } from 'ethers'
 import { walletClientToSigner } from '@/lib/wagmi-adapter'
-import { evmAddressAtom, activeRailgunWalletIdAtom, shieldedWalletsAtom } from '@/state/wallet'
+import { evmAddressAtom, activeShieldedWalletIdAtom, shieldedWalletsAtom } from '@/state/wallet'
 import { track, trackError } from '@/lib/telemetry'
 import { isUnlocked, getEvmAddress, getWalletId } from '@/lib/railgun/keyManager'
 import { lockWallet } from '@/lib/railgun/wallet'
@@ -26,7 +26,7 @@ export function useWallet(): UseWalletResult {
   const { data: walletClient } = useWalletClient()
   const { disconnect } = useDisconnect()
   const setEvmAddress = useSetAtom(evmAddressAtom)
-  const setActiveWalletId = useSetAtom(activeRailgunWalletIdAtom)
+  const setActiveWalletId = useSetAtom(activeShieldedWalletIdAtom)
   const setShieldedWallets = useSetAtom(shieldedWalletsAtom)
 
   const signer = useMemo(() => {
@@ -115,7 +115,7 @@ export function useWallet(): UseWalletResult {
             if (!existing) return prev
             return { ...prev, [idForUpdate]: { ...existing, status: 'locked' } }
           })
-          // Keep activeRailgunWalletIdAtom pointing at the locked entry.
+          // Keep activeShieldedWalletIdAtom pointing at the locked entry.
         } else {
           // Defensive fallback: couldn't read the walletId. Clear the atoms so we don't leave
           // a stale 'unlocked' entry in place.

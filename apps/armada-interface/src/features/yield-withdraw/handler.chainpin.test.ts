@@ -16,7 +16,7 @@ vi.mock('@/lib/tx/receipt', async (importActual) => {
 vi.mock('@/lib/railgun/keyManager', () => ({
   isUnlocked: () => false,
   getWalletId: () => 'rw-1',
-  getRailgunAddress: () => '0zk1example',
+  getShieldedAddress: () => '0zk1example',
   getSdkEncryptionKey: () => '0xkey',
 }))
 vi.mock('@/lib/railgun/sync', () => ({ refreshShieldedBalances: vi.fn(async () => {}) }))
@@ -50,7 +50,7 @@ function overrideRecordWithHash(): TxRecord<'yield-withdraw'> {
       sourceTxHash: '0xfeed',
       yieldTx: { to: '0x4444444444444444444444444444444444444444', data: '0xabcd', value: '0' },
     },
-    walletContext: { evmAddress: '0xabc', railgunWalletId: 'rw-1', sourceChainId: 31337 },
+    walletContext: { evmAddress: '0xabc', shieldedWalletId: 'rw-1', sourceChainId: 31337 },
   } as TxRecord<'yield-withdraw'>
 }
 

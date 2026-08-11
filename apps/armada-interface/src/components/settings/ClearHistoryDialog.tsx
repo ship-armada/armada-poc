@@ -6,7 +6,7 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import { Eraser } from 'lucide-react'
 import { Modal } from '@/components/ui'
 import { FlowFooter } from '@/components/flow/FlowFooter'
-import { activeRailgunWalletIdAtom } from '@/state/wallet'
+import { activeShieldedWalletIdAtom } from '@/state/wallet'
 import { txListAtom } from '@/state/tx'
 import { historyRecoveryEpochAtom } from '@/state/history'
 import { cacheClear } from '@/lib/cache'
@@ -20,7 +20,7 @@ export interface ClearHistoryDialogProps {
 }
 
 export function ClearHistoryDialog({ open, onClose }: ClearHistoryDialogProps) {
-  const walletId = useAtomValue(activeRailgunWalletIdAtom)
+  const walletId = useAtomValue(activeShieldedWalletIdAtom)
   const setTxList = useSetAtom(txListAtom)
   const setEpoch = useSetAtom(historyRecoveryEpochAtom)
   const [submitting, setSubmitting] = useState(false)

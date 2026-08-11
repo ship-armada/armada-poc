@@ -20,7 +20,7 @@ Transaction lifecycle model. The most important architectural surface in this ap
 - **`reducer.ts` is pure.** No IDB writes, no React. Hooks / executor call the reducer, then write the result via `state/tx.ts::upsertTxAtom` + `storage::putTxIfFresh`.
 - **`updatedSeq` enforces optimistic concurrency.** Every transition increments it; `putTxIfFresh` and `upsertTxAtom` reject stale writes. This guards against duplicate-tab writes, poller races, and crash recovery anomalies.
 - **`id` is a ulid generated client-side at submit.** Idempotency key: re-submitting with the same id is a no-op upsert (executor's reentrancy guard).
-- **`walletContext` is captured at submit and immutable.** History filtering + debugging rely on stable identity even if the user later switches EVM or Railgun wallets.
+- **`walletContext` is captured at submit and immutable.** History filtering + debugging rely on stable identity even if the user later switches EVM or shielded wallets.
 
 ## Adding a new `TxKind`
 

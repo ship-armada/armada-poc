@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import {
-  activeRailgunWalletIdAtom,
+  activeShieldedWalletIdAtom,
   evmAddressAtom,
   shieldedWalletsAtom,
 } from '@/state/wallet'
@@ -179,7 +179,7 @@ describe('useWallet — account-switch detection', () => {
     mockGetWalletId.mockReturnValue('seeded-wallet-id')
 
     const store = createStore()
-    store.set(activeRailgunWalletIdAtom, 'seeded-wallet-id')
+    store.set(activeShieldedWalletIdAtom, 'seeded-wallet-id')
     store.set(shieldedWalletsAtom, {
       'seeded-wallet-id': { id: 'seeded-wallet-id', status: 'unlocked' },
     })
@@ -190,8 +190,8 @@ describe('useWallet — account-switch detection', () => {
     )
 
     expect(mockLockWallet).toHaveBeenCalledTimes(1)
-    // activeRailgunWalletIdAtom must remain set so shieldedWalletAtom resolves the entry below.
-    expect(store.get(activeRailgunWalletIdAtom)).toBe('seeded-wallet-id')
+    // activeShieldedWalletIdAtom must remain set so shieldedWalletAtom resolves the entry below.
+    expect(store.get(activeShieldedWalletIdAtom)).toBe('seeded-wallet-id')
     // The entry's status must be 'locked' (not removed) — App.tsx only routes to UnlockFlow on
     // 'locked', not on 'missing'. Wiping the entry would leave the user stranded on the dashboard.
     expect(store.get(shieldedWalletsAtom)['seeded-wallet-id']?.status).toBe('locked')

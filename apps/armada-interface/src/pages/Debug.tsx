@@ -282,7 +282,7 @@ export function Debug() {
           <dt>Wallet chain</dt><dd>{connectedChainId ?? '—'}</dd>
           <AddressRow label="Shielded wallet ID" value={shieldedState?.id} />
           <dt>Shielded status</dt><dd>{shieldedState?.status ?? 'missing'}</dd>
-          <AddressRow label="Shielded address" value={shieldedState?.railgunAddress} truncate />
+          <AddressRow label="Shielded address" value={shieldedState?.shieldedAddress} truncate />
           <dt>Anti-phish checksum</dt><dd>{shieldedState?.checksum ?? '—'}</dd>
           <dt>Shielded USDC</dt><dd>{shielded === null ? '— not synced —' : `${formatUsdcAmount(shielded)} USDC`}</dd>
         </dl>

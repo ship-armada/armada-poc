@@ -36,7 +36,7 @@ describe('buildUnshieldSdk', () => {
     expect(hoisted.planTransfer).toHaveBeenCalledWith({
       outputs: [],
       unshield: { recipient: RECIPIENT, amount: 5_000_000n },
-      fee: { schedule: { transfer: '20000' }, broadcasterRailgunAddress: '0zk_relayer', feesCacheId: '', expiresAt: 0 },
+      fee: { schedule: { transfer: '20000' }, broadcasterShieldedAddress: '0zk_relayer', feesCacheId: '', expiresAt: 0 },
     })
     expect(hoisted.buildTransactCalldata).toHaveBeenCalledWith([{ tx: 'data' }], POOL)
     expect(r).toEqual({ to: POOL, data: '0xdeadbeef' })
@@ -47,7 +47,7 @@ describe('buildUnshieldSdk', () => {
     expect(hoisted.planTransfer).toHaveBeenCalledWith({
       outputs: [],
       unshield: { recipient: RECIPIENT, amount: 1n },
-      fee: { schedule: { transfer: '0' }, broadcasterRailgunAddress: '', feesCacheId: '', expiresAt: 0 },
+      fee: { schedule: { transfer: '0' }, broadcasterShieldedAddress: '', feesCacheId: '', expiresAt: 0 },
     })
   })
 })

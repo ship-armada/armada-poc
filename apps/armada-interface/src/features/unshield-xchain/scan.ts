@@ -1,5 +1,5 @@
 // ABOUTME: Pure per-tick scan helper used by the xchain unshield handler — caps the eth_getLogs window to maxLogRange blocks and advances a cursor between ticks.
-// ABOUTME: Lifted out of handler.ts so the cursor/window math is unit-testable without dragging in wagmi, ethers, or the railgun SDK.
+// ABOUTME: Lifted out of handler.ts so the cursor/window math is unit-testable without dragging in wagmi, ethers, or the SDK.
 
 /**
  * Minimal log shape we need: a (possibly absent) transaction hash for the match outcome. Typed

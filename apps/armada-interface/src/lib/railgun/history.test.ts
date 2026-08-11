@@ -47,7 +47,7 @@ describe('historyEntryToTxRecord (@armada/sdk read path)', () => {
 
   it('transfer-sent → transfer-shielded, recipient + broadcaster fee split from sentOutputs', () => {
     const r = historyEntryToTxRecord(
-      sdkEntry({ category: 'transfer-sent', value: -500_000n, broadcasterFee: 20_000n, sentOutputs: [{ recipientRailgunAddress: '0zk_bob', value: 480_000n }] }),
+      sdkEntry({ category: 'transfer-sent', value: -500_000n, broadcasterFee: 20_000n, sentOutputs: [{ recipientShieldedAddress: '0zk_bob', value: 480_000n }] }),
       'w', SDK_CTX, 5000,
     )
     expect(r).toMatchObject({ kind: 'transfer-shielded', meta: { amount: 480_000n, broadcasterFeeAmount: 20_000n, recipient: '0zk_bob' } })
@@ -68,11 +68,11 @@ describe('historyEntryToTxRecord (@armada/sdk read path)', () => {
     expect(historyEntryToTxRecord(sdkEntry({ category: 'yield-withdraw', value: 950_000n }), 'w', SDK_CTX, 5000)).toMatchObject({ kind: 'yield-withdraw', meta: { amount: 950_000n } })
   })
 
-  it('stamps walletContext: railgunWalletId + hub chain, undefined evmAddress', () => {
+  it('stamps walletContext: shieldedWalletId + hub chain, undefined evmAddress', () => {
     // WHY: TxWalletContext allows undefined evmAddress for shielded-only ops. We don't fabricate an
     // EVM binding for historical records because the user may have switched EVMs since.
     const r = historyEntryToTxRecord(sdkEntry({ category: 'shield' }), 'w', SDK_CTX, 5000)
-    expect(r!.walletContext).toEqual({ evmAddress: undefined, railgunWalletId: 'w', sourceChainId: 31337 })
+    expect(r!.walletContext).toEqual({ evmAddress: undefined, shieldedWalletId: 'w', sourceChainId: 31337 })
   })
 })
 

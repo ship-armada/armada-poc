@@ -13,7 +13,7 @@ function deposit(amount: bigint, id = '1'): TxRecord {
     stagesCompleted: ['hub-confirmed'],
     meta: { amount, feeCacheId: 'f', fromChainId: 1 },
     artifacts: {},
-    walletContext: { evmAddress: '0xabc', railgunWalletId: 'rg', sourceChainId: 1 },
+    walletContext: { evmAddress: '0xabc', shieldedWalletId: 'rg', sourceChainId: 1 },
     createdAt: 0,
     updatedAt: 0,
     updatedSeq: 1,

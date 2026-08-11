@@ -143,7 +143,7 @@ export async function loadAllTx(walletId?: string): Promise<TxRecord[]> {
   for (const e of entries) {
     const r = tryUnwrap(e.value, key)
     if (!r) continue
-    if (r.walletContext.railgunWalletId !== walletId) continue
+    if (r.walletContext.shieldedWalletId !== walletId) continue
     records.push(r)
   }
   return records.sort((a, b) => historySortTime(b) - historySortTime(a))

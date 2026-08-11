@@ -7,15 +7,15 @@ import type { ShieldedWalletState } from '@/lib/railgun/wallet'
 /** Truncated/raw EVM address of the connected wallet. null = not connected. */
 export const evmAddressAtom = atom<string | null>(null)
 
-/** Plural shielded wallets, keyed by railgunWalletId. Schema is plural even in v1 (one entry). */
+/** Plural shielded wallets, keyed by shieldedWalletId. Schema is plural even in v1 (one entry). */
 export const shieldedWalletsAtom = atom<Record<string, ShieldedWalletState>>({})
 
 /** Which entry in `shieldedWalletsAtom` is currently active. Null when no wallet exists or none selected. */
-export const activeRailgunWalletIdAtom = atom<string | null>(null)
+export const activeShieldedWalletIdAtom = atom<string | null>(null)
 
 /** Derived: the active wallet's state, or null. UI mostly reads this; write paths use the two source atoms above. */
 export const activeShieldedWalletAtom = atom<ShieldedWalletState | null>((get) => {
-  const id = get(activeRailgunWalletIdAtom)
+  const id = get(activeShieldedWalletIdAtom)
   if (!id) return null
   return get(shieldedWalletsAtom)[id] ?? null
 })
@@ -24,10 +24,10 @@ export const activeShieldedWalletAtom = atom<ShieldedWalletState | null>((get) =
  * Legacy alias retained until Bundle 2 consumers fully migrate to `activeShieldedWalletAtom`.
  * For now, returns a thin compat shape ({ status: 'missing' } when no wallet, else the active one).
  */
-export const shieldedWalletAtom = atom<{ status: 'locked' | 'unlocked' | 'missing'; railgunAddress?: string }>((get) => {
+export const shieldedWalletAtom = atom<{ status: 'locked' | 'unlocked' | 'missing'; shieldedAddress?: string }>((get) => {
   const active = get(activeShieldedWalletAtom)
   if (!active) return { status: 'missing' }
-  return { status: active.status, railgunAddress: active.railgunAddress }
+  return { status: active.status, shieldedAddress: active.shieldedAddress }
 })
 
 /**
@@ -35,7 +35,7 @@ export const shieldedWalletAtom = atom<{ status: 'locked' | 'unlocked' | 'missin
  */
 export const usdcBalancesAtom = atom<Record<number, bigint>>({})
 
-/** Shielded USDC balance (raw 6-decimal units). null until the Railgun sync completes. */
+/** Shielded USDC balance (raw 6-decimal units). null until the shielded sync completes. */
 export const shieldedUsdcAtom = atom<bigint | null>(null)
 
 /** Shielded yield shares (raw 18-decimal units). null until sync. */

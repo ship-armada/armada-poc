@@ -29,7 +29,7 @@ Privacy apps routinely leak through carelessly-written telemetry and dev logs. B
 1. **Never `console.log` / `console.debug` mnemonics, viewing keys, spending keys, decrypted DEKs, or anything derived from them.** Use `lib/telemetry.ts::track` for structured events with allowlisted shapes — the registry won't let a key slip through.
 
 2. **Memory zeroization** (reviewer rec #11):
-   - Where the Railgun SDK gives us key material as `Uint8Array`, `fill(0)` after use.
+   - Where the SDK gives us key material as `Uint8Array`, `fill(0)` after use.
    - Avoid storing the mnemonic as a JS string when avoidable — strings are interned and cannot be zeroized. Prefer `Uint8Array` of UTF-8 bytes; convert at the SDK boundary only.
    - Decrypted DEK lives in memory for one operation, then `fill(0)`. Never store on `window`, in localStorage, or in a Jotai atom.
    - JS makes zeroization imperfect (V8 may move buffers), but the discipline still meaningfully reduces leak surface.
@@ -64,7 +64,7 @@ registry on app mount by `artifacts.ts::preloadArtifactsFromOrigin`.
 
 See `specs/TX_SIGNING_V2_AMENDMENT.md` §"Outstanding compliance gaps from this redesign":
 
-- **Web Worker isolation for spending key operations** — spec mandates that proof signing + key-decrypt operations run in a dedicated Web Worker. Deferred because the Railgun SDK isn't architected for parallel instances against the same `armada-shielded` IDB; v2 follow-up needs either an upstream SDK refactor or a non-trivial parallel-SDK-in-worker setup.
+- **Web Worker isolation for spending key operations** — spec mandates that proof signing + key-decrypt operations run in a dedicated Web Worker. Deferred because the SDK isn't architected for parallel instances against the same `armada-shielded` IDB; v2 follow-up needs either an upstream SDK refactor or a non-trivial parallel-SDK-in-worker setup.
 - **ESLint rule for signature discipline** — `no-restricted-syntax` to mechanically catch `fetch(sig)` / `console.log(sig)` / etc. Deferred because the app has no eslint config yet.
 
 ## WebAuthn (future, not now)

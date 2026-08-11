@@ -16,7 +16,7 @@ function quote(expiresAt: number): FeeSchedule {
     cacheId: 'c',
     expiresAt,
     chainId: 31337,
-    broadcasterRailgunAddress: '',
+    broadcasterShieldedAddress: '',
     fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0', shield: '0', shieldXchain: '0' },
   }
 }

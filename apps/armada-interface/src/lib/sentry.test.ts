@@ -33,7 +33,7 @@ afterEach(() => {
 })
 
 describe('scrubString', () => {
-  it('redacts railgun 0zk addresses', () => {
+  it('redacts shielded 0zk addresses', () => {
     const addr = '0zk1' + 'q'.repeat(40)
     expect(scrubString(`sent to ${addr} ok`)).toBe('sent to 0zk[redacted] ok')
     expect(scrubString('0zk' + 'a'.repeat(64))).toBe('0zk[redacted]')

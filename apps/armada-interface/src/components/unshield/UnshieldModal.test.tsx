@@ -5,7 +5,7 @@ import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { UnshieldModal } from './UnshieldModal'
 import { openModalAtom } from '@/state/ui'
-import { activeRailgunWalletIdAtom, shieldedUsdcAtom, evmAddressAtom } from '@/state/wallet'
+import { activeShieldedWalletIdAtom, shieldedUsdcAtom, evmAddressAtom } from '@/state/wallet'
 import { feeQuoteAtom, feeQuoteFetchedAtAtom } from '@/state/fees'
 import { withTestQueryClient } from '@/test-utils/queryClient'
 
@@ -54,7 +54,7 @@ const FAKE_QUOTE = {
   chainId: 31337,
   // Shape-valid 0zk for the new isShieldedAddress() submit-time check. UnshieldModal rejects an
   // empty / malformed broadcaster address before kicking proof generation.
-  broadcasterRailgunAddress: '0zk' + 'a'.repeat(64),
+  broadcasterShieldedAddress: '0zk' + 'a'.repeat(64),
   fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0', shield: '0', shieldXchain: '0' },
 }
 
@@ -69,7 +69,7 @@ function renderModal(opts?: {
   if (opts?.evm) store.set(evmAddressAtom, opts.evm)
   // useTx.submit() refuses to write a record without an active shielded walletId (Phase 6
   // scoping invariant). Seed a placeholder so the Confirm flow doesn't trip the guard.
-  store.set(activeRailgunWalletIdAtom, 'rg-test')
+  store.set(activeShieldedWalletIdAtom, 'rg-test')
   store.set(feeQuoteAtom, FAKE_QUOTE)
   // staleAtom treats a quote with no fetch timestamp as stale (350e084), which would send
   // Confirm down the real refresh()/fetchFees path — unreachable in jsdom. A fresh

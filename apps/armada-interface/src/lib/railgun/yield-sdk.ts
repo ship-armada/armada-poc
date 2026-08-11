@@ -31,11 +31,12 @@ const as0x = (hex: string): `0x${string}` => {
 }
 
 /**
- * Write-path cutover flag. When set, the yield handlers build + submit via `@armada/sdk`
- * (`buildYieldAdaptSdk`) instead of the stock engine. Off by default; the engine drives.
+ * Write-path cutover flag. The yield handlers build + submit via `@armada/sdk` (`buildYieldAdaptSdk`)
+ * by default; set `VITE_SDK_YIELD=0` to fall back to the stock engine (escape hatch, retained until
+ * the engine yield builder is deleted).
  */
 export function sdkYieldEnabled(): boolean {
-  return import.meta.env.VITE_SDK_YIELD === '1'
+  return import.meta.env.VITE_SDK_YIELD !== '0'
 }
 
 /** A re-shield destination bound into adaptParams: npk (poseidon(mpk, random)) + the shield ECIES bundle. */

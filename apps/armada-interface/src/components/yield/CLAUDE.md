@@ -37,7 +37,7 @@ The conversion path means the displayed "amount" is the **expected USDC output**
 
 ## What's wired now
 
-- Executor handlers for `yield-deposit` and `yield-withdraw` are registered. Submit walks `build-proof` → `submit-relayer` → `hub-confirmed` via the adapter's atomic lend/redeem entry point (`buildYieldAdaptTransaction` in `lib/railgun/yield.ts`).
+- Executor handlers for `yield-deposit` and `yield-withdraw` are registered. Submit walks `build-proof` → `submit-relayer` → `hub-confirmed` via the adapter's atomic lend/redeem entry point (`buildYieldAdaptSdk` in `lib/railgun/yield-sdk.ts`, built on `@armada/sdk`).
 - `useYieldRate()` polls `vault.convertToAssets(1e18)` + net APY (`spoke.annualYieldBps × (10_000 - vault.yieldFeeBps) / 10_000`) on the hub every 5 min (visibility-gated). EarnModal calls `refresh()` on open + post-submit so the user always sees fresh state at the moments that matter.
 - Withdraw slippage: the modal refreshes the rate immediately before computing shares to bound the slippage window to ~1 block. A `minUsdcOut` proof-bound parameter on the adapter would close the residual window — tracked in the polish doc.
 - `useShieldedBalanceSync` writes both `shieldedUsdcAtom` and `yieldSharesAtom` so the user's shielded ayUSDC balance is visible.

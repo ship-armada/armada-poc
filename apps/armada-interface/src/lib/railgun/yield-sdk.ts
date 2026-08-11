@@ -1,5 +1,5 @@
 // ABOUTME: SDK-backed yield adapter builder — planTransfer(unshield to adapter + re-shield-bundle adaptParams)
-// ABOUTME: → prove → transactionToTuple → encode lendAndShield / redeemAndShield. @armada/sdk analogue of buildYieldAdaptTransaction.
+// ABOUTME: → prove → transactionToTuple → encode lendAndShield / redeemAndShield calldata for the yield adapter.
 
 import { ethers } from 'ethers'
 import {
@@ -28,15 +28,6 @@ const ADAPTER_ABI = [
 const as0x = (hex: string): `0x${string}` => {
   if (!hex.startsWith('0x')) throw new Error('yield-sdk: expected a 0x-prefixed hex value')
   return hex as `0x${string}`
-}
-
-/**
- * Write-path cutover flag. The yield handlers build + submit via `@armada/sdk` (`buildYieldAdaptSdk`)
- * by default; set `VITE_SDK_YIELD=0` to fall back to the stock engine (escape hatch, retained until
- * the engine yield builder is deleted).
- */
-export function sdkYieldEnabled(): boolean {
-  return import.meta.env.VITE_SDK_YIELD !== '0'
 }
 
 /** A re-shield destination bound into adaptParams: npk (poseidon(mpk, random)) + the shield ECIES bundle. */

@@ -10,14 +10,11 @@ import { waitForReceiptOrFail } from '@/lib/tx/receipt'
 import { simulateOrThrow } from '@/lib/tx/simulate'
 import {
   getRailgunAddress as kmGetRailgunAddress,
-  getSdkEncryptionKey as kmGetSdkEncryptionKey,
   getWalletId as kmGetWalletId,
   isUnlocked as kmIsUnlocked,
 } from '@/lib/railgun/keyManager'
 import { refreshShieldedBalances } from '@/lib/railgun/sync'
-import { buildYieldAdaptTransaction, type BroadcasterFeeRecipient } from '@/lib/railgun/yield'
-import { runYieldDifferential, yieldDifferentialEnabled } from '@/lib/railgun/yield-differential'
-import { buildYieldAdaptSdk, sdkYieldEnabled } from '@/lib/railgun/yield-sdk'
+import { buildYieldAdaptSdk } from '@/lib/railgun/yield-sdk'
 import { submitRelay } from '@/lib/relayer'
 import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
 import { advance, markFailed } from '@/lib/tx/reducer'
@@ -68,11 +65,9 @@ export const yieldDepositHandler: StageHandler<'yield-deposit'> = {
 /** A6 — null when wallet-override, otherwise the broadcaster context from meta. */
 function broadcasterFeeFromRecord(
   record: TxRecord<'yield-deposit'>,
-  tokenAddress: string,
-): BroadcasterFeeRecipient | null {
+): { amount: bigint; recipientAddress: string } | null {
   if (record.meta.useWalletOverride) return null
   return {
-    tokenAddress,
     amount: record.meta.broadcasterFeeAmount,
     recipientAddress: record.meta.broadcasterRailgunAddress,
   }
@@ -85,8 +80,6 @@ async function runBuildProof(
   if (!kmIsUnlocked()) {
     throw new Error('Yield deposit requires an unlocked shielded wallet.')
   }
-  const walletId = kmGetWalletId()
-  const encryptionKey = kmGetSdkEncryptionKey()
   const railgunAddress = kmGetRailgunAddress()
   const deployments = await loadDeployments()
   const yieldDeployment = await loadYieldDeployment()
@@ -100,71 +93,27 @@ async function runBuildProof(
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   const progress = createProofProgressWriter(record, ctx.signal)
-
-  if (sdkYieldEnabled()) {
-    // @armada/sdk cutover: plan (unshield USDC → adapter + re-shield-bundle adaptParams) → prove
-    // off-thread → encode lendAndShield, and stash the calldata so submit-relayer dispatches it
-    // without re-proving. Survives a reload (persisted in the record).
-    const bf = broadcasterFeeFromRecord(record, usdcAddress)
-    const { to, data } = await buildYieldAdaptSdk({
-      mode: 'lend',
-      amount: record.meta.amount,
-      unshieldToken: usdcAddress as `0x${string}`,
-      shieldOutputToken: vaultAddress as `0x${string}`,
-      adapterAddress: adapterAddress as `0x${string}`,
-      railgunAddress,
-      broadcasterFee: bf ? { amount: bf.amount, recipientAddress: bf.recipientAddress } : null,
-      onProgress: progress.write,
-    })
-    if (ctx.signal.aborted) throw new Error('cancelled')
-    await ctx.upsert(advance(progress.latest(), 'submit-relayer', { yieldTx: { to, data, value: '0' } }))
-    return
-  }
-
-  const built = await buildYieldAdaptTransaction({
-    walletId,
-    encryptionKey,
+  // Plan (unshield USDC → adapter + re-shield-bundle adaptParams) → prove off-thread → encode
+  // lendAndShield, and stash the calldata so submit-relayer dispatches it without re-proving.
+  // Survives a reload (persisted in the record).
+  const bf = broadcasterFeeFromRecord(record)
+  const { to, data } = await buildYieldAdaptSdk({
     mode: 'lend',
-    unshieldToken: usdcAddress,
-    shieldOutputToken: vaultAddress,
     amount: record.meta.amount,
+    unshieldToken: usdcAddress as `0x${string}`,
+    shieldOutputToken: vaultAddress as `0x${string}`,
+    adapterAddress: adapterAddress as `0x${string}`,
     railgunAddress,
-    adapterAddress,
-    hubChainId: getNetworkConfig().hub.chainId,
-    broadcasterFee: broadcasterFeeFromRecord(record, usdcAddress),
+    broadcasterFee: bf,
     onProgress: progress.write,
   })
-
   if (ctx.signal.aborted) throw new Error('cancelled')
 
-  // Pre-cutover differential (opt-in, observe-only): build this deposit with @armada/sdk and simulate
-  // it against the adapter — telemetry-reports whether the SDK proof + re-shield binding verifies
-  // on-chain. Fire-and-forget; never blocks or fails the deposit (the engine build above is what submits).
-  const evmFrom = record.walletContext.evmAddress
-  if (yieldDifferentialEnabled() && evmFrom) {
-    const bf = broadcasterFeeFromRecord(record, usdcAddress)
-    void runYieldDifferential({
-      mode: 'lend',
-      amount: record.meta.amount,
-      unshieldToken: usdcAddress as `0x${string}`,
-      shieldOutputToken: vaultAddress as `0x${string}`,
-      adapterAddress: adapterAddress as `0x${string}`,
-      railgunAddress,
-      broadcasterFee: bf ? { amount: bf.amount, recipientAddress: bf.recipientAddress } : null,
-      from: evmFrom as `0x${string}`,
-      chainId: getNetworkConfig().hub.chainId,
-    })
-  }
-
-  // Stash the populated calldata so submit-relayer skips re-proving. The SDK's
-  // generateProofTransactions is stateless — without this, a resume after a transient relayer
-  // error would pay the ~20-30s proving cost again.
+  // Stash the populated calldata so submit-relayer skips re-proving. The build runs a ~20-30s
+  // proof off-thread; without persisting the result, a resume after a transient relayer error
+  // would pay that cost again.
   await ctx.upsert(advance(progress.latest(), 'submit-relayer', {
-    yieldTx: {
-      to: built.transaction.to,
-      data: built.transaction.data,
-      value: built.transaction.value.toString(),
-    },
+    yieldTx: { to, data, value: '0' },
   }))
 }
 

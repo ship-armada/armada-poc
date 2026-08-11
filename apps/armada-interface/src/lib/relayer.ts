@@ -426,7 +426,16 @@ export async function fetchFees(
     headers: { Accept: 'application/json' },
   }, signal, 15_000)
   if (!res.ok) throw await parseError(res)
-  return (await res.json()) as FeeSchedule
+  // Wire-boundary normalization: the relayer's /fees contract still names the broadcaster 0zk field
+  // `broadcasterRailgunAddress` (its `BROADCASTER_RAILGUN_ADDRESS` env var). The interface uses the
+  // SDK-aligned `broadcasterShieldedAddress` everywhere downstream, so map it here. Tolerant of either
+  // wire name so a future relayer rename doesn't break us.
+  const raw = (await res.json()) as Omit<FeeSchedule, 'broadcasterShieldedAddress'> & {
+    broadcasterRailgunAddress?: string
+    broadcasterShieldedAddress?: string
+  }
+  const { broadcasterRailgunAddress, broadcasterShieldedAddress, ...rest } = raw
+  return { ...rest, broadcasterShieldedAddress: broadcasterShieldedAddress ?? broadcasterRailgunAddress ?? '' }
 }
 
 /**

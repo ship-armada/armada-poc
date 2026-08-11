@@ -16,6 +16,8 @@ import {
 } from '@/lib/railgun/keyManager'
 import { refreshShieldedBalances } from '@/lib/railgun/sync'
 import { buildYieldAdaptTransaction, type BroadcasterFeeRecipient } from '@/lib/railgun/yield'
+import { runYieldDifferential, yieldDifferentialEnabled } from '@/lib/railgun/yield-differential'
+import { buildYieldAdaptSdk, sdkYieldEnabled } from '@/lib/railgun/yield-sdk'
 import { submitRelay } from '@/lib/relayer'
 import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
 import { advance, markFailed } from '@/lib/tx/reducer'
@@ -90,6 +92,27 @@ async function runBuildProof(
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   const progress = createProofProgressWriter(record, ctx.signal)
+
+  if (sdkYieldEnabled()) {
+    // @armada/sdk cutover: plan (unshield shares → adapter + re-shield-bundle adaptParams) → prove
+    // off-thread → encode redeemAndShield, and stash the calldata + the fee note's random (#312) so
+    // submit-relayer dispatches it without re-proving. Survives a reload (persisted in the record).
+    const bf = broadcasterFeeFromRecord(record, usdcAddress)
+    const { to, data, feeShieldRandom } = await buildYieldAdaptSdk({
+      mode: 'redeem',
+      amount: record.meta.shares,
+      unshieldToken: yieldDeployment.contracts.armadaYieldVault as `0x${string}`,
+      shieldOutputToken: usdcAddress as `0x${string}`,
+      adapterAddress: yieldDeployment.contracts.armadaYieldAdapter as `0x${string}`,
+      railgunAddress,
+      broadcasterFee: bf ? { amount: bf.amount, recipientAddress: bf.recipientAddress } : null,
+      onProgress: progress.write,
+    })
+    if (ctx.signal.aborted) throw new Error('cancelled')
+    await ctx.upsert(advance(progress.latest(), 'submit-relayer', { yieldTx: { to, data, value: '0' }, feeShieldRandom }))
+    return
+  }
+
   const built = await buildYieldAdaptTransaction({
     walletId,
     encryptionKey,
@@ -109,6 +132,26 @@ async function runBuildProof(
   })
 
   if (ctx.signal.aborted) throw new Error('cancelled')
+
+  // Pre-cutover differential (opt-in, observe-only): build this withdraw with @armada/sdk and simulate
+  // it against the adapter — telemetry-reports whether the SDK proof + re-shield binding (user + fee
+  // notes) verifies on-chain. Fire-and-forget; never blocks or fails the withdraw.
+  const evmFrom = record.walletContext.evmAddress
+  if (yieldDifferentialEnabled() && evmFrom) {
+    const bf = broadcasterFeeFromRecord(record, usdcAddress)
+    void runYieldDifferential({
+      mode: 'redeem',
+      amount: record.meta.shares,
+      unshieldToken: yieldDeployment.contracts.armadaYieldVault as `0x${string}`,
+      shieldOutputToken: usdcAddress as `0x${string}`,
+      adapterAddress: yieldDeployment.contracts.armadaYieldAdapter as `0x${string}`,
+      railgunAddress,
+      broadcasterFee: bf ? { amount: bf.amount, recipientAddress: bf.recipientAddress } : null,
+      from: evmFrom as `0x${string}`,
+      chainId: getNetworkConfig().hub.chainId,
+    })
+  }
+
   await ctx.upsert(advance(progress.latest(), 'submit-relayer', {
     yieldTx: {
       to: built.transaction.to,

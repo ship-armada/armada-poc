@@ -1,58 +1,31 @@
 // ABOUTME: Signature-derived Railgun wallet lifecycle per specs/TX_SIGNING.md + TX_SIGNING_V2_AMENDMENT.md.
 // ABOUTME: enrollFromSignature / unlockFromRootSecret / unlockFromBackup / lockWallet / resetWallet route through a shared applyRootSecret helper. Internal mnemonic shim hidden inside this module.
 
-// The Railgun SDK pulls a chunky transitive dep graph (circomlibjs, etc.) that has trouble
-// loading in jsdom. We `import()` the SDK at call time so vitest can load this module without
-// instantiating the engine's polyfill surface — pure unit tests stub the SDK at the import
-// boundary. Production code pays the dynamic import cost once per session on first call.
-type RailgunSdk = typeof import('@railgun-community/wallet')
-async function railgunSdk(): Promise<RailgunSdk> {
-  return import('@railgun-community/wallet')
-}
+import { deriveKeyset } from '@armada/sdk'
 import {
   antiPhishChecksumBytes,
   assertEntropyFloor,
   decryptBackup,
   deriveHistoryEncryptionKey,
-  deriveInternalMnemonic,
   deriveRootSecret,
   deriveSdkEncryptionKeyHex,
   deriveSpendingKeyBytes,
   deriveViewingKeyBytes,
+  deriveWalletId,
   formatChecksumDisplay,
   type BackupBlob,
 } from '@/lib/crypto/kdf'
 import { NonDeterministicSignerError } from '@/lib/crypto/determinism'
-import { track, trackError } from '@/lib/telemetry'
+import { track } from '@/lib/telemetry'
 import {
   clear as clearKeyManager,
-  getSdkEncryptionKey as kmGetSdkEncryptionKey,
   getWalletId as kmGetWalletId,
   setUnlocked,
 } from './keyManager'
 import { loadDeployments } from '@/config/deployments'
-import { getNetworkConfig } from '@/config/network'
 import { clearHistoryCheckpoint } from './history-checkpoint'
-import { initRailgunEngine } from './init'
-import { getCurrentHubBlock, loadHubNetwork } from './network'
-
-/**
- * Ensure the Railgun engine is initialized + the hub network is loaded before issuing an SDK
- * call. Both are idempotent — first call does the work, subsequent calls return immediately.
- * loadHubNetwork failure is non-fatal during enrollment (the wallet can still be created
- * without a network; balance scanning just won't work until the network is loaded).
- */
-async function ensureRailgunReady(): Promise<void> {
-  await initRailgunEngine()
-  try {
-    await loadHubNetwork()
-  } catch (err) {
-    // Surface but don't block — wallet creation/load doesn't strictly need the network.
-    // Balance scans + tx submission will fail downstream until the user fixes the underlying
-    // problem (RPC down, contracts not deployed, etc.).
-    trackError('shielded.network.load', err, { scope: 'shielded.unlock', message: 'hub network load failed' })
-  }
-}
+import { deleteSdkReadStorage } from './sdk-read'
+import { getCurrentHubBlock } from './network'
 
 /**
  * Public state shape exposed to React (atoms / hooks). No secrets — just identity + status.
@@ -324,41 +297,19 @@ async function applyRootSecret(
     ? readStoredWalletIdFor(opts.evmAddress, account)
     : null
 
-  let walletId: string
-  let railgunAddress: string
-  let newlyCreated: boolean
-  // `effectiveCreationBlock` mirrors what we stash into keyManager.creationBlock so a later
-  // `exportBackup` can write a meaningful value. null = "not known in this session": the load-
-  // fast-path doesn't tell us, since the SDK already has the canonical value in walletDetails.
-  let effectiveCreationBlock: number | null = opts.creationBlock ?? null
-
-  if (cachedWalletId) {
-    try {
-      const { loadWalletByID } = await railgunSdk()
-      const info = await loadWalletByID(sdkEncryptionKey, cachedWalletId, false /* isViewOnlyWallet */)
-      walletId = cachedWalletId
-      railgunAddress = info.railgunAddress
-      newlyCreated = false
-    } catch (err) {
-      // Cached id but no entry in this device's IDB (cleared / new device / corrupted state, or
-      // the cached id belonged to a different identity and this rootSecret's sdkEncryptionKey
-      // can't decrypt it). Recreate the wallet — same rootSecret deterministically yields the
-      // same walletId per the BIP-39 mnemonic shim, so this is idempotent.
-      trackError('shielded.wallet.loadByID', err, {
-        scope: 'shielded.unlock',
-        message: 'load failed, recreating',
-      })
-      const recreated = await createSdkWalletFromRoot(rootSecret, opts.creationBlock)
-      walletId = recreated.walletId
-      railgunAddress = recreated.railgunAddress
-      newlyCreated = true
-    }
-  } else {
-    const recreated = await createSdkWalletFromRoot(rootSecret, opts.creationBlock)
-    walletId = recreated.walletId
-    railgunAddress = recreated.railgunAddress
-    newlyCreated = true
-  }
+  // Identity is derived locally — no engine wallet to create or load. `walletId` is a deterministic
+  // function of rootSecret; the 0zk address comes from the SDK's keyset derivation (byte-identical to
+  // what the read instance derives via `fromRootSecret`). The actual wallet is the persistent
+  // @armada/sdk read instance, created lazily on first balance read (sdk-read.ts).
+  const walletId = deriveWalletId(rootSecret)
+  const railgunAddress = (await deriveKeyset(rootSecret)).railgunAddress
+  // "Newly created" (telemetry) = first sign-in on this device for the tuple (no cached id). It no
+  // longer implies an engine wallet was created; the identity is purely derived.
+  const newlyCreated = cachedWalletId === null
+  // Mirrors what we stash into keyManager.creationBlock so a later `exportBackup` can write a
+  // meaningful value. null = not known in this session (the SDK read instance resumes from its own
+  // persisted checkpoint regardless).
+  const effectiveCreationBlock: number | null = opts.creationBlock ?? null
 
   if (opts.evmAddress) {
     setStoredWalletId(opts.evmAddress, account, walletId)
@@ -403,9 +354,9 @@ async function applyRootSecret(
  * backup-export ceremony. The keyManager retains the authoritative copy until lock or reset; the
  * caller must NOT mutate or `fill(0)` the returned buffer.
  *
- * Phase 1 compromise: `deriveInternalMnemonic` (called inside `applyRootSecret`'s recreate path)
- * produces a deterministic 24-word BIP-39 from root_secret; we hand it to `createRailgunWallet`
- * and never expose it. Phase 2 drops the shim by going through the lower-level engine package.
+ * Identity is derived entirely locally now — `applyRootSecret` computes the walletId + 0zk address
+ * from root_secret (no engine wallet). The actual scanning wallet is the persistent @armada/sdk read
+ * instance, created lazily on first balance read.
  */
 /**
  * Caller-supplied identity binding for sign-in / unlock entry points. Threading these through
@@ -428,7 +379,6 @@ export async function enrollFromSignature(
   rootSecret: Uint8Array
   state: ShieldedWalletState
 }> {
-  await ensureRailgunReady()
   let rootSecret: Uint8Array
   try {
     rootSecret = deriveRootSecret(signatureBytes)
@@ -523,7 +473,6 @@ export async function unlockFromRootSecret(
   if (rootSecret.length !== 32) {
     throw new Error('unlockFromRootSecret: rootSecret must be 32 bytes')
   }
-  await ensureRailgunReady()
   const { state } = await applyRootSecret(rootSecret, opts)
   track('shielded.unlock', { walletId: state.id })
   return state
@@ -548,11 +497,13 @@ export async function unlockFromBackup(
 }
 
 /**
- * Drop the unlocked-session state. Does NOT delete the SDK wallet from IDB — only releases
- * the in-memory copies. The user can re-unlock at any time with the same root_secret.
+ * Drop the unlocked-session state. Does NOT delete the SDK read instance's persisted scan state —
+ * only releases the in-memory secrets. The user can re-unlock at any time with the same root_secret;
+ * the @armada/sdk read instance is torn down separately by `useShieldedBalanceSync` on the active-
+ * wallet change (which calls `closeSdkRead`). `_id` is accepted for API compatibility with callers.
  *
- * Async because we await the SDK's in-memory wallet unload. `_id` is accepted for API
- * consistency with the legacy signature; we always lock whichever wallet is currently unlocked.
+ * Kept synchronous-first: the tab-unload (`beforeunload`) lock path relies on the rootSecret buffer
+ * being zeroized before the page tears down, so `clearKeyManager()` must run before any await.
  */
 export async function lockWallet(_id: string): Promise<void> {
   const id = (() => {
@@ -562,40 +513,8 @@ export async function lockWallet(_id: string): Promise<void> {
       return null
     }
   })()
-  // Clear the keyManager FIRST and synchronously — the tab-unload (`beforeunload`) lock path
-  // relies on the rootSecret buffer being zeroized before the page tears down; an `await` ahead of
-  // this would orphan that guarantee. Clearing our keys does not unload the SDK's wallet handle.
   clearKeyManager()
-  if (!id) return
-  // WS7.2 Option A: wipe the SDK's decrypted note plaintext (value, 0zk addresses, memo) from IDB
-  // while the wallet handle is still loaded and before we unload it, so it doesn't persist at rest
-  // while locked. The public merkletree is left intact — the next unlock re-decrypts locally from
-  // it (no network rescan). Best-effort: a failure must never block the lock; abrupt termination
-  // (tab kill) skips it, which is the accepted limitation of this mitigation.
-  await clearDecryptedBalancesOnLock(id)
-  try {
-    const { unloadWalletByID } = await railgunSdk()
-    unloadWalletByID(id)
-  } catch {
-    /* SDK throws if the wallet isn't loaded; ignore. */
-  }
-  track('shielded.locked', { walletId: id })
-}
-
-/**
- * Best-effort clear of a wallet's decrypted balances (note plaintext + scan heights) from IDB.
- * Leaves the public merkletree. See `lockWallet` for why this runs on lock (WS7.2 Option A).
- */
-async function clearDecryptedBalancesOnLock(id: string): Promise<void> {
-  try {
-    const { walletForID } = await railgunSdk()
-    const wallet = walletForID(id)
-    // ChainType.EVM === 0; mirror the chain shape network.ts patches into NETWORK_CONFIG.
-    const chain = { type: 0, id: getNetworkConfig().hub.chainId }
-    await wallet.clearDecryptedBalancesAllTXIDVersions(chain)
-  } catch {
-    /* wallet not loaded / SDK unavailable — nothing to clear */
-  }
+  if (id) track('shielded.locked', { walletId: id })
 }
 
 /**
@@ -616,30 +535,13 @@ export async function resetWallet(_id: string): Promise<void> {
   if (!id) {
     throw new Error('resetWallet: no wallet to reset')
   }
-  const sdkEncryptionKey = (() => {
-    try {
-      return kmGetSdkEncryptionKey()
-    } catch {
-      return null
-    }
-  })()
   clearKeyManager()
-  // sdkEncryptionKey is captured pre-clear so the SDK delete can run after we've locked the
-  // key manager. We don't actually need it for the delete call (SDK signature takes id only)
-  // but reading it confirms the session was authenticated. If absent, we still proceed —
-  // there's no auth surface on delete to guard.
-  void sdkEncryptionKey
-  try {
-    const { deleteWalletByID } = await railgunSdk()
-    await deleteWalletByID(id)
-  } catch (err) {
-    // Surface but don't block — the wallet may already be absent.
-    trackError('shielded.wallet.deleteByID', err, { scope: 'shielded.reset', message: 'delete failed' })
-  }
+  // Wipe the @armada/sdk read instance's persisted scan state (closes it, deletes the read DB) so the
+  // next enrollment re-scans from the deploy block. Best-effort — a delete error must not block reset.
+  await deleteSdkReadStorage()
   clearStoredWalletIdentity()
-  // Drop the history-scan checkpoint so a future re-enrollment on this device walks chain
-  // history from the hub deploy block again, not from a stale block that pre-dates the new
-  // wallet's first observable activity.
+  // Drop the history-scan checkpoint so a future re-enrollment on this device walks chain history
+  // from the hub deploy block again, not from a stale block that pre-dates the new wallet's activity.
   clearHistoryCheckpoint(id)
   track('shielded.reset', { walletId: id })
 }
@@ -663,47 +565,4 @@ async function resolveCreationBlock(): Promise<number | undefined> {
     // Manifest load failed (offline, dev plugin down) — fall through to head-block fallback.
   }
   return (await getCurrentHubBlock()) ?? undefined
-}
-
-/**
- * Internal helper: derive the internal mnemonic + encryption key from root_secret and hand
- * them to the Railgun SDK. The mnemonic exists only on this function's stack frame; the SDK
- * encrypts it before returning. We do not retain the string reference beyond the await.
- *
- * Phase 1 compromise documented in lib/crypto/CLAUDE.md.
- */
-async function createSdkWalletFromRoot(
-  rootSecret: Uint8Array,
-  creationBlock: number | undefined,
-): Promise<{
-  walletId: string
-  railgunAddress: string
-}> {
-  const sdkEncryptionKey = deriveSdkEncryptionKeyHex(rootSecret)
-  const mnemonic = deriveInternalMnemonic(rootSecret)
-  // creationBlockNumbers is the SDK's hint for where to begin the merkletree commitment scan.
-  // Per the engine source (abstract-wallet.js::getCreationTreeAndPosition), it resolves to a
-  // `(creationTree, creationTreeHeight)` position from which the scan walks forward. Pass the
-  // TRUE creation block when known (first-enrollment, or restored from v2 backup); pass
-  // undefined for restore paths where it's unknown (paste-secret, post-load-failure recovery)
-  // and accept the slower full-genesis rescan.
-  //
-  // Keyed by SDK NetworkName, not chain id. We patch NETWORK_CONFIG.Hardhat to mean our hub
-  // chain (see lib/railgun/network.ts), so the key here is literally 'Hardhat'.
-  const creationBlockNumbers = creationBlock != null ? { Hardhat: creationBlock } : undefined
-  try {
-    const { createRailgunWallet } = await railgunSdk()
-    const info = await createRailgunWallet(
-      sdkEncryptionKey,
-      mnemonic,
-      creationBlockNumbers,
-      0, // railgunWalletDerivationIndex — fixed at 0 for Phase 1 (one identity per spec)
-    )
-    return { walletId: info.id, railgunAddress: info.railgunAddress }
-  } finally {
-    // JS strings are immutable; we can't overwrite the buffer. Best we can do is drop the
-    // reference. V8 will reclaim it on the next GC cycle. Phase 2 (engine-level) avoids the
-    // mnemonic string entirely by writing key bytes directly.
-    void mnemonic
-  }
 }

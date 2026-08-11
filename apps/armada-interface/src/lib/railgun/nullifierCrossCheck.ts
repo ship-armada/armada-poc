@@ -6,30 +6,21 @@ import { getNetworkConfig } from '@/config/network'
 import { loadDeployments } from '@/config/deployments'
 import { trackError } from '@/lib/telemetry'
 import { aggregate3, type AggregateCall } from '@/lib/multicall3'
-import { timeoutProvider, getHubChainDescriptor } from './network'
+import { timeoutProvider } from './network'
+import { getSdkWallet } from './sdk-read'
 
 // PrivacyPoolStorage.sol: mapping(uint256 => mapping(bytes32 => bool)) public nullifiers → this
 // auto getter. Set in TransactModule.sol when a note is spent. No SDK read helper exists.
 const NULLIFIERS_ABI = ['function nullifiers(uint256,bytes32) view returns (bool)']
 
 /**
- * Normalize a TXO nullifier for the `bytes32` ABI arg. The engine stores it as an UNPREFIXED,
- * zero-padded 32-byte hex string (`ByteUtils.nToHex(nullifier, ByteLength.UINT_256)`), but ethers'
- * `bytes32` encoder requires a `0x`-prefixed BytesLike — passing the raw value throws
- * "invalid BytesLike value". Idempotent: tolerates an already-prefixed or short-trimmed value.
+ * Normalize a nullifier for the `bytes32` ABI arg. `@armada/sdk` gives the nullifier as a field-
+ * element `bigint`, rendered here as unprefixed hex; ethers' `bytes32` encoder requires a `0x`-
+ * prefixed, zero-padded 32-byte value. Idempotent: tolerates an already-prefixed or short value.
  */
 export function toNullifierBytes32(nullifier: string): string {
   const raw = nullifier.startsWith('0x') ? nullifier.slice(2) : nullifier
   return `0x${raw.padStart(64, '0')}`
-}
-
-// The Railgun SDK crashes on module-load under jsdom (circomlibjs) — defer to call time, same
-// pattern as sync.ts / wallet.ts. One import per session.
-async function railgunSdk() {
-  return import('@railgun-community/wallet')
-}
-async function sharedModels() {
-  return import('@railgun-community/shared-models')
 }
 
 /** An own note the wallet believes is unspent, identified for its on-chain nullifier lookup. */
@@ -46,17 +37,14 @@ export interface NullifierCrossCheckResult {
 }
 
 /**
- * The wallet's own notes it believes are unspent, as `{tree, nullifier}`. Each TXO already carries
- * its computed `nullifier` and `tree`; `spendtxid === false` means locally-unspent. V2 only — our
- * PrivacyPool implements the V2 UTXO tree.
+ * The wallet's own locally-unspent notes as `{tree, nullifier}`, from the @armada/sdk read wallet's
+ * `spendableNullifiers()` (the SDK-native replacement for the engine's `TXOs(...)` + `spendtxid`
+ * filter). `_walletId` is accepted for call-site compatibility but ignored — the read instance is the
+ * unlocked wallet. V2 only — our PrivacyPool implements the V2 UTXO tree.
  */
-export async function getOwnUnspentNotes(walletId: string): Promise<OwnUnspentNote[]> {
-  const [{ walletForID }, { TXIDVersion }] = await Promise.all([railgunSdk(), sharedModels()])
-  const wallet = walletForID(walletId)
-  const txos = await wallet.TXOs(TXIDVersion.V2_PoseidonMerkle, getHubChainDescriptor())
-  return txos
-    .filter((txo) => txo.spendtxid === false)
-    .map((txo) => ({ tree: txo.tree, nullifier: txo.nullifier }))
+export async function getOwnUnspentNotes(_walletId?: string): Promise<OwnUnspentNote[]> {
+  const wallet = await getSdkWallet()
+  return wallet.spendableNullifiers().map((n) => ({ tree: n.tree, nullifier: n.nullifier.toString(16) }))
 }
 
 /**

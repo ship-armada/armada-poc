@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const hoisted = vi.hoisted(() => ({
-  walletForID: vi.fn(),
+  getSdkWallet: vi.fn(),
   getNetworkConfig: vi.fn(),
   loadDeployments: vi.fn(),
   timeoutProvider: vi.fn(() => ({})),
@@ -14,10 +14,8 @@ const hoisted = vi.hoisted(() => ({
   trackError: vi.fn(),
 }))
 
-vi.mock('@railgun-community/wallet', () => ({ walletForID: hoisted.walletForID }))
-vi.mock('@railgun-community/shared-models', () => ({
-  TXIDVersion: { V2_PoseidonMerkle: 'V2_PoseidonMerkle' },
-}))
+// The cross-check now reads the wallet's spendable notes' (tree, nullifier) from @armada/sdk.
+vi.mock('./sdk-read', () => ({ getSdkWallet: hoisted.getSdkWallet }))
 vi.mock('ethers', () => ({
   ethers: {
     Contract: class {
@@ -31,10 +29,7 @@ vi.mock('ethers', () => ({
 vi.mock('@/config/network', () => ({ getNetworkConfig: hoisted.getNetworkConfig }))
 vi.mock('@/config/deployments', () => ({ loadDeployments: hoisted.loadDeployments }))
 vi.mock('@/lib/multicall3', () => ({ aggregate3: hoisted.aggregate3 }))
-vi.mock('./network', () => ({
-  timeoutProvider: hoisted.timeoutProvider,
-  getHubChainDescriptor: () => ({ type: 0, id: 31337 }),
-}))
+vi.mock('./network', () => ({ timeoutProvider: hoisted.timeoutProvider }))
 vi.mock('@/lib/telemetry', () => ({ trackError: hoisted.trackError }))
 
 import {
@@ -44,8 +39,9 @@ import {
   toNullifierBytes32,
 } from './nullifierCrossCheck'
 
-function txo(overrides: Record<string, unknown>) {
-  return { tree: 0, position: 0, nullifier: '0xnf', spendtxid: false as string | false, ...overrides }
+/** Stub the SDK wallet's `spendableNullifiers()` — the read the cross-check consumes. */
+function mockSpendable(refs: { tree: number; nullifier: bigint }[]): void {
+  hoisted.getSdkWallet.mockResolvedValue({ spendableNullifiers: () => refs })
 }
 
 beforeEach(() => {
@@ -92,26 +88,23 @@ describe('detectOmittedNullifiers (pure)', () => {
 })
 
 describe('getOwnUnspentNotes', () => {
-  it('returns only locally-unspent notes as {tree, nullifier}', async () => {
-    hoisted.walletForID.mockReturnValue({
-      TXOs: vi.fn(async () => [
-        txo({ tree: 0, nullifier: '0xunspent', spendtxid: false }),
-        txo({ tree: 0, nullifier: '0xspent', spendtxid: '0xsometx' }),
-        txo({ tree: 2, nullifier: '0xunspent2', spendtxid: false }),
-      ]),
-    })
-
-    const notes = await getOwnUnspentNotes('wallet-1')
+  it('maps the SDK\'s spendable (tree, nullifier) refs to {tree, nullifier-hex}', async () => {
+    // spendableNullifiers is already unspent-filtered by the SDK; the nullifier is a field bigint.
+    mockSpendable([
+      { tree: 0, nullifier: 0xdeadn },
+      { tree: 2, nullifier: 0xbeefn },
+    ])
+    const notes = await getOwnUnspentNotes()
     expect(notes).toEqual([
-      { tree: 0, nullifier: '0xunspent' },
-      { tree: 2, nullifier: '0xunspent2' },
+      { tree: 0, nullifier: (0xdeadn).toString(16) },
+      { tree: 2, nullifier: (0xbeefn).toString(16) },
     ])
   })
 })
 
 describe('toNullifierBytes32', () => {
-  it('0x-prefixes the engine\'s unprefixed 32-byte nullifier hex', () => {
-    const raw = 'ab'.repeat(32) // 64 hex chars, no 0x — exactly what the engine hands us
+  it('0x-prefixes an unprefixed 32-byte nullifier hex', () => {
+    const raw = 'ab'.repeat(32) // 64 hex chars, no 0x
     expect(toNullifierBytes32(raw)).toBe(`0x${raw}`)
   })
 
@@ -127,12 +120,10 @@ describe('toNullifierBytes32', () => {
 
 describe('checkOwnNullifiersOnChain (wired)', () => {
   it('flags omission-detected and batches a 0x-prefixed bytes32 into one aggregate3 call', async () => {
-    // The engine yields the nullifier UNPREFIXED; the wired check must normalize it before the
-    // ethers encode, else ethers throws "invalid BytesLike value" (the WI-5 fail-open regression).
+    // The SDK yields the nullifier as a field bigint; the wired check renders + normalizes it to a
+    // 0x-prefixed bytes32 before the ethers encode, else ethers throws "invalid BytesLike value".
     const rawNullifier = 'ab'.repeat(32)
-    hoisted.walletForID.mockReturnValue({
-      TXOs: vi.fn(async () => [txo({ tree: 0, nullifier: rawNullifier, spendtxid: false })]),
-    })
+    mockSpendable([{ tree: 0, nullifier: BigInt(`0x${rawNullifier}`) }])
     hoisted.aggregate3.mockResolvedValue([{ success: true, result: [true] }]) // chain says spent
 
     const r = await checkOwnNullifiersOnChain('wallet-1')
@@ -148,13 +139,11 @@ describe('checkOwnNullifiersOnChain (wired)', () => {
   })
 
   it('batches every unspent note into a single aggregate3 call', async () => {
-    hoisted.walletForID.mockReturnValue({
-      TXOs: vi.fn(async () => [
-        txo({ tree: 0, nullifier: '0xa', spendtxid: false }),
-        txo({ tree: 1, nullifier: '0xb', spendtxid: false }),
-        txo({ tree: 2, nullifier: '0xc', spendtxid: false }),
-      ]),
-    })
+    mockSpendable([
+      { tree: 0, nullifier: 0xan },
+      { tree: 1, nullifier: 0xbn },
+      { tree: 2, nullifier: 0xcn },
+    ])
     hoisted.aggregate3.mockResolvedValue([
       { success: true, result: [false] },
       { success: true, result: [false] },
@@ -169,9 +158,7 @@ describe('checkOwnNullifiersOnChain (wired)', () => {
   })
 
   it('returns ok when the chain agrees the notes are unspent', async () => {
-    hoisted.walletForID.mockReturnValue({
-      TXOs: vi.fn(async () => [txo({ tree: 0, nullifier: '0xa', spendtxid: false })]),
-    })
+    mockSpendable([{ tree: 0, nullifier: 0xan }])
     hoisted.aggregate3.mockResolvedValue([{ success: true, result: [false] }])
 
     const r = await checkOwnNullifiersOnChain('wallet-1')
@@ -179,12 +166,10 @@ describe('checkOwnNullifiersOnChain (wired)', () => {
   })
 
   it('treats an unreadable sub-call as not-spent (fail-open per note)', async () => {
-    hoisted.walletForID.mockReturnValue({
-      TXOs: vi.fn(async () => [
-        txo({ tree: 0, nullifier: '0xa', spendtxid: false }),
-        txo({ tree: 1, nullifier: '0xb', spendtxid: false }),
-      ]),
-    })
+    mockSpendable([
+      { tree: 0, nullifier: 0xan },
+      { tree: 1, nullifier: 0xbn },
+    ])
     // First note unreadable (success:false), second reads unspent → no omission flagged.
     hoisted.aggregate3.mockResolvedValue([
       { success: false, result: undefined },
@@ -196,7 +181,7 @@ describe('checkOwnNullifiersOnChain (wired)', () => {
   })
 
   it('short-circuits (no RPC) when the wallet has no unspent notes', async () => {
-    hoisted.walletForID.mockReturnValue({ TXOs: vi.fn(async () => []) })
+    mockSpendable([])
 
     const r = await checkOwnNullifiersOnChain('wallet-1')
     expect(r).toEqual({ checked: 0, omissionDetected: false })
@@ -204,9 +189,7 @@ describe('checkOwnNullifiersOnChain (wired)', () => {
   })
 
   it('fails open (no false block) and logs when the on-chain query errors', async () => {
-    hoisted.walletForID.mockReturnValue({
-      TXOs: vi.fn(async () => [txo({ tree: 0, nullifier: '0xa', spendtxid: false })]),
-    })
+    mockSpendable([{ tree: 0, nullifier: 0xan }])
     hoisted.aggregate3.mockRejectedValue(new Error('rpc down'))
 
     const r = await checkOwnNullifiersOnChain('wallet-1')

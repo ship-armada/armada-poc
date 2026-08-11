@@ -45,6 +45,17 @@ vi.mock('@railgun-community/wallet', () => ({
   deleteWalletByID: hoisted.deleteWalletByID,
 }))
 
+// wallet.ts derives the 0zk address via the SDK's `deriveKeyset`; the real one needs ed25519/poseidon
+// crypto that jsdom can't run, and this test exercises the record/atom lifecycle, not keyset crypto.
+// Override just `deriveKeyset`, keep the rest of @armada/sdk real (sdk-read + handlers import it).
+vi.mock('@armada/sdk', async (importActual) => {
+  const actual = await importActual<typeof import('@armada/sdk')>()
+  return {
+    ...actual,
+    deriveKeyset: vi.fn(async () => ({ railgunAddress: '0zk1qtestlifecycleaddr000000000000000000000000000000000000000000' })),
+  }
+})
+
 vi.mock('@/lib/railgun/init', () => ({
   initRailgunEngine: vi.fn(async () => {}),
   isRailgunEngineInitialized: vi.fn(() => true),
@@ -178,8 +189,7 @@ describe('V2 shielded-wallet lifecycle integration', () => {
       await capture.shielded!.signIn()
     })
 
-    // SDK was called once to create the wallet (first-time path); active id atom is populated.
-    expect(hoisted.createRailgunWallet).toHaveBeenCalledTimes(1)
+    // Identity is derived locally (no engine wallet); the unlock populates the active id atom.
     expect(isUnlocked()).toBe(true)
     const activeWalletId = store.get(activeRailgunWalletIdAtom)
     expect(activeWalletId).toBeTruthy()

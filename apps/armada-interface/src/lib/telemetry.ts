@@ -51,6 +51,14 @@ export type EventRegistry = {
   // means it resumed from the IndexedDB checkpoint. `scanned` false = head hadn't advanced (no work).
   'sdk.sync':                 { fromBlock: number; syncedThrough: number; scanned: boolean }
 
+  // @armada/sdk quick-sync outcome — emitted once per sync WHEN an indexer (watcher) is configured,
+  // so an operator can confirm it's actually serving vs silently degrading to RPC. Forwarded from the
+  // SDK's `sync.quicksync` telemetry via `sdk-telemetry.ts`. Block numbers + booleans only.
+  //   'served'                — the indexer batch verified against the on-chain root (tailCovered =
+  //                             the indexer lagged head and RPC covered the remainder)
+  //   'root-mismatch-fallback'— the indexer batch failed root-verify → discarded, range RPC-rescanned
+  'sdk.quicksync':            { outcome: 'served' | 'root-mismatch-fallback'; fromBlock: number; head: number; tailCovered: boolean }
+
   'tx.submitted':             { id: string; kind: TxKind }
   'tx.transition':            { id: string; kind: TxKind; from: TxStage; to: TxStage; executionState: TxRecord['executionState'] }
   'tx.failed':                { id: string; kind: TxKind; errorCode?: string }

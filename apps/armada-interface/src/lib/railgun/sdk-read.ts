@@ -23,7 +23,7 @@ async function vaultTokenAddress(): Promise<`0x${string}` | undefined> {
   return yieldDeployment?.contracts.armadaYieldVault as `0x${string}` | undefined
 }
 
-/** Assemble the SDK config from the same deployment + network config the engine uses. */
+/** Assemble the SDK config from the same deployment + network config the app uses. */
 async function readPathConfig(): Promise<{
   pool: {
     chainId: number
@@ -33,6 +33,7 @@ async function readPathConfig(): Promise<{
     additionalTokens?: `0x${string}`[]
   }
   rpc: { urls: string[] }
+  indexer?: { url: string }
 }> {
   const deployments = getCachedDeployments()
   if (deployments === null) throw new Error('sdk-read: deployments not loaded')
@@ -44,6 +45,10 @@ async function readPathConfig(): Promise<{
   }
   // Scan the yield-vault share token too, so the SDK can report shielded ayUSDC shares.
   const vault = await vaultTokenAddress()
+  // Quick-sync fast path: when a watcher URL is configured, the SDK uses the native `/v2/quick-sync`
+  // indexer as the primary event source (RPC covers the tail + verifies against the on-chain root).
+  // Unset → RPC-only slow scan. Parity with the engine's former quickSync path.
+  const indexerUrl = getNetworkConfig().indexerUrl
   return {
     pool: {
       chainId: hub.chainId,
@@ -53,6 +58,7 @@ async function readPathConfig(): Promise<{
       ...(vault ? { additionalTokens: [vault] } : {}),
     },
     rpc: { urls: [...hub.rpcUrls] },
+    ...(indexerUrl ? { indexer: { url: indexerUrl } } : {}),
   }
 }
 
@@ -173,4 +179,23 @@ export async function closeSdkRead(): Promise<void> {
     instance = null
     await closing.close()
   }
+}
+
+/**
+ * Wipe the SDK read instance's persisted scan state (Settings → Reset wallet). Closes the instance
+ * first (releasing the IndexedDB handle), then deletes the whole read database so the next unlock
+ * re-scans from the deploy block. Best-effort: a delete error must never block the reset.
+ */
+export async function deleteSdkReadStorage(): Promise<void> {
+  await closeSdkRead()
+  await new Promise<void>((resolve) => {
+    try {
+      const req = indexedDB.deleteDatabase(READ_DB_NAME)
+      req.onsuccess = () => resolve()
+      req.onerror = () => resolve()
+      req.onblocked = () => resolve()
+    } catch {
+      resolve()
+    }
+  })
 }

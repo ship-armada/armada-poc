@@ -53,17 +53,21 @@ export function isShieldedAddress(value: string): boolean {
 }
 
 /**
- * Strict shielded-address validation via the Railgun SDK's `validateRailgunAddress` (bech32m +
- * checksum). Async + dynamic-imported: the SDK is heavy and crashes under jsdom at module load, so
- * it already ships as a lazy chunk (init.ts / wallet.ts) — this adds no entry-chunk weight. The
- * sync `isShieldedAddress` regex stays the per-keystroke fast path; call this once at the
- * form-validation / submit boundary to reject a 0zk recipient whose checksum doesn't validate
- * (a transposed character that the shape regex would otherwise wave funds through to).
+ * Strict shielded-address validation via `@armada/sdk`'s `decodeAddress` (bech32m checksum + `0zk`
+ * prefix + address version — it throws on any of those failing). The sync `isShieldedAddress` regex
+ * stays the per-keystroke fast path; call this once at the form-validation / submit boundary to
+ * reject a 0zk recipient whose checksum doesn't validate (a transposed character that the shape
+ * regex would otherwise wave funds through to).
  */
 export async function validateShieldedAddressStrict(value: string): Promise<boolean> {
   const v = value.trim()
-  // Fast pre-filter: avoid loading the SDK chunk for obviously-malformed input.
+  // Fast pre-filter: avoid the decode path for obviously-malformed input.
   if (!isShieldedAddress(v)) return false
-  const { validateRailgunAddress } = await import('@railgun-community/wallet')
-  return validateRailgunAddress(v)
+  const { decodeAddress } = await import('@armada/sdk/core')
+  try {
+    decodeAddress(v)
+    return true
+  } catch {
+    return false
+  }
 }

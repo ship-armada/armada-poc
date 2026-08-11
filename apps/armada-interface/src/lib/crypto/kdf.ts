@@ -103,6 +103,21 @@ export function deriveHistoryEncryptionKey(rootSecret: Uint8Array): Uint8Array {
   return hkdfExpand(sha256, rootSecret, HKDF_INFO_HISTORY_ENCRYPTION_V1, 32)
 }
 
+/** Info string for the local wallet identifier. Versioned; domain-separated from the encryption keys. */
+const HKDF_INFO_WALLET_ID_V1 = utf8('armada-wallet-id:v1')
+
+/**
+ * Deterministic, engine-free wallet identifier — HKDF-Expand from root_secret (16 bytes → 32 hex),
+ * domain-separated from the encryption/history keys. Replaces the stock engine's opaque
+ * `sha256(mnemonicToSeed(...) ‖ index)` walletId now that the engine is gone. Non-secret: it's a
+ * one-way derivation used only to key local bookkeeping (the per-(EVM, account) maps + tx-history
+ * records); knowing it grants nothing (the at-rest wallet/history is encrypted under separate keys).
+ */
+export function deriveWalletId(rootSecret: Uint8Array): string {
+  assertRootSecret(rootSecret)
+  return bytesToHexNoPrefix(hkdfExpand(sha256, rootSecret, HKDF_INFO_WALLET_ID_V1, 16))
+}
+
 /**
  * Convert the 32-byte root_secret into a 24-word BIP-39 mnemonic for SDK consumption only.
  *

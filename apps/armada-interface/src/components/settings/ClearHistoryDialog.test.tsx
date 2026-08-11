@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { txListAtom } from '@/state/tx'
-import { activeRailgunWalletIdAtom } from '@/state/wallet'
+import { activeShieldedWalletIdAtom } from '@/state/wallet'
 import { historyRecoveryEpochAtom } from '@/state/history'
 
 const hoisted = vi.hoisted(() => ({
@@ -34,12 +34,12 @@ const SEEDED_RECORD = {
   updatedAt: 0,
   meta: { amount: 1n, feeCacheId: '', fromChainId: 31337 },
   artifacts: {},
-  walletContext: { evmAddress: undefined, railgunWalletId: 'rg-1', sourceChainId: 31337 },
+  walletContext: { evmAddress: undefined, shieldedWalletId: 'rg-1', sourceChainId: 31337 },
 }
 
 function setup(opts: { open: boolean }) {
   const store = createStore()
-  store.set(activeRailgunWalletIdAtom, 'rg-1')
+  store.set(activeShieldedWalletIdAtom, 'rg-1')
   store.set(txListAtom, [SEEDED_RECORD as never])
   render(
     <Provider store={store}>

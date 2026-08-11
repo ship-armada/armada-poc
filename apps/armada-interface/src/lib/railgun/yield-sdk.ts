@@ -39,13 +39,13 @@ interface ReshieldBundle {
 }
 
 /**
- * Build a re-shield destination for `railgunAddress` in `tokenAddress` — the note the adapter shields
+ * Build a re-shield destination for `shieldedAddress` in `tokenAddress` — the note the adapter shields
  * back into the pool after the vault op. Value is 0 (the adapter fills the real output amount at
  * runtime); only npk/encryptedBundle/shieldKey are bound into adaptParams, all value-independent.
  */
-async function buildReshieldBundle(railgunAddress: string, tokenAddress: `0x${string}`): Promise<ReshieldBundle> {
+async function buildReshieldBundle(shieldedAddress: string, tokenAddress: `0x${string}`): Promise<ReshieldBundle> {
   const { shieldRequest, random } = await buildShieldRequest(
-    { railgunAddress, amount: 0n, tokenAddress },
+    { shieldedAddress, amount: 0n, tokenAddress },
     generateShieldPrivateKey(),
   )
   return {
@@ -70,7 +70,7 @@ export interface SdkYieldInputs {
   readonly shieldOutputToken: `0x${string}`
   readonly adapterAddress: `0x${string}`
   /** The user's 0zk address — recipient of the re-shielded output. */
-  readonly railgunAddress: string
+  readonly shieldedAddress: string
   /** Broadcaster (relayer) fee. On lend it's a shielded fee note (SDK fee leg); on redeem it's the
    *  contract-side fee shielded to the relayer's 0zk from the redeemed USDC, bound into adaptParams. */
   readonly broadcasterFee: { readonly amount: bigint; readonly recipientAddress: string } | null
@@ -93,7 +93,7 @@ export async function buildYieldAdaptSdk(
   const wallet = await getSdkWallet()
 
   // The user's re-shield destination + the deposit/redeem binding.
-  const user = await buildReshieldBundle(inputs.railgunAddress, inputs.shieldOutputToken)
+  const user = await buildReshieldBundle(inputs.shieldedAddress, inputs.shieldOutputToken)
 
   // The relayer fee re-shield destination (redeem only, when a broadcaster fee is charged).
   let feeNpk: `0x${string}` = ZERO_BYTES32
@@ -119,11 +119,11 @@ export async function buildYieldAdaptSdk(
   const fee = !isRedeem && inputs.broadcasterFee
     ? {
         schedule: { transfer: inputs.broadcasterFee.amount.toString() },
-        broadcasterRailgunAddress: inputs.broadcasterFee.recipientAddress,
+        broadcasterShieldedAddress: inputs.broadcasterFee.recipientAddress,
         feesCacheId: '',
         expiresAt: 0,
       }
-    : { schedule: { transfer: '0' }, broadcasterRailgunAddress: '', feesCacheId: '', expiresAt: 0 }
+    : { schedule: { transfer: '0' }, broadcasterShieldedAddress: '', feesCacheId: '', expiresAt: 0 }
 
   const plan = await wallet.planTransfer({
     outputs: [],

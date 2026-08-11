@@ -37,7 +37,7 @@ export function ShieldedIdentitySection({ onRequestSignIn }: ShieldedIdentitySec
     return null
   }
 
-  if (state.status !== 'unlocked' || !state.railgunAddress) {
+  if (state.status !== 'unlocked' || !state.shieldedAddress) {
     // EVM connected but shielded wallet is locked. Replace the address row with a CTA so the
     // user knows the menu is half-active and what to do about it.
     return (
@@ -54,7 +54,7 @@ export function ShieldedIdentitySection({ onRequestSignIn }: ShieldedIdentitySec
     )
   }
 
-  const fullAddress = state.railgunAddress
+  const fullAddress = state.shieldedAddress
   const display = truncateAddressEnds(fullAddress, 7, 4)
 
   async function handleCopy() {

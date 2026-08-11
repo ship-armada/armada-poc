@@ -49,11 +49,11 @@ function overrideRecordWithHash(): TxRecord<'transfer-shielded'> {
       feeCacheId: 'c',
       recipient: '0zk1recipient',
       broadcasterFeeAmount: 0n,
-      broadcasterRailgunAddress: '0zk1relayer',
+      broadcasterShieldedAddress: '0zk1relayer',
       useWalletOverride: true,
     },
     artifacts: { sourceTxHash: '0xfeed' },
-    walletContext: { evmAddress: '0xabc', railgunWalletId: 'rw-1', sourceChainId: 31337 },
+    walletContext: { evmAddress: '0xabc', shieldedWalletId: 'rw-1', sourceChainId: 31337 },
   } as TxRecord<'transfer-shielded'>
 }
 

@@ -13,7 +13,7 @@ import { wagmiConfig } from '@/config/wagmi'
 import { loadDeployments } from '@/config/deployments'
 import { getIntegratorAddress } from '@/config/network'
 import {
-  getRailgunAddress as kmGetRailgunAddress,
+  getShieldedAddress as kmGetShieldedAddress,
   getWalletId as kmGetWalletId,
   isUnlocked as kmIsUnlocked,
 } from '@/lib/railgun/keyManager'
@@ -146,7 +146,7 @@ async function runBuildProof(
   if (!kmIsUnlocked()) {
     throw new Error('Shield requires an unlocked shielded wallet.')
   }
-  const railgunAddress = kmGetRailgunAddress()
+  const shieldedAddress = kmGetShieldedAddress()
 
   const deployments = await loadDeployments()
   const usdcAddress = deployments.hub.cctp.usdc
@@ -182,7 +182,7 @@ async function runBuildProof(
     )
   }
   const shieldPrivateKey = generateRandomShieldPrivateKey()
-  const request = await createShieldRequestSdk(railgunAddress, shieldValue, usdcAddress, shieldPrivateKey)
+  const request = await createShieldRequestSdk(shieldedAddress, shieldValue, usdcAddress, shieldPrivateKey)
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   // Phase C — gasless path: build the relayer fee note (a second shield note to the relayer's 0zk),
@@ -232,7 +232,7 @@ async function buildGaslessArtifacts(
     record.meta.feeAmount === undefined ||
     record.meta.wrapperAddress === undefined ||
     record.meta.permitDeadline === undefined ||
-    record.meta.broadcasterRailgunAddress === undefined
+    record.meta.broadcasterShieldedAddress === undefined
   ) {
     throw new Error(
       'Shield gasless mode requires feeAmount + wrapperAddress + permitDeadline + the broadcaster 0zk address in meta.',
@@ -249,7 +249,7 @@ async function buildGaslessArtifacts(
 
   // Build the relayer fee note to the relayer's published 0zk. value = the quoted fee.
   const feeShieldPrivateKey = generateRandomShieldPrivateKey()
-  const feeNote = await createShieldRequestSdk(record.meta.broadcasterRailgunAddress, record.meta.feeAmount, usdcAddress, feeShieldPrivateKey)
+  const feeNote = await createShieldRequestSdk(record.meta.broadcasterShieldedAddress, record.meta.feeAmount, usdcAddress, feeShieldPrivateKey)
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   // Bind the exact array the wrapper will shield: [userNote, feeNote].

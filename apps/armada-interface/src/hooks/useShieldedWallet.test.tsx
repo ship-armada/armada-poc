@@ -6,13 +6,13 @@ import { render, act, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { useShieldedWallet } from './useShieldedWallet'
 import {
-  activeRailgunWalletIdAtom,
+  activeShieldedWalletIdAtom,
   evmAddressAtom,
   shieldedWalletsAtom,
 } from '@/state/wallet'
 import type { ShieldedWalletState } from '@/lib/railgun/wallet'
 
-// Mock the lib boundary so we never touch the Railgun SDK + circomlibjs in jsdom.
+// Mock the lib boundary so we never touch the SDK + circomlibjs in jsdom.
 vi.mock('@/lib/railgun/wallet', () => ({
   enrollFromSignature: vi.fn(),
   unlockFromRootSecret: vi.fn(),
@@ -75,7 +75,7 @@ const SAMPLE_SIG_HEX = '0x' + '11'.repeat(32) + '22'.repeat(32) + '1b'
 const SAMPLE_STATE: ShieldedWalletState = {
   id: 'wallet-id-1',
   status: 'unlocked',
-  railgunAddress: '0zk1qexample',
+  shieldedAddress: '0zk1qexample',
   checksum: 'a3f2 91c8 b7e0',
   unlockedAt: 1700000000000,
 }
@@ -139,7 +139,7 @@ describe('enroll', () => {
     expect(mockEnroll).toHaveBeenCalledTimes(1)
     expect(result!.state.id).toBe('wallet-id-1')
     expect(store.get(shieldedWalletsAtom)['wallet-id-1']).toEqual(SAMPLE_STATE)
-    expect(store.get(activeRailgunWalletIdAtom)).toBe('wallet-id-1')
+    expect(store.get(activeShieldedWalletIdAtom)).toBe('wallet-id-1')
   })
 
   it('rejects when no EVM wallet is connected', async () => {
@@ -180,7 +180,7 @@ describe('signIn (v2 primary)', () => {
     expect(mockSignTypedData).toHaveBeenCalledTimes(1)
     expect(mockEnroll).toHaveBeenCalledTimes(1)
     expect(result!.state.id).toBe('wallet-id-1')
-    expect(store.get(activeRailgunWalletIdAtom)).toBe('wallet-id-1')
+    expect(store.get(activeShieldedWalletIdAtom)).toBe('wallet-id-1')
   })
 
   it('defaults the account index to 0 in the signed message', async () => {
@@ -363,7 +363,7 @@ describe('unlockByBackup', () => {
     })
 
     expect(mockUnlockFromBackup).toHaveBeenCalledTimes(1)
-    expect(store.get(activeRailgunWalletIdAtom)).toBe('wallet-id-1')
+    expect(store.get(activeShieldedWalletIdAtom)).toBe('wallet-id-1')
   })
 
   it('rejects malformed JSON', async () => {
@@ -395,7 +395,7 @@ describe('exportBackup', () => {
   it('reads root_secret from the keyManager and returns an encrypted blob', async () => {
     const store = createStore()
     store.set(shieldedWalletsAtom, { [SAMPLE_STATE.id]: SAMPLE_STATE })
-    store.set(activeRailgunWalletIdAtom, SAMPLE_STATE.id)
+    store.set(activeShieldedWalletIdAtom, SAMPLE_STATE.id)
     const rootSecret = new Uint8Array(32)
     for (let i = 0; i < 32; i++) rootSecret[i] = i + 1
     mockGetRootSecret.mockReturnValueOnce(rootSecret)
@@ -426,7 +426,7 @@ describe('lock', () => {
   it('calls lockWallet and flips the atom entry to locked', async () => {
     const store = createStore()
     store.set(shieldedWalletsAtom, { [SAMPLE_STATE.id]: SAMPLE_STATE })
-    store.set(activeRailgunWalletIdAtom, SAMPLE_STATE.id)
+    store.set(activeShieldedWalletIdAtom, SAMPLE_STATE.id)
     const capture = renderWithStore(store)
 
     await act(async () => {
@@ -442,7 +442,7 @@ describe('lock', () => {
   it('cancels in-flight txs + clears the resume guard while still unlocked, before lockWallet (T-M1)', async () => {
     const store = createStore()
     store.set(shieldedWalletsAtom, { [SAMPLE_STATE.id]: SAMPLE_STATE })
-    store.set(activeRailgunWalletIdAtom, SAMPLE_STATE.id)
+    store.set(activeShieldedWalletIdAtom, SAMPLE_STATE.id)
     const capture = renderWithStore(store)
 
     await act(async () => {
@@ -472,7 +472,7 @@ describe('reset', () => {
   it('calls resetWallet and clears the entry from atoms', async () => {
     const store = createStore()
     store.set(shieldedWalletsAtom, { [SAMPLE_STATE.id]: SAMPLE_STATE })
-    store.set(activeRailgunWalletIdAtom, SAMPLE_STATE.id)
+    store.set(activeShieldedWalletIdAtom, SAMPLE_STATE.id)
     const capture = renderWithStore(store)
 
     await act(async () => {
@@ -482,7 +482,7 @@ describe('reset', () => {
     expect(mockResetWallet).toHaveBeenCalledTimes(1)
     await waitFor(() => {
       expect(store.get(shieldedWalletsAtom)[SAMPLE_STATE.id]).toBeUndefined()
-      expect(store.get(activeRailgunWalletIdAtom)).toBeNull()
+      expect(store.get(activeShieldedWalletIdAtom)).toBeNull()
     })
   })
 })

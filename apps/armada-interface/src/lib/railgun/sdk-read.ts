@@ -80,7 +80,7 @@ function dbNameFor(cfg: Awaited<ReturnType<typeof readPathConfig>>): string {
 }
 
 async function ensureInstance(): Promise<{ sdk: ArmadaSdk; wallet: ReadWallet; address: string }> {
-  const engineAddress = keyManager.getRailgunAddress()
+  const engineAddress = keyManager.getShieldedAddress()
   if (instance !== null && instance.address === engineAddress) return instance
 
   if (instance !== null) await instance.sdk.close()

@@ -34,7 +34,7 @@ describe('buildTransferSdk', () => {
     })
     expect(hoisted.planTransfer).toHaveBeenCalledWith({
       outputs: [{ to0zk: '0zk_bob', amount: 5_000_000n }],
-      fee: { schedule: { transfer: '20000' }, broadcasterRailgunAddress: '0zk_relayer', feesCacheId: '', expiresAt: 0 },
+      fee: { schedule: { transfer: '20000' }, broadcasterShieldedAddress: '0zk_relayer', feesCacheId: '', expiresAt: 0 },
     })
     expect(hoisted.buildTransactCalldata).toHaveBeenCalledWith([{ tx: 'data' }], POOL)
     expect(r).toEqual({ to: POOL, data: '0xdeadbeef' })
@@ -44,7 +44,7 @@ describe('buildTransferSdk', () => {
     await buildTransferSdk({ recipient: '0zk_bob', amount: 1n, broadcasterFee: null, poolAddress: POOL })
     expect(hoisted.planTransfer).toHaveBeenCalledWith({
       outputs: [{ to0zk: '0zk_bob', amount: 1n }],
-      fee: { schedule: { transfer: '0' }, broadcasterRailgunAddress: '', feesCacheId: '', expiresAt: 0 },
+      fee: { schedule: { transfer: '0' }, broadcasterShieldedAddress: '', feesCacheId: '', expiresAt: 0 },
     })
   })
 })

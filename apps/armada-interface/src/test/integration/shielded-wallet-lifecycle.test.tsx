@@ -1,11 +1,11 @@
 // ABOUTME: V2 redesign integration sweep — exercises the cross-phase boundaries: signIn (Phases 2, 2a, 4) → tx storage encryption (Phase 7) → activeTxListAtom scoping (Phase 6) → account-switch auto-lock (Phase 4) → history isolation across wallets.
-// ABOUTME: Mocks at the Railgun SDK boundary only — keyManager, storage, wallet.ts, useShieldedWallet, useWallet all run real. wagmi signTypedData + useAccount are stubbed via the same hoisted-state pattern the unit tests use.
+// ABOUTME: Mocks at the SDK boundary only — keyManager, storage, wallet.ts, useShieldedWallet, useWallet all run real. wagmi signTypedData + useAccount are stubbed via the same hoisted-state pattern the unit tests use.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, waitFor, act } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import {
-  activeRailgunWalletIdAtom,
+  activeShieldedWalletIdAtom,
   evmAddressAtom,
   shieldedWalletsAtom,
 } from '@/state/wallet'
@@ -40,7 +40,7 @@ vi.mock('@armada/sdk', async (importActual) => {
   const actual = await importActual<typeof import('@armada/sdk')>()
   return {
     ...actual,
-    deriveKeyset: vi.fn(async () => ({ railgunAddress: '0zk1qtestlifecycleaddr000000000000000000000000000000000000000000' })),
+    deriveKeyset: vi.fn(async () => ({ shieldedAddress: '0zk1qtestlifecycleaddr000000000000000000000000000000000000000000' })),
   }
 })
 
@@ -139,7 +139,7 @@ function txFixture(id: string, walletId: string): TxRecord<'shield'> {
     artifacts: {},
     walletContext: {
       evmAddress: '0xabc',
-      railgunWalletId: walletId,
+      shieldedWalletId: walletId,
       sourceChainId: 31337,
     },
   } as TxRecord<'shield'>
@@ -170,7 +170,7 @@ describe('V2 shielded-wallet lifecycle integration', () => {
 
     // Identity is derived locally (no engine wallet); the unlock populates the active id atom.
     expect(isUnlocked()).toBe(true)
-    const activeWalletId = store.get(activeRailgunWalletIdAtom)
+    const activeWalletId = store.get(activeShieldedWalletIdAtom)
     expect(activeWalletId).toBeTruthy()
 
     // Write a tx record via the real storage layer (Phase 7 encryption on write).
@@ -194,7 +194,7 @@ describe('V2 shielded-wallet lifecycle integration', () => {
     await act(async () => {
       await capture.shielded!.signIn()
     })
-    const walletIdA = store.get(activeRailgunWalletIdAtom)
+    const walletIdA = store.get(activeShieldedWalletIdAtom)
     expect(walletIdA).toBeTruthy()
 
     const r = txFixture('tx-A1', walletIdA!)
@@ -222,14 +222,14 @@ describe('V2 shielded-wallet lifecycle integration', () => {
     })
 
     // The shielded wallet should be locked (zeroized) and the wallet entry's status flipped
-    // to 'locked' (NOT removed). Keeping activeRailgunWalletIdAtom set is what lets App.tsx's
+    // to 'locked' (NOT removed). Keeping activeShieldedWalletIdAtom set is what lets App.tsx's
     // lock-watch effect route from dashboard → UnlockFlow on disconnect/switch — wiping the
     // atoms would produce `{ status: 'missing' }`, which the guard doesn't catch. Once the
     // user signs in with the new EVM, the new walletId replaces the active id and the old
     // wallet's records fall out of activeTxListAtom naturally.
     await waitFor(() => {
       expect(isUnlocked()).toBe(false)
-      expect(store.get(activeRailgunWalletIdAtom)).toBe(walletIdA)
+      expect(store.get(activeShieldedWalletIdAtom)).toBe(walletIdA)
       expect(store.get(shieldedWalletsAtom)[walletIdA!]?.status).toBe('locked')
     })
   })

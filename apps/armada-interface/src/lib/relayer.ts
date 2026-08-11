@@ -9,13 +9,13 @@ export interface FeeSchedule {
   expiresAt: number
   chainId: number
   /**
-   * Relayer's Railgun (`0zk...`) address. Clients direct the broadcaster-fee output of their
+   * Relayer's shielded (`0zk...`) address. Clients direct the broadcaster-fee output of their
    * SNARK proof here so the relayer is paid in the same atomic tx. Sourced verbatim from the
    * relayer's `BROADCASTER_RAILGUN_ADDRESS` env var. Empty string is allowed in Phase A1 (no
    * handler consumes this yet); the build-proof stage will start asserting non-empty once
    * relayer-mediated submit ships in A3.
    */
-  broadcasterRailgunAddress: string
+  broadcasterShieldedAddress: string
   /** USDC raw values (6 decimals) as strings — JSON can't carry bigints. Callers BigInt() on use. */
   fees: {
     transfer: string

@@ -1,5 +1,5 @@
 // ABOUTME: ReceiveDialog — surfaces the user's full 0zk shielded address with a copy-to-clipboard CTA, opened via openModalAtom='receive' from the BalanceHero "Receive" button.
-// ABOUTME: Only renders when the wallet is unlocked AND has a railgunAddress; closes itself on lock/disconnect mid-display by reading the same atom every render.
+// ABOUTME: Only renders when the wallet is unlocked AND has a shieldedAddress; closes itself on lock/disconnect mid-display by reading the same atom every render.
 
 import { useEffect, useRef, useState } from 'react'
 import { useAtom } from 'jotai'
@@ -20,7 +20,7 @@ export function ReceiveDialog() {
 
   const isOpen = openModal === 'receive'
   const fullAddress =
-    state?.status === 'unlocked' && state.railgunAddress ? state.railgunAddress : null
+    state?.status === 'unlocked' && state.shieldedAddress ? state.shieldedAddress : null
 
   // Defensive auto-close: if the wallet locks while the dialog is open (auto-lock fires,
   // disconnect lands), drop the modal kind so the parent re-renders without it. Avoids

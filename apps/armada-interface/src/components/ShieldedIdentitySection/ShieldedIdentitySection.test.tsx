@@ -7,7 +7,7 @@ const hoisted = vi.hoisted(() => ({
   mockState: null as {
     id: string
     status: 'locked' | 'unlocked'
-    railgunAddress?: string
+    shieldedAddress?: string
     checksum?: string
   } | null,
 }))
@@ -33,7 +33,7 @@ describe('<ShieldedIdentitySection>', () => {
     hoisted.mockState = {
       id: 'rg-1',
       status: 'unlocked',
-      railgunAddress: '0zk1qexampleexampleexampleexampleexample1234',
+      shieldedAddress: '0zk1qexampleexampleexampleexampleexample1234',
       checksum: 'a3f2 91c8 b7e0',
     }
     render(<ShieldedIdentitySection />)
@@ -45,11 +45,11 @@ describe('<ShieldedIdentitySection>', () => {
     expect(screen.queryByLabelText('Anti-phishing checksum')).not.toBeInTheDocument()
   })
 
-  it('copies the full railgun address to the clipboard on click', async () => {
+  it('copies the full shielded address to the clipboard on click', async () => {
     hoisted.mockState = {
       id: 'rg-1',
       status: 'unlocked',
-      railgunAddress: '0zk1full-address-here',
+      shieldedAddress: '0zk1full-address-here',
       checksum: 'a3f2 91c8 b7e0',
     }
     const writeText = vi.fn(async () => {})
@@ -82,11 +82,11 @@ describe('<ShieldedIdentitySection>', () => {
     expect(screen.queryByRole('button', { name: 'Sign in to access' })).not.toBeInTheDocument()
   })
 
-  it('treats an unlocked-but-missing-railgunAddress state as locked (defensive)', () => {
+  it('treats an unlocked-but-missing-shieldedAddress state as locked (defensive)', () => {
     hoisted.mockState = {
       id: 'rg-1',
       status: 'unlocked',
-      // intentionally no railgunAddress — should not crash on the copy button
+      // intentionally no shieldedAddress — should not crash on the copy button
     }
     render(<ShieldedIdentitySection />)
     expect(screen.queryByRole('button', { name: /Copy shielded address/i })).not.toBeInTheDocument()

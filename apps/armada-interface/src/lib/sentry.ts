@@ -12,7 +12,7 @@ let initialized = false
  */
 export function scrubString(input: string): string {
   return input
-    // Railgun shielded addresses (0zk + bech32-ish payload).
+    // shielded (0zk) addresses (0zk + bech32-ish payload).
     .replace(/0zk[0-9a-zA-Z]{8,}/g, '0zk[redacted]')
     // EVM addresses (40 hex), tx hashes (64 hex), calldata / key material (any long hex run).
     .replace(/0x[0-9a-fA-F]{40,}/g, '0x[redacted]')

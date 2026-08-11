@@ -5,7 +5,7 @@ import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { SendModal } from './SendModal'
 import { openModalAtom } from '@/state/ui'
-import { activeRailgunWalletIdAtom, shieldedUsdcAtom } from '@/state/wallet'
+import { activeShieldedWalletIdAtom, shieldedUsdcAtom } from '@/state/wallet'
 import { feeQuoteAtom, feeQuoteFetchedAtAtom } from '@/state/fees'
 import { withTestQueryClient } from '@/test-utils/queryClient'
 
@@ -37,7 +37,7 @@ vi.mock('@/hooks/useGasBalanceWarning', () => ({
   }),
 }))
 
-// The private-send submit path strict-validates the 0zk recipient via the Railgun SDK
+// The private-send submit path strict-validates the 0zk recipient via the SDK
 // (validateShieldedAddressStrict → dynamic import), which crashes jsdom at load. Keep the sync
 // validators real; stub only the strict async check to pass for the test's fake 0zk fixture.
 vi.mock('@/lib/address', async (importActual) => ({
@@ -62,7 +62,7 @@ const FAKE_QUOTE = {
   expiresAt: Date.now() + 5 * 60_000,
   chainId: 31337,
   // Shape-valid 0zk for the submit-time isShieldedAddress() check on the external-tab→hub path.
-  broadcasterRailgunAddress: '0zk' + 'a'.repeat(64),
+  broadcasterShieldedAddress: '0zk' + 'a'.repeat(64),
   fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0', shield: '0', shieldXchain: '0' },
 }
 
@@ -72,7 +72,7 @@ function renderModal(opts?: { open?: boolean; shielded?: bigint }) {
   if (opts?.shielded !== undefined) store.set(shieldedUsdcAtom, opts.shielded)
   // useTx.submit() refuses to write a record without an active shielded walletId (Phase 6
   // scoping invariant). Seed a placeholder so the Confirm flow doesn't trip the guard.
-  store.set(activeRailgunWalletIdAtom, 'rg-test')
+  store.set(activeShieldedWalletIdAtom, 'rg-test')
   store.set(feeQuoteAtom, FAKE_QUOTE)
   // staleAtom treats a quote with no fetch timestamp as stale (350e084), which would send
   // Confirm down the real refresh()/fetchFees path — unreachable in jsdom. A fresh

@@ -1,4 +1,4 @@
-// ABOUTME: Header banner that surfaces the Railgun engine's UTXO merkletree scan state.
+// ABOUTME: Header banner that surfaces the SDK's UTXO merkletree scan state.
 // ABOUTME: Hidden when sync is idle or complete; visible (with progress bar) while syncing or after a failure.
 
 import { useAtomValue } from 'jotai'

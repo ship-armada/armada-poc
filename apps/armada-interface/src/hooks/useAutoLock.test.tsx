@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, act } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { useAutoLock } from './useAutoLock'
-import { activeRailgunWalletIdAtom, shieldedWalletsAtom } from '@/state/wallet'
+import { activeShieldedWalletIdAtom, shieldedWalletsAtom } from '@/state/wallet'
 import { preferencesAtom, DEFAULT_PREFERENCES } from '@/state/preferences'
 import { txListAtom } from '@/state/tx'
 import type { TxRecord } from '@/lib/tx/types'
@@ -25,10 +25,10 @@ function setupStore(opts: {
     'rg-1': {
       id: 'rg-1',
       status: opts.unlocked ? 'unlocked' : 'locked',
-      railgunAddress: '0zk-test',
+      shieldedAddress: '0zk-test',
     },
   })
-  store.set(activeRailgunWalletIdAtom, 'rg-1')
+  store.set(activeShieldedWalletIdAtom, 'rg-1')
   store.set(preferencesAtom, {
     ...DEFAULT_PREFERENCES,
     autoLockMinutes: opts.autoLockMinutes ?? DEFAULT_PREFERENCES.autoLockMinutes,
@@ -45,7 +45,7 @@ function setupStore(opts: {
       updatedAt: 0,
       meta: { amount: 1_000_000n, feeCacheId: '', fromChainId: 31337 },
       artifacts: {},
-      walletContext: { evmAddress: '0x', railgunWalletId: 'rg-1', sourceChainId: 31337 },
+      walletContext: { evmAddress: '0x', shieldedWalletId: 'rg-1', sourceChainId: 31337 },
     }
     store.set(txListAtom, [r])
   }

@@ -9,7 +9,7 @@ const hoisted = vi.hoisted(() => ({
   mockState: null as {
     id: string
     status: 'locked' | 'unlocked'
-    railgunAddress?: string
+    shieldedAddress?: string
   } | null,
 }))
 
@@ -37,7 +37,7 @@ beforeEach(() => {
   hoisted.mockState = {
     id: 'rg-1',
     status: 'unlocked',
-    railgunAddress: FULL_ADDRESS,
+    shieldedAddress: FULL_ADDRESS,
   }
 })
 

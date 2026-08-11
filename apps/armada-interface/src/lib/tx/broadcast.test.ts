@@ -21,7 +21,7 @@ function unlock(walletId = 'rw-1'): void {
     rootSecret: new Uint8Array(32),
     walletId,
     sdkEncryptionKey: 'ff'.repeat(32),
-    railgunAddress: '0zk1example',
+    shieldedAddress: '0zk1example',
     checksum: 'a3f2 91c8 b7e0',
     creationBlock: null,
     evmAddress: null,
@@ -42,7 +42,7 @@ function record(): TxRecord<'shield'> {
     updatedAt: Date.now(),
     meta: { amount: 1_000_000n, feeCacheId: 'c', fromChainId: 31337 },
     artifacts: {},
-    walletContext: { evmAddress: '0xabc', railgunWalletId: 'rw-1', sourceChainId: 31337 },
+    walletContext: { evmAddress: '0xabc', shieldedWalletId: 'rw-1', sourceChainId: 31337 },
   } as TxRecord<'shield'>
 }
 

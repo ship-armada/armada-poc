@@ -23,7 +23,7 @@ function quoteWith(overrides: Partial<FeeSchedule['fees']> = {}): FeeSchedule {
     cacheId: 'test-cache',
     expiresAt: Date.now() + 60_000,
     chainId: 31337,
-    broadcasterRailgunAddress: '0zk1test',
+    broadcasterShieldedAddress: '0zk1test',
     fees: {
       transfer: '0',
       unshield: '0',

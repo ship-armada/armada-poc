@@ -19,7 +19,7 @@ function shieldRecord(overrides?: Partial<TxRecord<'shield'>>): TxRecord<'shield
     updatedAt: 0,
     meta: { amount: 1_000_000n, feeCacheId: 'fc', fromChainId: 31337 },
     artifacts: {},
-    walletContext: { evmAddress: '0xabc', railgunWalletId: 'rg', sourceChainId: 31337 },
+    walletContext: { evmAddress: '0xabc', shieldedWalletId: 'rg', sourceChainId: 31337 },
     ...overrides,
   } as TxRecord<'shield'>
 }
@@ -39,7 +39,7 @@ function xchainRecord(overrides?: Partial<TxRecord<'unshield-xchain'>>): TxRecor
       sourceTxHash: '0xaaaa' as `0x${string}`,
       messageHash: '0xbbbb' as `0x${string}`,
     },
-    walletContext: { evmAddress: '0xabc', railgunWalletId: 'rg', sourceChainId: 31337 },
+    walletContext: { evmAddress: '0xabc', shieldedWalletId: 'rg', sourceChainId: 31337 },
     ...overrides,
   } as TxRecord<'unshield-xchain'>
 }

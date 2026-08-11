@@ -16,7 +16,7 @@ const mockEnroll = vi.fn()
 const mockExportBackup = vi.fn()
 
 // Mutable mock state — useShieldedWallet returns the active wallet's checksum after enroll().
-let mockState: { id: string; status: 'unlocked'; checksum: string; railgunAddress: string } | null = null
+let mockState: { id: string; status: 'unlocked'; checksum: string; shieldedAddress: string } | null = null
 
 vi.mock('@/hooks/useShieldedWallet', () => ({
   useShieldedWallet: () => ({
@@ -68,7 +68,7 @@ beforeEach(() => {
       id: 'wallet-id-1',
       status: 'unlocked',
       checksum: FIXED_CHECKSUM,
-      railgunAddress: '0zk1qexample',
+      shieldedAddress: '0zk1qexample',
     }
     return {
       rootSecret: FIXED_ROOT,

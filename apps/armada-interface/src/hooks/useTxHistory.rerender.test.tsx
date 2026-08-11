@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest'
 import { render, act } from '@testing-library/react'
 import { Provider, createStore, useAtomValue } from 'jotai'
 import { txListAtom, activeTxListAtom, upsertTxAtom } from '@/state/tx'
-import { activeRailgunWalletIdAtom } from '@/state/wallet'
+import { activeShieldedWalletIdAtom } from '@/state/wallet'
 import { useTxHistory } from './useTxHistory'
 import type { TxRecord } from '@/lib/tx/types'
 
@@ -21,14 +21,14 @@ function record(id: string): TxRecord<'shield'> {
     updatedAt: 0,
     meta: { amount: 1n, feeCacheId: '', fromChainId: 31337 },
     artifacts: {},
-    walletContext: { evmAddress: '0x', railgunWalletId: 'rg-1', sourceChainId: 31337 },
+    walletContext: { evmAddress: '0x', shieldedWalletId: 'rg-1', sourceChainId: 31337 },
   } as TxRecord<'shield'>
 }
 
 describe('useTxHistory re-render isolation (P1-19)', () => {
   it('does not re-render the hydrator host on a tx write, but a list consumer does', () => {
     const store = createStore()
-    store.set(activeRailgunWalletIdAtom, 'rg-1')
+    store.set(activeShieldedWalletIdAtom, 'rg-1')
 
     let hydratorRenders = 0
     function Hydrator() {

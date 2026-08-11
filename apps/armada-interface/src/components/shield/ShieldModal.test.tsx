@@ -6,7 +6,7 @@ import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { ShieldModal } from './ShieldModal'
 import { openModalAtom } from '@/state/ui'
-import { activeRailgunWalletIdAtom, usdcBalancesAtom } from '@/state/wallet'
+import { activeShieldedWalletIdAtom, usdcBalancesAtom } from '@/state/wallet'
 import { feeQuoteAtom, feeQuoteFetchedAtAtom } from '@/state/fees'
 import { txListAtom } from '@/state/tx'
 import { withTestQueryClient } from '@/test-utils/queryClient'
@@ -25,7 +25,7 @@ function unresolvedShield(amount: bigint): TxRecord {
     updatedAt: 0,
     meta: { amount, feeCacheId: '', fromChainId: 31337 },
     artifacts: { sourceTxHash: '0xfeed', error: { code: 'POLL_TIMEOUT', message: 't', txHash: '0xfeed' } },
-    walletContext: { evmAddress: '0xabc', railgunWalletId: 'rg-test', sourceChainId: 31337 },
+    walletContext: { evmAddress: '0xabc', shieldedWalletId: 'rg-test', sourceChainId: 31337 },
   } as TxRecord
 }
 
@@ -78,7 +78,7 @@ const FAKE_QUOTE = {
   cacheId: 'test-cache',
   expiresAt: Date.now() + 5 * 60_000,
   chainId: 31337,
-  broadcasterRailgunAddress: '',
+  broadcasterShieldedAddress: '',
   fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0', shield: '0', shieldXchain: '0' },
 }
 
@@ -89,10 +89,10 @@ function renderModal(opts?: { open?: boolean; max?: bigint }) {
     store.set(usdcBalancesAtom, { 31337: opts.max })
   }
   // useTx.submit() refuses to write a record without an active shielded walletId (Phase 6
-  // scoping invariant — every TxRecord must be filterable by walletContext.railgunWalletId).
+  // scoping invariant — every TxRecord must be filterable by walletContext.shieldedWalletId).
   // Seed a placeholder id so the Confirm flow exercises the orchestration without tripping
   // the guard. The id value isn't asserted; it just satisfies the invariant.
-  store.set(activeRailgunWalletIdAtom, 'rg-test')
+  store.set(activeShieldedWalletIdAtom, 'rg-test')
   store.set(feeQuoteAtom, FAKE_QUOTE)
   // staleAtom treats a quote with no fetch timestamp as stale (350e084), which would send
   // Confirm down the real refresh()/fetchFees path — unreachable in jsdom. A fresh

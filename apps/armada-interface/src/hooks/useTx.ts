@@ -10,7 +10,7 @@ import { putTxIfFresh } from '@/lib/tx/storage'
 import { toast } from 'sonner'
 import { cancelTx, executeTx, getIsLeader, retryTx } from '@/lib/tx/executor'
 import { txByIdAtom, upsertTxAtom } from '@/state/tx'
-import { activeRailgunWalletIdAtom, evmAddressAtom } from '@/state/wallet'
+import { activeShieldedWalletIdAtom, evmAddressAtom } from '@/state/wallet'
 import { getNetworkConfig } from '@/config/network'
 import { track } from '@/lib/telemetry'
 
@@ -40,7 +40,7 @@ export function useTx<K extends TxKind>(opts: UseTxOptions<K>): UseTxResult<K> {
   const [id, setId] = useState<string | null>(null)
   const upsert = useSetAtom(upsertTxAtom)
   const evmAddress = useAtomValue(evmAddressAtom)
-  const activeWalletId = useAtomValue(activeRailgunWalletIdAtom)
+  const activeWalletId = useAtomValue(activeShieldedWalletIdAtom)
   const record = useAtomValue(useMemo(() => txByIdAtom(id ?? ''), [id])) as TxRecord<K> | undefined
 
   const submit = useCallback(async (meta: MetaFor<K>): Promise<string | null> => {
@@ -72,7 +72,7 @@ export function useTx<K extends TxKind>(opts: UseTxOptions<K>): UseTxResult<K> {
     const metaSourceChainId = (meta as { fromChainId?: number }).fromChainId
     const walletContext: TxWalletContext = {
       evmAddress: evmAddress ?? undefined,
-      railgunWalletId: activeWalletId,
+      shieldedWalletId: activeWalletId,
       sourceChainId: metaSourceChainId ?? getNetworkConfig().hub.chainId,
     }
 

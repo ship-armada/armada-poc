@@ -30,16 +30,16 @@ export async function buildUnshieldSdk(
   inputs: SdkUnshieldInputs,
 ): Promise<{ to: `0x${string}`; data: `0x${string}` }> {
   const wallet = await getSdkWallet()
-  // planTransfer reads only `schedule.transfer` + `broadcasterRailgunAddress`; `feesCacheId`/`expiresAt`
+  // planTransfer reads only `schedule.transfer` + `broadcasterShieldedAddress`; `feesCacheId`/`expiresAt`
   // are part of the FeeQuote contract but unused here (the quote's staleness is the relayer's concern).
   const fee = inputs.broadcasterFee
     ? {
         schedule: { transfer: inputs.broadcasterFee.amount.toString() },
-        broadcasterRailgunAddress: inputs.broadcasterFee.recipientAddress,
+        broadcasterShieldedAddress: inputs.broadcasterFee.recipientAddress,
         feesCacheId: '',
         expiresAt: 0,
       }
-    : { schedule: { transfer: '0' }, broadcasterRailgunAddress: '', feesCacheId: '', expiresAt: 0 }
+    : { schedule: { transfer: '0' }, broadcasterShieldedAddress: '', feesCacheId: '', expiresAt: 0 }
 
   const plan = await wallet.planTransfer({
     outputs: [],

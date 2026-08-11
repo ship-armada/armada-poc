@@ -1,4 +1,4 @@
-// ABOUTME: Derives spendable private USDC from completed tx history when Railgun sync has not written shieldedUsdcAtom yet.
+// ABOUTME: Derives spendable private USDC from completed tx history when shielded sync has not written shieldedUsdcAtom yet.
 // ABOUTME: Prefer live chain balance when available; history is a device-local ledger fallback (same rows as Activity).
 
 import type { TxRecord, TxKind } from '@/lib/tx/types'

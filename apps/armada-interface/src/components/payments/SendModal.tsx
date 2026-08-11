@@ -225,7 +225,7 @@ export function SendModal() {
         }
         // Same address-shape guard as unshield-local — both paths now embed a broadcaster
         // output, so a malformed published address would doom proof gen the same way.
-        if (!isShieldedAddress(activeQuote.broadcasterRailgunAddress)) {
+        if (!isShieldedAddress(activeQuote.broadcasterShieldedAddress)) {
           throw new Error(
             'Relayer published an invalid broadcaster address. Refresh and try again; if the ' +
               'problem persists, the relayer may be misconfigured.',
@@ -237,14 +237,14 @@ export function SendModal() {
           feeCacheId,
           recipient,
           broadcasterFeeAmount: BigInt(activeQuote.fees.transfer),
-          broadcasterRailgunAddress: activeQuote.broadcasterRailgunAddress,
+          broadcasterShieldedAddress: activeQuote.broadcasterShieldedAddress,
           useWalletOverride: prefs.submitFromWallet,
         })
       } else if (computedKind === 'unshield-local') {
         // Fail fast if the relayer published a malformed broadcaster address — see UnshieldModal's
         // version of this check for the rationale (avoid a 20-30s proof gen that's doomed to
         // surface an opaque SDK throw deep in the pipeline).
-        if (!isShieldedAddress(activeQuote.broadcasterRailgunAddress)) {
+        if (!isShieldedAddress(activeQuote.broadcasterShieldedAddress)) {
           throw new Error(
             'Relayer published an invalid broadcaster address. Refresh and try again; if the ' +
               'problem persists, the relayer may be misconfigured.',
@@ -258,7 +258,7 @@ export function SendModal() {
           feeCacheId,
           recipient,
           broadcasterFeeAmount: BigInt(activeQuote.fees.unshield),
-          broadcasterRailgunAddress: activeQuote.broadcasterRailgunAddress,
+          broadcasterShieldedAddress: activeQuote.broadcasterShieldedAddress,
           useWalletOverride: prefs.submitFromWallet,
         })
       } else {
@@ -266,7 +266,7 @@ export function SendModal() {
         // as unshield-local + transfer-shielded, with the fee sourced from the `crossChainUnshield`
         // tier of the quote. Fail fast on a malformed broadcaster address so 20-30s of proof gen
         // doesn't end in an opaque SDK throw downstream.
-        if (!isShieldedAddress(activeQuote.broadcasterRailgunAddress)) {
+        if (!isShieldedAddress(activeQuote.broadcasterShieldedAddress)) {
           throw new Error(
             'Relayer published an invalid broadcaster address. Refresh and try again; if the ' +
               'problem persists, the relayer may be misconfigured.',
@@ -279,7 +279,7 @@ export function SendModal() {
           toChainId: destChainId,
           recipient,
           broadcasterFeeAmount: BigInt(activeQuote.fees.crossChainUnshield),
-          broadcasterRailgunAddress: activeQuote.broadcasterRailgunAddress,
+          broadcasterShieldedAddress: activeQuote.broadcasterShieldedAddress,
           useWalletOverride: prefs.submitFromWallet,
         })
       }

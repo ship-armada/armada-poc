@@ -1,4 +1,4 @@
-// ABOUTME: Signature-derived Railgun wallet lifecycle per specs/TX_SIGNING.md + TX_SIGNING_V2_AMENDMENT.md.
+// ABOUTME: Signature-derived shielded wallet lifecycle per specs/TX_SIGNING.md + TX_SIGNING_V2_AMENDMENT.md.
 // ABOUTME: enrollFromSignature / unlockFromRootSecret / unlockFromBackup / lockWallet / resetWallet route through a shared applyRootSecret helper. Internal mnemonic shim hidden inside this module.
 
 import { deriveKeyset } from '@armada/sdk'
@@ -29,12 +29,12 @@ import { getCurrentHubBlock } from './network'
 
 /**
  * Public state shape exposed to React (atoms / hooks). No secrets — just identity + status.
- * `id` (walletId) is opaque per Plan §15. `railgunAddress` is the 0zk… form.
+ * `id` (walletId) is opaque per Plan §15. `shieldedAddress` is the 0zk… form.
  */
 export interface ShieldedWalletState {
   readonly id: string
   readonly status: 'locked' | 'unlocked' | 'missing'
-  readonly railgunAddress?: string
+  readonly shieldedAddress?: string
   /** Anti-phish checksum display string (e.g. "a3f2 91c8 b7e0"). Display-only. */
   readonly checksum?: string
   /** ms timestamp of the most recent successful unlock. */
@@ -303,7 +303,7 @@ async function applyRootSecret(
   // what the read instance derives via `fromRootSecret`). The actual wallet is the persistent
   // @armada/sdk read instance, created lazily on first balance read (sdk-read.ts).
   const walletId = deriveWalletId(rootSecret)
-  const railgunAddress = (await deriveKeyset(rootSecret)).railgunAddress
+  const shieldedAddress = (await deriveKeyset(rootSecret)).shieldedAddress
   // "Newly created" (telemetry) = first sign-in on this device for the tuple (no cached id). It no
   // longer implies an engine wallet was created; the identity is purely derived.
   const newlyCreated = cachedWalletId === null
@@ -320,7 +320,7 @@ async function applyRootSecret(
     rootSecret,
     walletId,
     sdkEncryptionKey,
-    railgunAddress,
+    shieldedAddress,
     checksum,
     creationBlock: effectiveCreationBlock,
     evmAddress: opts.evmAddress ? normalizeEvmAddress(opts.evmAddress) : null,
@@ -332,7 +332,7 @@ async function applyRootSecret(
     state: {
       id: walletId,
       status: 'unlocked',
-      railgunAddress,
+      shieldedAddress,
       checksum,
       unlockedAt: Date.now(),
     },

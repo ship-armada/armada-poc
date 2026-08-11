@@ -115,7 +115,7 @@ type PatchedPrototype = typeof JsonRpcProvider.prototype & { [PATCHED_FLAG]?: bo
  * Patches `JsonRpcProvider.prototype.send` to intercept eth_getLogs calls and bisect on range
  * errors. Idempotent — safe to call multiple times. Non-getLogs RPC calls pass through unchanged.
  *
- * Affects every ethers JsonRpcProvider in the process — including the Railgun SDK's
+ * Affects every ethers JsonRpcProvider in the process — including the SDK's
  * PollingJsonRpcProvider (which extends JsonRpcProvider). Wagmi/viem providers are unaffected
  * (different stack).
  *

@@ -15,7 +15,7 @@ vi.mock('@/lib/telemetry', () => ({ trackError: hoisted.trackError }))
 
 import { useNullifierCrossCheck } from './useNullifierCrossCheck'
 import {
-  activeRailgunWalletIdAtom,
+  activeShieldedWalletIdAtom,
   shieldedWalletsAtom,
   syncStateAtom,
   nullifierCrossCheckAtom,
@@ -29,7 +29,7 @@ function mount(store: ReturnType<typeof createStore>) {
 
 function seed(store: ReturnType<typeof createStore>, status: 'unlocked' | 'locked', sync: SyncState) {
   store.set(shieldedWalletsAtom, { w1: { id: 'w1', status } })
-  store.set(activeRailgunWalletIdAtom, 'w1')
+  store.set(activeShieldedWalletIdAtom, 'w1')
   store.set(syncStateAtom, sync)
 }
 

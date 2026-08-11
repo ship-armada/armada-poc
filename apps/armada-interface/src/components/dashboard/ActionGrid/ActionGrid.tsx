@@ -26,8 +26,8 @@ export function ActionGrid() {
   const earningLabel = earningUsdc === null ? '—' : formatUsdcAmount(earningUsdc, { decimals: 4 })
   // Vault share of total private USDC for the Earn card progress bar. Total = shielded + vault,
   // matching BalanceHero's definition. Stays at 0% until both numbers have resolved; if total is
-  // zero we report 0 to avoid divide-by-zero (NaN would render the bar full). While the Railgun
-  // engine is still syncing, force 0 so the bar reads as "no data yet" instead of a stale figure.
+  // zero we report 0 to avoid divide-by-zero (NaN would render the bar full). While the shielded
+  // balance is still syncing, force 0 so the bar reads as "no data yet" instead of a stale figure.
   //
   // Dust handling: anything below the Earn footer's 4-decimal display threshold (50 raw units =
   // 0.00005 USDC) rounds to "0.0000" in the UI. Without rounding to that floor here, a few raw

@@ -13,7 +13,7 @@ import {
 import { useShieldedWallet } from '@/hooks/useShieldedWallet'
 import { preferencesAtom, type AutoLockMinutes } from '@/state/preferences'
 import {
-  activeRailgunWalletIdAtom,
+  activeShieldedWalletIdAtom,
   autoLockDeadlineAtom,
 } from '@/state/wallet'
 import { historyRecoveryAtom, historyRecoveryEpochAtom } from '@/state/history'
@@ -31,7 +31,7 @@ export function Settings() {
   const [exportOpen, setExportOpen] = useState(false)
   const [resetOpen, setResetOpen] = useState(false)
   const [clearHistoryOpen, setClearHistoryOpen] = useState(false)
-  const activeWalletId = useAtomValue(activeRailgunWalletIdAtom)
+  const activeWalletId = useAtomValue(activeShieldedWalletIdAtom)
   const recovery = useAtomValue(historyRecoveryAtom)
   const setEpoch = useSetAtom(historyRecoveryEpochAtom)
 

@@ -28,7 +28,7 @@ function inFlightRecord(): TxRecord {
     updatedAt: 1,
     meta: { amount: 1_000_000n, feeCacheId: 'c', fromChainId: 31337 },
     artifacts: {}, // no sourceTxHash → pre-broadcast → "Cancel"
-    walletContext: { evmAddress: '0xabc', railgunWalletId: 'rw-1', sourceChainId: 31337 },
+    walletContext: { evmAddress: '0xabc', shieldedWalletId: 'rw-1', sourceChainId: 31337 },
   } as TxRecord
 }
 

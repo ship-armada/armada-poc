@@ -47,7 +47,7 @@ describe('recordTitle', () => {
       stagesCompleted: [], updatedSeq: 0, createdAt: 0, updatedAt: 0,
       meta: { amount: 0n, feeCacheId: '', fromChainId: 31337 },
       artifacts: {},
-      walletContext: { evmAddress: undefined, railgunWalletId: '', sourceChainId: 31337 },
+      walletContext: { evmAddress: undefined, shieldedWalletId: '', sourceChainId: 31337 },
     }
     expect(recordTitle(record)).toBe('Deposit')
   })
@@ -62,10 +62,10 @@ describe('recordTitle', () => {
         toChainId: 31338,
         recipient: '0x0',
         broadcasterFeeAmount: 0n,
-        broadcasterRailgunAddress: '',
+        broadcasterShieldedAddress: '',
       },
       artifacts: {},
-      walletContext: { evmAddress: undefined, railgunWalletId: '', sourceChainId: 31337 },
+      walletContext: { evmAddress: undefined, shieldedWalletId: '', sourceChainId: 31337 },
     }
     expect(recordTitle(record)).toMatch(/^Withdraw to /)
   })

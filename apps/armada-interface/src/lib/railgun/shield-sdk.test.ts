@@ -42,7 +42,7 @@ describe('createShieldRequestSdk', () => {
       random: 'ef'.repeat(16),
     })
     expect(hoisted.buildShieldRequest).toHaveBeenCalledWith(
-      { railgunAddress: ZK, amount: 5_000_000n, tokenAddress: USDC },
+      { shieldedAddress: ZK, amount: 5_000_000n, tokenAddress: USDC },
       expect.any(Uint8Array),
     )
     // No random injected — the production path lets the SDK generate a fresh salt per deposit.

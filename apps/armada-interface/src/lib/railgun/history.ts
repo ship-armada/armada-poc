@@ -52,7 +52,7 @@ function walletContextFor(
 ): TxRecord['walletContext'] {
   return {
     evmAddress: undefined,
-    railgunWalletId: walletId,
+    shieldedWalletId: walletId,
     sourceChainId: hubChainId,
   }
 }
@@ -133,8 +133,8 @@ export function historyEntryToTxRecord(
         stage: stages.stage, stagesCompleted: stages.stagesCompleted, ...times, artifacts, walletContext,
         meta: {
           amount: recipientAmount, feeCacheId: '',
-          recipient: entry.sentOutputs?.[0]?.recipientRailgunAddress ?? 'unknown',
-          broadcasterFeeAmount: broadcasterFee, broadcasterRailgunAddress: '',
+          recipient: entry.sentOutputs?.[0]?.recipientShieldedAddress ?? 'unknown',
+          broadcasterFeeAmount: broadcasterFee, broadcasterShieldedAddress: '',
         },
       }
     }
@@ -146,7 +146,7 @@ export function historyEntryToTxRecord(
         meta: {
           amount: abs - broadcasterFee - (entry.unshieldFee ?? 0n), feeCacheId: '',
           recipient: entry.recipient ?? 'unknown',
-          broadcasterFeeAmount: broadcasterFee, broadcasterRailgunAddress: '',
+          broadcasterFeeAmount: broadcasterFee, broadcasterShieldedAddress: '',
         },
       }
     }
@@ -155,7 +155,7 @@ export function historyEntryToTxRecord(
       return {
         id: syntheticTxId(entry.txid, entry.category), kind: 'yield-deposit', executionState: 'completed',
         stage: stages.stage, stagesCompleted: stages.stagesCompleted, ...times, artifacts, walletContext,
-        meta: { amount: abs, feeCacheId: '', broadcasterFeeAmount: broadcasterFee, broadcasterRailgunAddress: '' },
+        meta: { amount: abs, feeCacheId: '', broadcasterFeeAmount: broadcasterFee, broadcasterShieldedAddress: '' },
       }
     }
     case 'yield-withdraw': {
@@ -163,7 +163,7 @@ export function historyEntryToTxRecord(
       return {
         id: syntheticTxId(entry.txid, entry.category), kind: 'yield-withdraw', executionState: 'completed',
         stage: stages.stage, stagesCompleted: stages.stagesCompleted, ...times, artifacts, walletContext,
-        meta: { amount: entry.value, feeCacheId: '', shares: 0n, broadcasterFeeAmount: 0n, broadcasterRailgunAddress: '' },
+        meta: { amount: entry.value, feeCacheId: '', shares: 0n, broadcasterFeeAmount: 0n, broadcasterShieldedAddress: '' },
       }
     }
     default:

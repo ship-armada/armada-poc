@@ -28,7 +28,7 @@ const LEGACY_KEYS = ['armada.shielded.walletId', 'armada.shielded.checksum'] as 
 /**
  * IndexedDB databases dropped on a schema fork.
  *
- * - `armada-shielded`: owned by the Railgun SDK; holds the encrypted v1 wallet blob keyed by
+ * - `armada-shielded`: owned by the SDK; holds the encrypted v1 wallet blob keyed by
  *   v1 walletId. Useless once we re-derive under v2.
  * - `armada-interface`: owned by `lib/cache.ts`; holds tx history, fee quotes, ENS resolutions,
  *   shielded balance snapshots. We drop the whole DB rather than clearing individual stores so
@@ -91,7 +91,7 @@ function deleteIndexedDbDatabase(name: string): Promise<void> {
  * Idempotent migration runner. Synchronous portion (localStorage) completes first so any
  * downstream code that reads `readStoredWalletId()` sees clean state immediately. Async
  * portion (IDB) runs in parallel; callers SHOULD await the returned promise before initializing
- * the Railgun engine to avoid racing against the SDK's `armada-shielded` open.
+ * the SDK to avoid racing against the SDK's `armada-shielded` open.
  *
  * Returns `null` if no migration is needed (schemaVersion is already current).
  */

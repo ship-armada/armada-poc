@@ -14,7 +14,7 @@ export interface SpendableSyncGate {
 /**
  * Returns whether a "spend the user's shielded balance" flow can safely proceed.
  *
- * The Railgun engine runs an initial historical scan the first time a wallet is unlocked on
+ * The SDK runs an initial historical scan the first time a wallet is unlocked on
  * a device — until that completes, `shieldedUsdcAtom` is null (we don't know the user's actual
  * balance). Letting the user submit a transfer/unshield/yield-deposit/yield-withdraw against
  * "null balance" is incoherent: they'd either submit zero amount (with a confusing error) or

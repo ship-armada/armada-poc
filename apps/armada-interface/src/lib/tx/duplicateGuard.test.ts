@@ -19,7 +19,7 @@ function shield(
     updatedAt: 0,
     meta: { amount, feeCacheId: '', fromChainId: 31337 },
     artifacts: { ...(hash ? { sourceTxHash: '0xfeed' } : {}), ...(error ? { error } : {}) },
-    walletContext: { evmAddress: '0xabc', railgunWalletId: 'rw-1', sourceChainId: 31337 },
+    walletContext: { evmAddress: '0xabc', shieldedWalletId: 'rw-1', sourceChainId: 31337 },
   } as TxRecord
 }
 

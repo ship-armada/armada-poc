@@ -23,7 +23,7 @@ const HKDF_INFO_SPEND_V1 = utf8('spend:v1')
 const HKDF_INFO_VIEW_V1 = utf8('view:v1')
 
 /**
- * Internal-only info string for deriving an encryption key passed to the Railgun SDK in Phase 1.
+ * Internal-only info string for deriving an encryption key passed to the SDK in Phase 1.
  * Not part of the spec; replaced in Phase 2 when we drop the internal-mnemonic shim entirely.
  * Documented here so future readers understand this is a Phase 1 compromise.
  */
@@ -77,7 +77,7 @@ export function deriveViewingKeyBytes(rootSecret: Uint8Array): Uint8Array {
 }
 
 /**
- * Derive a 32-byte encryption key (hex) for the Railgun SDK's at-rest wallet encryption.
+ * Derive a 32-byte encryption key (hex) for the SDK's at-rest wallet encryption.
  * Returns 64 lowercase hex characters (no `0x` prefix) — matches the SDK's expected format.
  *
  * Phase 1 only: in Phase 2 this disappears because we won't go through the high-level wallet SDK.
@@ -200,7 +200,7 @@ export function assertEntropyFloor(name: string, key: Uint8Array): void {
 /**
  * v2 backup envelope. The plaintext payload is 40 bytes: [0..32) rootSecret, [32..40) uint64-BE
  * creationBlock. `creationBlock` is the hub-chain block at which the wallet was first enrolled —
- * passed to the Railgun SDK's `creationBlockNumbers` on restore so the merkletree scan starts at
+ * passed to the SDK's `creationBlockNumbers` on restore so the merkletree scan starts at
  * the right tree position. A value of 0 means "unknown" (e.g. a backup exported after a
  * paste-secret restore where the true creation block was never persisted); the restore path
  * treats 0 as `undefined` and falls back to a full chain rescan (correct, slow).

@@ -175,7 +175,7 @@ export function UnshieldModal() {
         // response truncated by a proxy, etc.) would otherwise surface as an opaque SDK throw
         // deep in proof gen. Fail fast with a clear message so the user knows it's a relayer-
         // side problem rather than a wallet / amount issue.
-        if (!isShieldedAddress(activeQuote.broadcasterRailgunAddress)) {
+        if (!isShieldedAddress(activeQuote.broadcasterShieldedAddress)) {
           throw new Error(
             'Relayer published an invalid broadcaster address. Refresh and try again; if the ' +
               'problem persists, the relayer may be misconfigured.',
@@ -192,14 +192,14 @@ export function UnshieldModal() {
           feeCacheId,
           recipient,
           broadcasterFeeAmount: BigInt(activeQuote.fees.unshield),
-          broadcasterRailgunAddress: activeQuote.broadcasterRailgunAddress,
+          broadcasterShieldedAddress: activeQuote.broadcasterShieldedAddress,
           useWalletOverride: prefs.submitFromWallet,
         })
       } else {
         // A5 — relayer-mediated hub burn. Same broadcaster-context shape as unshield-local; fee
         // comes from the `crossChainUnshield` tier. Fail-fast on a malformed broadcaster address
         // mirrors the unshield-local check above.
-        if (!isShieldedAddress(activeQuote.broadcasterRailgunAddress)) {
+        if (!isShieldedAddress(activeQuote.broadcasterShieldedAddress)) {
           throw new Error(
             'Relayer published an invalid broadcaster address. Refresh and try again; if the ' +
               'problem persists, the relayer may be misconfigured.',
@@ -212,7 +212,7 @@ export function UnshieldModal() {
           toChainId: destChainId,
           recipient,
           broadcasterFeeAmount: BigInt(activeQuote.fees.crossChainUnshield),
-          broadcasterRailgunAddress: activeQuote.broadcasterRailgunAddress,
+          broadcasterShieldedAddress: activeQuote.broadcasterShieldedAddress,
           useWalletOverride: prefs.submitFromWallet,
         })
       }

@@ -206,14 +206,14 @@ export function EarnModal() {
       const feeCacheId = activeQuote.cacheId
       // Same broadcaster address guard as Send / Unshield — fail fast if the relayer published
       // a malformed value rather than paying 20-30s of proof gen for a doomed submission.
-      if (!isShieldedAddress(activeQuote.broadcasterRailgunAddress)) {
+      if (!isShieldedAddress(activeQuote.broadcasterShieldedAddress)) {
         throw new Error(
           'Relayer published an invalid broadcaster address. Refresh and try again; if the ' +
             'problem persists, the relayer may be misconfigured.',
         )
       }
       const broadcasterFeeAmount = BigInt(activeQuote.fees.crossContract)
-      const broadcasterRailgunAddress = activeQuote.broadcasterRailgunAddress
+      const broadcasterShieldedAddress = activeQuote.broadcasterShieldedAddress
       if (tab === 'add') {
         // S-M5: a deposit unshields amount + fee from the shielded balance (fee-on-top), so
         // re-validate against the FRESH fee before proof gen. Wallet-override pays native gas
@@ -229,7 +229,7 @@ export function EarnModal() {
           amount,
           feeCacheId,
           broadcasterFeeAmount,
-          broadcasterRailgunAddress,
+          broadcasterShieldedAddress,
           useWalletOverride: effectiveUseWalletOverride,
         })
       } else {
@@ -249,7 +249,7 @@ export function EarnModal() {
           feeCacheId,
           shares,
           broadcasterFeeAmount,
-          broadcasterRailgunAddress,
+          broadcasterShieldedAddress,
           useWalletOverride: effectiveUseWalletOverride,
         })
       }

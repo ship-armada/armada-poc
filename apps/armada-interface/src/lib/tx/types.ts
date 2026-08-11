@@ -189,11 +189,11 @@ export interface MetaShield extends MetaCommon {
    */
   permitDeadline?: number
   /**
-   * Phase C — the relayer's Railgun (`0zk...`) address, frozen from the fee quote. The gasless
+   * Phase C — the relayer's shielded (`0zk...`) address, frozen from the fee quote. The gasless
    * build-proof shields the relayer's fee note to this npk (a second note in the array), replacing
    * the old public-USDC fee. Only set when `useGasless` is true.
    */
-  broadcasterRailgunAddress?: string
+  broadcasterShieldedAddress?: string
 }
 
 export interface MetaShieldXchain extends MetaCommon {
@@ -230,11 +230,11 @@ export interface MetaShieldXchain extends MetaCommon {
    */
   permitDeadline?: number
   /**
-   * Phase C — the relayer's Railgun (`0zk...`) address, frozen from the fee quote. The gasless
+   * Phase C — the relayer's shielded (`0zk...`) address, frozen from the fee quote. The gasless
    * build-proof shields the relayer's fee note to this npk (carried across CCTP, minted on the
    * hub at full value). Only set when `useGasless` is true.
    */
-  broadcasterRailgunAddress?: string
+  broadcasterShieldedAddress?: string
 }
 
 export interface MetaUnshieldLocal extends MetaCommon, MetaBroadcaster {
@@ -257,15 +257,15 @@ export interface MetaUnshieldXchain extends MetaCommon, MetaBroadcaster {
  *
  * A6 — when `useWalletOverride: true` the handler skips the broadcaster path entirely: the proof
  * is built with `broadcasterFee: null`, the tx is submitted via the user's EVM wallet, and the
- * broadcasterFeeAmount / broadcasterRailgunAddress fields are recorded for history but ignored
+ * broadcasterFeeAmount / broadcasterShieldedAddress fields are recorded for history but ignored
  * by the proof builder. The flag is frozen on the record at submit-time so a session-level
  * preference flip mid-flight doesn't strand the handler.
  */
 interface MetaBroadcaster {
   /** USDC raw amount paid to the relayer's broadcaster output. */
   broadcasterFeeAmount: bigint
-  /** Relayer's Railgun (`0zk`) address that the broadcaster output pays. */
-  broadcasterRailgunAddress: string
+  /** Relayer's shielded (`0zk`) address that the broadcaster output pays. */
+  broadcasterShieldedAddress: string
   /**
    * A6 wallet-override escape hatch. When true, handler builds the proof with `broadcasterFee:
    * null` and submits via the user's EVM wallet (writeContract / sendTransaction) instead of
@@ -459,7 +459,7 @@ export interface ArtifactsShield extends ArtifactsCommon {
 /**
  * Yield-specific artifacts. The `build-proof` stage stashes the populated adapter calldata here
  * so submit-relayer can dispatch it directly without re-running `generateProofTransactions`
- * (which is stateless in the Railgun SDK — a second call from submit-relayer would otherwise pay
+ * (which is stateless in the SDK — a second call from submit-relayer would otherwise pay
  * the full ~20-30s proving cost again). `value` is stringified for IDB serializability.
  */
 export interface ArtifactsYield extends ArtifactsCommon {
@@ -579,7 +579,7 @@ export interface TxWalletContext {
    *  that didn't touch an EVM signer (e.g. a pure shielded transfer). */
   evmAddress: string | undefined
   /** Always present — every tx originates from a shielded wallet. */
-  railgunWalletId: string
+  shieldedWalletId: string
   /** Source chain id for the operation. Hub chain for shielded-only ops. */
   sourceChainId: number
 }

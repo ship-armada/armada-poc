@@ -15,7 +15,7 @@ vi.mock('@/hooks/useShieldedWallet', () => ({
   useShieldedWallet: () => ({
     signIn: mockSignIn,
     reset: mockReset,
-    state: { id: 'wallet-1', status: 'unlocked', checksum: 'ab12 cd34 ef56', railgunAddress: '0zk1example' },
+    state: { id: 'wallet-1', status: 'unlocked', checksum: 'ab12 cd34 ef56', shieldedAddress: '0zk1example' },
     enroll: vi.fn(),
     unlockByPaste: vi.fn(),
     unlockByBackup: vi.fn(),

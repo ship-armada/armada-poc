@@ -55,7 +55,7 @@ describe('buildXchainUnshieldSdk', () => {
     expect(hoisted.planTransfer).toHaveBeenCalledWith({
       outputs: [],
       unshield: { recipient: POOL, amount: 5_000_000n, adaptParams: BINDING },
-      fee: { schedule: { transfer: '20000' }, broadcasterRailgunAddress: '0zk_relayer', feesCacheId: '', expiresAt: 0 },
+      fee: { schedule: { transfer: '20000' }, broadcasterShieldedAddress: '0zk_relayer', feesCacheId: '', expiresAt: 0 },
     })
     // The proved tx is embedded as a POSITIONAL tuple, then the CCTP args.
     expect(hoisted.transactionToTuple).toHaveBeenCalledWith({ tx: 'data' })
@@ -81,7 +81,7 @@ describe('buildXchainUnshieldSdk', () => {
     expect(hoisted.planTransfer).toHaveBeenCalledWith({
       outputs: [],
       unshield: { recipient: POOL, amount: 1n, adaptParams: BINDING },
-      fee: { schedule: { transfer: '0' }, broadcasterRailgunAddress: '', feesCacheId: '', expiresAt: 0 },
+      fee: { schedule: { transfer: '0' }, broadcasterShieldedAddress: '', feesCacheId: '', expiresAt: 0 },
     })
   })
 })

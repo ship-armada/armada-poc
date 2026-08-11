@@ -31,7 +31,7 @@ export function BalanceHero() {
   // action we can't fulfill.
   const shieldedWallet = useAtomValue(shieldedWalletAtom)
   const canReceive =
-    shieldedWallet.status === 'unlocked' && Boolean(shieldedWallet.railgunAddress)
+    shieldedWallet.status === 'unlocked' && Boolean(shieldedWallet.shieldedAddress)
 
   const earningUsdc =
     yieldShares !== null && yieldRate !== null
@@ -39,7 +39,7 @@ export function BalanceHero() {
       : null
 
   const total = displayBalance + (earningUsdc ?? 0n)
-  // Show the in-card sync UI while the Railgun engine is mid-scan or has failed. Replaces the
+  // Show the in-card sync UI while the SDK is mid-scan or has failed. Replaces the
   // total + available + Deposit block — the balance isn't trustworthy until sync completes.
   const showSyncBlock = sync.status === 'syncing' || sync.status === 'failed'
   const syncPct = Math.round(Math.max(0, Math.min(1, sync.progress)) * 100)

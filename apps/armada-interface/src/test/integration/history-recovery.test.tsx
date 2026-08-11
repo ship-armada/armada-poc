@@ -5,7 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, waitFor, act } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import {
-  activeRailgunWalletIdAtom,
+  activeShieldedWalletIdAtom,
   shieldedWalletsAtom,
 } from '@/state/wallet'
 import { txListAtom } from '@/state/tx'
@@ -20,7 +20,7 @@ const HUB_DEPLOY_BLOCK = 100_000
 // ─────────────────────────────────────────────────────────────────────────────
 const hoisted = vi.hoisted(() => {
   let balanceListener:
-    | ((event: { chain: { type: 0; id: number }; railgunWalletID: string }) => void)
+    | ((event: { chain: { type: 0; id: number }; shieldedWalletID: string }) => void)
     | null = null
   return {
     runHistoryScan: vi.fn(async (): Promise<HistoryScanResult> => ({
@@ -37,7 +37,7 @@ const hoisted = vi.hoisted(() => {
     }),
     fireBalanceEvent(walletID: string) {
       if (balanceListener) {
-        balanceListener({ chain: { type: 0, id: 31337 }, railgunWalletID: walletID })
+        balanceListener({ chain: { type: 0, id: 31337 }, shieldedWalletID: walletID })
       }
     },
     loadDeployments: vi.fn(async () => ({
@@ -114,9 +114,9 @@ function scanResult(records: TxRecord[], highestBlock: number | null): HistorySc
 function unlockedStore() {
   const store = createStore()
   store.set(shieldedWalletsAtom, {
-    'rg-1': { id: 'rg-1', status: 'unlocked', railgunAddress: '0zk-test' },
+    'rg-1': { id: 'rg-1', status: 'unlocked', shieldedAddress: '0zk-test' },
   })
-  store.set(activeRailgunWalletIdAtom, 'rg-1')
+  store.set(activeShieldedWalletIdAtom, 'rg-1')
   return store
 }
 
@@ -210,7 +210,7 @@ describe('Phase 9 — chain history recovery + incoming detector integration', (
       updatedAt: 1,
       meta: { amount: 1_000_000n, feeCacheId: 'fc', fromChainId: 31337 },
       artifacts: { sourceTxHash: AUTHORED_HASH },
-      walletContext: { evmAddress: '0xeoa', railgunWalletId: 'rg-1', sourceChainId: 31337 },
+      walletContext: { evmAddress: '0xeoa', shieldedWalletId: 'rg-1', sourceChainId: 31337 },
     }
     const store = unlockedStore()
     store.set(txListAtom, [authored])
@@ -255,7 +255,7 @@ describe('Phase 9 — chain history recovery + incoming detector integration', (
       updatedAt: 1,
       meta: { amount: 1_000_000n, feeCacheId: 'fc', fromChainId: 31337 },
       artifacts: { sourceTxHash: CONFIRMED_HASH, error: { code: 'POLL_TIMEOUT', message: 'lost track' } },
-      walletContext: { evmAddress: '0xeoa', railgunWalletId: 'rg-1', sourceChainId: 31337 },
+      walletContext: { evmAddress: '0xeoa', shieldedWalletId: 'rg-1', sourceChainId: 31337 },
     }
     const store = unlockedStore()
     store.set(txListAtom, [expired])
@@ -303,10 +303,10 @@ describe('Phase 9 — chain history recovery + incoming detector integration', (
         toChainId: 84532,
         recipient: '0x0000000000000000000000000000000000000001',
         broadcasterFeeAmount: 50_000n,
-        broadcasterRailgunAddress: '0zk' + 'a'.repeat(64),
+        broadcasterShieldedAddress: '0zk' + 'a'.repeat(64),
       },
       artifacts: { sourceTxHash: BURN_HASH, error: { code: 'POLL_TIMEOUT', message: 'lost track' } },
-      walletContext: { evmAddress: '0xeoa', railgunWalletId: 'rg-1', sourceChainId: 31337 },
+      walletContext: { evmAddress: '0xeoa', shieldedWalletId: 'rg-1', sourceChainId: 31337 },
     }
     const store = unlockedStore()
     store.set(txListAtom, [failedXchain])
@@ -351,7 +351,7 @@ describe('Phase 9 — chain history recovery + incoming detector integration', (
         sourceTxHash: '0xclientburn' as `0x${string}`,
         destTxHash: '0xhubmint' as `0x${string}`,
       },
-      walletContext: { evmAddress: '0xeoa', railgunWalletId: 'rg-1', sourceChainId: 84532 },
+      walletContext: { evmAddress: '0xeoa', shieldedWalletId: 'rg-1', sourceChainId: 84532 },
     }
     const store = unlockedStore()
     store.set(txListAtom, [completedShieldXchain])

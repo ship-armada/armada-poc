@@ -21,7 +21,7 @@ function baseXchainRecord(): TxRecord<'unshield-xchain'> {
       toChainId: 84532,
       recipient: '0x0000000000000000000000000000000000000001',
       broadcasterFeeAmount: 50_000n,
-      broadcasterRailgunAddress: '0zk' + 'a'.repeat(64),
+      broadcasterShieldedAddress: '0zk' + 'a'.repeat(64),
     },
     artifacts: {
       sourceTxHash: '0xabc' as `0x${string}`,
@@ -30,7 +30,7 @@ function baseXchainRecord(): TxRecord<'unshield-xchain'> {
     },
     walletContext: {
       evmAddress: '0xeve',
-      railgunWalletId: 'wallet-1',
+      shieldedWalletId: 'wallet-1',
       sourceChainId: 31337,
     },
   }
@@ -106,7 +106,7 @@ describe('patchArtifacts → advance OCC chaining', () => {
       artifacts: {},
       walletContext: {
         evmAddress: '0xeve',
-        railgunWalletId: 'wallet-1',
+        shieldedWalletId: 'wallet-1',
         sourceChainId: 11155111,
       },
     }
@@ -138,7 +138,7 @@ describe('patchArtifacts → advance OCC chaining', () => {
       artifacts: {},
       walletContext: {
         evmAddress: '0xeve',
-        railgunWalletId: 'wallet-1',
+        shieldedWalletId: 'wallet-1',
         sourceChainId: 11155111,
       },
     }

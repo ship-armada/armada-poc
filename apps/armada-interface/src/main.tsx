@@ -25,7 +25,7 @@ initSentry()
 // Install at the earliest possible point — before any provider is constructed. Patches
 // ethers' JsonRpcProvider.prototype.send to bisect eth_getLogs on "block range too large"
 // errors, so free-tier RPCs (Alchemy 10 blocks, Infura quotas, etc.) Just Work with the
-// Railgun engine's 499-block scan chunks. Idempotent + prototype-level, so all ethers
+// SDK's 499-block scan chunks. Idempotent + prototype-level, so all ethers
 // providers in the process (including the SDK's internal PollingJsonRpcProvider) pick it up.
 installBisectingGetLogs()
 import { Dashboard } from '@/pages/Dashboard'

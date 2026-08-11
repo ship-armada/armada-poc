@@ -18,7 +18,7 @@ function record(): TxRecord<'unshield-xchain'> {
     updatedAt: Date.now() - 60_000,
     meta: { amount: 99_500_000n, feeCacheId: 'fc', toChainId: 31338, recipient: '0xdef' },
     artifacts: {},
-    walletContext: { evmAddress: '0xabc', railgunWalletId: 'rg', sourceChainId: 31337 },
+    walletContext: { evmAddress: '0xabc', shieldedWalletId: 'rg', sourceChainId: 31337 },
   } as TxRecord<'unshield-xchain'>
 }
 
@@ -79,7 +79,7 @@ describe('<TxRow>', () => {
       updatedAt: Date.now() - 120_000,
       meta: { amount: 5_000_000n },
       artifacts: {},
-      walletContext: { evmAddress: undefined, railgunWalletId: 'rg', sourceChainId: 31337 },
+      walletContext: { evmAddress: undefined, shieldedWalletId: 'rg', sourceChainId: 31337 },
     }
     render(<TxRow record={received} />)
     expect(screen.getByText('Received')).toBeInTheDocument()

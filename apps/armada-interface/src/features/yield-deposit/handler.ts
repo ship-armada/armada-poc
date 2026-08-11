@@ -9,7 +9,7 @@ import { ensureChain } from '@/lib/network-switch'
 import { waitForReceiptOrFail } from '@/lib/tx/receipt'
 import { simulateOrThrow } from '@/lib/tx/simulate'
 import {
-  getRailgunAddress as kmGetRailgunAddress,
+  getShieldedAddress as kmGetShieldedAddress,
   getWalletId as kmGetWalletId,
   isUnlocked as kmIsUnlocked,
 } from '@/lib/railgun/keyManager'
@@ -69,7 +69,7 @@ function broadcasterFeeFromRecord(
   if (record.meta.useWalletOverride) return null
   return {
     amount: record.meta.broadcasterFeeAmount,
-    recipientAddress: record.meta.broadcasterRailgunAddress,
+    recipientAddress: record.meta.broadcasterShieldedAddress,
   }
 }
 
@@ -80,7 +80,7 @@ async function runBuildProof(
   if (!kmIsUnlocked()) {
     throw new Error('Yield deposit requires an unlocked shielded wallet.')
   }
-  const railgunAddress = kmGetRailgunAddress()
+  const shieldedAddress = kmGetShieldedAddress()
   const deployments = await loadDeployments()
   const yieldDeployment = await loadYieldDeployment()
   if (!yieldDeployment) {
@@ -103,7 +103,7 @@ async function runBuildProof(
     unshieldToken: usdcAddress as `0x${string}`,
     shieldOutputToken: vaultAddress as `0x${string}`,
     adapterAddress: adapterAddress as `0x${string}`,
-    railgunAddress,
+    shieldedAddress,
     broadcasterFee: bf,
     onProgress: progress.write,
   })

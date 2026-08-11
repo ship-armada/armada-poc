@@ -18,6 +18,7 @@ import { useNowTicker } from '@/hooks/useNowTicker'
 import { useRailgunEngineSync } from '@/hooks/useRailgunEngineSync'
 import { useFees } from '@/hooks/useFees'
 import { useShieldedBalanceSync } from '@/hooks/useShieldedBalanceSync'
+import { useShieldedSyncPoll } from '@/hooks/useShieldedSyncPoll'
 import { useNullifierCrossCheck } from '@/hooks/useNullifierCrossCheck'
 import { useTabVisible } from '@/hooks/useTabVisible'
 import { useTxHistory } from '@/hooks/useTxHistory'
@@ -71,6 +72,9 @@ export function App() {
   // mirrors the active wallet's shielded USDC balance into shieldedUsdcAtom for BalanceHero
   // and the shield/unshield modals.
   useShieldedBalanceSync()
+  // Drive periodic wallet.sync() (visibility-gated) so live balance + incoming-transfer updates keep
+  // flowing — the SDK-native replacement for the stock engine's continuous scan poller.
+  useShieldedSyncPoll()
   // WI-5: after each shielded scan completes, cross-check the wallet's own unspent notes against
   // the hub PrivacyPool's on-chain nullifier set and block spending if the indexer omitted a spend.
   useNullifierCrossCheck()

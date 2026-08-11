@@ -14,6 +14,7 @@ import { getCachedDeployments, getUsdcAddress, loadYieldDeployment } from '../..
 import { getNetworkConfig } from '../../config/network'
 import * as keyManager from './keyManager'
 import { createInterfaceArtifactSource, createInterfaceProver } from './sdk-prover'
+import { emitBalanceChange } from './balance-bus'
 import { track } from '../telemetry'
 
 /** The shielded yield-vault share token (ayUSDC), if a yield deployment exists. */
@@ -87,6 +88,12 @@ async function ensureInstance(): Promise<{ sdk: ArmadaSdk; wallet: ReadWallet; a
     creationBlock: keyManager.getCreationBlock() ?? 0,
     signer: await LocalSigner.fromRootSecret(keyManager.getRootSecret()),
   })
+  // Forward the wallet's scan/balance/note events onto the app balance bus — the SDK-native
+  // replacement for the stock engine's global balance callback. The wallet (and its listeners) is
+  // discarded on `closeSdkRead`, so no explicit teardown is needed.
+  wallet.on('scan:complete', () => emitBalanceChange({ reason: 'scan' }))
+  wallet.on('balance:updated', () => emitBalanceChange({ reason: 'balance' }))
+  wallet.on('note:received', () => emitBalanceChange({ reason: 'note' }))
   instance = { sdk, wallet, address: engineAddress }
   return instance
 }
@@ -99,14 +106,36 @@ export async function getSdkWallet(): Promise<ReadWallet> {
   return (await ensureInstance()).wallet
 }
 
+// The SDK's `wallet.sync()` has no in-flight guard; two concurrent calls would double-apply the same
+// events and corrupt the scan state. Chain every sync so they run strictly one-at-a-time, and each
+// caller's sync runs AFTER any in-flight one — so a post-tx refresh still observes the new block
+// rather than piggybacking on a scan that started earlier.
+let syncChain: Promise<void> = Promise.resolve()
+
 /**
- * Sync the wallet and emit a telemetry line so resume-vs-rescan is observable in the console. A low
- * `fromBlock` (≈ deploy block) means a cold rescan; a high one means it resumed from the IndexedDB
- * checkpoint. `scanned: false` = the head hadn't advanced, so no getLogs work was done.
+ * Sync the wallet (serialized) and emit a telemetry line so resume-vs-rescan is observable in the
+ * console. A low `fromBlock` (≈ deploy block) means a cold rescan; a high one means it resumed from
+ * the IndexedDB checkpoint. `scanned: false` = the head hadn't advanced, so no getLogs work was done.
  */
 export async function syncTracked(wallet: Pick<ReadWallet, 'sync'>): Promise<void> {
-  const { fromBlock, syncedThrough, scanned } = await wallet.sync()
-  track('sdk.sync', { fromBlock, syncedThrough, scanned })
+  const run = syncChain.then(async () => {
+    const { fromBlock, syncedThrough, scanned } = await wallet.sync()
+    track('sdk.sync', { fromBlock, syncedThrough, scanned })
+  })
+  syncChain = run.catch(() => {}) // a failed sync must not wedge the chain for later callers
+  return run
+}
+
+/**
+ * Trigger a wallet scan to chain head — the refresh entry point the app + tx handlers call after a
+ * submit or on the periodic poll. Serialized via `syncTracked`; balance/history updates are delivered
+ * asynchronously through the balance bus (the wallet's `on(...)` forwarders), not the return value.
+ * `walletId` is accepted for call-site compatibility but ignored — the read instance is keyed by the
+ * unlocked identity, not a passed id.
+ */
+export async function refreshShieldedBalances(_walletId?: string): Promise<void> {
+  const { wallet } = await ensureInstance()
+  await syncTracked(wallet)
 }
 
 /** Sync the persistent SDK wallet and return its shielded USDC balance (spendable + pending). */

@@ -35,18 +35,15 @@ export function useIncomingTransferDetector(): void {
   useEffect(() => {
     if (active?.status !== 'unlocked') return
 
-    const walletId = active.id
     let unsubscribe: (() => void) | null = null
     let cancelled = false
     let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
     void (async () => {
       try {
-        unsubscribe = await subscribeBalanceUpdates((event) => {
-          // The SDK's global callback fans out across every subscribed listener; filter to
-          // events for our wallet so a multi-wallet setup (future) doesn't trigger spurious
-          // scans on the wrong session.
-          if (event.railgunWalletID !== walletId) return
+        unsubscribe = await subscribeBalanceUpdates(() => {
+          // Every event on the bus is already scoped to the unlocked wallet (the SDK read instance
+          // is that wallet), so no per-wallet filtering is needed.
           // Trailing-debounce the epoch bump: each event resets the timer, so a burst of SDK
           // events during one scan collapses into a single bump after the quiet window. Bump as
           // a function-update so it composes rather than racing on a stale read.

@@ -10,14 +10,11 @@ import { waitForReceiptOrFail } from '@/lib/tx/receipt'
 import { simulateOrThrow } from '@/lib/tx/simulate'
 import {
   getRailgunAddress as kmGetRailgunAddress,
-  getSdkEncryptionKey as kmGetSdkEncryptionKey,
   getWalletId as kmGetWalletId,
   isUnlocked as kmIsUnlocked,
 } from '@/lib/railgun/keyManager'
 import { refreshShieldedBalances } from '@/lib/railgun/sync'
-import { buildYieldAdaptTransaction, type BroadcasterFeeRecipient } from '@/lib/railgun/yield'
-import { runYieldDifferential, yieldDifferentialEnabled } from '@/lib/railgun/yield-differential'
-import { buildYieldAdaptSdk, sdkYieldEnabled } from '@/lib/railgun/yield-sdk'
+import { buildYieldAdaptSdk } from '@/lib/railgun/yield-sdk'
 import { submitRelay } from '@/lib/relayer'
 import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
 import { advance, markFailed } from '@/lib/tx/reducer'
@@ -59,11 +56,9 @@ export const yieldWithdrawHandler: StageHandler<'yield-withdraw'> = {
 /** A6 — null when wallet-override, otherwise the broadcaster context from meta. */
 function broadcasterFeeFromRecord(
   record: TxRecord<'yield-withdraw'>,
-  tokenAddress: string,
-): BroadcasterFeeRecipient | null {
+): { amount: bigint; recipientAddress: string } | null {
   if (record.meta.useWalletOverride) return null
   return {
-    tokenAddress,
     amount: record.meta.broadcasterFeeAmount,
     recipientAddress: record.meta.broadcasterRailgunAddress,
   }
@@ -76,8 +71,6 @@ async function runBuildProof(
   if (!kmIsUnlocked()) {
     throw new Error('Yield withdraw requires an unlocked shielded wallet.')
   }
-  const walletId = kmGetWalletId()
-  const encryptionKey = kmGetSdkEncryptionKey()
   const railgunAddress = kmGetRailgunAddress()
   const deployments = await loadDeployments()
   const yieldDeployment = await loadYieldDeployment()
@@ -92,75 +85,29 @@ async function runBuildProof(
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   const progress = createProofProgressWriter(record, ctx.signal)
-
-  if (sdkYieldEnabled()) {
-    // @armada/sdk cutover: plan (unshield shares → adapter + re-shield-bundle adaptParams) → prove
-    // off-thread → encode redeemAndShield, and stash the calldata + the fee note's random (#312) so
-    // submit-relayer dispatches it without re-proving. Survives a reload (persisted in the record).
-    const bf = broadcasterFeeFromRecord(record, usdcAddress)
-    const { to, data, feeShieldRandom } = await buildYieldAdaptSdk({
-      mode: 'redeem',
-      amount: record.meta.shares,
-      unshieldToken: yieldDeployment.contracts.armadaYieldVault as `0x${string}`,
-      shieldOutputToken: usdcAddress as `0x${string}`,
-      adapterAddress: yieldDeployment.contracts.armadaYieldAdapter as `0x${string}`,
-      railgunAddress,
-      broadcasterFee: bf ? { amount: bf.amount, recipientAddress: bf.recipientAddress } : null,
-      onProgress: progress.write,
-    })
-    if (ctx.signal.aborted) throw new Error('cancelled')
-    await ctx.upsert(advance(progress.latest(), 'submit-relayer', { yieldTx: { to, data, value: '0' }, feeShieldRandom }))
-    return
-  }
-
-  const built = await buildYieldAdaptTransaction({
-    walletId,
-    encryptionKey,
+  // Plan (unshield shares → adapter + re-shield-bundle adaptParams) → prove off-thread → encode
+  // redeemAndShield, and stash the calldata + the fee note's random (#312) so submit-relayer
+  // dispatches it without re-proving. Survives a reload (persisted in the record).
+  const bf = broadcasterFeeFromRecord(record)
+  const { to, data, feeShieldRandom } = await buildYieldAdaptSdk({
     mode: 'redeem',
-    // Redeem flips the token roles: we unshield SHARES (ayUSDC, the vault token) and receive
-    // USDC (the underlying) back into the shielded pool.
-    unshieldToken: yieldDeployment.contracts.armadaYieldVault,
-    shieldOutputToken: usdcAddress,
     amount: record.meta.shares,
+    // Redeem flips the token roles: unshield SHARES (ayUSDC, the vault token) and receive USDC
+    // (the underlying) back into the shielded pool.
+    unshieldToken: yieldDeployment.contracts.armadaYieldVault as `0x${string}`,
+    shieldOutputToken: usdcAddress as `0x${string}`,
+    adapterAddress: yieldDeployment.contracts.armadaYieldAdapter as `0x${string}`,
     railgunAddress,
-    adapterAddress: yieldDeployment.contracts.armadaYieldAdapter,
-    hubChainId: getNetworkConfig().hub.chainId,
-    // Broadcaster fee is paid in USDC (the unshielded output token), same as deposit. A6:
-    // null when wallet-override is set → SDK builds without a broadcaster output.
-    broadcasterFee: broadcasterFeeFromRecord(record, usdcAddress),
+    broadcasterFee: bf,
     onProgress: progress.write,
   })
-
   if (ctx.signal.aborted) throw new Error('cancelled')
 
-  // Pre-cutover differential (opt-in, observe-only): build this withdraw with @armada/sdk and simulate
-  // it against the adapter — telemetry-reports whether the SDK proof + re-shield binding (user + fee
-  // notes) verifies on-chain. Fire-and-forget; never blocks or fails the withdraw.
-  const evmFrom = record.walletContext.evmAddress
-  if (yieldDifferentialEnabled() && evmFrom) {
-    const bf = broadcasterFeeFromRecord(record, usdcAddress)
-    void runYieldDifferential({
-      mode: 'redeem',
-      amount: record.meta.shares,
-      unshieldToken: yieldDeployment.contracts.armadaYieldVault as `0x${string}`,
-      shieldOutputToken: usdcAddress as `0x${string}`,
-      adapterAddress: yieldDeployment.contracts.armadaYieldAdapter as `0x${string}`,
-      railgunAddress,
-      broadcasterFee: bf ? { amount: bf.amount, recipientAddress: bf.recipientAddress } : null,
-      from: evmFrom as `0x${string}`,
-      chainId: getNetworkConfig().hub.chainId,
-    })
-  }
-
   await ctx.upsert(advance(progress.latest(), 'submit-relayer', {
-    yieldTx: {
-      to: built.transaction.to,
-      data: built.transaction.data,
-      value: built.transaction.value.toString(),
-    },
+    yieldTx: { to, data, value: '0' },
     // Persisted so submit-relayer can hand the relayer the fee note's random to verify the fee is
     // shielded to it (#312). Undefined on the wallet-override / fee-less path.
-    feeShieldRandom: built.feeShieldRandom,
+    feeShieldRandom,
   }))
 }
 

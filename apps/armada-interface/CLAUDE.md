@@ -4,7 +4,7 @@ USDC user app on the Armada protocol — shield, unshield, yield, payments, cros
 
 **Status:** V2 shielded-wallet redesign landed (Path C). Deterministic re-sign is the primary unlock path; backup-file + paste-secret remain as secondary recovery for smart-account wallets and cross-device portability. `OnboardingFlowV2` runs welcome → sign → checksum → complete (4 steps); `UnlockFlow` exposes three tabs (Sign in / Backup file / Paste secret). Per-(EVM address, account) walletId map in localStorage drives account-switch detection + auto-lock. Tx history is scoped to the active walletId and AES-256-GCM-encrypted at rest under a per-wallet key. See `specs/TX_SIGNING.md` + `specs/TX_SIGNING_V2_AMENDMENT.md`. Tx flows (shield/unshield/payments/yield) are wired end-to-end.
 
-**V1 Phase 9 — chain history recovery (landed):** on unlock, `useHistoryRecovery` reconstructs history from the `@armada/sdk` wallet scan (`runHistoryScan` → `historyEntryToTxRecord`) and synthesizes terminal `TxRecord`s for shields / transacts / unshields / yield ops not already in local IDB. `useIncomingTransferDetector` re-fires the scan on every SDK balance event so received transfers (which the user didn't author) surface live. A per-wallet localStorage checkpoint makes subsequent scans incremental. Settings → "Re-scan history" / "Clear local history" let the user force a refresh or wipe locally. See `lib/railgun/history.ts`, `hooks/useHistoryRecovery.ts`, and `test/integration/history-recovery.test.tsx`.
+**V1 Phase 9 — chain history recovery (landed):** on unlock, `useHistoryRecovery` reconstructs history from the `@armada/sdk` wallet scan (`runHistoryScan` → `historyEntryToTxRecord`) and synthesizes terminal `TxRecord`s for shields / transacts / unshields / yield ops not already in local IDB. `useIncomingTransferDetector` re-fires the scan on every SDK balance event so received transfers (which the user didn't author) surface live. A per-wallet localStorage checkpoint makes subsequent scans incremental. Settings → "Re-scan history" / "Clear local history" let the user force a refresh or wipe locally. See `lib/shielded/history.ts`, `hooks/useHistoryRecovery.ts`, and `test/integration/history-recovery.test.tsx`.
 
 ## Plan
 
@@ -32,7 +32,7 @@ src/
 ├── index.css                @import tailwindcss + @armada/ui tokens.css + global.css
 ├── config/                  env-driven config — network, wagmi, deployments, relayer
 ├── lib/                     pure logic, no React (rpc, cache, format, revert, wagmi-adapter, telemetry, relayer, cctp)
-│   ├── railgun/             @armada/sdk wrappers (wallet, keyManager, sdk-read, sdk-prover, sync, balance-bus, network, artifacts) — stock engine fully removed
+│   ├── shielded/            @armada/sdk wrappers (wallet, keyManager, sdk-read, sdk-prover, sync, balance-bus, network, artifacts) — stock engine fully removed
 │   └── tx/                  lifecycle model — types, lifecycles, reducer, storage, poller
 ├── state/                   Jotai atoms (tx, wallet, fees, visibility, ui)
 ├── hooks/                   per-concern hooks (useWallet, useShieldedWallet, useBalances, useYieldRate, useFees, useTx, useTxHistory, useTabVisible)
@@ -44,7 +44,7 @@ src/
 
 - **All source files start with two-line `// ABOUTME:` comments.** Project-wide rule from the root CLAUDE.md.
 - **No `ethers` or `@railgun-community/*` imports in `components/**`.** Business logic lives in `hooks/` and `lib/`. Components are dumb.
-- **No `console.log`/`console.debug` in `lib/railgun/`.** Secret-leak prevention. Use `lib/telemetry.ts` instead. Telemetry is **typed** via an event registry (`lib/telemetry.ts::EventRegistry`); arbitrary props are not allowed.
+- **No `console.log`/`console.debug` in `lib/shielded/`.** Secret-leak prevention. Use `lib/telemetry.ts` instead. Telemetry is **typed** via an event registry (`lib/telemetry.ts::EventRegistry`); arbitrary props are not allowed.
 - **No typography Tailwind classes app-wide.** `text-xs`/`font-*`/`tracking-*`/`leading-*`/`uppercase` etc. are forbidden — typography flows from the body baseline + @armada/ui CSS Modules. Layout utilities (`flex`, `grid`, `mx-auto`, `pt-20`, color tokens) are fine.
 - **TS strict + `noUncheckedIndexedAccess`.** No `any`, no `as any`. If a type is opaque (e.g. wagmi internals), narrow at the boundary.
 - **Tx executor lives at module scope, not React scope.** `lib/tx/executor.ts` initialises via `startEngine()` (called once from `App.tsx`). Hooks dispatch `executeTx(id)` / `cancelTx(id)`; they don't orchestrate.

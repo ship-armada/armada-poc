@@ -11,7 +11,7 @@ import {
 import { txListAtom } from '@/state/tx'
 import { historyRecoveryAtom } from '@/state/history'
 import type { TxRecord } from '@/lib/tx/types'
-import type { HistoryScanResult } from '@/lib/railgun/history'
+import type { HistoryScanResult } from '@/lib/shielded/history'
 
 const HUB_DEPLOY_BLOCK = 100_000
 
@@ -50,9 +50,9 @@ const hoisted = vi.hoisted(() => {
 
 // Replace the scan entry point so we feed deterministic HistoryScanResults, but keep the real
 // historyEntryToTxRecord mapper for building fixtures (so ids + sourceTxHash are authentic).
-vi.mock('@/lib/railgun/history', async () => {
-  const actual = await vi.importActual<typeof import('@/lib/railgun/history')>(
-    '@/lib/railgun/history',
+vi.mock('@/lib/shielded/history', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/shielded/history')>(
+    '@/lib/shielded/history',
   )
   return { ...actual, runHistoryScan: hoisted.runHistoryScan }
 })
@@ -64,7 +64,7 @@ vi.mock('@/lib/tx/storage', () => ({
   loadAllTx: vi.fn(async () => []),
 }))
 
-vi.mock('@/lib/railgun/sync', () => ({
+vi.mock('@/lib/shielded/sync', () => ({
   subscribeBalanceUpdates: hoisted.subscribe,
 }))
 
@@ -75,7 +75,7 @@ vi.mock('@/config/deployments', () => ({
 
 import { useHistoryRecovery } from '@/hooks/useHistoryRecovery'
 import { useIncomingTransferDetector } from '@/hooks/useIncomingTransferDetector'
-import { historyEntryToTxRecord } from '@/lib/railgun/history'
+import { historyEntryToTxRecord } from '@/lib/shielded/history'
 
 function Harness() {
   useHistoryRecovery()

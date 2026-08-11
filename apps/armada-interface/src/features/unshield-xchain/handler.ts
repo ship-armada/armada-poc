@@ -16,9 +16,9 @@ import { createProvider } from '@/lib/rpc'
 import {
   getWalletId as kmGetWalletId,
   isUnlocked as kmIsUnlocked,
-} from '@/lib/railgun/keyManager'
-import { refreshShieldedBalances } from '@/lib/railgun/sync'
-import { buildXchainUnshieldSdk } from '@/lib/railgun/unshield-xchain-sdk'
+} from '@/lib/shielded/keyManager'
+import { refreshShieldedBalances } from '@/lib/shielded/sync'
+import { buildXchainUnshieldSdk } from '@/lib/shielded/unshield-xchain-sdk'
 import {
   extractCctpMessageFromReceipt,
   messageReceivedTopic,

@@ -25,7 +25,7 @@ vi.mock('@/hooks/useShieldedWallet', () => ({
   }),
 }))
 
-vi.mock('@/lib/railgun/keyManager', () => ({
+vi.mock('@/lib/shielded/keyManager', () => ({
   getRootSecret: mockGetRootSecret,
 }))
 

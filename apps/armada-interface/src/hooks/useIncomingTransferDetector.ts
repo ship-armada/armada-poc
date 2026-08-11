@@ -5,7 +5,7 @@ import { useEffect } from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { activeShieldedWalletAtom } from '@/state/wallet'
 import { historyRecoveryEpochAtom } from '@/state/history'
-import { subscribeBalanceUpdates } from '@/lib/railgun/sync'
+import { subscribeBalanceUpdates } from '@/lib/shielded/sync'
 import { trackError } from '@/lib/telemetry'
 
 /**

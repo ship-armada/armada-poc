@@ -1,12 +1,12 @@
-// ABOUTME: SDK-backed unshield builder — planTransfer(unshield) → prove → toTransactionData → buildTransactCalldata,
-// ABOUTME: returning the raw { to, data } the handler submits. The @armada/sdk analogue of lib/railgun/unshield.ts.
+// ABOUTME: SDK-backed shielded-transfer builder — planTransfer → prove → toTransactionData → buildTransactCalldata,
+// ABOUTME: returning the raw { to, data } the handler submits. The @armada/sdk analogue of lib/shielded/transfer.ts.
 
 import { buildTransactCalldata } from '@armada/sdk'
 import { getSdkWallet } from './sdk-read'
 
-export interface SdkUnshieldInputs {
-  /** EVM recipient of the unshielded USDC — funds leave the pool to this address. */
-  readonly recipient: `0x${string}`
+export interface SdkTransferInputs {
+  /** 0zk recipient of the transfer. */
+  readonly recipient: string
   readonly amount: bigint
   /** Broadcaster (relayer) fee note, or null for direct user submission (no fee output). */
   readonly broadcasterFee: { readonly amount: bigint; readonly recipientAddress: string } | null
@@ -16,18 +16,14 @@ export interface SdkUnshieldInputs {
 }
 
 /**
- * Build an unshield transaction via `@armada/sdk`: the wallet plans a transfer whose only public
- * output is the unshield (recipient EVM address, no shielded outputs), proves it (Groth16), and the
- * proved struct is serialized into `transact(...)` calldata. Returns `{ to, data }` (value is always
- * 0 — a shielded tx carries no native value; the USDC is paid out from the pool).
+ * Build a shielded-transfer transaction via `@armada/sdk`: the wallet plans the transfer over its
+ * spendable notes, proves it (Groth16), and the proved struct is serialized into `transact(...)`
+ * calldata. Returns `{ to, data }` (value is always 0 — a shielded tx carries no native value).
  *
- * The unshield is modelled inside `planTransfer` as `{ recipient, amount }` — the last output
- * commitment (a public `UnshieldNoteERC20`, npk = recipient), which the contract pays out on. No
- * shielded recipients, so `outputs` is empty; the broadcaster fee (when present) is the only shielded
- * output. Proving runs on the instance's worker prover.
+ * Proving runs on the instance's off-thread worker prover. Returns `{ to, data }` for the caller to submit.
  */
-export async function buildUnshieldSdk(
-  inputs: SdkUnshieldInputs,
+export async function buildTransferSdk(
+  inputs: SdkTransferInputs,
 ): Promise<{ to: `0x${string}`; data: `0x${string}` }> {
   const wallet = await getSdkWallet()
   // planTransfer reads only `schedule.transfer` + `broadcasterShieldedAddress`; `feesCacheId`/`expiresAt`
@@ -42,8 +38,7 @@ export async function buildUnshieldSdk(
     : { schedule: { transfer: '0' }, broadcasterShieldedAddress: '', feesCacheId: '', expiresAt: 0 }
 
   const plan = await wallet.planTransfer({
-    outputs: [],
-    unshield: { recipient: inputs.recipient, amount: inputs.amount },
+    outputs: [{ to0zk: inputs.recipient, amount: inputs.amount }],
     fee,
   })
   const handle = await wallet.prove(

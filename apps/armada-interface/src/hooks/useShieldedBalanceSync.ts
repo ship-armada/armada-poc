@@ -1,4 +1,4 @@
-// ABOUTME: Bridges lib/railgun/sync's SDK balance events into shieldedUsdcAtom + yieldSharesAtom; drives an initial scan on unlock.
+// ABOUTME: Bridges lib/shielded/sync's SDK balance events into shieldedUsdcAtom + yieldSharesAtom; drives an initial scan on unlock.
 // ABOUTME: Mount once at App root. No-op when locked; auto-resubscribes on unlock.
 
 import { useEffect, useRef } from 'react'
@@ -14,8 +14,8 @@ import {
   refreshShieldedBalances,
   subscribeBalanceUpdates,
   subscribeScanStatus,
-} from '@/lib/railgun/sync'
-import { closeSdkRead, readSdkUsdcBalance, readSdkYieldShares } from '@/lib/railgun/sdk-read'
+} from '@/lib/shielded/sync'
+import { closeSdkRead, readSdkUsdcBalance, readSdkYieldShares } from '@/lib/shielded/sdk-read'
 import { trackError } from '@/lib/telemetry'
 
 /**

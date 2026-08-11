@@ -10,7 +10,7 @@ import { activeShieldedWalletIdAtom } from '@/state/wallet'
 import { txListAtom } from '@/state/tx'
 import { historyRecoveryEpochAtom } from '@/state/history'
 import { cacheClear } from '@/lib/cache'
-import { clearHistoryCheckpoint } from '@/lib/railgun/history-checkpoint'
+import { clearHistoryCheckpoint } from '@/lib/shielded/history-checkpoint'
 import { trackError } from '@/lib/telemetry'
 import styles from './ClearHistoryDialog.module.css'
 

@@ -1,5 +1,5 @@
 // ABOUTME: Tests for useShieldedWallet — enroll/unlockByPaste/unlockByBackup/exportBackup/lock/reset.
-// ABOUTME: Mocks lib/railgun/wallet at the import boundary so we don't need a live engine; wagmi useSignTypedData is mocked to return a deterministic signature.
+// ABOUTME: Mocks lib/shielded/wallet at the import boundary so we don't need a live engine; wagmi useSignTypedData is mocked to return a deterministic signature.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, act, waitFor } from '@testing-library/react'
@@ -10,10 +10,10 @@ import {
   evmAddressAtom,
   shieldedWalletsAtom,
 } from '@/state/wallet'
-import type { ShieldedWalletState } from '@/lib/railgun/wallet'
+import type { ShieldedWalletState } from '@/lib/shielded/wallet'
 
 // Mock the lib boundary so we never touch the SDK + circomlibjs in jsdom.
-vi.mock('@/lib/railgun/wallet', () => ({
+vi.mock('@/lib/shielded/wallet', () => ({
   enrollFromSignature: vi.fn(),
   unlockFromRootSecret: vi.fn(),
   unlockFromBackup: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock('@/lib/railgun/wallet', () => ({
   exportMnemonic: vi.fn(),
 }))
 
-vi.mock('@/lib/railgun/keyManager', () => ({
+vi.mock('@/lib/shielded/keyManager', () => ({
   getRootSecret: vi.fn(),
   getCreationBlock: vi.fn(() => null),
 }))
@@ -56,8 +56,8 @@ import {
   lockWallet,
   readStoredWalletIdFor,
   resetWallet,
-} from '@/lib/railgun/wallet'
-import { getRootSecret } from '@/lib/railgun/keyManager'
+} from '@/lib/shielded/wallet'
+import { getRootSecret } from '@/lib/shielded/keyManager'
 import { signTypedData } from 'wagmi/actions'
 
 const mockEnroll = enrollFromSignature as unknown as ReturnType<typeof vi.fn>

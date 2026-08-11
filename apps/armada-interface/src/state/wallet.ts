@@ -2,7 +2,7 @@
 // ABOUTME: EVM state sourced from wagmi hooks. Plural-wallet schema is future-proofing per reviewer #5; v1 only ever populates one entry.
 
 import { atom } from 'jotai'
-import type { ShieldedWalletState } from '@/lib/railgun/wallet'
+import type { ShieldedWalletState } from '@/lib/shielded/wallet'
 
 /** Truncated/raw EVM address of the connected wallet. null = not connected. */
 export const evmAddressAtom = atom<string | null>(null)
@@ -57,7 +57,7 @@ export const autoLockDeadlineAtom = atom<number | null>(null)
  *   failed    — the scan reported an error (RPC failures, etc.) or couldn't start
  *
  * Driven by the SDK wallet's scan events (scan:started/progress/complete/error), forwarded through
- * the scan-status bus (lib/railgun/balance-bus.ts) and written by `useShieldedBalanceSync`. Consumed
+ * the scan-status bus (lib/shielded/balance-bus.ts) and written by `useShieldedBalanceSync`. Consumed
  * by the SyncBanner UI + per-modal "block submit while sync is incomplete" gates.
  */
 export interface SyncState {

@@ -27,7 +27,7 @@ vi.mock('@/lib/tx/receipt', async (importActual) => {
 const simulateMock = vi.hoisted(() => vi.fn(async () => {}))
 vi.mock('@/lib/tx/simulate', () => ({ simulateOrThrow: simulateMock }))
 
-vi.mock('@/lib/railgun/keyManager', () => ({
+vi.mock('@/lib/shielded/keyManager', () => ({
   isUnlocked: () => false, // skip the post-confirm balance refresh
   getWalletId: () => 'rw-1',
   getShieldedAddress: () => '0zk1example',

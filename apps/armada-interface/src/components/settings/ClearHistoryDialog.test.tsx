@@ -1,5 +1,5 @@
 // ABOUTME: Tests for ClearHistoryDialog — confirm-gated cacheClear + checkpoint drop + atom reset + epoch bump.
-// ABOUTME: Stubs lib/cache and lib/railgun/history-checkpoint so the actions are observable without touching IDB.
+// ABOUTME: Stubs lib/cache and lib/shielded/history-checkpoint so the actions are observable without touching IDB.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -17,7 +17,7 @@ vi.mock('@/lib/cache', () => ({
   cacheClear: hoisted.cacheClear,
 }))
 
-vi.mock('@/lib/railgun/history-checkpoint', () => ({
+vi.mock('@/lib/shielded/history-checkpoint', () => ({
   clearHistoryCheckpoint: hoisted.clearHistoryCheckpoint,
 }))
 

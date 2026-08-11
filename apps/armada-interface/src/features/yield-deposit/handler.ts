@@ -12,9 +12,9 @@ import {
   getShieldedAddress as kmGetShieldedAddress,
   getWalletId as kmGetWalletId,
   isUnlocked as kmIsUnlocked,
-} from '@/lib/railgun/keyManager'
-import { refreshShieldedBalances } from '@/lib/railgun/sync'
-import { buildYieldAdaptSdk } from '@/lib/railgun/yield-sdk'
+} from '@/lib/shielded/keyManager'
+import { refreshShieldedBalances } from '@/lib/shielded/sync'
+import { buildYieldAdaptSdk } from '@/lib/shielded/yield-sdk'
 import { submitRelay } from '@/lib/relayer'
 import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
 import { advance, markFailed } from '@/lib/tx/reducer'

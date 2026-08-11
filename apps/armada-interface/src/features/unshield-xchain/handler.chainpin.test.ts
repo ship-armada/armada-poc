@@ -19,11 +19,11 @@ vi.mock('@/lib/tx/receipt', async (importActual) => {
 })
 
 // Mock the SDK builder so importing the handler doesn't transitively load the @armada/sdk prover.
-vi.mock('@/lib/railgun/unshield-xchain-sdk', () => ({
+vi.mock('@/lib/shielded/unshield-xchain-sdk', () => ({
   buildXchainUnshieldSdk: vi.fn(),
 }))
-vi.mock('@/lib/railgun/sync', () => ({ refreshShieldedBalances: vi.fn(async () => {}) }))
-vi.mock('@/lib/railgun/keyManager', () => ({
+vi.mock('@/lib/shielded/sync', () => ({ refreshShieldedBalances: vi.fn(async () => {}) }))
+vi.mock('@/lib/shielded/keyManager', () => ({
   isUnlocked: () => false,
   getWalletId: () => 'rw-1',
   getSdkEncryptionKey: () => '0xkey',

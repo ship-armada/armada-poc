@@ -9,7 +9,7 @@ import {
   isNonDeterministicSignerError,
   type NonDeterministicSignerErrorReason,
 } from '@/lib/crypto/determinism'
-import { normalizeEnrollmentError } from '@/lib/railgun/enrollmentErrors'
+import { normalizeEnrollmentError } from '@/lib/shielded/enrollmentErrors'
 import styles from './SignEnrollmentStep.module.css'
 
 export interface SignEnrollmentStepProps {

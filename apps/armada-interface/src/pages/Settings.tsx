@@ -17,7 +17,7 @@ import {
   autoLockDeadlineAtom,
 } from '@/state/wallet'
 import { historyRecoveryAtom, historyRecoveryEpochAtom } from '@/state/history'
-import { clearHistoryCheckpoint } from '@/lib/railgun/history-checkpoint'
+import { clearHistoryCheckpoint } from '@/lib/shielded/history-checkpoint'
 import { getNetworkMode } from '@/config/network'
 import styles from './Settings.module.css'
 

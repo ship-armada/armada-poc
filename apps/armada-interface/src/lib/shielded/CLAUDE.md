@@ -1,4 +1,4 @@
-# lib/railgun/
+# lib/shielded/
 
 Shielded-wallet lifecycle, proof generation, and tree sync — built entirely on `@armada/sdk`. (The
 stock `@railgun-community/*` engine has been fully removed; the `railgun/` directory name is retained

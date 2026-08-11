@@ -11,7 +11,7 @@ import {
   type ShieldRequestStruct,
   type ShieldDataStruct,
 } from './shield-intent'
-import type { ShieldRequestData } from '@/lib/railgun/shield'
+import type { ShieldRequestData } from '@/lib/shielded/shield'
 
 const TOKEN = '0x2222222222222222222222222222222222222222' as const
 const INTEGRATOR = '0x3333333333333333333333333333333333333333' as const

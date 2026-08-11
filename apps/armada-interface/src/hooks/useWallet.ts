@@ -9,8 +9,8 @@ import type { JsonRpcSigner } from 'ethers'
 import { walletClientToSigner } from '@/lib/wagmi-adapter'
 import { evmAddressAtom, activeShieldedWalletIdAtom, shieldedWalletsAtom } from '@/state/wallet'
 import { track, trackError } from '@/lib/telemetry'
-import { isUnlocked, getEvmAddress, getWalletId } from '@/lib/railgun/keyManager'
-import { lockWallet } from '@/lib/railgun/wallet'
+import { isUnlocked, getEvmAddress, getWalletId } from '@/lib/shielded/keyManager'
+import { lockWallet } from '@/lib/shielded/wallet'
 import { cancelAllRunning, clearResumed } from '@/lib/tx/executor'
 
 export interface UseWalletResult {

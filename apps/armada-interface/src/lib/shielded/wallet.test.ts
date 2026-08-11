@@ -1,4 +1,4 @@
-// ABOUTME: Tests for lib/railgun/wallet — enroll/unlock/lock/reset. Identity is derived locally now
+// ABOUTME: Tests for lib/shielded/wallet — enroll/unlock/lock/reset. Identity is derived locally now
 // ABOUTME: (deriveWalletId + the SDK's deriveKeyset 0zk); no stock engine. We verify the keyManager + localStorage plumbing.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'

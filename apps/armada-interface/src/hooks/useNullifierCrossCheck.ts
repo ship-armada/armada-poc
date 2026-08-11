@@ -4,7 +4,7 @@
 import { useEffect, useRef } from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { activeShieldedWalletAtom, nullifierCrossCheckAtom, syncStateAtom } from '@/state/wallet'
-import { checkOwnNullifiersOnChain } from '@/lib/railgun/nullifierCrossCheck'
+import { checkOwnNullifiersOnChain } from '@/lib/shielded/nullifierCrossCheck'
 import { trackError } from '@/lib/telemetry'
 
 /**

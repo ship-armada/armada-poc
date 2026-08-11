@@ -1,4 +1,4 @@
-// ABOUTME: Tests for lib/railgun/keyManager — set/get/clear, locked-state throws, best-effort zeroization of the rootSecret buffer on clear.
+// ABOUTME: Tests for lib/shielded/keyManager — set/get/clear, locked-state throws, best-effort zeroization of the rootSecret buffer on clear.
 
 import { describe, it, expect, beforeEach } from 'vitest'
 import {

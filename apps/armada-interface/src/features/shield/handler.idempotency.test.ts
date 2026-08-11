@@ -24,7 +24,7 @@ vi.mock('@/lib/tx/receipt', async (importActual) => {
   return { ...actual, waitForReceiptOrFail: waitForReceiptMock }
 })
 
-vi.mock('@/lib/railgun/keyManager', () => ({
+vi.mock('@/lib/shielded/keyManager', () => ({
   // isUnlocked false → handler skips the post-confirm balance refresh (keeps the test self-contained).
   isUnlocked: () => false,
   getWalletId: () => 'rw-1',

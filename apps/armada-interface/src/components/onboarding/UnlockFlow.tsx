@@ -10,7 +10,7 @@ import { FlowFooter } from '@/components/flow/FlowFooter'
 import { Tabs, Tooltip } from '@/components/ui'
 import { useShieldedWallet } from '@/hooks/useShieldedWallet'
 import { isNonDeterministicSignerError } from '@/lib/crypto/determinism'
-import { normalizeEnrollmentError } from '@/lib/railgun/enrollmentErrors'
+import { normalizeEnrollmentError } from '@/lib/shielded/enrollmentErrors'
 import styles from './UnlockFlow.module.css'
 
 export interface UnlockFlowProps {

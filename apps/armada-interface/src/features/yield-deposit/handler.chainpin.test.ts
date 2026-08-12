@@ -20,13 +20,13 @@ vi.mock('@/lib/tx/receipt', async (importActual) => {
 const simulateMock = vi.hoisted(() => vi.fn(async () => {}))
 vi.mock('@/lib/tx/simulate', () => ({ simulateOrThrow: simulateMock }))
 
-vi.mock('@/lib/railgun/keyManager', () => ({
+vi.mock('@/lib/shielded/keyManager', () => ({
   isUnlocked: () => false,
   getWalletId: () => 'rw-1',
   getShieldedAddress: () => '0zk1example',
   getSdkEncryptionKey: () => '0xkey',
 }))
-vi.mock('@/lib/railgun/sync', () => ({ refreshShieldedBalances: vi.fn(async () => {}) }))
+vi.mock('@/lib/shielded/sync', () => ({ refreshShieldedBalances: vi.fn(async () => {}) }))
 
 import { yieldDepositHandler } from './handler'
 import type { ExecutorCtx } from '@/lib/tx/executor'

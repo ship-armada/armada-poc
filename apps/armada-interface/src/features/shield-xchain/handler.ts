@@ -18,13 +18,13 @@ import {
   getShieldedAddress as kmGetShieldedAddress,
   getWalletId as kmGetWalletId,
   isUnlocked as kmIsUnlocked,
-} from '@/lib/railgun/keyManager'
-import { refreshShieldedBalances } from '@/lib/railgun/sync'
+} from '@/lib/shielded/keyManager'
+import { refreshShieldedBalances } from '@/lib/shielded/sync'
 import {
   generateRandomShieldPrivateKey,
   type ShieldRequestData,
-} from '@/lib/railgun/shield'
-import { createShieldRequestSdk } from '@/lib/railgun/shield-sdk'
+} from '@/lib/shielded/shield'
+import { createShieldRequestSdk } from '@/lib/shielded/shield-sdk'
 import { extractCctpMessageFromReceipt, messageReceivedTopic } from '@/lib/cctp'
 import { cctpMaxFeeForKind, submitRelay, fetchCctpDeliveryStatus } from '@/lib/relayer'
 import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
@@ -176,7 +176,7 @@ async function runBuildProof(
 
   // Same flow as same-chain shield: generate an ephemeral per-deposit shieldPrivateKey and ask
   // the engine to build the ShieldRequest. Cross-chain doesn't change the off-chain ZK
-  // construction — only what we do with the result on-chain. See lib/railgun/shield.ts for why
+  // construction — only what we do with the result on-chain. See lib/shielded/shield.ts for why
   // randomness is correct (the Railgun-convention wallet prompt is unnecessary in our model).
   if (ctx.signal.aborted) throw new Error('cancelled')
 

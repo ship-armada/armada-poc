@@ -51,7 +51,7 @@ describe('runSchemaMigrationIfNeeded', () => {
     window.localStorage.setItem(LEGACY_WALLET_ID_KEY, 'preserved-because-v2')
     await runSchemaMigrationIfNeeded()
     // Legacy keys are NOT wiped when the schema is already current — they belong to the
-    // v2 owner (`lib/railgun/wallet.ts`) at that point.
+    // v2 owner (`lib/shielded/wallet.ts`) at that point.
     expect(window.localStorage.getItem(LEGACY_WALLET_ID_KEY)).toBe('preserved-because-v2')
   })
 

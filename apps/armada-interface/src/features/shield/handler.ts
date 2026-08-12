@@ -16,13 +16,13 @@ import {
   getShieldedAddress as kmGetShieldedAddress,
   getWalletId as kmGetWalletId,
   isUnlocked as kmIsUnlocked,
-} from '@/lib/railgun/keyManager'
-import { refreshShieldedBalances } from '@/lib/railgun/sync'
+} from '@/lib/shielded/keyManager'
+import { refreshShieldedBalances } from '@/lib/shielded/sync'
 import {
   generateRandomShieldPrivateKey,
   type ShieldRequestData,
-} from '@/lib/railgun/shield'
-import { createShieldRequestSdk } from '@/lib/railgun/shield-sdk'
+} from '@/lib/shielded/shield'
+import { createShieldRequestSdk } from '@/lib/shielded/shield-sdk'
 import { signUsdcPermit } from '@/lib/wallet/permit'
 import { buildGaslessShieldCalldata } from '@/lib/wallet/gasless-shield'
 import {
@@ -94,7 +94,7 @@ const PRIVACY_POOL_SHIELD_ABI = [
  * routes through the user's EVM wallet (direct) or the relayer-mediated wrapper (gasless).
  *
  *   1. `build-proof`    — generate a random shieldPrivateKey → build ShieldRequest (no signature —
- *                         see lib/railgun/shield.ts for why the shield key is random, not derived).
+ *                         see lib/shielded/shield.ts for why the shield key is random, not derived).
  *                         When gasless: sign an EIP-2612 USDC permit for `amount + fee` to the
  *                         wrapper address — the only wallet prompt on this path.
  *   2. `submit-relayer` — direct path: approve USDC + writeContract(PrivacyPool.shield).
@@ -163,7 +163,7 @@ async function runBuildProof(
   // shieldPrivateKey is an ephemeral per-deposit ECIES sender secret — used once at note
   // construction, never re-needed (the recipient's chain scan uses the on-chain `shieldKey` +
   // their viewing key to decrypt). Random generation eliminates the Railgun-convention
-  // `personal_sign('RAILGUN_SHIELD')` wallet prompt; see lib/railgun/shield.ts for the full
+  // `personal_sign('RAILGUN_SHIELD')` wallet prompt; see lib/shielded/shield.ts for the full
   // rationale.
 
   // Determine the value that lands in the shielded commitment. For the gasless path the wrapper

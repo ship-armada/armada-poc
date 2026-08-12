@@ -30,7 +30,7 @@ vi.mock('../cache', () => ({
 }))
 
 import { putTxIfFresh, putTx, loadAllTx, deleteTx } from './storage'
-import { setUnlocked, clear } from '../railgun/keyManager'
+import { setUnlocked, clear } from '../shielded/keyManager'
 import { isEncryptedBlob, unwrap, wrap } from '../crypto/cache-cipher'
 import type { TxRecord } from './types'
 

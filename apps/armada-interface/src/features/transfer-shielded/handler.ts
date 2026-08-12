@@ -11,9 +11,9 @@ import { simulateOrThrow } from '@/lib/tx/simulate'
 import {
   getWalletId as kmGetWalletId,
   isUnlocked as kmIsUnlocked,
-} from '@/lib/railgun/keyManager'
-import { refreshShieldedBalances } from '@/lib/railgun/sync'
-import { buildTransferSdk } from '@/lib/railgun/transfer-sdk'
+} from '@/lib/shielded/keyManager'
+import { refreshShieldedBalances } from '@/lib/shielded/sync'
+import { buildTransferSdk } from '@/lib/shielded/transfer-sdk'
 import { submitRelay } from '@/lib/relayer'
 import { handleRelaySubmitError } from '@/lib/tx/relaySubmit'
 import { advance, markFailed } from '@/lib/tx/reducer'

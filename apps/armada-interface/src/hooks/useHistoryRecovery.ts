@@ -1,5 +1,5 @@
 // ABOUTME: Drives chain-driven history recovery on wallet unlock — reconstructs history from the @armada/sdk scan, maps entries to TxRecord, persists via the existing OCC-protected storage, and advances a per-wallet checkpoint so subsequent scans only walk the delta.
-// ABOUTME: Mount once at App root. Idempotent across re-mounts (effect re-runs only on walletId / epoch change). Shares the scan path with useIncomingTransferDetector (Phase 9.4) via lib/railgun/history.ts::runHistoryScan.
+// ABOUTME: Mount once at App root. Idempotent across re-mounts (effect re-runs only on walletId / epoch change). Shares the scan path with useIncomingTransferDetector (Phase 9.4) via lib/shielded/history.ts::runHistoryScan.
 
 import { useEffect, useRef } from 'react'
 import { useAtomValue, useSetAtom, useStore } from 'jotai'
@@ -15,11 +15,11 @@ import { markRecoveredComplete, sourceHashProvesComplete } from '@/lib/tx/reduce
 import {
   runHistoryScan,
   type HistoryMapContext,
-} from '@/lib/railgun/history'
+} from '@/lib/shielded/history'
 import {
   readHistoryCheckpoint,
   writeHistoryCheckpoint,
-} from '@/lib/railgun/history-checkpoint'
+} from '@/lib/shielded/history-checkpoint'
 import { loadDeployments } from '@/config/deployments'
 import { track, trackError } from '@/lib/telemetry'
 

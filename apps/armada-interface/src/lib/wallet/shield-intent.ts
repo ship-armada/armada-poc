@@ -4,7 +4,7 @@
 import { readContract, signTypedData } from 'wagmi/actions'
 import { keccak256, encodeAbiParameters } from 'viem'
 import { wagmiConfig } from '@/config/wagmi'
-import type { ShieldRequestData } from '@/lib/railgun/shield'
+import type { ShieldRequestData } from '@/lib/shielded/shield'
 
 /**
  * On-chain `ShieldRequest` struct shape (hub `shield` / `gaslessShield`). The frontend builds these

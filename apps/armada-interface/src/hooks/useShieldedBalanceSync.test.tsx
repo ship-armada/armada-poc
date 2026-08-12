@@ -16,7 +16,7 @@ const h = vi.hoisted(() => ({
 
 // Mock the SDK boundary so importing the hook doesn't pull the SDK into jsdom, and so we can
 // capture the scan-status + balance-update listeners the hook subscribes.
-vi.mock('@/lib/railgun/sync', () => ({
+vi.mock('@/lib/shielded/sync', () => ({
   subscribeBalanceUpdates: vi.fn(async (cb: () => void) => {
     h.balanceListener = cb
     return () => { h.balanceListener = null }
@@ -27,7 +27,7 @@ vi.mock('@/lib/railgun/sync', () => ({
   }),
   refreshShieldedBalances: h.refreshShieldedBalances,
 }))
-vi.mock('@/lib/railgun/sdk-read', () => ({
+vi.mock('@/lib/shielded/sdk-read', () => ({
   closeSdkRead: vi.fn(async () => {}),
   readSdkUsdcBalance: h.readSdkUsdcBalance,
   readSdkYieldShares: h.readSdkYieldShares,

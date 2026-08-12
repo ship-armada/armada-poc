@@ -27,7 +27,7 @@ const hoisted = vi.hoisted(() => {
   }
 })
 
-vi.mock('@/lib/railgun/sync', () => ({
+vi.mock('@/lib/shielded/sync', () => ({
   subscribeBalanceUpdates: hoisted.subscribe,
 }))
 

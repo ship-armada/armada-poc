@@ -16,7 +16,7 @@ vi.mock('@/lib/relayer', async (importActual) => {
 
 // The SDK unshield builder must NOT run on a submit re-entry — the calldata was stashed in build-proof.
 const buildUnshieldMock = vi.hoisted(() => vi.fn(() => { throw new Error('buildUnshieldSdk must not be called on idempotent re-entry') }))
-vi.mock('@/lib/railgun/unshield-sdk', () => ({ buildUnshieldSdk: buildUnshieldMock }))
+vi.mock('@/lib/shielded/unshield-sdk', () => ({ buildUnshieldSdk: buildUnshieldMock }))
 
 const pollMock = vi.hoisted(() => vi.fn(async () => ({ status: 'done' as const, value: { status: 'confirmed' as const } })))
 const pollStatusOnceMock = vi.hoisted(() => vi.fn(async () => null))
@@ -25,13 +25,13 @@ vi.mock('@/lib/tx/poller', async (importActual) => {
   return { ...actual, poll: pollMock, pollRelayStatusOnce: pollStatusOnceMock }
 })
 
-vi.mock('@/lib/railgun/keyManager', () => ({
+vi.mock('@/lib/shielded/keyManager', () => ({
   isUnlocked: () => true,
   getWalletId: () => 'rw-1',
 }))
 
 // Stub the post-confirm balance refresh — fire-and-forget, irrelevant to the idempotency assertion.
-vi.mock('@/lib/railgun/sync', () => ({ refreshShieldedBalances: vi.fn(async () => {}) }))
+vi.mock('@/lib/shielded/sync', () => ({ refreshShieldedBalances: vi.fn(async () => {}) }))
 
 vi.mock('@/lib/network-switch', () => ({
   ensureChain: vi.fn(() => { throw new Error('ensureChain must not be called on idempotent re-entry') }),

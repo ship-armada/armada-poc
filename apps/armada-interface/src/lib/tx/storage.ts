@@ -3,7 +3,7 @@
 
 import { cacheAll, cacheDelete, cacheGet, cachePut } from '../cache'
 import { isEncryptedBlob, unwrap, wrap, type EncryptedBlob } from '../crypto/cache-cipher'
-import { getHistoryEncryptionKey, isUnlocked } from '../railgun/keyManager'
+import { getHistoryEncryptionKey, isUnlocked } from '../shielded/keyManager'
 import { trackError } from '../telemetry'
 import { historySortTime, isTerminalState } from './types'
 import type { TxRecord } from './types'

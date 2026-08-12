@@ -6,7 +6,7 @@ import { Check, Download, Eye, KeyRound } from 'lucide-react'
 import { Modal, Tabs } from '@/components/ui'
 import { FlowFooter } from '@/components/flow/FlowFooter'
 import { useShieldedWallet } from '@/hooks/useShieldedWallet'
-import { getRootSecret } from '@/lib/railgun/keyManager'
+import { getRootSecret } from '@/lib/shielded/keyManager'
 import { normalizeBackupUnlockError, verifyBackupFileText } from '@/lib/crypto/kdf'
 import styles from './RecoverySecretExportDialog.module.css'
 

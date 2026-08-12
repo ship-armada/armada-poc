@@ -36,9 +36,9 @@ import '@/features/yield-withdraw'
 import { startEngine } from '@/lib/tx/executor'
 import { trackError } from '@/lib/telemetry'
 import { appModeForWalletStatus, type GuardMode } from '@/lib/app-mode'
-import { preloadArtifactsFromOrigin } from '@/lib/railgun/artifacts'
-import { runSchemaMigrationIfNeeded } from '@/lib/railgun/schema-migration'
-import { clearStoredWalletIdentity, readStoredWalletId } from '@/lib/railgun/wallet'
+import { preloadArtifactsFromOrigin } from '@/lib/shielded/artifacts'
+import { runSchemaMigrationIfNeeded } from '@/lib/shielded/schema-migration'
+import { clearStoredWalletIdentity, readStoredWalletId } from '@/lib/shielded/wallet'
 import { isLocalMode } from '@/config/network'
 import {
   DEFAULT_DEV_MOCK_BALANCE,

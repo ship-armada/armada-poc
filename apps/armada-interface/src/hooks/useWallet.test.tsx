@@ -48,11 +48,11 @@ vi.mock('sonner', () => ({
   toast: (...args: unknown[]) => hoisted.mockToast(...args),
 }))
 
-vi.mock('@/lib/railgun/wallet', () => ({
+vi.mock('@/lib/shielded/wallet', () => ({
   lockWallet: hoisted.mockLockWallet,
 }))
 
-vi.mock('@/lib/railgun/keyManager', () => ({
+vi.mock('@/lib/shielded/keyManager', () => ({
   isUnlocked: hoisted.mockIsUnlocked,
   getEvmAddress: hoisted.mockGetEvmAddress,
   getWalletId: hoisted.mockGetWalletId,

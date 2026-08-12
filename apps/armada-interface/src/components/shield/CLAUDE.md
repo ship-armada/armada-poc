@@ -24,7 +24,7 @@ The deposit (public → private) flow. Owned by `ShieldModal`, opened via `setOp
 
 ## What's wired now (Phase 2)
 
-- The shield handler (`features/shield/handler.ts`) is registered with the executor; `tx.submit()` runs the full `build-proof → submit-relayer → hub-confirmed` chain. Direct-submit path: the user's wallet prompts once (the on-chain `PrivacyPool.shield(...)`, with a one-time USDC `approve(MAX_UINT256)` first if allowance is low). Gasless path: one prompt for the EIP-2612 USDC permit. `shieldPrivateKey` is generated locally (random 32 bytes) at build-proof — no signing prompt for the Railgun-convention message; see `lib/railgun/shield.ts` for why randomness is correct.
+- The shield handler (`features/shield/handler.ts`) is registered with the executor; `tx.submit()` runs the full `build-proof → submit-relayer → hub-confirmed` chain. Direct-submit path: the user's wallet prompts once (the on-chain `PrivacyPool.shield(...)`, with a one-time USDC `approve(MAX_UINT256)` first if allowance is low). Gasless path: one prompt for the EIP-2612 USDC permit. `shieldPrivateKey` is generated locally (random 32 bytes) at build-proof — no signing prompt for the Railgun-convention message; see `lib/shielded/shield.ts` for why randomness is correct.
 - `useUsdcBalances()` polls the connected wallet's hub USDC balance into `usdcBalancesAtom` so the MAX is populated.
 - After confirmation the handler triggers `refreshShieldedBalances`, which fires the SDK's onBalanceUpdate callback and `useShieldedBalanceSync` writes the new shielded total into `shieldedUsdcAtom`.
 

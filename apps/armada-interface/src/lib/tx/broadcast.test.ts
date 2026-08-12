@@ -9,7 +9,7 @@ import { markCancelled } from './reducer'
 import { loadAllTx, putTxIfFresh } from './storage'
 import { txListAtom, upsertTxAtom } from '@/state/tx'
 import { cacheClear } from '../cache'
-import { setUnlocked, clear as clearKeyManager } from '../railgun/keyManager'
+import { setUnlocked, clear as clearKeyManager } from '../shielded/keyManager'
 import type { TxRecord } from './types'
 
 const HASH = '0xdeadbeef' as const

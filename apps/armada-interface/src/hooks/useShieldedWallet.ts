@@ -19,11 +19,11 @@ import {
   unlockFromBackup,
   unlockFromRootSecret,
   type ShieldedWalletState,
-} from '@/lib/railgun/wallet'
+} from '@/lib/shielded/wallet'
 import {
   getCreationBlock as kmGetCreationBlock,
   getRootSecret as kmGetRootSecret,
-} from '@/lib/railgun/keyManager'
+} from '@/lib/shielded/keyManager'
 import {
   buildEnrollmentTypedData,
   normalizeSignature,
@@ -42,7 +42,7 @@ import { cancelAllRunning, clearResumed } from '@/lib/tx/executor'
 import { track, trackError } from '@/lib/telemetry'
 
 /**
- * Hook surface: typed lifecycle actions that wrap `lib/railgun/wallet`. Side effects per call:
+ * Hook surface: typed lifecycle actions that wrap `lib/shielded/wallet`. Side effects per call:
  * 1. Calls the lib function (which writes the keyManager singleton)
  * 2. Mirrors the resulting `ShieldedWalletState` into `shieldedWalletsAtom` + `activeShieldedWalletIdAtom`
  * 3. Emits a `track(...)` event on success, `trackError(...)` on failure
@@ -84,7 +84,7 @@ export function useShieldedWallet() {
     //   - MUST NOT be persisted to localStorage / sessionStorage / IndexedDB / cookies.
     //   - MUST NOT be logged to `console` / telemetry / Sentry / error reporters. The structured
     //     `track`/`trackError` helpers in lib/telemetry.ts are allowlist-typed and won't accept
-    //     them; raw `console.*` is banned in lib/railgun/ + lib/crypto/ by convention.
+    //     them; raw `console.*` is banned in lib/shielded/ + lib/crypto/ by convention.
     //   - MUST be discarded immediately after HKDF derivation. `enrollFromSignature` zeros the
     //     buffer internally; the `finally` block below covers the early-return paths where
     //     enrollFromSignature wasn't reached (e.g. determinism check failed and we throw).

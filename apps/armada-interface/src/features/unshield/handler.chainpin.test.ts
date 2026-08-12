@@ -13,12 +13,12 @@ vi.mock('@/lib/tx/receipt', async (importActual) => {
   return { ...actual, waitForReceiptOrFail: waitForReceiptMock }
 })
 
-vi.mock('@/lib/railgun/keyManager', () => ({
+vi.mock('@/lib/shielded/keyManager', () => ({
   isUnlocked: () => true, // handler guards on this before submit; refreshShieldedBalances is mocked
   getWalletId: () => 'rw-1',
   getSdkEncryptionKey: () => '0xkey',
 }))
-vi.mock('@/lib/railgun/sync', () => ({ refreshShieldedBalances: vi.fn(async () => {}) }))
+vi.mock('@/lib/shielded/sync', () => ({ refreshShieldedBalances: vi.fn(async () => {}) }))
 
 import { unshieldLocalHandler } from './handler'
 import type { ExecutorCtx } from '@/lib/tx/executor'

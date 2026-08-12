@@ -46,8 +46,8 @@ vi.mock('@armada/sdk', async (importActual) => {
 
 // network.ts is pure ethers now; stub only `getCurrentHubBlock` (wallet.ts calls it on signIn and
 // the real one would hit an RPC jsdom can't reach). Keep the rest real.
-vi.mock('@/lib/railgun/network', async (importActual) => {
-  const actual = await importActual<typeof import('@/lib/railgun/network')>()
+vi.mock('@/lib/shielded/network', async (importActual) => {
+  const actual = await importActual<typeof import('@/lib/shielded/network')>()
   return {
     ...actual,
     getCurrentHubBlock: vi.fn(async () => 100),
@@ -89,7 +89,7 @@ vi.mock('@/lib/wagmi-adapter', () => ({ walletClientToSigner: vi.fn() }))
 import { useShieldedWallet } from '@/hooks/useShieldedWallet'
 import { useWallet } from '@/hooks/useWallet'
 import { useTxHistory } from '@/hooks/useTxHistory'
-import { isUnlocked, clear as clearKeyManager } from '@/lib/railgun/keyManager'
+import { isUnlocked, clear as clearKeyManager } from '@/lib/shielded/keyManager'
 import { putTxIfFresh } from '@/lib/tx/storage'
 
 // ─────────────────────────────────────────────────────────────────────────────

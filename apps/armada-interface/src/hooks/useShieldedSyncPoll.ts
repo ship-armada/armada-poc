@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useAtomValue } from 'jotai'
 import { activeShieldedWalletAtom } from '@/state/wallet'
 import { tabVisibleAtom } from '@/state/visibility'
-import { refreshShieldedBalances } from '@/lib/railgun/sync'
+import { refreshShieldedBalances } from '@/lib/shielded/sync'
 
 // Cadence for the background scan. The SDK's sync is a cheap no-op (`scanned:false`) when the chain
 // head hasn't advanced, so a tight-ish interval keeps received transfers fresh without real cost.

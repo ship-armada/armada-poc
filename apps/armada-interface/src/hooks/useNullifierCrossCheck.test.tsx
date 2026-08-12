@@ -10,7 +10,7 @@ const hoisted = vi.hoisted(() => ({
   check: vi.fn(),
   trackError: vi.fn(),
 }))
-vi.mock('@/lib/railgun/nullifierCrossCheck', () => ({ checkOwnNullifiersOnChain: hoisted.check }))
+vi.mock('@/lib/shielded/nullifierCrossCheck', () => ({ checkOwnNullifiersOnChain: hoisted.check }))
 vi.mock('@/lib/telemetry', () => ({ trackError: hoisted.trackError }))
 
 import { useNullifierCrossCheck } from './useNullifierCrossCheck'

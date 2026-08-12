@@ -8,7 +8,7 @@ import { putTx, loadAllTx } from './storage'
 import { upsertTxAtom, txListAtom } from '@/state/tx'
 import { tabVisibleAtom } from '@/state/visibility'
 import { cacheClear } from '../cache'
-import { setUnlocked, clear as clearKeyManager } from '../railgun/keyManager'
+import { setUnlocked, clear as clearKeyManager } from '../shielded/keyManager'
 import { isTerminalState, type TxError, type TxRecord } from './types'
 
 function makeRecord(overrides: Partial<TxRecord> = {}): TxRecord {

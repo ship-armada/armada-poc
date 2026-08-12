@@ -2,6 +2,16 @@
 
 import { describe, it, expect } from 'vitest'
 import { encodeErrorResult } from 'viem'
+import {
+  FeeQuoteExpiredError,
+  InsufficientBalanceError,
+  InvalidKeyMaterialError,
+  NoSpendCapabilityError,
+  NoteAlreadySpentError,
+  ProofExpiredError,
+  RootMismatchError,
+  StorageConflictError,
+} from '@armada/sdk'
 import { classifyHandlerError } from './errors'
 import { asTxError } from './receipt'
 
@@ -140,6 +150,46 @@ describe('classifyHandlerError — RelayerError branch (S-H2)', () => {
     const r = classifyHandlerError(relayerError('UNKNOWN_ERROR', 'weird relayer state'), 'fallback')
     expect(r.code).toBe('OTHER')
     expect(r.message).toBe('weird relayer state')
+  })
+})
+
+describe('classifyHandlerError — @armada/sdk ArmadaError branch', () => {
+  it('maps pre-submit spend errors to PRE_FLIGHT_REVERT (nothing was sent)', () => {
+    // WHY: planTransfer/prove/buildTransactCalldata throw these BEFORE the wire, so the user should
+    // hear "nothing left your wallet" — not a generic failure that implies funds may be in limbo.
+    expect(classifyHandlerError(new RootMismatchError('tree moved'), 'fallback').code).toBe('PRE_FLIGHT_REVERT')
+    expect(classifyHandlerError(new NoteAlreadySpentError('spent'), 'fallback').code).toBe('PRE_FLIGHT_REVERT')
+    expect(classifyHandlerError(new InsufficientBalanceError('too little'), 'fallback').code).toBe('PRE_FLIGHT_REVERT')
+    expect(classifyHandlerError(new NoSpendCapabilityError('view-only'), 'fallback').code).toBe('PRE_FLIGHT_REVERT')
+    expect(classifyHandlerError(new ProofExpiredError('stale proof'), 'fallback').code).toBe('PRE_FLIGHT_REVERT')
+  })
+
+  it('gives each spend error category-appropriate copy, not the raw SDK message', () => {
+    expect(classifyHandlerError(new RootMismatchError('root 0xabc not found'), 'fallback').message).toMatch(
+      /out of date|sync/i,
+    )
+    expect(classifyHandlerError(new InsufficientBalanceError('need 5 have 2'), 'fallback').message).toMatch(
+      /insufficient shielded balance/i,
+    )
+  })
+
+  it('maps FeeQuoteExpiredError to FEE_EXPIRED so retry is gated off (start-over copy)', () => {
+    const r = classifyHandlerError(new FeeQuoteExpiredError('quote stale'), 'fallback')
+    expect(r.code).toBe('FEE_EXPIRED')
+    expect(r.message).toMatch(/new transaction|fresh quote/i)
+  })
+
+  it('maps transient StorageConflictError to RPC_ERROR (retry-appropriate)', () => {
+    expect(classifyHandlerError(new StorageConflictError('concurrent write'), 'fallback').code).toBe('RPC_ERROR')
+  })
+
+  it('falls through to OTHER for an unmapped SDK code, surfacing the (truncated) SDK message', () => {
+    // WHY: identity/signing-path codes (INVALID_KEY_MATERIAL, …) and any FUTURE ArmadaError should
+    // be surfaced honestly rather than swallowed — but still run through mapRevertToMessage so a
+    // long dump doesn't reach the UI verbatim.
+    const r = classifyHandlerError(new InvalidKeyMaterialError('bad key material'), 'fallback')
+    expect(r.code).toBe('OTHER')
+    expect(r.message).toBe('bad key material')
   })
 })
 

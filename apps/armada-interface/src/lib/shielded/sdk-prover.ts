@@ -3,24 +3,30 @@
 
 import {
   createWorkerProver,
+  webWorkerChannel,
   type ArtifactSet,
   type ArtifactSource,
+  type BrowserWorkerLike,
   type CircuitShape,
   type ProverAdapter,
   type WorkerChannel,
 } from '@armada/sdk'
 import { armadaVariantKey, getArmadaArtifact } from './artifactGetter'
 
-/** A `WorkerChannel` over a browser Web Worker running the @armada/sdk prover handler. */
+/**
+ * A `WorkerChannel` over a browser Web Worker running the SDK's prebuilt prover entry.
+ *
+ * `@armada/sdk/prover/worker` is the SDK-maintained, self-wiring worker module — it installs its own
+ * `onmessage` handler around `createProverWorkerHandler` and imports ONLY the lean `@armada/sdk/prover`
+ * subpath (snarkjs, no 13MB wasm-inlined root), so Vite bundles a small worker chunk. Pairing it with
+ * `webWorkerChannel` keeps the two-phase `proof:progress` (witness → proving) flowing to the main thread.
+ */
 function createProverWorkerChannel(): WorkerChannel {
-  const worker = new Worker(new URL('./prover.worker.ts', import.meta.url), { type: 'module' })
-  return {
-    post: (message) => worker.postMessage(message),
-    onMessage: (handler) => {
-      worker.onmessage = (event: MessageEvent) => handler(event.data)
-    },
-    terminate: () => worker.terminate(),
-  }
+  const worker = new Worker(new URL('@armada/sdk/prover/worker', import.meta.url), { type: 'module' })
+  // The DOM `Worker.onmessage` param is `MessageEvent` — wider than `BrowserWorkerLike`'s `{ data }`,
+  // so it fails `strictFunctionTypes` assignability. `webWorkerChannel` only reads `event.data`, so the
+  // shapes are runtime-compatible; narrow at the boundary rather than pull the DOM lib into the SDK.
+  return webWorkerChannel(worker as unknown as BrowserWorkerLike)
 }
 
 /**

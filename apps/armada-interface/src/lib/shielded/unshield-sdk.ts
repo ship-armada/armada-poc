@@ -3,6 +3,7 @@
 
 import { buildTransactCalldata } from '@armada/sdk'
 import { getSdkWallet } from './sdk-read'
+import { assertSpendPreflight } from './preflight'
 
 export interface SdkUnshieldInputs {
   /** EVM recipient of the unshielded USDC — funds leave the pool to this address. */
@@ -46,6 +47,9 @@ export async function buildUnshieldSdk(
     unshield: { recipient: inputs.recipient, amount: inputs.amount },
     fee,
   })
+  // Pre-proof gate: reject a stale root / already-spent input in <1s instead of proving for ~30s and
+  // reverting on-chain. Throws a typed ArmadaError the handler's classifier maps to PRE_FLIGHT_REVERT.
+  await assertSpendPreflight(wallet, plan)
   const handle = await wallet.prove(
     plan,
     inputs.onProgress ? { onProgress: (p) => inputs.onProgress?.(p.fraction) } : undefined,

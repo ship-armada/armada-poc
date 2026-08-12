@@ -10,6 +10,7 @@ import {
   transactionToTuple,
 } from '@armada/sdk'
 import { getSdkWallet } from './sdk-read'
+import { assertSpendPreflight } from './preflight'
 
 const ZERO_BYTES32 = `0x${'00'.repeat(32)}` as const
 
@@ -131,6 +132,9 @@ export async function buildYieldAdaptSdk(
     tokenAddress: inputs.unshieldToken,
     fee,
   })
+  // Pre-proof gate: reject a stale root / already-spent input in <1s instead of proving for ~30s and
+  // reverting on-chain. Throws a typed ArmadaError the handler's classifier maps to PRE_FLIGHT_REVERT.
+  await assertSpendPreflight(wallet, plan)
   const handle = await wallet.prove(
     plan,
     inputs.onProgress ? { onProgress: (p) => inputs.onProgress?.(p.fraction) } : undefined,

@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const hoisted = vi.hoisted(() => ({
   planTransfer: vi.fn(),
   prove: vi.fn(),
+  preflight: vi.fn(),
   transactionToTuple: vi.fn(),
   encodeCctpBinding: vi.fn(),
   encodeFunctionData: vi.fn(),
@@ -19,7 +20,7 @@ vi.mock('viem', async (importActual) => {
   return { ...actual, encodeFunctionData: hoisted.encodeFunctionData }
 })
 vi.mock('./sdk-read', () => ({
-  getSdkWallet: async () => ({ planTransfer: hoisted.planTransfer, prove: hoisted.prove }),
+  getSdkWallet: async () => ({ planTransfer: hoisted.planTransfer, prove: hoisted.prove, preflight: hoisted.preflight }),
 }))
 
 import { buildXchainUnshieldSdk } from './unshield-xchain-sdk'
@@ -33,6 +34,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   hoisted.planTransfer.mockResolvedValue({ plan: true })
   hoisted.prove.mockResolvedValue({ toTransactionData: () => ({ tx: 'data' }) })
+  hoisted.preflight.mockResolvedValue({ ok: true, findings: [] })
   hoisted.transactionToTuple.mockReturnValue(['TUPLE'])
   hoisted.encodeCctpBinding.mockReturnValue(BINDING)
   hoisted.encodeFunctionData.mockReturnValue('0xcalldata')

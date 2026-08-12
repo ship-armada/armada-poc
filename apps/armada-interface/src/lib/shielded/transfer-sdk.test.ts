@@ -6,11 +6,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const hoisted = vi.hoisted(() => ({
   planTransfer: vi.fn(),
   prove: vi.fn(),
+  preflight: vi.fn(),
   buildTransactCalldata: vi.fn(),
 }))
 vi.mock('@armada/sdk', () => ({ buildTransactCalldata: hoisted.buildTransactCalldata }))
 vi.mock('./sdk-read', () => ({
-  getSdkWallet: async () => ({ planTransfer: hoisted.planTransfer, prove: hoisted.prove }),
+  getSdkWallet: async () => ({ planTransfer: hoisted.planTransfer, prove: hoisted.prove, preflight: hoisted.preflight }),
 }))
 
 import { buildTransferSdk } from './transfer-sdk'
@@ -21,6 +22,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   hoisted.planTransfer.mockResolvedValue({ plan: true })
   hoisted.prove.mockResolvedValue({ toTransactionData: () => ({ tx: 'data' }) })
+  hoisted.preflight.mockResolvedValue({ ok: true, findings: [] })
   hoisted.buildTransactCalldata.mockReturnValue({ to: POOL, data: '0xdeadbeef', value: 0n })
 })
 

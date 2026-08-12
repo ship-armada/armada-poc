@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const hoisted = vi.hoisted(() => ({
   planTransfer: vi.fn(),
   prove: vi.fn(),
+  preflight: vi.fn(),
   buildShieldRequest: vi.fn(),
   generateShieldPrivateKey: vi.fn(() => new Uint8Array(32)),
   encodeYieldDepositBinding: vi.fn(() => '0xdepositbinding'),
@@ -25,7 +26,7 @@ vi.mock('ethers', () => ({
   ethers: { Interface: vi.fn(function () { return { encodeFunctionData: hoisted.encodeFunctionData } }) },
 }))
 vi.mock('./sdk-read', () => ({
-  getSdkWallet: async () => ({ planTransfer: hoisted.planTransfer, prove: hoisted.prove }),
+  getSdkWallet: async () => ({ planTransfer: hoisted.planTransfer, prove: hoisted.prove, preflight: hoisted.preflight }),
 }))
 
 import { buildYieldAdaptSdk } from './yield-sdk'
@@ -49,6 +50,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   hoisted.planTransfer.mockResolvedValue({ plan: true })
   hoisted.prove.mockResolvedValue({ toTransactionData: () => ({ tx: 'data' }) })
+  hoisted.preflight.mockResolvedValue({ ok: true, findings: [] })
   hoisted.transactionToTuple.mockReturnValue(['TUPLE'])
   hoisted.encodeFunctionData.mockReturnValue('0xcalldata')
 })

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { openModalAtom } from '@/state/ui'
 import { preferencesAtom } from '@/state/preferences'
-import { evmAddressAtom, shieldedUsdcAtom, syncStateAtom } from '@/state/wallet'
+import { evmAddressAtom, shieldedUsdcAtom, shieldedUsdcSpendableAtom, syncStateAtom } from '@/state/wallet'
 import { useTx } from '@/hooks/useTx'
 import { useFees } from '@/hooks/useFees'
 import { useDisplayFees } from '@/hooks/useDisplayFees'
@@ -61,9 +61,12 @@ export function UnshieldModal() {
   const submittingRef = useRef(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Source data.
+  // Source data. `max` (+ the fee-on-top guard) draws from SPENDABLE only, so a not-yet-final
+  // ("pending") note can't be withdrawn; `pendingUsdc` is display-only (0 on local Anvil).
   const shieldedUsdc = useAtomValue(shieldedUsdcAtom)
-  const max = shieldedUsdc ?? 0n
+  const shieldedUsdcSpendable = useAtomValue(shieldedUsdcSpendableAtom)
+  const max = shieldedUsdcSpendable ?? 0n
+  const pendingUsdc = (shieldedUsdc ?? 0n) - max
   const { value: amount } = parseUsdcInput(amountStr)
   const { quote, isStale, refresh } = useFees()
   // Gate Confirm while the initial shielded-balance sync is incomplete (or failed). Reading
@@ -249,6 +252,7 @@ export function UnshieldModal() {
             amountStr={amountStr}
             onAmountChange={setAmountStr}
             maxInput={inputMax}
+            pending={pendingUsdc}
             balanceLabel={balanceLabel}
             balanceSyncing={balanceSyncing}
             displayFees={displayFees}

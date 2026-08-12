@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { openModalAtom } from '@/state/ui'
 import { preferencesAtom } from '@/state/preferences'
-import { shieldedUsdcAtom } from '@/state/wallet'
+import { shieldedUsdcAtom, shieldedUsdcSpendableAtom } from '@/state/wallet'
 import { useTx } from '@/hooks/useTx'
 import { useFees } from '@/hooks/useFees'
 import { useSpendableSyncGate } from '@/hooks/useSpendableSyncGate'
@@ -68,9 +68,12 @@ export function SendModal() {
   const submittingRef = useRef(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Source data
+  // Source data. `max` (and the fee-on-top guard) draws from SPENDABLE only, so a not-yet-final
+  // ("pending") note can't be selected; `pendingUsdc` is display-only (0 on local Anvil).
   const shieldedUsdc = useAtomValue(shieldedUsdcAtom)
-  const max = shieldedUsdc ?? 0n
+  const shieldedUsdcSpendable = useAtomValue(shieldedUsdcSpendableAtom)
+  const max = shieldedUsdcSpendable ?? 0n
+  const pendingUsdc = (shieldedUsdc ?? 0n) - max
   const { value: amount } = parseUsdcInput(amountStr)
   const { quote, isStale, refresh } = useFees()
   // Gate Confirm while the initial shielded-balance sync is incomplete. Both Send tabs
@@ -323,6 +326,7 @@ export function SendModal() {
             onAmountChange={setAmountStr}
             max={max}
             maxInput={inputMax}
+            pending={pendingUsdc}
             displayFees={displayFees}
             flowBreakdown={flowBreakdown}
             feeLoading={feeLoading}

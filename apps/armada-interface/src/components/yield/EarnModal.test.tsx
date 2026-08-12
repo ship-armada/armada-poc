@@ -5,7 +5,7 @@ import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { EarnModal } from './EarnModal'
 import { openModalAtom } from '@/state/ui'
-import { activeShieldedWalletIdAtom, shieldedUsdcAtom } from '@/state/wallet'
+import { activeShieldedWalletIdAtom, shieldedUsdcAtom, shieldedUsdcSpendableAtom } from '@/state/wallet'
 import { feeQuoteAtom, feeQuoteFetchedAtAtom } from '@/state/fees'
 import { withTestQueryClient } from '@/test-utils/queryClient'
 
@@ -57,7 +57,10 @@ const FAKE_QUOTE = {
 function renderModal(opts?: { open?: 'yield-deposit' | 'yield-withdraw' | false; shielded?: bigint }) {
   const store = createStore()
   if (opts?.open) store.set(openModalAtom, opts.open)
-  if (opts?.shielded !== undefined) store.set(shieldedUsdcAtom, opts.shielded)
+  if (opts?.shielded !== undefined) {
+    store.set(shieldedUsdcAtom, opts.shielded)
+    store.set(shieldedUsdcSpendableAtom, opts.shielded) // no pending in tests → spendable == total
+  }
   // useTx.submit() refuses to write a record without an active shielded walletId (Phase 6
   // scoping invariant). Seed a placeholder so the Confirm flow doesn't trip the guard.
   store.set(activeShieldedWalletIdAtom, 'rg-test')

@@ -26,6 +26,9 @@ export interface UnshieldInputStepProps {
   onAmountChange: (next: string) => void
   max: bigint
   maxInput: bigint
+  /** Not-yet-spendable ("pending") shielded USDC (raw). Shown as a "· X pending" suffix on the
+   *  balance row; excluded from `max`/Max. Omitted or 0 (e.g. local Anvil) → no suffix. */
+  pending?: bigint
   balanceLabel: string
   balanceSyncing: boolean
   displayFees: DisplayFees
@@ -49,6 +52,7 @@ export function UnshieldInputStepContent({
   amountStr,
   onAmountChange,
   maxInput,
+  pending,
   balanceLabel,
   balanceSyncing,
   displayFees,
@@ -64,6 +68,7 @@ export function UnshieldInputStepContent({
   | 'amountStr'
   | 'onAmountChange'
   | 'maxInput'
+  | 'pending'
   | 'balanceLabel'
   | 'balanceSyncing'
   | 'displayFees'
@@ -100,6 +105,7 @@ export function UnshieldInputStepContent({
           amount={amountStr}
           onAmountChange={onAmountChange}
           balance={balanceLabel}
+          pendingBalance={!balanceSyncing && pending !== undefined && pending > 0n ? formatUsdcPlain(pending) : undefined}
           displayFees={displayFees}
           flowBreakdown={flowBreakdown}
           feeLoading={feeLoading}

@@ -42,6 +42,7 @@ async function readPathConfig(): Promise<{
     additionalTokens?: `0x${string}`[]
     wrappers?: { yieldAdapter?: `0x${string}` }
     confirmationDepth: number
+    finalityThreshold: number
   }
   rpc: { urls: string[] }
   indexer?: { url: string }
@@ -72,6 +73,7 @@ async function readPathConfig(): Promise<{
       ...(vault ? { additionalTokens: [vault] } : {}),
       ...(yieldAdapter ? { wrappers: { yieldAdapter } } : {}),
       confirmationDepth: getNetworkConfig().confirmationDepth,
+      finalityThreshold: getNetworkConfig().finalityThreshold,
     },
     rpc: { urls: [...hub.rpcUrls] },
     ...(indexerUrl ? { indexer: { url: indexerUrl } } : {}),
@@ -213,15 +215,24 @@ export async function refreshShieldedBalances(_walletId?: string): Promise<void>
 // completed — re-syncing there would be circular and produce a self-sustaining sync cascade (a sync
 // emits `scan:complete` → a balance read that re-syncs → another `scan:complete` → …).
 
-/** Read the current shielded USDC balance (spendable + pending) from the scan state. Does not sync. */
-export async function readSdkUsdcBalance(): Promise<bigint> {
+/**
+ * Read the current shielded USDC balance from the scan state, split into `spendable` (notes past the
+ * `finalityThreshold` confirmation buffer — safe to prove/spend) and `pending` (notes newer than that
+ * — visible but not yet spendable). On local Anvil (`finalityThreshold` 0) `pending` is always 0.
+ * Does not sync. Callers surface `spendable` for MAX / the fee-on-top guard; `pending` is display-only.
+ */
+export async function readSdkUsdcBalance(): Promise<{ spendable: bigint; pending: bigint }> {
   const { wallet } = await ensureInstance()
   const cfg = await readPathConfig()
   const usdcHash = getTokenDataHash(getTokenDataERC20(cfg.pool.usdcAddress))
   const usdc = (await wallet.balances()).find(b => b.tokenHash === usdcHash)
-  return usdc ? usdc.spendable + usdc.pending : 0n
+  return usdc ? { spendable: usdc.spendable, pending: usdc.pending } : { spendable: 0n, pending: 0n }
 }
 
+// TODO(tier3b): split yield shares into spendable/pending like readSdkUsdcBalance, so the withdraw MAX
+// doesn't offer shares still inside the finalityThreshold buffer. Low urgency: on local finalityThreshold
+// is 0 (no pending shares), and on sepolia the pre-proof preflight gate (assertSpendPreflight) fast-fails
+// a redeem of not-yet-spendable shares — so this is a MAX-button nicety, not a correctness hole.
 /** Read the current shielded yield-vault shares (ayUSDC) from the scan state. 0 if no vault. Does not sync. */
 export async function readSdkYieldShares(): Promise<bigint> {
   const vault = await vaultTokenAddress()

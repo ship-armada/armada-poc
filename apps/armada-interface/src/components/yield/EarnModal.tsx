@@ -6,7 +6,7 @@ import { useAtom, useAtomValue } from 'jotai'
 import { openModalAtom, type ModalKind } from '@/state/ui'
 import { preferencesAtom } from '@/state/preferences'
 import { RelayerStatusBanner } from '@/components/RelayerStatusBanner'
-import { shieldedUsdcAtom, yieldSharesAtom } from '@/state/wallet'
+import { shieldedUsdcAtom, shieldedUsdcSpendableAtom, yieldSharesAtom } from '@/state/wallet'
 import { useTx } from '@/hooks/useTx'
 import { useFees } from '@/hooks/useFees'
 import { useSpendableSyncGate } from '@/hooks/useSpendableSyncGate'
@@ -57,14 +57,20 @@ export function EarnModal() {
   const submittingRef = useRef(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Source data
+  // Source data. The USDC leg (deposit amount + the withdraw-fee reserve + the fee-on-top guard) draws
+  // from SPENDABLE only, so a not-yet-final ("pending") note can't be used; `pendingUsdc` is
+  // display-only (0 on local Anvil). Yield shares aren't split yet — see readSdkYieldShares TODO.
   const shieldedUsdc = useAtomValue(shieldedUsdcAtom)
+  const shieldedUsdcSpendable = useAtomValue(shieldedUsdcSpendableAtom)
   const yieldShares = useAtomValue(yieldSharesAtom)
   const { rate: yieldRate, refresh: refreshYieldRate } = useYieldRate()
   // Earning balance (USDC) requires both shares + rate to compute.
   const earningUsdc =
     yieldShares !== null && yieldRate !== null ? sharesToUsdc(yieldShares, yieldRate.rate) : null
-  const max = tab === 'add' ? shieldedUsdc ?? 0n : earningUsdc ?? 0n
+  const spendableUsdc = shieldedUsdcSpendable ?? 0n
+  const max = tab === 'add' ? spendableUsdc : earningUsdc ?? 0n
+  // Pending only applies to the USDC deposit leg; the withdraw tab's max is share-derived.
+  const pendingUsdc = tab === 'add' ? (shieldedUsdc ?? 0n) - spendableUsdc : 0n
 
   const { value: amount } = parseUsdcInput(amountStr)
   const { quote, isStale, refresh } = useFees()
@@ -135,7 +141,7 @@ export function EarnModal() {
   // time). If the user's private USDC is below the fee, proof gen will fail 20-30s in. Block at
   // submit-time with a clear reason instead. Only enforced when we have a real fee quote — pre-quote
   // we don't know the number yet.
-  const withdrawFeeShortfall = tab === 'withdraw' && fee > 0n && (shieldedUsdc ?? 0n) < fee
+  const withdrawFeeShortfall = tab === 'withdraw' && fee > 0n && spendableUsdc < fee
   const withdrawFeeBlockedReason: string | null = withdrawFeeShortfall
     ? `You need at least ${formatUsdcAmount(fee)} USDC in your private balance to cover the withdrawal fee. Add USDC from another source before withdrawing.`
     : null
@@ -289,6 +295,7 @@ export function EarnModal() {
             onAmountChange={setAmountStr}
             max={max}
             maxInput={inputMax}
+            pending={pendingUsdc}
             displayFees={displayFees}
             flowBreakdown={flowBreakdown}
             feeLoading={feeLoading}

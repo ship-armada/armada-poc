@@ -38,6 +38,13 @@ export interface NetworkConfig {
    * value rather than disabling the chunker — keeps one code path for both environments.
    */
   readonly maxLogRange: number
+  /**
+   * Blocks to stay behind chain head when scanning the shielded pool (SDK `PoolConfig.confirmationDepth`).
+   * A shallow reorg within this depth can't remove an already-persisted commitment leaf, avoiding the
+   * SDK's blunt full-rescan self-heal. Trade-off: notes in the last N blocks aren't spendable until deeper.
+   * 0 on local Anvil (instant finality, no reorgs); a small buffer on public testnets.
+   */
+  readonly confirmationDepth: number
 }
 
 export function getNetworkMode(): NetworkMode {
@@ -141,6 +148,7 @@ function sepoliaConfig(): NetworkConfig {
     indexerUrl: (import.meta.env.VITE_INDEXER_URL as string | undefined) ?? null,
     pollIntervalMs: 15_000,
     maxLogRange: 5_000,
+    confirmationDepth: 2, // small buffer for Sepolia's rare, shallow reorgs
   }
 }
 
@@ -157,6 +165,7 @@ function localConfig(): NetworkConfig {
     indexerUrl: (import.meta.env.VITE_INDEXER_URL as string | undefined) ?? null,
     pollIntervalMs: 5_000,
     maxLogRange: 100_000,
+    confirmationDepth: 0, // Anvil: instant finality, no reorgs
   }
 }
 

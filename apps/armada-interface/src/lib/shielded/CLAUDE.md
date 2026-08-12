@@ -36,17 +36,17 @@ Privacy apps routinely leak through carelessly-written telemetry and dev logs. B
 
 3. **Encryption at rest.** Be precise about what the SDK encrypts vs. what it doesn't (verified against `@railgun-community/engine` 9.5.1):
    - **Shielded reads run through the `@armada/sdk` read instance** (`sdk-read.ts`), which persists its
-     scan state in a per-deployment IndexedDB database (`armada-shielded-scan-e1-<chainId>-<pool>`),
+     scan state in a per-deployment IndexedDB database (`armada-shielded-scan-e2-<chainId>-<pool>`),
      separate from the historical stock-engine `armada-shielded` DB.
-   - **Decrypted note plaintext — encrypted at rest (§4.3, "Option B") ✅.** The read instance's
-     `IndexedDBStorageAdapter` is wrapped in the SDK's `EncryptedStore`, which AES-256-GCM-encrypts every
-     value under a key from `deriveStorageKey(rootSecret)` held **only in memory**. The DB therefore holds
+   - **Decrypted note plaintext — encrypted at rest, SDK-owned (§4.3) ✅.** The interface passes the SDK a
+     **raw** `IndexedDBStorageAdapter`; the SDK auto-wraps it **per wallet** in an `EncryptedStore` keyed from
+     the **viewing private key** (AES-256-GCM, record-key bound as AAD), held only in memory. The DB holds
      only ciphertext at rest — a tab crash / disk read leaks no decrypted note data (value, recipient/sender
-     0zk, memo). Locking tears the instance down (`closeSdkRead`) → the key is dropped; Settings → Reset
-     deletes the DB (`deleteSdkReadStorage`). The pre-encryption plaintext DB (`armada-shielded-scan-<…>`,
-     no `-e1`) is best-effort deleted on the next unlock so no legacy plaintext lingers. This closes the
-     last Phase-2 acceptance gap — and goes further than the stock engine, which left decrypted notes
-     plaintext at rest.
+     0zk, memo). Locking tears the instance down (`closeSdkRead`) → the SDK's key is dropped; Settings → Reset
+     deletes the DB. Prior-schema DBs (pre-encryption plaintext + the interface's earlier `-e1` rootSecret-keyed
+     wrap) are best-effort deleted on the next unlock so nothing stale lingers. We never set the SDK's
+     `dangerouslyAllowPlaintextStorage` escape hatch. **Do NOT re-wrap the adapter in `EncryptedStore` here —
+     the SDK owns this; wrapping would double-encrypt under a mismatched key.**
    - **Tx history (V2 Phase 7) — encrypted.** Every `TxRecord` persisted by `lib/tx/storage.ts` is wrapped via `lib/crypto/cache-cipher.ts` as AES-256-GCM (`{ nonce: hex, ciphertext: hex }`) under `historyEncryptionKey` (HKDF-Expand from `rootSecret`, info=`'armada-tx-history:v1'`). Foreign-wallet records throw on `unwrap` and get silently skipped at hydration. The envelope deliberately carries no plaintext walletId — isolation is purely key-based.
 
 4. **Session-bound unlock.** Decrypted key material is held in memory for the active session only. **15-minute inactivity timeout** auto-locks (zeroizes). Lock also fires on tab unload (`beforeunload`), after a **5-minute tab-hidden grace period** (`visibilitychange`), and on EVM-account switch (V2 Phase 4 — `useWallet` compares wagmi's address against `keyManager.getEvmAddress()` and locks on mismatch). Reload requires re-signing.

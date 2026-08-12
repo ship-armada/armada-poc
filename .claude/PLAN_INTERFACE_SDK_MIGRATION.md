@@ -2,9 +2,9 @@
 
 Status: **interface migration complete** (2026-08). The interface runs entirely on `@armada/sdk`; the
 stock `@railgun-community/*` engine is gone from the interface (no imports in `apps/armada-interface/src`).
-Gate 0, Phase A, Phase B, and most of Phase C are done and merged; the tail items (at-rest encryption,
-tree-wide Railgun removal, native value-types, the `railgunAddress` rename) are tracked under
-**Remaining** below. Read alongside `.claude/PLAN_ARMADA_INTERFACE.md` (the interface's own architecture doc).
+**Gate 0, Phase A, Phase B, and Phase C are all done and merged** — at-rest encryption + the
+`railgunAddress → shieldedAddress` rename landed, closing the last Phase-2 acceptance items. The
+remaining tail items (tree-wide Railgun removal, native value-types) are tracked under **Remaining** below. Read alongside `.claude/PLAN_ARMADA_INTERFACE.md` (the interface's own architecture doc).
 
 ## Guiding principle (locked)
 
@@ -33,7 +33,7 @@ When migrating an interface capability onto the SDK, build the **native** equiva
   - Broadcaster-fee output on `planTransfer`/`prove` (the `FeeRequest` path) — ✅.
 - **Phase A — read path:** ✅ `createArmadaSdk` instance + IndexedDB `StorageAdapter` + identity parity (`deriveKeyset`) + sync/balances via `SyncEventMap`. Shadow-differential → cutover done. (Sync-vs-read split later hardened to kill an amplification loop — see `sdk-read.ts`.)
 - **Phase B — write path:** ✅ shield → transfer → unshield-local → xchain-unshield → yield, all migrated + engine builders deleted; off-thread worker prover.
-- **Phase C — history + nullifier cross-check + at-rest encryption:** ⚠️ **partial** — history ✅, nullifier cross-check ✅ (`spendableNullifiers()`), **at-rest encryption still deferred** (see Remaining).
+- **Phase C — history + nullifier cross-check + at-rest encryption:** ✅ history ✅, nullifier cross-check ✅ (`spendableNullifiers()`), at-rest encryption ✅ (`EncryptedStore` wraps the read instance's `IndexedDBStorageAdapter`, AES-256-GCM under `deriveStorageKey(rootSecret)` held in-memory only).
 
 ## Railgun-removal end-state milestone
 
@@ -59,16 +59,17 @@ An explicit completion gate — the flags below are **transitional scaffolds**, 
 | Tx history | ✅ native `wallet.history()` — not ported from Railgun |
 | Proved struct for wrappers | ✅ `ProofHandle.toTransactionData()` |
 | Gas Type1/Type2 ceremony | 🗑️ deleted — `populate*` artifact, not needed natively |
-| At-rest encryption | ⚠️ **deferred** — StorageAdapter-level encryption (Option B); still plaintext-at-rest, at parity with the stock engine |
+| At-rest encryption | ✅ `EncryptedStore` (AES-256-GCM) wraps the read instance's `IndexedDBStorageAdapter`, keyed by `deriveStorageKey(rootSecret)` (in-memory only); DB holds ciphertext at rest |
 
-## Remaining (tail items — migration itself is done)
+## Remaining (tail items — the migration + all of Phase 2 are done)
 
-1. **At-rest encryption of the SDK read instance** (Phase C tail, "Option B"). The read instance's IndexedDB (`armada-sdk-shadow` — legacy name from the Phase-A shadow-differential) holds decrypted note plaintext unencrypted while unlocked, and unlike the stock engine we do **not** clear it on lock (`closeSdkRead` releases the instance but leaves the DB; only Reset deletes it). This is at parity with stock Railgun for the *encrypted wallet blob* (both encrypt the mnemonic) and *matches* Railgun's unencrypted decrypted-notes-at-rest — a lock-time clear is the one thing the engine did that we don't. Needs an encrypting `StorageAdapter` wrapper (and/or a cheap lock-time clear if the SDK exposes re-decrypt-from-tree). Deferred: PoC/testnet, no real funds, tracked.
-2. **Tree-wide Railgun removal** — gradual over future work (contract/relayer/deploy tooling); relayer v2 in a separate repo (armada-relayer#26).
-3. **Own the SDK's vendored value-types natively** — pinned to the **custom-circuits milestone** (when Armada's own ZK circuits + verifiers replace the vendored Railgun ones per `ARCHITECTURE_NOTES.md`; the value-types get redefined then anyway).
-4. **Rename `railgunAddress` → `shieldedAddress`** — cross-repo (SDK `Keyset`/`deriveKeyset` public field → interface `keyManager`/atoms/`ShieldedWalletState`). Internal identifier (not a runtime-emitted string, so not a naming-rule violation) — a clarity nicety tracked in SDK SPEC §4.2.
-5. **Future investigation** — push / new-block-driven sync trigger (armada-sdk#59). RPC scan stays the trust anchor; watcher optional + verified.
+Phase 2's last acceptance item (at-rest encryption) and the `railgunAddress → shieldedAddress` rename
+both landed; the interface is fully on the SDK with encrypted-at-rest scan state.
+
+1. **Tree-wide Railgun removal** — gradual over future work (contract/relayer/deploy tooling); relayer v2 in a separate repo (armada-relayer#26).
+2. **Own the SDK's vendored value-types natively** — pinned to the **custom-circuits milestone** (when Armada's own ZK circuits + verifiers replace the vendored Railgun ones per `ARCHITECTURE_NOTES.md`; the value-types get redefined then anyway).
+3. **Future investigation** — push / new-block-driven sync trigger (armada-sdk#59). RPC scan stays the trust anchor; watcher optional + verified.
 
 ## Key risks (retired)
 
-Identity/address parity, the native quicksync path (`/v2` + root verification), and native tx-history design all landed and are in production use in the interface. The remaining open risk is the at-rest encryption model (Remaining #1).
+Identity/address parity, the native quicksync path (`/v2` + root verification), native tx-history design, and at-rest encryption all landed and are in production use in the interface. No open migration risks remain.

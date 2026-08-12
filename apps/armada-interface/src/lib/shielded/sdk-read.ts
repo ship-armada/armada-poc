@@ -4,6 +4,8 @@
 import {
   createArmadaSdk,
   IndexedDBStorageAdapter,
+  EncryptedStore,
+  deriveStorageKey,
   LocalSigner,
   getTokenDataERC20,
   getTokenDataHash,
@@ -74,9 +76,31 @@ let instance: { sdk: ArmadaSdk; wallet: ReadWallet; address: string } | null = n
 // PrivacyPool address) pair that uniquely identifies a scan context. Chain id alone is insufficient:
 // two deployments on the same chain (different pool address — e.g. switching deployment instances)
 // must not share scan state, and the SDK's scan-state key is chain-agnostic (the 0zk address is the
-// same across chains), so a shared DB would let their checkpoints clobber each other.
+// same across chains), so a shared DB would let their checkpoints clobber each other. The `-e1` marks
+// the at-rest-encrypted schema (§4.3) — a distinct name from the pre-encryption plaintext DB, so the
+// EncryptedStore never tries to GCM-decrypt legacy plaintext (which would auth-fail).
 function dbNameFor(cfg: Awaited<ReturnType<typeof readPathConfig>>): string {
+  return `armada-shielded-scan-e1-${cfg.pool.chainId}-${cfg.pool.poolAddress.toLowerCase()}`
+}
+
+// The pre-encryption plaintext DB name (no `-e1`). Deleted on encrypted-instance creation so no
+// decrypted note plaintext lingers at rest after the migration — the whole point of §4.3.
+function legacyPlaintextDbName(cfg: Awaited<ReturnType<typeof readPathConfig>>): string {
   return `armada-shielded-scan-${cfg.pool.chainId}-${cfg.pool.poolAddress.toLowerCase()}`
+}
+
+/** Best-effort IndexedDB delete — never throws (a delete error must not block reset / migration). */
+function deleteDatabaseByName(name: string): Promise<void> {
+  return new Promise<void>((resolve) => {
+    try {
+      const req = indexedDB.deleteDatabase(name)
+      req.onsuccess = () => resolve()
+      req.onerror = () => resolve()
+      req.onblocked = () => resolve()
+    } catch {
+      resolve()
+    }
+  })
 }
 
 async function ensureInstance(): Promise<{ sdk: ArmadaSdk; wallet: ReadWallet; address: string }> {
@@ -86,9 +110,18 @@ async function ensureInstance(): Promise<{ sdk: ArmadaSdk; wallet: ReadWallet; a
   if (instance !== null) await instance.sdk.close()
 
   const cfg = await readPathConfig()
+  // Migration to at-rest encryption (§4.3): best-effort drop the pre-encryption plaintext DB so no
+  // decrypted note data lingers at rest. Fire-and-forget; the fresh encrypted DB re-scans from deploy.
+  void deleteDatabaseByName(legacyPlaintextDbName(cfg))
   const sdk = await createArmadaSdk({
     ...cfg,
-    storage: new IndexedDBStorageAdapter(dbNameFor(cfg)),
+    // At-rest AES-256-GCM under a rootSecret-derived key held only in memory (§4.3). Locking tears the
+    // instance down (`closeSdkRead`) → key dropped; the DB then holds only ciphertext, so a tab crash /
+    // disk read leaks no decrypted note plaintext.
+    storage: new EncryptedStore(
+      new IndexedDBStorageAdapter(dbNameFor(cfg)),
+      deriveStorageKey(keyManager.getRootSecret()),
+    ),
     prover: createInterfaceProver(),
     artifacts: createInterfaceArtifactSource(),
     // Quick-sync observability: the SDK emits its `sync.quicksync` outcome (served / tail-covered /
@@ -214,14 +247,5 @@ export async function deleteSdkReadStorage(): Promise<void> {
   } catch {
     return // deployments not loaded → nothing was ever opened, so nothing to delete
   }
-  await new Promise<void>((resolve) => {
-    try {
-      const req = indexedDB.deleteDatabase(name)
-      req.onsuccess = () => resolve()
-      req.onerror = () => resolve()
-      req.onblocked = () => resolve()
-    } catch {
-      resolve()
-    }
-  })
+  await deleteDatabaseByName(name)
 }

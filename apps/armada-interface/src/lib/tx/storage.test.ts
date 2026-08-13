@@ -19,6 +19,22 @@ const hoisted = vi.hoisted(() => {
     cacheAll: vi.fn(async (_storeName: string) => {
       return Array.from(store.entries()).map(([key, value]) => ({ key, value }))
     }),
+    // Atomic get→decide→put on the in-memory store — mirrors the real single-transaction semantics
+    // (the whole op is synchronous here, so it's atomic just like the real IDB readwrite transaction).
+    cacheReadModifyWrite: vi.fn(
+      async (
+        _storeName: string,
+        key: string,
+        decide: (existing: unknown) => { put: unknown } | { skip: true },
+      ) => {
+        const decision = decide(store.get(key))
+        if ('put' in decision) {
+          store.set(key, decision.put)
+          return true
+        }
+        return false
+      },
+    ),
   }
 })
 
@@ -27,6 +43,7 @@ vi.mock('../cache', () => ({
   cachePut: hoisted.cachePut,
   cacheDelete: hoisted.cacheDelete,
   cacheAll: hoisted.cacheAll,
+  cacheReadModifyWrite: hoisted.cacheReadModifyWrite,
 }))
 
 import { putTxIfFresh, putTx, loadAllTx, deleteTx } from './storage'
@@ -122,11 +139,19 @@ describe('encrypted writes', () => {
       executionState: 'cancelled' as const,
       stage: 'submit-relayer' as const,
     }
-    // Zeroize the keyManager DURING the OCC read's await — exactly when lockWallet would.
-    hoisted.cacheGet.mockImplementationOnce(async () => {
-      clear()
-      return undefined
-    })
+    // Zeroize the keyManager DURING the OCC read-modify-write — exactly when lockWallet would. The
+    // envelope was already encrypted up-front (before this), so the write must still succeed.
+    hoisted.cacheReadModifyWrite.mockImplementationOnce(
+      async (_s: string, k: string, decide: (e: unknown) => { put: unknown } | { skip: true }) => {
+        clear()
+        const decision = decide(hoisted.store.get(k))
+        if ('put' in decision) {
+          hoisted.store.set(k, decision.put)
+          return true
+        }
+        return false
+      },
+    )
 
     await expect(putTxIfFresh(record)).resolves.toBe(true)
 

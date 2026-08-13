@@ -82,10 +82,20 @@ async function readPathConfig(): Promise<{
 
 type ReadWallet = Awaited<ReturnType<ArmadaSdk['wallet']['fromRootSecret']>>
 
+type SdkInstance = { sdk: ArmadaSdk; wallet: ReadWallet; address: string }
+
 // A PERSISTENT SDK instance for the session — IndexedDB-backed, so the scan state survives across reads
 // and page reloads (the first sync scans from deployBlock; later ones are
 // incremental). Recreated when the unlocked wallet changes; closed on lock via `closeSdkRead`.
-let instance: { sdk: ArmadaSdk; wallet: ReadWallet; address: string } | null = null
+let instance: SdkInstance | null = null
+
+// In-flight creation guard. `ensureInstance` is called near-simultaneously on unlock by several flows
+// (initial scan, the sync poll's mount fetch, the three balance reads, history recovery). Without
+// coalescing, each races past the null check and builds its OWN SDK instance + wallet against the SAME
+// IndexedDB scan-state DB — multiple wallets then scan and write one encrypted DB concurrently and
+// clobber each other, so early reads see 0 owned notes until the survivors settle. This holds the single
+// in-flight build so all concurrent callers for the same identity await one instance.
+let pendingInstance: { address: string; promise: Promise<SdkInstance> } | null = null
 
 // IndexedDB database name for the SDK read instance's scan state, partitioned by the (hub chain id,
 // PrivacyPool address) pair that uniquely identifies a scan context. Chain id alone is insufficient:
@@ -122,10 +132,23 @@ function deleteDatabaseByName(name: string): Promise<void> {
   })
 }
 
-async function ensureInstance(): Promise<{ sdk: ArmadaSdk; wallet: ReadWallet; address: string }> {
+async function ensureInstance(): Promise<SdkInstance> {
   const engineAddress = keyManager.getShieldedAddress()
+  // Fast path: a ready instance for this identity.
   if (instance !== null && instance.address === engineAddress) return instance
+  // Coalesce concurrent creations for the same identity onto one in-flight build (see `pendingInstance`).
+  if (pendingInstance !== null && pendingInstance.address === engineAddress) return pendingInstance.promise
+  const promise = createInstance(engineAddress)
+  pendingInstance = { address: engineAddress, promise }
+  try {
+    return await promise
+  } finally {
+    // Clear the marker only if still ours — a later identity change may have replaced it mid-build.
+    if (pendingInstance !== null && pendingInstance.promise === promise) pendingInstance = null
+  }
+}
 
+async function createInstance(engineAddress: string): Promise<SdkInstance> {
   if (instance !== null) await instance.sdk.close()
 
   const cfg = await readPathConfig()
@@ -251,6 +274,9 @@ export async function readSdkHistory(sinceBlock?: number): Promise<HistoryEntry[
 
 /** Close the persistent instance (call on wallet lock). Idempotent. */
 export async function closeSdkRead(): Promise<void> {
+  // Drop any in-flight build marker so a lock mid-creation can't leave a stale pending promise that a
+  // later caller would await into a closed/orphaned instance.
+  pendingInstance = null
   if (instance !== null) {
     const closing = instance.sdk
     instance = null

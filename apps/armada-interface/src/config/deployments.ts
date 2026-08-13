@@ -96,22 +96,32 @@ async function fetchManifest<T>(name: string): Promise<T> {
 }
 
 let cached: ResolvedDeployments | null = null
+let pendingDeployments: Promise<ResolvedDeployments> | null = null
 
 export async function loadDeployments(): Promise<ResolvedDeployments> {
   if (cached) return cached
+  // Single-flight: coalesce concurrent callers onto ONE fetch so a burst (e.g. readPathConfig fired by
+  // several readers on unlock) doesn't re-request the same static manifests. The in-flight ref is cleared
+  // on settle, so a transient failure retries and a success falls through to `cached`.
+  if (pendingDeployments) return pendingDeployments
+  const p: Promise<ResolvedDeployments> = (async (): Promise<ResolvedDeployments> => {
+    const cfg = getNetworkConfig()
+    const hub = await fetchManifest<PrivacyPoolHubDeployment>(manifestName('hub'))
 
-  const cfg = getNetworkConfig()
-  const hub = await fetchManifest<PrivacyPoolHubDeployment>(manifestName('hub'))
+    // Two clients today (clientA + clientB). Mapped to the network config's `clients[]` order.
+    const clientNames: ReadonlyArray<'client' | 'clientB'> = ['client', 'clientB']
+    const clients: PrivacyPoolClientDeployment[] = []
+    for (const role of clientNames.slice(0, cfg.clients.length)) {
+      clients.push(await fetchManifest<PrivacyPoolClientDeployment>(manifestName(role)))
+    }
 
-  // Two clients today (clientA + clientB). Mapped to the network config's `clients[]` order.
-  const clientNames: ReadonlyArray<'client' | 'clientB'> = ['client', 'clientB']
-  const clients: PrivacyPoolClientDeployment[] = []
-  for (const role of clientNames.slice(0, cfg.clients.length)) {
-    clients.push(await fetchManifest<PrivacyPoolClientDeployment>(manifestName(role)))
-  }
-
-  cached = { hub, clients }
-  return cached
+    cached = { hub, clients }
+    return cached
+  })().finally(() => {
+    if (pendingDeployments === p) pendingDeployments = null
+  })
+  pendingDeployments = p
+  return p
 }
 
 export function getCachedDeployments(): ResolvedDeployments | null {
@@ -164,6 +174,7 @@ export interface YieldDeployment {
 }
 
 let yieldCached: YieldDeployment | null = null
+let pendingYield: Promise<YieldDeployment | null> | null = null
 
 /**
  * Fetch the yield deployment manifest. Returns null if the manifest isn't present (e.g., a
@@ -172,17 +183,27 @@ let yieldCached: YieldDeployment | null = null
  */
 export async function loadYieldDeployment(): Promise<YieldDeployment | null> {
   if (yieldCached) return yieldCached
-  const cfg = getNetworkConfig()
-  const suffix = cfg.mode === 'sepolia' ? '-sepolia' : ''
-  const name = `yield-hub${suffix}.json`
-  try {
-    const res = await fetch(`/api/deployments/${name}`)
-    if (!res.ok) return null
-    yieldCached = (await res.json()) as YieldDeployment
-    return yieldCached
-  } catch {
-    return null
-  }
+  // Single-flight — readPathConfig calls this twice (vault + adapter) across several readers on unlock,
+  // so coalesce concurrent callers onto one fetch. Cleared on settle: a failure (returns null without
+  // caching) retries next call; a success falls through to `yieldCached`.
+  if (pendingYield) return pendingYield
+  const p: Promise<YieldDeployment | null> = (async (): Promise<YieldDeployment | null> => {
+    const cfg = getNetworkConfig()
+    const suffix = cfg.mode === 'sepolia' ? '-sepolia' : ''
+    const name = `yield-hub${suffix}.json`
+    try {
+      const res = await fetch(`/api/deployments/${name}`)
+      if (!res.ok) return null
+      yieldCached = (await res.json()) as YieldDeployment
+      return yieldCached
+    } catch {
+      return null
+    }
+  })().finally(() => {
+    if (pendingYield === p) pendingYield = null
+  })
+  pendingYield = p
+  return p
 }
 
 export interface FeeModuleDeployment {
@@ -193,26 +214,36 @@ export interface FeeModuleDeployment {
 }
 
 let feeModuleCached: `0x${string}` | null | undefined
+let pendingFeeModule: Promise<`0x${string}` | null> | null = null
 
 /** ArmadaFeeModule proxy on the hub chain — used for on-chain shield fee quotes. */
 export async function loadFeeModuleAddress(): Promise<`0x${string}` | null> {
   if (feeModuleCached !== undefined) return feeModuleCached
-  const cfg = getNetworkConfig()
-  const suffix = cfg.mode === 'sepolia' ? '-sepolia' : ''
-  const name = `fee-module-hub${suffix}.json`
-  try {
-    const res = await fetch(`/api/deployments/${name}`)
-    if (!res.ok) {
+  // Single-flight: coalesce concurrent callers onto one fetch. `feeModuleCached` caches the failure
+  // (null) too, matching the prior behavior — a missing fee module is a stable answer, not a retry.
+  if (pendingFeeModule) return pendingFeeModule
+  const p: Promise<`0x${string}` | null> = (async (): Promise<`0x${string}` | null> => {
+    const cfg = getNetworkConfig()
+    const suffix = cfg.mode === 'sepolia' ? '-sepolia' : ''
+    const name = `fee-module-hub${suffix}.json`
+    try {
+      const res = await fetch(`/api/deployments/${name}`)
+      if (!res.ok) {
+        feeModuleCached = null
+        return null
+      }
+      const json = (await res.json()) as FeeModuleDeployment
+      const addr = json.contracts?.feeModuleProxy
+      feeModuleCached =
+        addr && /^0x[0-9a-fA-F]{40}$/.test(addr) ? (addr as `0x${string}`) : null
+      return feeModuleCached
+    } catch {
       feeModuleCached = null
       return null
     }
-    const json = (await res.json()) as FeeModuleDeployment
-    const addr = json.contracts?.feeModuleProxy
-    feeModuleCached =
-      addr && /^0x[0-9a-fA-F]{40}$/.test(addr) ? (addr as `0x${string}`) : null
-    return feeModuleCached
-  } catch {
-    feeModuleCached = null
-    return null
-  }
+  })().finally(() => {
+    if (pendingFeeModule === p) pendingFeeModule = null
+  })
+  pendingFeeModule = p
+  return p
 }

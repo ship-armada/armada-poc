@@ -1,7 +1,7 @@
 // ABOUTME: Tx record persistence with optimistic concurrency + at-rest AES-256-GCM encryption (V2 Phase 7) under a per-wallet historyEncryptionKey from keyManager.
 // ABOUTME: Stores envelopes of shape `{ nonce, ciphertext }` keyed by tx id; foreign-wallet records throw on unwrap and get silently skipped during hydration.
 
-import { cacheAll, cacheDelete, cacheGet, cachePut } from '../cache'
+import { cacheAll, cacheDelete, cachePut, cacheReadModifyWrite } from '../cache'
 import { isEncryptedBlob, unwrap, wrap, type EncryptedBlob } from '../crypto/cache-cipher'
 import { getHistoryEncryptionKey, isUnlocked } from '../shielded/keyManager'
 import { trackError } from '../telemetry'
@@ -68,39 +68,46 @@ export async function putTxIfFresh(record: TxRecord): Promise<boolean> {
   // instead of throwing at write time and silently losing the record (→ false INTERRUPTED). (W-5)
   const envelope = wrap(record, key)
   try {
-    const existingRaw = await cacheGet<unknown>(STORE, record.id)
-    if (existingRaw !== undefined) {
-      const existing = tryUnwrap(existingRaw, key)
-      // Terminal-state write guard (mirrors state/tx.ts::upsertTxAtom): refuse any write that
-      // would move a settled record back to a non-terminal state, regardless of updatedSeq, so a
-      // late poller/progress write can't resurrect a cancelled/failed/expired record on disk.
-      // Exceptions: terminal→terminal (history-recovery upgrade path) and terminal→`retrying` (an
-      // intentional retry). Stale writes only ever produce `active`/`waiting`, never `retrying`. (P0-3)
-      if (
-        existing
-        && isTerminalState(existing.executionState)
-        && !isTerminalState(record.executionState)
-        && record.executionState !== 'retrying'
-      ) {
-        trackError('tx.storage.terminal-write', new Error('terminal→non-terminal'), {
-          scope: 'tx.storage',
-          message: `refused terminal→non-terminal write for ${record.id}`,
-        })
-        return false
+    // Compare-and-set in ONE IndexedDB transaction so the OCC + terminal guards are atomic on disk. The
+    // prior `cacheGet` → guard → `cachePut` split spanned two transactions, so two concurrent same-id
+    // writers (a cancel's fire-and-forget `putTxIfFresh` racing an in-flight `ctx.upsert`, or a
+    // history-recovery reconcile vs the executor watcher) could both read the same value, both pass the
+    // guard, and both write — persisting a state the in-memory atom guard correctly rejected, which then
+    // resurrects on reload/resume. `decide` is synchronous (`wrap`/`unwrap` are @noble, no await) so the
+    // transaction stays open. (P0-3)
+    return await cacheReadModifyWrite<unknown, typeof envelope>(STORE, record.id, (existingRaw) => {
+      if (existingRaw !== undefined) {
+        const existing = tryUnwrap(existingRaw, key)
+        // Terminal-state write guard (mirrors state/tx.ts::upsertTxAtom): refuse any write that
+        // would move a settled record back to a non-terminal state, regardless of updatedSeq, so a
+        // late poller/progress write can't resurrect a cancelled/failed/expired record on disk.
+        // Exceptions: terminal→terminal (history-recovery upgrade path) and terminal→`retrying` (an
+        // intentional retry). Stale writes only ever produce `active`/`waiting`, never `retrying`. (P0-3)
+        if (
+          existing
+          && isTerminalState(existing.executionState)
+          && !isTerminalState(record.executionState)
+          && record.executionState !== 'retrying'
+        ) {
+          trackError('tx.storage.terminal-write', new Error('terminal→non-terminal'), {
+            scope: 'tx.storage',
+            message: `refused terminal→non-terminal write for ${record.id}`,
+          })
+          return { skip: true }
+        }
+        if (existing && existing.updatedSeq >= record.updatedSeq) {
+          trackError('tx.storage.stale-write', new Error('stale updatedSeq'), {
+            scope: 'tx.storage',
+            message: `stale write rejected for ${record.id}`,
+          })
+          return { skip: true }
+        }
+        // If existing is null here, the stored envelope was either foreign-wallet (couldn't
+        // decrypt under our key) or pre-Phase-7 plaintext. In either case the old value is
+        // unreadable garbage to us and overwriting it is correct.
       }
-      if (existing && existing.updatedSeq >= record.updatedSeq) {
-        trackError('tx.storage.stale-write', new Error('stale updatedSeq'), {
-          scope: 'tx.storage',
-          message: `stale write rejected for ${record.id}`,
-        })
-        return false
-      }
-      // If existing is null here, the stored envelope was either foreign-wallet (couldn't
-      // decrypt under our key) or pre-Phase-7 plaintext. In either case the old value is
-      // unreadable garbage to us and overwriting it is correct.
-    }
-    await cachePut(STORE, record.id, envelope)
-    return true
+      return { put: envelope }
+    })
   } catch (err) {
     trackError('tx.storage.putTxIfFresh', err, { scope: 'tx.storage', message: 'idb write failed' })
     throw err

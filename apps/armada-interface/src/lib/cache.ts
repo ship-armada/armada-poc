@@ -61,6 +61,55 @@ export async function cachePut<T>(store: StoreName, key: string, value: T): Prom
   })
 }
 
+/**
+ * Atomic read-modify-write on ONE key in a SINGLE `readwrite` transaction. `decide` runs synchronously
+ * inside the transaction with the current stored value; return `{ put }` to write, or `{ skip: true }`
+ * to leave the store unchanged. Because get → decide → put all share one transaction, a compare-and-set
+ * (optimistic-concurrency / terminal-state guard) is atomic — two concurrent callers can't both read the
+ * same value, both pass the guard, and both write (the `cacheGet`-then-`cachePut` split can). Resolves
+ * to whether a write happened.
+ *
+ * `decide` MUST be synchronous — any `await` inside it lets IndexedDB auto-commit the transaction before
+ * the `put`, defeating the atomicity (and throwing on the late write).
+ */
+export async function cacheReadModifyWrite<T, V>(
+  store: StoreName,
+  key: string,
+  decide: (existing: T | undefined) => { put: V } | { skip: true },
+): Promise<boolean> {
+  const db = await openDb()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite')
+    const os = tx.objectStore(store)
+    const getReq = os.get(key)
+    let wrote = false
+    let settled = false
+    const done = (fn: () => void): void => {
+      if (!settled) {
+        settled = true
+        fn()
+      }
+    }
+    getReq.onsuccess = () => {
+      try {
+        const decision = decide(getReq.result as T | undefined)
+        if ('put' in decision) {
+          os.put(decision.put, key)
+          wrote = true
+        }
+      } catch (err) {
+        // A throw from decide() must not leave a half-applied state — abort the whole transaction.
+        tx.abort()
+        done(() => reject(err instanceof Error ? err : new Error(String(err))))
+      }
+    }
+    getReq.onerror = () => done(() => reject(getReq.error))
+    tx.oncomplete = () => done(() => resolve(wrote))
+    tx.onerror = () => done(() => reject(tx.error))
+    tx.onabort = () => done(() => reject(tx.error ?? new Error('cacheReadModifyWrite: transaction aborted')))
+  })
+}
+
 export async function cacheDelete(store: StoreName, key: string): Promise<void> {
   const db = await openDb()
   return new Promise((resolve, reject) => {

@@ -97,6 +97,12 @@ let instance: SdkInstance | null = null
 // in-flight build so all concurrent callers for the same identity await one instance.
 let pendingInstance: { address: string; promise: Promise<SdkInstance> } | null = null
 
+// Bumped on every teardown (`closeSdkRead`). `createInstance` captures the generation at its start; if a
+// teardown lands during its awaits (lock / account-switch mid-build), the generation moves and the build
+// discards its freshly-opened SDK instead of assigning an orphan instance past the teardown or leaking
+// the open IndexedDB handle (a leaked handle would block Settings → Reset's DB delete).
+let generation = 0
+
 // IndexedDB database name for the SDK read instance's scan state, partitioned by the (hub chain id,
 // PrivacyPool address) pair that uniquely identifies a scan context. Chain id alone is insufficient:
 // two deployments on the same chain (different pool address — e.g. switching deployment instances)
@@ -149,6 +155,7 @@ async function ensureInstance(): Promise<SdkInstance> {
 }
 
 async function createInstance(engineAddress: string): Promise<SdkInstance> {
+  const gen = generation
   if (instance !== null) await instance.sdk.close()
 
   const cfg = await readPathConfig()
@@ -168,13 +175,28 @@ async function createInstance(engineAddress: string): Promise<SdkInstance> {
     // root-mismatch-fallback) through this sink, which the interface surfaces as `sdk.quicksync`.
     telemetry: sdkTelemetrySink,
   })
+  // A teardown (lock / account-switch) during the build above moves the generation. `createArmadaSdk`
+  // has already opened the read DB and the next `getRootSecret()` would throw (locked), so bail now and
+  // close the SDK rather than leak the open handle.
+  if (gen !== generation) {
+    await sdk.close().catch(() => {})
+    throw new Error('sdk-read: instance build superseded by teardown')
+  }
   // Attach a spend signer so the instance is write-capable (planTransfer/prove) — not just view-only.
   // Derived from the same in-memory rootSecret the viewing key comes from, so it adds no new secret
   // exposure; it only signs during prove(). Reads never invoke it.
-  const wallet = await sdk.wallet.fromRootSecret(keyManager.getRootSecret(), {
-    creationBlock: keyManager.getCreationBlock() ?? 0,
-    signer: await LocalSigner.fromRootSecret(keyManager.getRootSecret()),
-  })
+  let wallet: ReadWallet
+  try {
+    wallet = await sdk.wallet.fromRootSecret(keyManager.getRootSecret(), {
+      creationBlock: keyManager.getCreationBlock() ?? 0,
+      signer: await LocalSigner.fromRootSecret(keyManager.getRootSecret()),
+    })
+  } catch (err) {
+    // Close the freshly-opened SDK so a lock landing mid-build (getRootSecret throws) can't leak the
+    // open IndexedDB connection — a leaked handle blocks Settings → Reset's DB delete.
+    await sdk.close().catch(() => {})
+    throw err
+  }
   // Forward the wallet's scan/balance/note events onto the app buses — the SDK-native replacement for
   // the stock engine's global balance callback + merkletree-scan callback. Scan lifecycle drives the
   // sync banner/gate (scan-status bus); scan-complete/balance/note ping the balance bus (re-read
@@ -188,6 +210,13 @@ async function createInstance(engineAddress: string): Promise<SdkInstance> {
   wallet.on('scan:error', () => emitScanStatus({ status: 'failed', progress: 0 }))
   wallet.on('balance:updated', () => emitBalanceChange({ reason: 'balance' }))
   wallet.on('note:received', () => emitBalanceChange({ reason: 'note' }))
+  // Final gen-check right before the (synchronous) assign — a teardown during `fromRootSecret` above
+  // would otherwise assign an orphan instance past `closeSdkRead` (built from a possibly-zeroized
+  // rootSecret). No await between here and the assign, so a teardown can't interleave this window.
+  if (gen !== generation) {
+    await sdk.close().catch(() => {})
+    throw new Error('sdk-read: instance build superseded by teardown')
+  }
   instance = { sdk, wallet, address: engineAddress }
   return instance
 }
@@ -274,8 +303,9 @@ export async function readSdkHistory(sinceBlock?: number): Promise<HistoryEntry[
 
 /** Close the persistent instance (call on wallet lock). Idempotent. */
 export async function closeSdkRead(): Promise<void> {
-  // Drop any in-flight build marker so a lock mid-creation can't leave a stale pending promise that a
-  // later caller would await into a closed/orphaned instance.
+  // Supersede any in-flight build (bump the generation) and drop the pending marker, so a lock landing
+  // mid-creation can't strand a pending promise or let the build assign/leak an instance past teardown.
+  generation += 1
   pendingInstance = null
   if (instance !== null) {
     const closing = instance.sdk

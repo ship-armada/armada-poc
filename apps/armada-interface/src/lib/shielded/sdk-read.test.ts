@@ -99,10 +99,11 @@ describe('syncTracked', () => {
 })
 
 describe('ensureInstance — concurrency guard (getSdkWallet)', () => {
+  let fakeSdk: { wallet: { fromRootSecret: ReturnType<typeof vi.fn> }; close: ReturnType<typeof vi.fn> }
   beforeEach(async () => {
     await closeSdkRead() // reset the module singleton + any in-flight build between tests
     const fakeWallet = { on: vi.fn() }
-    const fakeSdk = { wallet: { fromRootSecret: vi.fn(async () => fakeWallet) }, close: vi.fn(async () => {}) }
+    fakeSdk = { wallet: { fromRootSecret: vi.fn(async () => fakeWallet) }, close: vi.fn(async () => {}) }
     vi.mocked(createArmadaSdk).mockReset()
     // A deliberately slow build so the concurrent callers genuinely overlap during creation — the exact
     // window the in-flight guard closes.
@@ -129,5 +130,18 @@ describe('ensureInstance — concurrency guard (getSdkWallet)', () => {
     await closeSdkRead()
     await getSdkWallet()
     expect(createArmadaSdk).toHaveBeenCalledTimes(2)
+  })
+
+  it('discards an in-flight build if a teardown lands mid-build — closes the SDK, no orphan/leak', async () => {
+    // WHY: a lock/account-switch during the (slow) createArmadaSdk build must not assign an orphan
+    // instance past closeSdkRead, nor leak the freshly-opened IndexedDB handle (which would block
+    // Settings → Reset's DB delete). The generation guard bumps on teardown; the build then bails.
+    const p = getSdkWallet() // build starts — createArmadaSdk is delaying
+    await new Promise((r) => setTimeout(r, 1)) // let createInstance reach the createArmadaSdk await
+    await closeSdkRead() // teardown mid-build → bumps the generation
+    await expect(p).rejects.toThrow(/superseded/)
+    expect(fakeSdk.close).toHaveBeenCalled() // the superseded build closed its freshly-opened SDK
+    // The singleton is clean afterward: a fresh unlock rebuilds normally.
+    await expect(getSdkWallet()).resolves.toBeDefined()
   })
 })

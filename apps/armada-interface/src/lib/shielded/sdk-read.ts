@@ -4,8 +4,6 @@
 import {
   createArmadaSdk,
   IndexedDBStorageAdapter,
-  EncryptedStore,
-  deriveStorageKey,
   LocalSigner,
   getTokenDataERC20,
   getTokenDataHash,
@@ -26,6 +24,14 @@ async function vaultTokenAddress(): Promise<`0x${string}` | undefined> {
   return yieldDeployment?.contracts.armadaYieldVault as `0x${string}` | undefined
 }
 
+/** The yield adapter (lend/redeemAndShield target), if a yield deployment exists. Threaded into the
+ *  SDK's `pool.wrappers.yieldAdapter` so it natively classifies yield ops (history `yield-*`
+ *  categories) and binds the correct `crossContract` fee tier. */
+async function yieldAdapterAddress(): Promise<`0x${string}` | undefined> {
+  const yieldDeployment = await loadYieldDeployment()
+  return yieldDeployment?.contracts.armadaYieldAdapter as `0x${string}` | undefined
+}
+
 /** Assemble the SDK config from the same deployment + network config the app uses. */
 async function readPathConfig(): Promise<{
   pool: {
@@ -34,6 +40,9 @@ async function readPathConfig(): Promise<{
     deployBlock: number
     usdcAddress: `0x${string}`
     additionalTokens?: `0x${string}`[]
+    wrappers?: { yieldAdapter?: `0x${string}` }
+    confirmationDepth: number
+    finalityThreshold: number
   }
   rpc: { urls: string[] }
   indexer?: { url: string }
@@ -48,6 +57,9 @@ async function readPathConfig(): Promise<{
   }
   // Scan the yield-vault share token too, so the SDK can report shielded ayUSDC shares.
   const vault = await vaultTokenAddress()
+  // Yield adapter → `pool.wrappers.yieldAdapter`: lets the SDK natively classify yield ops (history
+  // `yield-deposit`/`yield-withdraw` categories) and bind the correct `crossContract` fee tier.
+  const yieldAdapter = await yieldAdapterAddress()
   // Quick-sync fast path: when a watcher URL is configured, the SDK uses the native `/v2/quick-sync`
   // indexer as the primary event source (RPC covers the tail + verifies against the on-chain root).
   // Unset → RPC-only slow scan. Parity with the engine's former quickSync path.
@@ -59,6 +71,9 @@ async function readPathConfig(): Promise<{
       deployBlock: deployments.hub.deployBlock ?? 0,
       usdcAddress,
       ...(vault ? { additionalTokens: [vault] } : {}),
+      ...(yieldAdapter ? { wrappers: { yieldAdapter } } : {}),
+      confirmationDepth: getNetworkConfig().confirmationDepth,
+      finalityThreshold: getNetworkConfig().finalityThreshold,
     },
     rpc: { urls: [...hub.rpcUrls] },
     ...(indexerUrl ? { indexer: { url: indexerUrl } } : {}),
@@ -76,17 +91,21 @@ let instance: { sdk: ArmadaSdk; wallet: ReadWallet; address: string } | null = n
 // PrivacyPool address) pair that uniquely identifies a scan context. Chain id alone is insufficient:
 // two deployments on the same chain (different pool address — e.g. switching deployment instances)
 // must not share scan state, and the SDK's scan-state key is chain-agnostic (the 0zk address is the
-// same across chains), so a shared DB would let their checkpoints clobber each other. The `-e1` marks
-// the at-rest-encrypted schema (§4.3) — a distinct name from the pre-encryption plaintext DB, so the
-// EncryptedStore never tries to GCM-decrypt legacy plaintext (which would auth-fail).
+// same across chains), so a shared DB would let their checkpoints clobber each other. The `-e2` marks
+// the schema where the SDK owns at-rest encryption (§4.3): it auto-wraps this raw adapter in an
+// `EncryptedStore` keyed per-wallet from the viewing key. Distinct from prior schemas (see
+// `legacyDbNames`), whose records the SDK can't decrypt under the new key — so we retire them.
 function dbNameFor(cfg: Awaited<ReturnType<typeof readPathConfig>>): string {
-  return `armada-shielded-scan-e1-${cfg.pool.chainId}-${cfg.pool.poolAddress.toLowerCase()}`
+  return `armada-shielded-scan-e2-${cfg.pool.chainId}-${cfg.pool.poolAddress.toLowerCase()}`
 }
 
-// The pre-encryption plaintext DB name (no `-e1`). Deleted on encrypted-instance creation so no
-// decrypted note plaintext lingers at rest after the migration — the whole point of §4.3.
-function legacyPlaintextDbName(cfg: Awaited<ReturnType<typeof readPathConfig>>): string {
-  return `armada-shielded-scan-${cfg.pool.chainId}-${cfg.pool.poolAddress.toLowerCase()}`
+// Prior read-DB names for this (chain, pool): the pre-encryption plaintext DB (no suffix) and the
+// interface-side `-e1` encryption (rootSecret-derived key, now superseded by the SDK's viewing-key
+// encryption). Both are unreadable under the current key, so they are best-effort deleted so no stale
+// (plaintext or wrong-key) note data lingers at rest.
+function legacyDbNames(cfg: Awaited<ReturnType<typeof readPathConfig>>): string[] {
+  const suffix = `${cfg.pool.chainId}-${cfg.pool.poolAddress.toLowerCase()}`
+  return [`armada-shielded-scan-${suffix}`, `armada-shielded-scan-e1-${suffix}`]
 }
 
 /** Best-effort IndexedDB delete — never throws (a delete error must not block reset / migration). */
@@ -110,18 +129,16 @@ async function ensureInstance(): Promise<{ sdk: ArmadaSdk; wallet: ReadWallet; a
   if (instance !== null) await instance.sdk.close()
 
   const cfg = await readPathConfig()
-  // Migration to at-rest encryption (§4.3): best-effort drop the pre-encryption plaintext DB so no
-  // decrypted note data lingers at rest. Fire-and-forget; the fresh encrypted DB re-scans from deploy.
-  void deleteDatabaseByName(legacyPlaintextDbName(cfg))
+  // Retire prior read DBs for this (chain, pool) so no stale plaintext / wrong-key note data lingers
+  // at rest. Fire-and-forget; the fresh `-e2` DB re-scans from deploy. (§4.3.)
+  for (const name of legacyDbNames(cfg)) void deleteDatabaseByName(name)
   const sdk = await createArmadaSdk({
     ...cfg,
-    // At-rest AES-256-GCM under a rootSecret-derived key held only in memory (§4.3). Locking tears the
-    // instance down (`closeSdkRead`) → key dropped; the DB then holds only ciphertext, so a tab crash /
-    // disk read leaks no decrypted note plaintext.
-    storage: new EncryptedStore(
-      new IndexedDBStorageAdapter(dbNameFor(cfg)),
-      deriveStorageKey(keyManager.getRootSecret()),
-    ),
+    // Raw adapter — the SDK owns at-rest encryption (§4.3): it auto-wraps this in an `EncryptedStore`
+    // keyed per-wallet from the viewing key, so decrypted note data is AES-256-GCM-encrypted at rest
+    // without us wrapping it (wrapping here would double-encrypt under a mismatched key). Locking tears
+    // the instance down (`closeSdkRead`) → the SDK's key is dropped; the DB then holds only ciphertext.
+    storage: new IndexedDBStorageAdapter(dbNameFor(cfg)),
     prover: createInterfaceProver(),
     artifacts: createInterfaceArtifactSource(),
     // Quick-sync observability: the SDK emits its `sync.quicksync` outcome (served / tail-covered /
@@ -198,15 +215,24 @@ export async function refreshShieldedBalances(_walletId?: string): Promise<void>
 // completed — re-syncing there would be circular and produce a self-sustaining sync cascade (a sync
 // emits `scan:complete` → a balance read that re-syncs → another `scan:complete` → …).
 
-/** Read the current shielded USDC balance (spendable + pending) from the scan state. Does not sync. */
-export async function readSdkUsdcBalance(): Promise<bigint> {
+/**
+ * Read the current shielded USDC balance from the scan state, split into `spendable` (notes past the
+ * `finalityThreshold` confirmation buffer — safe to prove/spend) and `pending` (notes newer than that
+ * — visible but not yet spendable). On local Anvil (`finalityThreshold` 0) `pending` is always 0.
+ * Does not sync. Callers surface `spendable` for MAX / the fee-on-top guard; `pending` is display-only.
+ */
+export async function readSdkUsdcBalance(): Promise<{ spendable: bigint; pending: bigint }> {
   const { wallet } = await ensureInstance()
   const cfg = await readPathConfig()
   const usdcHash = getTokenDataHash(getTokenDataERC20(cfg.pool.usdcAddress))
   const usdc = (await wallet.balances()).find(b => b.tokenHash === usdcHash)
-  return usdc ? usdc.spendable + usdc.pending : 0n
+  return usdc ? { spendable: usdc.spendable, pending: usdc.pending } : { spendable: 0n, pending: 0n }
 }
 
+// TODO(tier3b): split yield shares into spendable/pending like readSdkUsdcBalance, so the withdraw MAX
+// doesn't offer shares still inside the finalityThreshold buffer. Low urgency: on local finalityThreshold
+// is 0 (no pending shares), and on sepolia the pre-proof preflight gate (assertSpendPreflight) fast-fails
+// a redeem of not-yet-spendable shares — so this is a MAX-button nicety, not a correctness hole.
 /** Read the current shielded yield-vault shares (ayUSDC) from the scan state. 0 if no vault. Does not sync. */
 export async function readSdkYieldShares(): Promise<bigint> {
   const vault = await vaultTokenAddress()
@@ -239,13 +265,13 @@ export async function closeSdkRead(): Promise<void> {
  */
 export async function deleteSdkReadStorage(): Promise<void> {
   await closeSdkRead()
-  let name: string
+  let cfg: Awaited<ReturnType<typeof readPathConfig>>
   try {
-    // Deletes only the current deployment's DB (the (chain, pool) the app is pointed at) — other
-    // deployments are separate scan contexts and keep their own state.
-    name = dbNameFor(await readPathConfig())
+    cfg = await readPathConfig()
   } catch {
     return // deployments not loaded → nothing was ever opened, so nothing to delete
   }
-  await deleteDatabaseByName(name)
+  // Delete the current DB plus any prior-schema DBs for this (chain, pool) — other deployments are
+  // separate scan contexts and keep their own state.
+  for (const name of [dbNameFor(cfg), ...legacyDbNames(cfg)]) await deleteDatabaseByName(name)
 }

@@ -35,8 +35,17 @@ export const shieldedWalletAtom = atom<{ status: 'locked' | 'unlocked' | 'missin
  */
 export const usdcBalancesAtom = atom<Record<number, bigint>>({})
 
-/** Shielded USDC balance (raw 6-decimal units). null until the shielded sync completes. */
+/** Shielded USDC balance — TOTAL (spendable + pending), raw 6-decimal units. null until the shielded
+ *  sync completes. Drives the headline/hero display + the sync gate. */
 export const shieldedUsdcAtom = atom<bigint | null>(null)
+
+/**
+ * Shielded USDC that is currently SPENDABLE — notes past the SDK `finalityThreshold` confirmation
+ * buffer. `shieldedUsdcAtom` is the total; this is what MAX + the fee-on-top guard read, so a
+ * not-yet-final ("pending") note can't be selected for a spend. Equals `shieldedUsdcAtom` when
+ * `finalityThreshold` is 0 (local Anvil). null until the first sync completes.
+ */
+export const shieldedUsdcSpendableAtom = atom<bigint | null>(null)
 
 /** Shielded yield shares (raw 18-decimal units). null until sync. */
 export const yieldSharesAtom = atom<bigint | null>(null)

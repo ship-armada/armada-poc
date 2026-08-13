@@ -30,6 +30,9 @@ export interface EarnInputStepProps {
   onAmountChange: (next: string) => void
   max: bigint
   maxInput: bigint
+  /** Not-yet-spendable ("pending") shielded USDC (raw) on the Add tab. Shown as a "· X pending"
+   *  suffix; excluded from `max`/Max. Omitted or 0 (e.g. local Anvil / Withdraw tab) → no suffix. */
+  pending?: bigint
   displayFees: DisplayFees
   flowBreakdown?: FlowFeeBreakdown
   feeLoading?: boolean
@@ -66,6 +69,7 @@ export function EarnInputStepContent({
   onAmountChange,
   max,
   maxInput,
+  pending,
   displayFees,
   flowBreakdown,
   feeLoading = false,
@@ -81,6 +85,7 @@ export function EarnInputStepContent({
   | 'onAmountChange'
   | 'max'
   | 'maxInput'
+  | 'pending'
   | 'displayFees'
   | 'flowBreakdown'
   | 'feeLoading'
@@ -125,6 +130,7 @@ export function EarnInputStepContent({
         amount={amountStr}
         onAmountChange={onAmountChange}
         balance={formatUsdcPlain(max)}
+        pendingBalance={pending !== undefined && pending > 0n ? formatUsdcPlain(pending) : undefined}
         displayFees={displayFees}
         flowBreakdown={flowBreakdown}
         feeLoading={feeLoading}

@@ -6,6 +6,7 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import {
   activeShieldedWalletAtom,
   shieldedUsdcAtom,
+  shieldedUsdcSpendableAtom,
   syncRetryEpochAtom,
   syncStateAtom,
   yieldSharesAtom,
@@ -35,6 +36,7 @@ import { trackError } from '@/lib/telemetry'
 export function useShieldedBalanceSync(): void {
   const active = useAtomValue(activeShieldedWalletAtom)
   const setShieldedUsdc = useSetAtom(shieldedUsdcAtom)
+  const setShieldedUsdcSpendable = useSetAtom(shieldedUsdcSpendableAtom)
   const setYieldShares = useSetAtom(yieldSharesAtom)
   const setSyncState = useSetAtom(syncStateAtom)
   // Bumped by useSyncRetry ("Try Again"). Included in the effect deps so a bump re-runs the
@@ -50,6 +52,7 @@ export function useShieldedBalanceSync(): void {
       // balance and enabled spend buttons until its own first scan event fires. (W-1)
       latestWalletIdRef.current = null
       setShieldedUsdc(null)
+      setShieldedUsdcSpendable(null)
       setYieldShares(null)
       setSyncState({ status: 'idle', progress: 0 })
       // This hook owns the @armada/sdk read instance — tear it down on lock.
@@ -93,7 +96,10 @@ export function useShieldedBalanceSync(): void {
         if (cancelled || latestWalletIdRef.current !== walletId) return
 
         if (usdcResult.status === 'fulfilled') {
-          setShieldedUsdc(usdcResult.value)
+          // `shieldedUsdcAtom` is the TOTAL (headline/hero); `shieldedUsdcSpendableAtom` is what MAX +
+          // the fee-on-top guard draw from, so a pending (not-yet-final) note can't be spent.
+          setShieldedUsdc(usdcResult.value.spendable + usdcResult.value.pending)
+          setShieldedUsdcSpendable(usdcResult.value.spendable)
         }
         if (sharesResult.status === 'fulfilled') {
           setYieldShares(sharesResult.value)

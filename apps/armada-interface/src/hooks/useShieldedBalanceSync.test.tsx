@@ -10,7 +10,7 @@ const h = vi.hoisted(() => ({
   scanListener: null as ((s: { status: 'idle' | 'syncing' | 'complete' | 'failed'; progress: number }) => void) | null,
   balanceListener: null as (() => void) | null,
   refreshShieldedBalances: vi.fn(async () => {}),
-  readSdkUsdcBalance: vi.fn(async () => 0n),
+  readSdkUsdcBalance: vi.fn(async () => ({ spendable: 0n, pending: 0n })),
   readSdkYieldShares: vi.fn(async () => 0n),
 }))
 

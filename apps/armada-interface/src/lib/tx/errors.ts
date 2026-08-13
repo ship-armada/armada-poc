@@ -1,6 +1,7 @@
 // ABOUTME: Shared handler-side error classification — converts any thrown value into a typed TxError so markFailed can carry an honest code + optional txHash for the UI to render category-appropriate copy.
 // ABOUTME: Handlers' outer try/catch funnels everything through `classifyHandlerError(err)` instead of `err.message` strings, so we never lose the distinction between "tx reverted" / "we lost track" / "user rejected" / "unexpected".
 
+import { ArmadaError } from '@armada/sdk'
 import { extractTxError } from './receipt'
 import { decodeRevertData, extractRevertHex } from './revertSelectors'
 import { isUserRejection, isChainMismatchError } from '../errors'
@@ -60,6 +61,84 @@ function classifyRelayerError(err: unknown): TxError | null {
 }
 
 /**
+ * Map an `@armada/sdk` `ArmadaError` (the typed spend/prove/sync taxonomy) to a TxError. These are
+ * thrown by `planTransfer` / `prove` / `buildTransactCalldata` BEFORE anything reaches the wire, so
+ * they carry `PRE_FLIGHT_REVERT` semantics ("nothing was sent") unless the code maps to a category
+ * with more specific UI handling (fee-quote → FEE_EXPIRED gates off retry; transient → RPC_ERROR).
+ *
+ * Mapping to the interface's `TxErrorCode` set rather than the raw SDK code keeps the UI's category
+ * behaviour (retry gating, explorer-link rendering) intact; the friendly copy is category-appropriate.
+ * Unknown/future SDK codes fall through to OTHER with the SDK's own (truncated) message, so a new
+ * error class is surfaced honestly rather than swallowed.
+ */
+function classifySdkError(err: unknown): TxError | null {
+  if (!(err instanceof ArmadaError)) return null
+  switch (err.code) {
+    case 'ROOT_MISMATCH':
+      return {
+        code: 'PRE_FLIGHT_REVERT',
+        message:
+          "Your wallet's view of the shielded pool is out of date (the tree moved on-chain). Wait for sync to finish, then try again.",
+      }
+    case 'NOTE_ALREADY_SPENT':
+      return {
+        code: 'PRE_FLIGHT_REVERT',
+        message: 'One of the notes selected for this transaction was already spent. Refresh your balance and try again.',
+      }
+    case 'INSUFFICIENT_BALANCE':
+      return { code: 'PRE_FLIGHT_REVERT', message: 'Insufficient shielded balance for this transaction.' }
+    case 'NO_SPEND_CAPABILITY':
+      return {
+        code: 'PRE_FLIGHT_REVERT',
+        message: "This wallet is unlocked in view-only mode and can't spend. Unlock with your signature to send.",
+      }
+    case 'UNSUPPORTED_CIRCUIT_SHAPE':
+      return {
+        code: 'PRE_FLIGHT_REVERT',
+        message: "This transaction's shape isn't supported by the available circuits.",
+      }
+    case 'ARTIFACT_INTEGRITY':
+      return {
+        code: 'PRE_FLIGHT_REVERT',
+        message: "The proving artifacts failed an integrity check and weren't used. Reload the app to re-fetch them.",
+      }
+    case 'PROOF_VERIFICATION':
+      return {
+        code: 'PRE_FLIGHT_REVERT',
+        message: 'The zero-knowledge proof failed local verification and was not submitted. Please try again.',
+      }
+    case 'PROOF_EXPIRED':
+    case 'PROOF_HANDLE_INVALIDATED':
+      return {
+        code: 'PRE_FLIGHT_REVERT',
+        message: 'The proof went stale before it could be submitted (the pool state changed). Please try again.',
+      }
+    case 'INVALID_REQUEST':
+      return { code: 'PRE_FLIGHT_REVERT', message: "The transaction request was invalid and wasn't submitted." }
+    case 'FEE_QUOTE_EXPIRED':
+      return {
+        code: 'FEE_EXPIRED',
+        message:
+          'Your fee quote expired before the transaction was built. Start a new transaction to get a fresh quote.',
+      }
+    case 'STORAGE_CONFLICT':
+      return { code: 'RPC_ERROR', message: 'A local storage conflict interrupted the operation. Please try again.' }
+    case 'QUICK_SYNC_SCHEMA':
+      return {
+        code: 'RPC_ERROR',
+        message: 'The sync service returned data in an unexpected format. Please try again shortly.',
+      }
+    case 'ABORTED':
+      // Defensive: the handler's `ctx.signal.aborted` return normally beats this to the punch.
+      return { code: 'CANCELLED', message: 'The operation was cancelled.' }
+    default:
+      // INVALID_KEY_MATERIAL / NON_DETERMINISTIC_SIGNER / CLAIM_SEED_COUNTER / SIGNER_CONTRACT_VIOLATION
+      // and any future ArmadaError — surface the SDK message honestly rather than swallow it.
+      return { code: 'OTHER', message: mapRevertToMessage(err.message) }
+  }
+}
+
+/**
  * Convert anything thrown inside a handler into a typed TxError suitable for `markFailed`.
  *
  * Precedence:
@@ -91,6 +170,11 @@ export function classifyHandlerError(
   // Relayer rejections carry a typed code — map it before the OTHER fallback flattens it (S-H2).
   const relayer = classifyRelayerError(err)
   if (relayer) return relayer
+
+  // @armada/sdk spend/prove errors carry a typed code too — map them before OTHER flattens the
+  // (often opaque) SDK message into "Something went wrong".
+  const sdk = classifySdkError(err)
+  if (sdk) return sdk
 
   // Chain-mismatch: a pinned-chainId call hit a wallet that switched networks mid-flow (W-3/W-4).
   // Nothing was broadcast and retry is safe once the user switches back, so RPC_ERROR semantics

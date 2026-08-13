@@ -38,6 +38,23 @@ export interface NetworkConfig {
    * value rather than disabling the chunker — keeps one code path for both environments.
    */
   readonly maxLogRange: number
+  /**
+   * Blocks to stay behind chain head when scanning the shielded pool (SDK `PoolConfig.confirmationDepth`).
+   * A shallow reorg within this depth can't remove an already-persisted commitment leaf, avoiding the
+   * SDK's blunt full-rescan self-heal. Trade-off: notes in the last N blocks aren't spendable until deeper.
+   * 0 on local Anvil (instant finality, no reorgs); a small buffer on public testnets.
+   */
+  readonly confirmationDepth: number
+  /**
+   * Confirmations a note needs before it counts as **spendable** rather than **pending** in the
+   * SDK's `balances()` view (SDK `PoolConfig.finalityThreshold`). Distinct from `confirmationDepth`:
+   * that one governs which notes are *persisted at all* (reorg-safe tree); this one splits the
+   * *visible* balance into spendable vs pending. For a visible pending window it must exceed
+   * `confirmationDepth` — otherwise every persisted note is already deep enough to be spendable and
+   * `pending` is always 0. On sepolia: invisible in blocks 0–`confirmationDepth`, pending in
+   * `confirmationDepth`–`finalityThreshold`, spendable beyond. 0 on local Anvil (instant finality).
+   */
+  readonly finalityThreshold: number
 }
 
 export function getNetworkMode(): NetworkMode {
@@ -141,6 +158,11 @@ function sepoliaConfig(): NetworkConfig {
     indexerUrl: (import.meta.env.VITE_INDEXER_URL as string | undefined) ?? null,
     pollIntervalMs: 15_000,
     maxLogRange: 5_000,
+    confirmationDepth: 2, // small buffer for Sepolia's rare, shallow reorgs
+    // Equal to confirmationDepth: a note is spendable as soon as it's persisted (≥ 2 blocks deep), so
+    // there's no separate visible "pending" window today. Raise it above confirmationDepth to surface
+    // recent notes as pending before they're spendable — the spendable/pending split already supports it.
+    finalityThreshold: 2,
   }
 }
 
@@ -157,6 +179,8 @@ function localConfig(): NetworkConfig {
     indexerUrl: (import.meta.env.VITE_INDEXER_URL as string | undefined) ?? null,
     pollIntervalMs: 5_000,
     maxLogRange: 100_000,
+    confirmationDepth: 0, // Anvil: instant finality, no reorgs
+    finalityThreshold: 0, // Anvil: instant finality — every visible note is immediately spendable
   }
 }
 

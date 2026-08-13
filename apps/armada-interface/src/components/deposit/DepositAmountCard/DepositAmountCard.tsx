@@ -26,6 +26,9 @@ export interface DepositAmountCardProps {
   amount: string
   onAmountChange: (value: string) => void
   balance?: string
+  /** Not-yet-spendable ("pending") amount, pre-formatted. Shown as a "· X pending" suffix on the
+   *  balance row when set — notes still inside the finality buffer, excluded from `balance`/Max. */
+  pendingBalance?: string
   /** When set, fee row shows total + breakdown tooltip. */
   displayFees?: DisplayFees
   feeLoading?: boolean
@@ -65,6 +68,7 @@ export function DepositAmountCard({
   amount,
   onAmountChange,
   balance = '0.00',
+  pendingBalance,
   displayFees,
   feeLoading = false,
   flowBreakdown,
@@ -192,7 +196,10 @@ export function DepositAmountCard({
       <div className={styles.bottomRow}>
         <div className={styles.balanceGroup}>
           <WalletIcon className={styles.walletIcon} aria-hidden />
-          <span className={styles.balanceText}>{balance}</span>
+          <span className={styles.balanceText}>
+            {balance}
+            {pendingBalance ? ` · ${pendingBalance} pending` : ''}
+          </span>
           {onMax ? (
             <button type="button" className={styles.maxBtn} onClick={onMax}>
               Max

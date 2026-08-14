@@ -221,7 +221,9 @@
 }
 
 .armadaAddress {
-  font-family: var(--semantic-typography-mono-sm-font-family);
+  /* Shielded address renders in the sans UI font (matches the current mockup); size/spacing stay on
+     the mono-sm scale. Deviates from our vendored copy's Geist Mono — see the dashboard CLAUDE.md note. */
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-size: var(--semantic-typography-mono-sm-font-size);
   font-weight: var(--primitives-fontWeight-medium);
   line-height: var(--semantic-typography-mono-sm-line-height);

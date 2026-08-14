@@ -25,6 +25,10 @@ Shared primitives `IconButton`, `Tooltip`, `BottomSheet` live in `@/design`; the
 - **The mockup is the source of truth.** These are ports — restyle via tokens, keep motion parity; don't diverge from the mockup without a reason.
 - Empty states are first-class (RecentActivityList renders "No activity yet"; the DepositTooltip is the balance-0 first-run affordance).
 
+## Deviations from the vendored mockup
+
+- `BalanceCard.module.css` `.armadaAddress` uses the sans UI font, not Geist Mono. The vendored mockup copy (cloned at the start of the redesign) specifies `mono-sm`, but the current designer mockup renders the shielded address in sans — the clone is likely stale. Re-cloning `.context/armada-app` may surface other drift.
+
 ## Known follow-ups
 
 - `useDashboardBackground` is a stub returning `'gradient'`; the solid/gradient toggle UI is not ported.

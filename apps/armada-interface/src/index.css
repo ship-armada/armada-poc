@@ -3,7 +3,11 @@
 
 @import "tailwindcss";
 
+/* Cascade order matters: tokens define the base vars, typography redefines composite type vars on
+   :root, then theme-overrides win (card surface-main, brand gradient stops). global.css is the reset. */
 @import "./design/styles/tokens.css";
+@import "./design/styles/typography.css";
+@import "./design/styles/theme-overrides.css";
 @import "./design/styles/global.css";
 
 /*

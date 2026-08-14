@@ -1,0 +1,35 @@
+/* ABOUTME: App-specific theme overrides — surface-main (card bg), brand gradient stops, mobile marketing type. */
+/* ABOUTME: Ported from the armada-app mockup. Load after tokens.css and typography.css so overrides win the cascade. */
+
+/*
+  EXCEPTION — marketing gem gradient (logo + footer Figma stops).
+  Overrides synced brand-lavender / brand-amber so animations match the footer.
+*/
+[data-theme='light'],
+[data-theme='dark'] {
+  --semantic-color-brand-lavender: #ca8aea;
+  --semantic-color-brand-amber: #f8d197;
+  --semantic-color-brand-gradient-rose: #f39db0;
+}
+
+[data-theme='light'] {
+  --semantic-color-surface-main: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
+  --semantic-component-button-secondary-bg: var(--semantic-color-surface-main);
+}
+
+[data-theme='dark'] {
+  --semantic-color-surface-main: var(--semantic-color-surface-default);
+}
+
+/*
+  Marketing mobile type — stay on the scale:
+  title floor is fontSize-3xl (32px); body stays fontSize-md (15px).
+*/
+@media (max-width: 767px) {
+  :root,
+  [data-theme='light'],
+  [data-theme='dark'] {
+    --semantic-typography-title-font-size: calc(var(--primitives-fontSize-3xl) * 1px);
+    --semantic-typography-body-font-size: calc(var(--primitives-fontSize-md) * 1px);
+  }
+}

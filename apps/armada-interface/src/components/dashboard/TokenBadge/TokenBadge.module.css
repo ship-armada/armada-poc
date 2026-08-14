@@ -1,0 +1,19 @@
+/* ABOUTME: Styles for the TokenBadge — square frame with a clipped, centered token glyph. */
+/* ABOUTME: Ported from the armada-app design mockup. */
+.badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: calc(var(--semantic-borderRadius-button) * 1px);
+}
+
+.icon {
+  display: block;
+  flex-shrink: 0;
+}
+
+.icon :global(svg) {
+  display: block;
+}

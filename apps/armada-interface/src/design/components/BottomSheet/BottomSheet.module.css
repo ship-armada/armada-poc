@@ -1,0 +1,150 @@
+/* ABOUTME: Styles for the BottomSheet — scrim, sheet, handle, header, and slide animations. */
+/* ABOUTME: Ported from the armada-app design mockup. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: color-mix(in srgb, var(--semantic-color-text-primary) 32%, transparent);
+  cursor: pointer;
+  animation: bottomSheetScrimIn 220ms ease;
+}
+
+.scrimExit {
+  animation: bottomSheetScrimOut 280ms ease forwards;
+}
+
+.sheet {
+  width: 100%;
+  max-height: min(88dvh, calc(100dvh - var(--mobile-safe-area-top) - var(--primitives-spacing-5)));
+  display: flex;
+  flex-direction: column;
+  background: var(--semantic-color-surface-default);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px)
+    calc(var(--semantic-borderRadius-modal) * 1px) 0 0;
+  box-shadow: 0
+    calc(var(--primitives-spacing-6) * -1)
+    calc(var(--primitives-spacing-12) + var(--primitives-spacing-1) * 0.5)
+    0 color-mix(in srgb, var(--semantic-color-text-primary) 12%, transparent);
+  cursor: default;
+  animation: bottomSheetSlideIn 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  box-sizing: border-box;
+}
+
+.sheetExit {
+  animation: bottomSheetSlideOut 320ms ease forwards;
+}
+
+.handleRow {
+  display: flex;
+  justify-content: center;
+  padding-block: var(--primitives-spacing-3);
+  flex-shrink: 0;
+}
+
+.handle {
+  width: var(--primitives-spacing-10);
+  height: var(--primitives-spacing-1);
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: color-mix(in srgb, var(--semantic-color-text-primary) 18%, transparent);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
+  padding-inline: var(--primitives-spacing-5);
+  padding-bottom: var(--primitives-spacing-3);
+  flex-shrink: 0;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-lg) * 1px);
+  font-weight: var(--primitives-fontWeight-semibold);
+  line-height: var(--primitives-lineHeight-tight);
+  color: var(--semantic-color-text-primary);
+}
+
+.closeButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--mobile-touch-target-min);
+  height: var(--mobile-touch-target-min);
+  margin: calc(var(--primitives-spacing-3) * -1);
+  padding: 0;
+  border: none;
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: transparent;
+  color: var(--semantic-color-text-muted);
+  cursor: pointer;
+}
+
+.closeButton:focus-visible {
+  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
+  outline-offset: calc(var(--primitives-spacing-1) * 1px);
+}
+
+.body {
+  overflow-x: clip;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-inline: var(--primitives-spacing-5);
+  padding-bottom: calc(var(--primitives-spacing-5) + var(--mobile-safe-area-bottom));
+}
+
+@keyframes bottomSheetScrimIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes bottomSheetScrimOut {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes bottomSheetSlideIn {
+  from {
+    transform: translateY(100%);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes bottomSheetSlideOut {
+  from {
+    transform: translateY(0);
+  }
+
+  to {
+    transform: translateY(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrim,
+  .scrimExit,
+  .sheet,
+  .sheetExit {
+    animation: none;
+  }
+}

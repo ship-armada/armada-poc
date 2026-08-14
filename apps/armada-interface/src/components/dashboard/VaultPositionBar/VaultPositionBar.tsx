@@ -1,0 +1,100 @@
+// ABOUTME: Compact vault position row showing shielded vault balance, APR, and accrued earnings.
+// ABOUTME: Ported from the armada-app design mockup.
+import { ChartBarIcon } from '@heroicons/react/24/outline'
+import { ChevronRightIcon } from '@heroicons/react/24/outline'
+import { BalanceScrambleValue } from '@/components/dashboard/BalanceScrambleValue'
+import { RollingBalanceValue } from '@/components/dashboard/RollingBalanceValue'
+import {
+  DEMO_EARN_APY,
+  estimateVaultEarnedSoFar,
+  formatEarnedSoFarAmount,
+  formatVaultEarningLabel,
+} from '@/components/dashboard/vaultEarnings'
+import { formatUsdcAmount } from '@/components/dashboard/dashboardFormat'
+import usdcAmount from '@/design/styles/usdcAmount.module.css'
+import styles from './VaultPositionBar.module.css'
+
+export interface VaultPositionBarProps {
+  balance: number
+  apy?: number
+  earnedAmount?: number
+  vaultRollActive?: boolean
+  vaultRollFromValue?: string
+  vaultRollTrigger?: number
+  balanceRevealed?: boolean
+  onOpen?: () => void
+}
+
+export function VaultPositionBar({
+  balance,
+  apy = DEMO_EARN_APY,
+  earnedAmount,
+  vaultRollActive = false,
+  vaultRollFromValue,
+  vaultRollTrigger = 0,
+  balanceRevealed = true,
+  onOpen,
+}: VaultPositionBarProps) {
+  if (balance <= 0 && !vaultRollActive) return null
+
+  const formattedBalance = formatUsdcAmount(balance)
+  const resolvedEarned = earnedAmount ?? estimateVaultEarnedSoFar(balance, apy)
+  const formattedEarned = formatEarnedSoFarAmount(resolvedEarned)
+  const amountLabel = balanceRevealed ? `${formattedBalance} USDC` : 'Vault balance hidden'
+  const earnedLabel = balanceRevealed ? `${formattedEarned} earned` : 'Earned amount hidden'
+
+  const amountDisplay =
+    vaultRollActive && vaultRollFromValue !== undefined && balanceRevealed ? (
+      <RollingBalanceValue
+        value={formattedBalance}
+        enableRoll
+        mode="fromValue"
+        fromValue={vaultRollFromValue}
+        rollTrigger={vaultRollTrigger}
+        className={styles.amountRoll}
+      />
+    ) : (
+      <BalanceScrambleValue value={formattedBalance} revealed={balanceRevealed} />
+    )
+
+  const content = (
+    <>
+      <div className={styles.lead}>
+        <span className={styles.iconBadge} aria-hidden>
+          <ChartBarIcon className={styles.icon} strokeWidth={1.5} />
+        </span>
+        <div className={styles.info}>
+          <span className={[styles.amount, usdcAmount.font].join(' ')} aria-label={amountLabel}>
+            {amountDisplay}
+            <span className={styles.amountSuffix}>USDC</span>
+          </span>
+          <span className={styles.apr}>{formatVaultEarningLabel(apy)}</span>
+        </div>
+      </div>
+
+      <div className={styles.trail}>
+        <span
+          className={[styles.earned, usdcAmount.font, styles.earnedPositive].join(' ')}
+          aria-label={earnedLabel}
+        >
+          <BalanceScrambleValue value={formattedEarned} revealed={balanceRevealed} />
+        </span>
+        <ChevronRightIcon className={styles.chevron} strokeWidth={2} aria-hidden />
+      </div>
+    </>
+  )
+
+  if (onOpen) {
+    return (
+      <button type="button" className={styles.root} aria-label="Open vault" onClick={onOpen}>
+        {content}
+      </button>
+    )
+  }
+
+  return (
+    <div className={styles.root} aria-label="Vault position">
+      {content}
+    </div>
+  )
+}

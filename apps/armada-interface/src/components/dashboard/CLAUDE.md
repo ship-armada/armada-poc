@@ -1,22 +1,35 @@
 # components/dashboard/
 
-Dashboard-specific layout pieces. Composed by `pages/Dashboard.tsx`; not generally reusable elsewhere.
+Dashboard presentation, ported from the armada-app design mockup. Composed by `pages/Dashboard.tsx` into a centered ~420px card stack (BalanceCard → DepositTooltip → RecentActivityList). Presentation only — all data/actions are wired in `Dashboard.tsx`.
 
 ## Contents
 
-| Component | Purpose |
+| Component / file | Purpose |
 |---|---|
-| `ActionCard` | Single tile in the action grid — icon + title + subtitle. Click handler supplied by parent. |
-| `ActionGrid` | The four ActionCards (Deposit / Withdraw / Send / Earn). Wires each click to `setOpenModal(...)`. |
-| `RecentActivityCard` | Terminal-state rows from `txListAtom`, capped at 5, sorted by updatedAt desc. "View all" → `/history`. |
-| `InProgressCard` | Non-terminal rows from `pendingTxsAtom`. One row per record with stage copy + progress strip. |
+| `BalanceCard` | The "Private USDC" card: header (shield badge · label · eye/hide toggle), animated balance numeral, action row (SEND · `+` deposit · `↓` receive · `⋯` more menu = Earn/Withdraw/activity toggle), optional vault position bar. |
+| `RollingBalanceValue` | Odometer roll for the balance numeral (intro from zero; re-roll from previous value on change). |
+| `BalanceScrambleValue` | Steady-state hide/reveal scramble for the balance + activity amounts. |
+| `VaultPositionBar` | Vault (yield) position row inside BalanceCard; shows earned + APR. |
+| `SendButton`, `ShieldedUsdcBadge`, `TokenBadge` | Small presentational pieces of the card. |
+| `DepositTooltip` | First-run "Make your first deposit" callout under the card (empty state). |
+| `RecentActivityList` | Preview activity list — icon-badge rows with scrambled amounts; "View all" → `/history`. |
+| `txActivityAdapter.ts` | Maps `TxRecord[]` → `DashboardActivityItem[]` (direction/sign/label/pending). The data seam for the activity list. |
+| `dashboardFormat.ts` | Number-based `formatUsdcAmount` / `truncateArmadaAddress` / `formatTimeAgo` used by the ported (number-typed) components. Distinct from `@/lib/format` (bigint-based). |
+| `vaultEarnings.ts` | `DEMO_EARN_APY` + vault-earning label/estimate helpers used by VaultPositionBar. |
+
+Shared primitives `IconButton`, `Tooltip`, `BottomSheet` live in `@/design`; the hooks (`useMobileLayout`, `useEscapeKey`, `useBodyScrollLock`, `useDashboardBackground`) live in `@/hooks`.
 
 ## Conventions
 
-- These components subscribe to atoms directly (one-level read of `txListAtom`, `pendingTxsAtom`) because the dashboard owns the data shape. Deeper components (TxRow, TxStatusChip) stay prop-only.
-- Empty states are first-class — never render a card with zero rows and no message.
-- `onSelect` is consumer-supplied; default behavior (none) leaves rows non-interactive. For now Dashboard wires it to a noop; later it'll open a detail drawer or navigate.
+- **Presentation only.** These components take numbers/strings/callbacks; `Dashboard.tsx` reads the atoms/hooks and adapts. Don't reach into atoms here.
+- **The mockup is the source of truth.** These are ports — restyle via tokens, keep motion parity; don't diverge from the mockup without a reason.
+- Empty states are first-class (RecentActivityList renders "No activity yet"; the DepositTooltip is the balance-0 first-run affordance).
 
-## Where BalanceHero lives
+## Deviations from the vendored mockup
 
-`BalanceHero` is in `components/balance/`, not here — it's the visual anchor for the page but conceptually a balance-domain component (it could be embedded elsewhere, e.g. Settings or a future portfolio view). Keeping it separate lets the dashboard folder stay focused on dashboard-only chrome.
+- `BalanceCard.module.css` `.armadaAddress` uses the sans UI font, not Geist Mono. The vendored mockup copy (cloned at the start of the redesign) specifies `mono-sm`, but the current designer mockup renders the shielded address in sans — the clone is likely stale. Re-cloning `.context/armada-app` may surface other drift.
+
+## Known follow-ups
+
+- `useDashboardBackground` is a stub returning `'gradient'`; the solid/gradient toggle UI is not ported.
+- `↓` maps to Receive as a placeholder; a dedicated payment-request flow is planned.

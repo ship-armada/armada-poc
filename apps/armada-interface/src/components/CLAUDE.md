@@ -20,8 +20,7 @@ UI components. **Dumb when possible.** State comes from hooks + atoms; effects b
 | `ui/` | App-local primitives (Card, Modal, AmountInput, ChainSelect, FeeSummary, RecipientInput, SectionHeader, StatusChip, Tabs, TechnicalDetailsDisclosure, EmptyState) — see `ui/CLAUDE.md` |
 | `flow/` | ActionFlowShell + FlowHeader + FlowFooter + FlowStepIndicator + ProgressStep + ErrorStep — see `flow/CLAUDE.md` |
 | `tx/` | TxLifecycleStepper, TxRow, TxStatusChip, stageCopy helpers — see `tx/CLAUDE.md` |
-| `balance/` | BalanceHero (dashboard hero card) |
-| `dashboard/` | ActionGrid, ActionCard, RecentActivityCard, InProgressCard — see `dashboard/CLAUDE.md` |
+| `dashboard/` | BalanceCard + numerals + RecentActivityList + DepositTooltip (centered card stack) — see `dashboard/CLAUDE.md` |
 | `shield/` | ShieldModal + steps — see `shield/CLAUDE.md` |
 | `unshield/` | UnshieldModal + steps — see `unshield/CLAUDE.md` |
 | `payments/` | SendModal + steps (Private / External tabs) — see `payments/CLAUDE.md` |

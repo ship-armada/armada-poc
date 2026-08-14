@@ -1,0 +1,146 @@
+/* ABOUTME: Styles for the IconButton — variant surfaces, focus ring, and disabled states. */
+/* ABOUTME: Ported from the armada-app design mockup. */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: calc(var(--primitives-spacing-12) + var(--primitives-spacing-2));
+  height: calc(var(--primitives-spacing-12) + var(--primitives-spacing-2));
+  padding: 0;
+  border: calc(var(--primitives-borderWidth-default) * 1px) solid transparent;
+  border-radius: calc(var(--semantic-borderRadius-button) * 1px);
+  cursor: pointer;
+  outline: none;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.button:focus-visible {
+  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
+  outline-offset: calc(var(--primitives-spacing-1) * 1px);
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--primitives-spacing-6);
+  height: var(--primitives-spacing-6);
+  color: currentColor;
+}
+
+.icon :global(svg) {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.solid {
+  background: var(--semantic-component-button-primary-bg);
+  color: var(--semantic-component-button-primary-text);
+}
+
+.solid:hover:not(:disabled) {
+  background: var(--semantic-component-button-primary-bg-hover);
+}
+
+.solid:active:not(:disabled) {
+  background: var(--semantic-component-button-primary-bg-active);
+}
+
+.solid:disabled {
+  background: var(--semantic-component-button-primary-bg-disabled);
+  color: var(--semantic-component-button-primary-text-disabled);
+}
+
+.gradient {
+  border: none;
+  background: linear-gradient(
+    to right,
+    var(--semantic-component-button-gradient-default-from) 0%,
+    var(--semantic-component-button-gradient-default-to) 100%
+  );
+  color: var(--semantic-component-button-gradient-text);
+}
+
+.gradient:hover:not(:disabled) {
+  background: linear-gradient(
+    to right,
+    var(--semantic-component-button-gradient-hover-from) 0%,
+    var(--semantic-component-button-gradient-hover-to) 100%
+  );
+}
+
+.gradient:active:not(:disabled) {
+  background: linear-gradient(
+    to right,
+    var(--semantic-component-button-gradient-active-from) 0%,
+    var(--semantic-component-button-gradient-active-to) 100%
+  );
+}
+
+.gradient:disabled {
+  color: var(--semantic-component-button-gradient-text-disabled);
+}
+
+.ghost {
+  background: transparent;
+  border-color: var(--semantic-color-border-lavender);
+  color: var(--semantic-component-button-ghost-text);
+}
+
+.ghostActive:not(:hover):not(:disabled) {
+  background: var(--semantic-component-button-primary-bg);
+  border-color: transparent;
+  color: var(--semantic-component-button-primary-text);
+}
+
+.ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 12%, transparent);
+}
+
+.ghost:active:not(:disabled) {
+  background: var(--semantic-component-button-ghost-bg-active);
+}
+
+.ghostSurface {
+  background: var(--semantic-color-surface-default);
+  border-color: var(--semantic-component-button-secondary-border);
+  color: var(--semantic-color-text-primary);
+}
+
+.ghostSurface:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 12%, transparent);
+}
+
+.ghostSurface:active:not(:disabled) {
+  background: var(--semantic-component-button-ghost-bg-active);
+}
+
+.secondary {
+  border: none;
+  background: var(--primitives-color-purple-200);
+  color: var(--semantic-component-button-gradient-text);
+}
+
+.secondary:hover:not(:disabled) {
+  background: var(--primitives-color-purple-300);
+}
+
+.secondary:active:not(:disabled) {
+  background: var(--primitives-color-purple-400);
+}
+
+.secondary:disabled {
+  color: var(--semantic-component-button-gradient-text-disabled);
+}

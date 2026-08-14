@@ -1,0 +1,74 @@
+/* ABOUTME: Reusable typography composites for CSS Modules `composes`. */
+/* ABOUTME: Ported from the armada-app design mockup. */
+
+.bodySm {
+  font-family: var(--semantic-typography-ui-body-sm-font-family);
+  font-weight: var(--semantic-typography-ui-body-sm-font-weight);
+  font-size: var(--semantic-typography-ui-body-sm-font-size);
+  line-height: var(--semantic-typography-ui-body-sm-line-height);
+  letter-spacing: var(--semantic-typography-ui-body-sm-letter-spacing);
+}
+
+.bodySmMedium {
+  font-family: var(--semantic-typography-ui-body-sm-font-family);
+  font-weight: var(--primitives-fontWeight-medium);
+  font-size: var(--semantic-typography-ui-body-sm-font-size);
+  line-height: var(--semantic-typography-ui-body-sm-line-height);
+  letter-spacing: var(--semantic-typography-ui-body-sm-letter-spacing);
+}
+
+.bodySmSemibold {
+  font-family: var(--semantic-typography-ui-body-sm-font-family);
+  font-weight: var(--primitives-fontWeight-semibold);
+  font-size: var(--semantic-typography-ui-body-sm-font-size);
+  line-height: var(--semantic-typography-ui-body-sm-line-height);
+  letter-spacing: var(--semantic-typography-ui-body-sm-letter-spacing);
+}
+
+.labelSm {
+  font-family: var(--semantic-typography-ui-label-sm-font-family);
+  font-weight: var(--semantic-typography-ui-label-sm-font-weight);
+  font-size: var(--semantic-typography-ui-label-sm-font-size);
+  line-height: var(--semantic-typography-ui-label-sm-line-height);
+  letter-spacing: var(--semantic-typography-ui-label-sm-letter-spacing);
+}
+
+.labelSmRegular {
+  font-family: var(--semantic-typography-ui-label-sm-font-family);
+  font-weight: var(--primitives-fontWeight-regular);
+  font-size: var(--semantic-typography-ui-label-sm-font-size);
+  line-height: var(--semantic-typography-ui-label-sm-line-height);
+  letter-spacing: var(--semantic-typography-ui-label-sm-letter-spacing);
+}
+
+.labelXs {
+  font-family: var(--semantic-typography-ui-label-xs-font-family);
+  font-weight: var(--semantic-typography-ui-label-xs-font-weight);
+  font-size: var(--semantic-typography-ui-label-xs-font-size);
+  line-height: var(--semantic-typography-ui-label-xs-line-height);
+  letter-spacing: var(--semantic-typography-ui-label-xs-letter-spacing);
+}
+
+.labelTag {
+  font-family: var(--semantic-typography-ui-label-tag-font-family);
+  font-weight: var(--semantic-typography-ui-label-tag-font-weight);
+  font-size: var(--semantic-typography-ui-label-tag-font-size);
+  line-height: var(--semantic-typography-ui-label-tag-line-height);
+  letter-spacing: var(--semantic-typography-ui-label-tag-letter-spacing);
+}
+
+.headingLg {
+  font-family: var(--semantic-typography-ui-heading-lg-font-family);
+  font-weight: var(--semantic-typography-ui-heading-lg-font-weight);
+  font-size: var(--semantic-typography-ui-heading-lg-font-size);
+  line-height: var(--semantic-typography-ui-heading-lg-line-height);
+  letter-spacing: var(--semantic-typography-ui-heading-lg-letter-spacing);
+}
+
+.monoSmMedium {
+  font-family: var(--semantic-typography-mono-sm-font-family);
+  font-weight: var(--primitives-fontWeight-medium);
+  font-size: var(--semantic-typography-mono-sm-font-size);
+  line-height: var(--semantic-typography-mono-sm-line-height);
+  letter-spacing: var(--semantic-typography-mono-sm-letter-spacing);
+}

@@ -1,0 +1,670 @@
+/* ABOUTME: Styles for the BalanceCard — card shell, gradient stroke, balance reveal, actions, and more-menu. */
+/* ABOUTME: Ported from the armada-app design mockup. */
+.cardShell {
+  position: relative;
+  width: 100%;
+}
+
+.cardStrokeSvg {
+  display: none;
+  position: absolute;
+  inset: -2px;
+  width: calc(100% + 4px);
+  height: calc(100% + 4px);
+  pointer-events: none;
+  overflow: visible;
+  z-index: 2;
+}
+
+.cardStrokeRect {
+  stroke-dasharray: 0 2000;
+  stroke-dashoffset: 0;
+  transition: stroke-dasharray 800ms ease, stroke-dashoffset 800ms ease;
+}
+
+.cardShell:has(.shieldedBalanceBadge:hover) .cardStrokeRect {
+  stroke-dasharray: 520 2000;
+  stroke-dashoffset: -180;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cardShell:has(.shieldedBalanceBadge:hover) .cardStrokeRect {
+    transition: none;
+    stroke-dasharray: 2000 0;
+    stroke-dashoffset: 0;
+  }
+}
+
+.card {
+  width: 100%;
+  height: auto;
+  background: var(--semantic-color-surface-main);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  position: relative;
+  padding: var(--semantic-spacing-card-padding);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: calc(var(--primitives-spacing-12) + var(--primitives-spacing-3) + var(--primitives-spacing-1));
+  box-sizing: border-box;
+  animation: balanceCardEnter 480ms cubic-bezier(0.22, 1, 0.36, 1) 220ms both;
+}
+
+:global([data-theme='light']) .card:not(.cardSolid) {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent) 0%,
+    color-mix(in srgb, var(--primitives-color-neutral-50) 20%, transparent) 100%
+  );
+}
+
+.cardSolid {
+  background: var(--semantic-color-surface-default);
+}
+
+.cardFooter {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--primitives-spacing-5);
+}
+
+.vaultPositionWrap {
+  width: 100%;
+}
+
+.vaultPositionVisible {
+  opacity: 1;
+  transform: none;
+}
+
+.vaultPositionEnter {
+  opacity: 0;
+  animation: vaultPositionEnter 420ms cubic-bezier(0.22, 1, 0.36, 1) 820ms forwards;
+}
+
+@keyframes vaultPositionEnter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--primitives-spacing-2));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vaultPositionEnter {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.cardBodyTop {
+  width: 100%;
+  display: flex;
+  justify-content: stretch;
+  opacity: 0;
+  animation: balanceTopRowEnter 360ms ease-out 480ms forwards;
+}
+
+.cardBodyBalance {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+@keyframes balanceTopRowEnter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes balanceFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(var(--primitives-spacing-2));
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes actionButtonEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+
+  48% {
+    opacity: 1;
+    transform: translateY(calc(var(--primitives-spacing-3) * -1));
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.topRow {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.iconBadge {
+  border-radius: calc(var(--semantic-borderRadius-button) * 1px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--semantic-component-button-gradient-text);
+}
+
+.shieldedBalanceBadge {
+  position: relative;
+  z-index: 3;
+  cursor: default;
+}
+
+.eyeBadge {
+  width: calc(var(--primitives-spacing-10) - var(--primitives-spacing-1));
+  height: calc(var(--primitives-spacing-10) - var(--primitives-spacing-1));
+  background: color-mix(in srgb, var(--semantic-component-button-gradient-default-from) 20%, transparent);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.eyeBadge:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.eyeBadge:hover {
+  background: color-mix(in srgb, var(--semantic-component-button-gradient-default-from) 32%, transparent);
+}
+
+.badgeIcon {
+  width: var(--primitives-spacing-4);
+  height: var(--primitives-spacing-4);
+}
+
+.labelStack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+  text-align: center;
+}
+
+.label {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: var(--semantic-component-button-primary-sm-font-size);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: var(--primitives-letterSpacing-normal);
+  color: var(--semantic-color-text-muted);
+}
+
+.armadaAddress {
+  /* Shielded address renders in the sans UI font (matches the current mockup); size/spacing stay on
+     the mono-sm scale. Deviates from our vendored copy's Geist Mono — see the dashboard CLAUDE.md note. */
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: var(--semantic-typography-mono-sm-font-size);
+  font-weight: var(--primitives-fontWeight-medium);
+  line-height: var(--semantic-typography-mono-sm-line-height);
+  letter-spacing: var(--semantic-typography-mono-sm-letter-spacing);
+  color: var(--semantic-color-text-secondary);
+  border: none;
+  margin: 0;
+  padding: 0 var(--primitives-spacing-2);
+  background: none;
+  cursor: pointer;
+  border-radius: calc(var(--semantic-borderRadius-button) * 1px);
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.armadaAddress:hover {
+  color: var(--semantic-color-text-primary);
+  background: color-mix(in srgb, var(--semantic-color-text-primary) 8%, transparent);
+}
+
+.armadaAddress:active {
+  background: color-mix(in srgb, var(--semantic-color-text-primary) 12%, transparent);
+}
+
+.armadaAddress:focus-visible {
+  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
+  outline-offset: calc(var(--primitives-spacing-1) * 1px);
+}
+
+.armadaAddressCopied {
+  color: var(--semantic-color-text-primary);
+}
+
+@keyframes balanceCardEnter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--primitives-spacing-10));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.balanceRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.balanceCluster {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: var(--primitives-spacing-2);
+  max-width: 100%;
+  min-width: 0;
+}
+
+.balanceClusterIntro .balanceValue {
+  animation: balanceFadeIn 920ms cubic-bezier(0.22, 1, 0.36, 1) 1280ms both;
+}
+
+.balanceClusterStable .balanceValue {
+  animation: none;
+  transform: none;
+  opacity: 1;
+}
+
+.balanceClusterStable .balanceValueLayer,
+.balanceClusterStable .balanceValueLayerHidden {
+  width: 100%;
+}
+
+.balanceCluster .balanceValue {
+  position: relative;
+  z-index: 1;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.balanceValue {
+  font-family: var(--primitives-fontFamily-mono), ui-monospace, monospace;
+  font-size: var(--balance-font-size, var(--primitives-spacing-10));
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  line-height: var(--balance-font-size, var(--primitives-spacing-10));
+  display: inline-grid;
+  align-items: center;
+  min-height: var(--balance-font-size, var(--primitives-spacing-10));
+  letter-spacing: 0;
+}
+
+.balanceValueSizer {
+  grid-area: 1 / 1;
+  visibility: hidden;
+  white-space: nowrap;
+  line-height: var(--balance-font-size, var(--primitives-spacing-10));
+  width: max-content;
+  max-width: 100%;
+}
+
+.balanceClusterPrivate {
+  cursor: default;
+}
+
+.balanceValueLayer {
+  grid-area: 1 / 1;
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--balance-font-size, var(--primitives-spacing-10));
+  overflow: hidden;
+  justify-content: flex-start;
+  transition: opacity 180ms ease;
+}
+
+.balanceValueLayerVisible {
+  opacity: 1;
+  z-index: 1;
+}
+
+.balanceValueLayerHidden {
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .balanceValueLayer {
+    transition: none;
+  }
+}
+
+.actionRow {
+  width: 100%;
+  min-height: var(--primitives-spacing-12);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+  z-index: 10;
+}
+
+.actionEnter {
+  opacity: 0;
+  animation: actionButtonEnter 520ms cubic-bezier(0.34, 1.15, 0.64, 1) both;
+}
+
+.actionEnter:nth-child(1) {
+  animation-delay: 560ms;
+}
+
+.actionEnter:nth-child(2) {
+  animation-delay: 630ms;
+}
+
+.actionEnter:nth-child(3) {
+  animation-delay: 700ms;
+}
+
+.actionEnter:nth-child(4) {
+  animation-delay: 770ms;
+}
+
+.actionRowV2 {
+  justify-content: flex-start;
+  gap: var(--primitives-spacing-4);
+}
+
+.actionRowV2 .actionEnter:nth-child(1),
+.actionRowV2 .actionEnter:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+
+.actionRowV2 .actionEnter:nth-child(2) {
+  animation-delay: 630ms;
+}
+
+.actionRowV2 .actionEnter:nth-child(3) {
+  flex-shrink: 0;
+  animation-delay: 700ms;
+}
+
+.actionRowV2 .sendButton {
+  width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .cardBodyTop,
+  .balanceClusterIntro .balanceValue,
+  .balanceClusterStable .balanceValue,
+  .actionEnter {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    max-width: none;
+  }
+}
+
+.sendButton {
+  width: calc(
+    var(--primitives-spacing-12) + var(--primitives-spacing-24) - var(--primitives-spacing-2) -
+      var(--primitives-spacing-1) * 0.25
+  );
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.actionAmber {
+  background: var(--primitives-color-purple-200);
+  color: var(--semantic-component-button-gradient-text);
+  border-color: transparent;
+}
+
+.actionEnter .actionAmber:hover:not(:disabled) {
+  background: var(--primitives-color-purple-300);
+}
+
+.actionEnter .actionAmber:active:not(:disabled) {
+  background: var(--primitives-color-purple-400);
+}
+
+.actionEnter .actionAmber:disabled {
+  background: var(--semantic-component-button-primary-bg-disabled);
+  color: var(--semantic-component-button-primary-text-disabled);
+}
+
+.actionMore {
+  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 12%, transparent);
+  border-color: transparent;
+  color: var(--semantic-component-button-gradient-text);
+}
+
+.actionEnter .actionMore:hover:not(:disabled) {
+  background: var(--primitives-color-purple-200);
+}
+
+.actionEnter .actionMore:active:not(:disabled) {
+  background: var(--primitives-color-purple-300);
+}
+
+.actionIcon {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+}
+
+.pillIcon {
+  width: 100%;
+  height: 100%;
+}
+
+.moreMenuRoot {
+  position: relative;
+  z-index: 30;
+}
+
+.moreMenu {
+  position: absolute;
+  left: 50%;
+  right: auto;
+  bottom: calc(100% + var(--primitives-spacing-4));
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+  width: calc(var(--primitives-spacing-20) * 3 + var(--primitives-spacing-10) * 0.75);
+  padding: var(--primitives-spacing-4);
+  background: var(--semantic-color-surface-default);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  box-shadow: 0
+    calc(var(--primitives-spacing-6) + var(--primitives-spacing-1) * 0.25)
+    calc(var(--primitives-spacing-12) + var(--primitives-spacing-1) * 0.5)
+    0 color-mix(in srgb, var(--primitives-color-purple-300) 25%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition:
+    opacity 160ms ease,
+    visibility 160ms ease;
+}
+
+.moreMenu::before {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: var(--primitives-spacing-4);
+}
+
+@media (hover: hover) {
+  .moreMenuRoot:hover:not([data-hover-suppressed='true']) .moreMenu {
+    opacity: 1;
+    pointer-events: auto;
+    visibility: visible;
+  }
+}
+
+.moreMenuRoot:focus-within:not([data-hover-suppressed='true']) .moreMenu,
+.moreMenuRoot[data-menu-open='true'] .moreMenu {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+}
+
+.moreMenuItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: var(--primitives-spacing-10);
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  transition: transform 0.1s ease;
+}
+
+.moreMenuItem:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.moreMenuItem:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.moreMenuItem:hover:not(:disabled) .moreMenuIconBadge {
+  background: var(--primitives-color-purple-200);
+}
+
+.moreMenuItemLead {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  min-width: 0;
+}
+
+.moreMenuIconBadge {
+  width: var(--primitives-spacing-10);
+  height: var(--primitives-spacing-10);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: color-mix(in srgb, var(--primitives-color-purple-500) 15%, transparent);
+  color: var(--semantic-color-text-primary);
+}
+
+.moreMenuIcon {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+}
+
+.moreMenuLabel {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  line-height: var(--primitives-spacing-6);
+  letter-spacing: var(--primitives-letterSpacing-normal);
+  color: var(--semantic-color-text-primary);
+}
+
+.moreMenuMeta {
+  flex-shrink: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  line-height: var(--primitives-spacing-4);
+  letter-spacing: var(--primitives-letterSpacing-wide);
+  color: var(--semantic-color-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .moreMenu {
+    transition: none;
+  }
+}
+
+.moreMenuSheet {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+}
+
+.moreMenuSheet .moreMenuItem {
+  min-height: var(--mobile-touch-target-min);
+  padding-block: var(--primitives-spacing-2);
+}
+
+@media (max-width: 767px) {
+  .actionRow {
+    justify-content: flex-start;
+    gap: var(--primitives-spacing-3);
+  }
+
+  .actionRowV2 {
+    gap: var(--primitives-spacing-3);
+  }
+
+  .actionRow .actionEnter:first-child {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+  }
+
+  .actionRow .actionEnter:not(:first-child) {
+    flex-shrink: 0;
+  }
+
+  .sendButton {
+    width: 100%;
+    display: flex;
+  }
+
+  .actionRowV2 .actionEnter:nth-child(1) {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+  }
+
+  .actionRowV2 .actionEnter:nth-child(2) {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+  }
+
+  .balanceClusterPrivate {
+    cursor: pointer;
+  }
+}

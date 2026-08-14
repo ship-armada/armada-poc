@@ -1,27 +1,5 @@
-/* ABOUTME: Design tokens for @armada/ui — CSS custom properties consumed by every component. */
-/* ABOUTME: Hand-maintained for now; mirror any change in ../tokens/armada-tokens.json (see PLAN_ARMADA_UI_FOUNDATION.md). */
-
-/*
- * Token layers:
- *   --primitives-*  raw values (color scales, font sizes, spacing, radii, etc.)
- *   --semantic-*    contextual aliases (surface bg, text color, button-md height, etc.)
- *
- * Typography composites (ui/heading-sm, etc.) are generated — see typography.css via
- * `npm run tokens:typography --workspace=@armada/ui`. Primitives/semantic colors here
- * are still hand-maintained; keep armada-tokens.json in sync when editing.
- *
- * Theme scoping:
- *   Tokens are scoped to `[data-theme="dark"]` and `[data-theme="light"]` selectors
- *   instead of `:root`. The consuming app MUST set a `data-theme` attribute on
- *   <html> (or any ancestor of the component tree) for tokens to resolve.
- *
- * Forward direction: a build script will regenerate this file from armada-tokens.json
- * once recovered or rewritten. Until then, this CSS is the live source of truth — edit
- * it directly AND keep armada-tokens.json in sync so the future migration is clean.
- *
- * Note: some token values are intentionally unitless (e.g. --primitives-fontSize-xs: 10).
- * That matches the mockup's emission style; consuming CSS multiplies by px where needed.
- */
+/* ABOUTME: Design tokens (colors, spacing, radii, type primitives) for the app's vendored design system. */
+/* ABOUTME: Adopted from the armada-app design mockup token pipeline — treat as generated; edit upstream, not here. */
 [data-theme="dark"] {
   /* Primitives */
   --primitives-color-purple-50: #f5eefb;
@@ -34,6 +12,9 @@
   --primitives-color-purple-700: #6b3fa0;
   --primitives-color-purple-800: #452570;
   --primitives-color-purple-900: #291433;
+  --primitives-color-violet-500: #5227ca;
+  --primitives-color-violet-600: #431fb0;
+  --primitives-color-violet-700: #361894;
   --primitives-color-amber-50: #fdf6ec;
   --primitives-color-amber-100: #faebd4;
   --primitives-color-amber-200: #f5d9ae;
@@ -54,6 +35,15 @@
   --primitives-color-neutral-600: #9d9aaa;
   --primitives-color-neutral-700: #c0bece;
   --primitives-color-neutral-800: #e0deea;
+  --primitives-color-gray-50: #121316;
+  --primitives-color-gray-100: #1a1c21;
+  --primitives-color-gray-200: #262930;
+  --primitives-color-gray-300: #3a3e48;
+  --primitives-color-gray-400: #5c6270;
+  --primitives-color-gray-500: #8b919e;
+  --primitives-color-gray-600: #a8adb8;
+  --primitives-color-gray-700: #c5c9d1;
+  --primitives-color-gray-800: #e2e4e8;
   --primitives-color-white-low: rgba(255,255,255,0.18);
   --primitives-color-white-mid: rgba(255,255,255,0.45);
   --primitives-color-white-high: rgba(255,255,255,0.87);
@@ -79,10 +69,9 @@
   --primitives-fontWeight-regular: 400;
   --primitives-fontWeight-medium: 500;
   --primitives-fontWeight-semibold: 600;
-  --primitives-fontFamily-display: Charis SIL;
+  --primitives-fontFamily-display: "Charis SIL";
   --primitives-fontFamily-ui: Geist;
-  /* Optional — use for hashes / code when explicitly needed; default UI type is Geist. */
-  --primitives-fontFamily-mono: Geist Mono;
+  --primitives-fontFamily-mono: "Geist Mono";
   --primitives-lineHeight-none: 100%;
   --primitives-lineHeight-tight: 110%;
   --primitives-lineHeight-snug: 120%;
@@ -107,7 +96,6 @@
   --primitives-spacing-16: 64px;
   --primitives-spacing-20: 80px;
   --primitives-spacing-24: 96px;
-  --primitives-borderRadius-xs: 2;
   --primitives-borderRadius-sm: 4;
   --primitives-borderRadius-md: 6;
   --primitives-borderRadius-lg: 8;
@@ -118,8 +106,16 @@
   /* Semantic */
   --semantic-color-brand-deep: var(--primitives-color-purple-900);
   --semantic-color-brand-lavender: var(--primitives-color-purple-500);
+  --semantic-color-brand-action: var(--primitives-color-violet-500);
+  --semantic-color-brand-action-muted: color-mix(in srgb, var(--semantic-color-brand-action) 15%, transparent);
+  --semantic-color-brand-action-muted-hover: color-mix(in srgb, var(--semantic-color-brand-action) 25%, transparent);
+  --semantic-color-brand-action-muted-active: color-mix(in srgb, var(--semantic-color-brand-action) 35%, transparent);
   --semantic-color-brand-amber: var(--primitives-color-amber-300);
   --semantic-color-brand-amber-dark: var(--primitives-color-amber-500);
+  /* Fixed ink — same in both themes (marketing CTAs on light/media surfaces) */
+  --semantic-color-brand-ink: #151416;
+  --semantic-color-brand-ink-hover: #2a2830;
+  --semantic-color-brand-ink-active: #0e0d0f;
   --semantic-color-surface-bg: var(--primitives-color-neutral-0);
   --semantic-color-surface-default: var(--primitives-color-neutral-50);
   --semantic-color-surface-raised: var(--primitives-color-neutral-100);
@@ -141,19 +137,19 @@
   --semantic-spacing-card-padding: var(--primitives-spacing-6);
   --semantic-spacing-section-gap: var(--primitives-spacing-10);
   --semantic-spacing-component-gap: var(--primitives-spacing-3);
+  --semantic-spacing-site-title-to-body: calc(var(--semantic-typography-title-font-size) * 0.5);
+  --semantic-spacing-site-body-to-cta: calc(var(--semantic-typography-body-font-size) * 1.6);
   --semantic-borderRadius-card: var(--primitives-borderRadius-lg);
   --semantic-borderRadius-item: 8;
   --semantic-borderRadius-modal: 20;
   --semantic-borderRadius-button: var(--primitives-borderRadius-full);
   --semantic-borderRadius-input: var(--primitives-borderRadius-md);
   --semantic-borderRadius-badge: var(--primitives-borderRadius-sm);
-  --semantic-borderRadius-item: 8px;
-  --semantic-borderRadius-modal: 20px;
-  --semantic-component-button-primary-bg: var(--primitives-color-purple-500);
-  --semantic-component-button-primary-bg-hover: var(--primitives-color-purple-400);
-  --semantic-component-button-primary-bg-active: var(--primitives-color-purple-600);
+  --semantic-component-button-primary-bg: var(--semantic-color-brand-action);
+  --semantic-component-button-primary-bg-hover: var(--primitives-color-violet-600);
+  --semantic-component-button-primary-bg-active: var(--primitives-color-violet-700);
   --semantic-component-button-primary-bg-disabled: var(--primitives-color-neutral-100);
-  --semantic-component-button-primary-text: var(--primitives-color-neutral-0);
+  --semantic-component-button-primary-text: #ffffff;
   --semantic-component-button-primary-text-disabled: var(--primitives-color-neutral-400);
   --semantic-component-button-primary-border: rgba(0,0,0,0);
   --semantic-component-button-primary-sm-height: var(--primitives-spacing-8);
@@ -222,7 +218,7 @@
   --semantic-component-button-ghost-lg-font-size: 15px;
   --semantic-component-button-ghost-lg-icon-gap: 6px;
   --semantic-component-button-ghost-lg-radius: var(--primitives-borderRadius-full);
-  --semantic-component-button-gradient-text: var(--primitives-color-neutral-0);
+  --semantic-component-button-gradient-text: #291433;
   --semantic-component-button-gradient-text-disabled: var(--primitives-color-neutral-400);
   --semantic-component-button-gradient-default-from: var(--primitives-color-purple-300);
   --semantic-component-button-gradient-default-to: var(--primitives-color-amber-300);
@@ -230,6 +226,12 @@
   --semantic-component-button-gradient-hover-to: var(--primitives-color-amber-200);
   --semantic-component-button-gradient-active-from: var(--primitives-color-purple-400);
   --semantic-component-button-gradient-active-to: var(--primitives-color-amber-400);
+  --semantic-component-button-ink-bg: var(--semantic-color-brand-ink);
+  --semantic-component-button-ink-bg-hover: var(--semantic-color-brand-ink-hover);
+  --semantic-component-button-ink-bg-active: var(--semantic-color-brand-ink-active);
+  --semantic-component-button-ink-bg-disabled: var(--primitives-color-neutral-100);
+  --semantic-component-button-ink-text: #ffffff;
+  --semantic-component-button-ink-text-disabled: var(--primitives-color-neutral-400);
   --semantic-component-navbar-bg: var(--primitives-color-neutral-50);
   --semantic-component-navbar-height: 40px;
   --semantic-component-navbar-padding-x: 0px;
@@ -261,7 +263,7 @@
   --semantic-component-tag-dot-lavender: var(--semantic-color-brand-lavender);
 }
 
-/* Light theme — real values ported from the armada-crowdfund mockup (commit c9f5807). */
+/* Light theme — anchored on real product values (bg #f1eeee, surface #ffffff) */
 [data-theme="light"] {
   /* Primitives */
   --primitives-color-purple-50: #f5eefb;
@@ -274,6 +276,9 @@
   --primitives-color-purple-700: #6b3fa0;
   --primitives-color-purple-800: #452570;
   --primitives-color-purple-900: #291433;
+  --primitives-color-violet-500: #5227ca;
+  --primitives-color-violet-600: #431fb0;
+  --primitives-color-violet-700: #361894;
   --primitives-color-amber-50: #fdf6ec;
   --primitives-color-amber-100: #faebd4;
   --primitives-color-amber-200: #f5d9ae;
@@ -294,6 +299,15 @@
   --primitives-color-neutral-600: #6c5656;
   --primitives-color-neutral-700: #4b3a3a;
   --primitives-color-neutral-800: #2e2323;
+  --primitives-color-gray-50: #f8f9fb;
+  --primitives-color-gray-100: #f1f3f6;
+  --primitives-color-gray-200: #e5e8ed;
+  --primitives-color-gray-300: #c9ced6;
+  --primitives-color-gray-400: #9aa1ad;
+  --primitives-color-gray-500: #6b7280;
+  --primitives-color-gray-600: #525866;
+  --primitives-color-gray-700: #3d4450;
+  --primitives-color-gray-800: #2a2f38;
   --primitives-color-white-low: rgba(0,0,0,0.08);
   --primitives-color-white-mid: rgba(0,0,0,0.45);
   --primitives-color-white-high: rgba(0,0,0,0.78);
@@ -319,9 +333,9 @@
   --primitives-fontWeight-regular: 400;
   --primitives-fontWeight-medium: 500;
   --primitives-fontWeight-semibold: 600;
-  --primitives-fontFamily-display: Charis SIL;
+  --primitives-fontFamily-display: "Charis SIL";
   --primitives-fontFamily-ui: Geist;
-  --primitives-fontFamily-mono: Geist Mono;
+  --primitives-fontFamily-mono: "Geist Mono";
   --primitives-lineHeight-none: 100%;
   --primitives-lineHeight-tight: 110%;
   --primitives-lineHeight-snug: 120%;
@@ -355,8 +369,16 @@
   /* Semantic */
   --semantic-color-brand-deep: var(--primitives-color-purple-900);
   --semantic-color-brand-lavender: var(--primitives-color-purple-500);
+  --semantic-color-brand-action: var(--primitives-color-violet-500);
+  --semantic-color-brand-action-muted: color-mix(in srgb, var(--semantic-color-brand-action) 15%, transparent);
+  --semantic-color-brand-action-muted-hover: color-mix(in srgb, var(--semantic-color-brand-action) 25%, transparent);
+  --semantic-color-brand-action-muted-active: color-mix(in srgb, var(--semantic-color-brand-action) 35%, transparent);
   --semantic-color-brand-amber: var(--primitives-color-amber-300);
   --semantic-color-brand-amber-dark: var(--primitives-color-amber-500);
+  /* Fixed ink — same in both themes (marketing CTAs on light/media surfaces) */
+  --semantic-color-brand-ink: #151416;
+  --semantic-color-brand-ink-hover: #2a2830;
+  --semantic-color-brand-ink-active: #0e0d0f;
   --semantic-color-surface-bg: var(--primitives-color-neutral-0);
   --semantic-color-surface-default: var(--primitives-color-neutral-50);
   --semantic-color-surface-raised: var(--primitives-color-neutral-100);
@@ -378,17 +400,19 @@
   --semantic-spacing-card-padding: var(--primitives-spacing-6);
   --semantic-spacing-section-gap: var(--primitives-spacing-10);
   --semantic-spacing-component-gap: var(--primitives-spacing-3);
+  --semantic-spacing-site-title-to-body: calc(var(--semantic-typography-title-font-size) * 0.5);
+  --semantic-spacing-site-body-to-cta: calc(var(--semantic-typography-body-font-size) * 1.6);
   --semantic-borderRadius-card: var(--primitives-borderRadius-lg);
   --semantic-borderRadius-item: 8;
   --semantic-borderRadius-modal: 20;
   --semantic-borderRadius-button: var(--primitives-borderRadius-full);
   --semantic-borderRadius-input: var(--primitives-borderRadius-md);
   --semantic-borderRadius-badge: var(--primitives-borderRadius-sm);
-  --semantic-component-button-primary-bg: var(--primitives-color-purple-500);
-  --semantic-component-button-primary-bg-hover: var(--primitives-color-purple-400);
-  --semantic-component-button-primary-bg-active: var(--primitives-color-purple-600);
+  --semantic-component-button-primary-bg: var(--semantic-color-brand-action);
+  --semantic-component-button-primary-bg-hover: var(--primitives-color-violet-600);
+  --semantic-component-button-primary-bg-active: var(--primitives-color-violet-700);
   --semantic-component-button-primary-bg-disabled: var(--primitives-color-neutral-100);
-  --semantic-component-button-primary-text: #291433;
+  --semantic-component-button-primary-text: #ffffff;
   --semantic-component-button-primary-text-disabled: var(--primitives-color-neutral-400);
   --semantic-component-button-primary-border: rgba(0,0,0,0);
   --semantic-component-button-primary-sm-height: var(--primitives-spacing-8);
@@ -465,6 +489,12 @@
   --semantic-component-button-gradient-hover-to: var(--primitives-color-amber-200);
   --semantic-component-button-gradient-active-from: var(--primitives-color-purple-400);
   --semantic-component-button-gradient-active-to: var(--primitives-color-amber-400);
+  --semantic-component-button-ink-bg: var(--semantic-color-brand-ink);
+  --semantic-component-button-ink-bg-hover: var(--semantic-color-brand-ink-hover);
+  --semantic-component-button-ink-bg-active: var(--semantic-color-brand-ink-active);
+  --semantic-component-button-ink-bg-disabled: var(--primitives-color-neutral-100);
+  --semantic-component-button-ink-text: #ffffff;
+  --semantic-component-button-ink-text-disabled: var(--primitives-color-neutral-400);
   --semantic-component-navbar-bg: var(--primitives-color-neutral-50);
   --semantic-component-navbar-height: 40px;
   --semantic-component-navbar-padding-x: 0px;
@@ -495,5 +525,3 @@
   --semantic-component-tag-dot-neutral: #9990a9;
   --semantic-component-tag-dot-lavender: var(--semantic-color-brand-lavender);
 }
-
-@import "./typography.css";

@@ -14,6 +14,7 @@
     "prepare:artifacts": "node scripts/prepare-artifacts.mjs"
   },
   "dependencies": {
+    "@armada/sdk": "github:ship-armada/armada-sdk#67c1aab47cb9df940db78e46822ec0d82aa5fef8",
     "@armada/ui": "*",
     "@heroicons/react": "^2.2.0",
     "@noble/ciphers": "^0.4.1",
@@ -22,6 +23,7 @@
     "@scure/bip39": "^1.3.0",
     "@sentry/react": "^8.55.0",
     "@tanstack/react-query": "^5.96.0",
+    "@web3icons/react": "^4.1.17",
     "clsx": "^2.1.1",
     "ethers": "^6.15.0",
     "jotai": "^2.15.1",

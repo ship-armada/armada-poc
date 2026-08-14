@@ -47,7 +47,7 @@
     curl -sfL -o public/api/deployments/privacy-pool-client-sepolia.json  "${BASE}/base-sepolia/privacy-pool.json" && \
     curl -sfL -o public/api/deployments/privacy-pool-clientB-sepolia.json "${BASE}/arbitrum-sepolia/privacy-pool.json" && \
     curl -sfL -o public/api/deployments/yield-hub-sepolia.json            "${BASE}/sepolia/yield.json" && \
-    cp ../../deployments/fee-module-hub-sepolia.json public/api/deployments/fee-module-hub-sepolia.json && \
+    curl -sfL -o public/api/deployments/fee-module-hub-sepolia.json       "${BASE}/sepolia/fee-module.json" && \
     npm run prepare:artifacts && \
     cd ../.. && \
     npm run build --workspace=@armada/interface

@@ -4,7 +4,7 @@
 import { useState } from 'react'
 import { useAccount } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { Button, Text } from '@armada/ui'
+import { Button, Text } from '@/design'
 import {
   isNonDeterministicSignerError,
   type NonDeterministicSignerErrorReason,

@@ -19,7 +19,7 @@ Architectural decisions and rationale: `../../.claude/PLAN_ARMADA_INTERFACE.md`.
 | Wallet | wagmi + RainbowKit + viem + ethers v6 | Same as crowdfund-committer; `walletClientToSigner` bridges to ethers |
 | State | Jotai | Atoms in `src/state/`, derived inline in hooks |
 | Server state | `@tanstack/react-query` | All HTTP, all RPC reads, all polling that fits the request/response shape |
-| Styling | `@armada/ui` (CSS Modules + tokens) + Tailwind v4 (layout glue) | No typography Tailwind classes in app code — body baseline (15px Geist 1.5) drives everything |
+| Styling | Vendored design system in `src/design` (CSS Modules + tokens, imported as `@/design`) + Tailwind v4 (layout glue) | Severed from the shared `@armada/ui` so the app is self-contained. No typography Tailwind classes in app code — body baseline (15px Geist 1.5) drives everything |
 | Persistence | IndexedDB (`lib/cache.ts`) | Stores tx history, fee quotes, ENS, shielded balance snapshots |
 | Routing | `react-router-dom` 7 | Three pages today (Dashboard, History, Settings) plus a parked AddressBook |
 
@@ -29,7 +29,8 @@ Architectural decisions and rationale: `../../.claude/PLAN_ARMADA_INTERFACE.md`.
 src/
 ├── main.tsx                 provider tree (StrictMode → Wagmi → Query → RainbowKit → Jotai → Router)
 ├── App.tsx                  installs visibility listener + hydrates tx history; renders <AppLayout>
-├── index.css                @import tailwindcss + @armada/ui tokens.css + global.css
+├── index.css                @import tailwindcss + ./design/styles tokens.css + global.css
+├── design/                  vendored design system (@/design) — primitives + tokens/typography CSS; severed from @armada/ui
 ├── config/                  env-driven config — network, wagmi, deployments, relayer
 ├── lib/                     pure logic, no React (rpc, cache, format, revert, wagmi-adapter, telemetry, relayer, cctp)
 │   ├── shielded/            @armada/sdk wrappers (wallet, keyManager, sdk-read, sdk-prover, sync, balance-bus, network, artifacts) — stock engine fully removed
@@ -45,7 +46,7 @@ src/
 - **All source files start with two-line `// ABOUTME:` comments.** Project-wide rule from the root CLAUDE.md.
 - **No `ethers` or `@railgun-community/*` imports in `components/**`.** Business logic lives in `hooks/` and `lib/`. Components are dumb.
 - **No `console.log`/`console.debug` in `lib/shielded/`.** Secret-leak prevention. Use `lib/telemetry.ts` instead. Telemetry is **typed** via an event registry (`lib/telemetry.ts::EventRegistry`); arbitrary props are not allowed.
-- **No typography Tailwind classes app-wide.** `text-xs`/`font-*`/`tracking-*`/`leading-*`/`uppercase` etc. are forbidden — typography flows from the body baseline + @armada/ui CSS Modules. Layout utilities (`flex`, `grid`, `mx-auto`, `pt-20`, color tokens) are fine.
+- **No typography Tailwind classes app-wide.** `text-xs`/`font-*`/`tracking-*`/`leading-*`/`uppercase` etc. are forbidden — typography flows from the body baseline + `@/design` CSS Modules. Layout utilities (`flex`, `grid`, `mx-auto`, `pt-20`, color tokens) are fine.
 - **TS strict + `noUncheckedIndexedAccess`.** No `any`, no `as any`. If a type is opaque (e.g. wagmi internals), narrow at the boundary.
 - **Tx executor lives at module scope, not React scope.** `lib/tx/executor.ts` initialises via `startEngine()` (called once from `App.tsx`). Hooks dispatch `executeTx(id)` / `cancelTx(id)`; they don't orchestrate.
 - **Single-leader execution.** Only the tab holding the `armada-tx-executor` `navigator.locks` lock runs handlers. Other tabs are passive observers. v1 has no follower-side live sync — opening multiple tabs means only the first is active.

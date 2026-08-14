@@ -3,7 +3,7 @@
 
 import { useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { ArmadaLogo, NavBar, type NavBarItem } from '@armada/ui'
+import { ArmadaLogo, NavBar, type NavBarItem } from '@/design'
 import { WalletConnector } from './WalletConnector'
 import { AppFooter } from './AppFooter/AppFooter'
 import { SyncBanner } from './sync'

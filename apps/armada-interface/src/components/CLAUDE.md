@@ -7,7 +7,7 @@ UI components. **Dumb when possible.** State comes from hooks + atoms; effects b
 - **No `ethers` imports.** If you need to call a contract, write a hook.
 - **No `@railgun-community/*` imports.** Same reason.
 - **No `useEffect` with side effects beyond DOM concerns.** If you find yourself fetching/polling/timing in a component, move the logic to a hook.
-- **No typography Tailwind classes.** `text-xs`/`font-medium`/`tracking-*`/`leading-*`/`uppercase` are forbidden. Use the body baseline (15 px Geist 1.5) or a `@armada/ui` primitive that owns its own typography.
+- **No typography Tailwind classes.** `text-xs`/`font-medium`/`tracking-*`/`leading-*`/`uppercase` are forbidden. Use the body baseline (15 px Geist 1.5) or a `@/design` primitive that owns its own typography.
 - **Layout Tailwind classes are fine.** `flex`, `grid`, `mx-auto`, `pt-20`, color tokens (`text-foreground`, `bg-card`) — those are layout/color, not typography.
 
 ## Current contents
@@ -16,7 +16,7 @@ UI components. **Dumb when possible.** State comes from hooks + atoms; effects b
 |---|---|
 | `AppLayout.tsx` | Fixed-inset header + nav + body wrap + global `AppFooter` |
 | `AppFooter/` | Minimal global footer — centered Discord / X / homepage icon links (inline brand SVGs + lucide `Globe`); links configured in `SOCIAL_LINKS` |
-| `WalletConnector.tsx` | Header wallet button — RainbowKit render-prop wired to `@armada/ui` `WalletButton` (all 4 states) |
+| `WalletConnector.tsx` | Header wallet button — RainbowKit render-prop wired to the `@/design` `WalletButton` (all 4 states) |
 | `ui/` | App-local primitives (Card, Modal, AmountInput, ChainSelect, FeeSummary, RecipientInput, SectionHeader, StatusChip, Tabs, TechnicalDetailsDisclosure, EmptyState) — see `ui/CLAUDE.md` |
 | `flow/` | ActionFlowShell + FlowHeader + FlowFooter + FlowStepIndicator + ProgressStep + ErrorStep — see `flow/CLAUDE.md` |
 | `tx/` | TxLifecycleStepper, TxRow, TxStatusChip, stageCopy helpers — see `tx/CLAUDE.md` |

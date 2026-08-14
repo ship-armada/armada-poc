@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAtom } from 'jotai'
 import { CheckIcon, ClipboardDocumentIcon } from '@heroicons/react/24/solid'
-import { Button } from '@armada/ui'
+import { Button } from '@/design'
 import { Modal } from '@/components/ui'
 import { useShieldedWallet } from '@/hooks/useShieldedWallet'
 import { openModalAtom } from '@/state/ui'

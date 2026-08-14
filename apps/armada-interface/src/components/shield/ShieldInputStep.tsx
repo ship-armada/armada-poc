@@ -2,7 +2,7 @@
 // ABOUTME: gaslessMode hides the GasBalanceNotice on the relayer-mediated permit path; the wallet-submit fallback shows it when the wallet's native balance is low.
 
 import { useMemo } from 'react'
-import { Button } from '@armada/ui'
+import { Button } from '@/design'
 import { DepositAmountCard } from '@/components/deposit/DepositAmountCard/DepositAmountCard'
 import { depositOverlayShellStyles } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
 import { GasBalanceNotice } from '@/components/ui'

@@ -4,7 +4,7 @@
 import { useId, useState, type ChangeEvent, type FormEvent } from 'react'
 import { useAccount } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { Button } from '@armada/ui'
+import { Button } from '@/design'
 import { OnboardingLayout } from '@/components/OnboardingLayout/OnboardingLayout'
 import { FlowFooter } from '@/components/flow/FlowFooter'
 import { Tabs, Tooltip } from '@/components/ui'

@@ -2,7 +2,7 @@
 // ABOUTME: A class component (the only way to catch render errors) with no new dependency; reports to telemetry via trackError('app', err).
 
 import { Component, type ErrorInfo, type ReactNode } from 'react'
-import { Button } from '@armada/ui'
+import { Button } from '@/design'
 import { Card } from '@/components/ui'
 import { trackError } from '@/lib/telemetry'
 

@@ -2,7 +2,7 @@
 // ABOUTME: Post-sign checkpoint: Continue advances to backup; Cancel opens a destructive confirm that wipes the enrolled wallet on this device.
 
 import { useState } from 'react'
-import { Text } from '@armada/ui'
+import { Text } from '@/design'
 import { FlowFooter } from '@/components/flow/FlowFooter'
 import { CancelSetupConfirmDialog } from '../CancelSetupConfirmDialog'
 import styles from './AntiPhishChecksumStep.module.css'

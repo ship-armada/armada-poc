@@ -1,0 +1,41 @@
+/* ABOUTME: CSS Module for NavItem — pill with hover and active background states. */
+/* ABOUTME: Sources colors and dimensions from --semantic-component-navitem-* tokens. */
+
+.navItem {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--semantic-component-navitem-height);
+  padding: 0 var(--semantic-component-navitem-padding-x);
+  border-radius: var(--semantic-component-navitem-radius);
+  background: transparent;
+  color: var(--semantic-component-navitem-default-text);
+  font-family: "Geist", sans-serif;
+  font-size: var(--semantic-component-button-primary-md-font-size);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  border: none;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+  outline: none;
+}
+.navItem:hover:not(.active) { background: var(--semantic-component-navitem-default-bg-hover); color: var(--semantic-component-navitem-default-text-hover); }
+.navItem:focus-visible { box-shadow: 0 0 0 2px var(--semantic-color-border-focus); }
+.active { background: var(--semantic-component-navitem-active-bg); color: var(--semantic-component-navitem-active-text); }
+
+/* Light theme — muted default text, lavender active pill with dark text. The
+   mockup applied these to the base rule; we scope to light so dark stays
+   token-driven and byte-identical. */
+:global([data-theme='light']) .navItem {
+  color: var(--semantic-color-text-muted);
+}
+:global([data-theme='light']) .navItem:hover:not(.active) {
+  background: transparent;
+  color: var(--semantic-color-text-secondary);
+}
+:global([data-theme='light']) .active,
+:global([data-theme='light']) .active:hover {
+  background: var(--semantic-color-brand-lavender);
+  color: #291433;
+}

@@ -1,7 +1,7 @@
 // ABOUTME: Send amount step — tab switcher, recipient, DepositAmountCard (full-viewport send flow).
 
 import { useMemo } from 'react'
-import { Button } from '@armada/ui'
+import { Button } from '@/design'
 import { DepositAmountCard } from '@/components/deposit/DepositAmountCard/DepositAmountCard'
 import { depositOverlayShellStyles } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
 import { GasBalanceNotice, RecipientInput, Tabs } from '@/components/ui'

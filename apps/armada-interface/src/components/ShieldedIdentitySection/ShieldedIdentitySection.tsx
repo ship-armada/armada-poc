@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { CheckIcon, ClipboardDocumentIcon } from '@heroicons/react/24/solid'
-import { ArmadaSymbol } from '@armada/ui'
+import { ArmadaSymbol } from '@/design'
 import { useShieldedWallet } from '@/hooks/useShieldedWallet'
 import { truncateAddressEnds } from '@/lib/format'
 import styles from './ShieldedIdentitySection.module.css'

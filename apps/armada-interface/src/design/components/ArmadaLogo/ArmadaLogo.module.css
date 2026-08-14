@@ -1,0 +1,6 @@
+/* ABOUTME: CSS Module for ArmadaLogo — theme-aware wordmark fill. */
+/* ABOUTME: Wordmark tracks text-primary (white in dark, dark ink in light) so the logo reads on either page surface. */
+
+.wordmark {
+  fill: var(--semantic-color-text-primary);
+}

@@ -4,7 +4,7 @@
 import { cacheAll, cacheDelete, cachePut, cacheReadModifyWrite } from '../cache'
 import { isEncryptedBlob, unwrap, wrap, type EncryptedBlob } from '../crypto/cache-cipher'
 import { getHistoryEncryptionKey, isUnlocked } from '../shielded/keyManager'
-import { trackError } from '../telemetry'
+import { track, trackError } from '../telemetry'
 import { historySortTime, isTerminalState } from './types'
 import type { TxRecord } from './types'
 
@@ -89,17 +89,14 @@ export async function putTxIfFresh(record: TxRecord): Promise<boolean> {
           && !isTerminalState(record.executionState)
           && record.executionState !== 'retrying'
         ) {
-          trackError('tx.storage.terminal-write', new Error('terminal→non-terminal'), {
-            scope: 'tx.storage',
-            message: `refused terminal→non-terminal write for ${record.id}`,
-          })
+          // Expected OCC outcome (a late write that would resurrect a settled record), NOT an error —
+          // info-level so it doesn't masquerade as an error / ship to Sentry.
+          track('tx.storage.write-rejected', { id: record.id, reason: 'terminal' })
           return { skip: true }
         }
         if (existing && existing.updatedSeq >= record.updatedSeq) {
-          trackError('tx.storage.stale-write', new Error('stale updatedSeq'), {
-            scope: 'tx.storage',
-            message: `stale write rejected for ${record.id}`,
-          })
+          // Expected OCC outcome (a superseded write whose newer state already persisted), NOT an error.
+          track('tx.storage.write-rejected', { id: record.id, reason: 'stale' })
           return { skip: true }
         }
         // If existing is null here, the stored envelope was either foreign-wallet (couldn't

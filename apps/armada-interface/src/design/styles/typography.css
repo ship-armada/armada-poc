@@ -102,6 +102,24 @@
   --semantic-typography-mono-xs-font-size: calc(var(--primitives-fontSize-sm) * 1px);
   --semantic-typography-mono-xs-line-height: var(--primitives-lineHeight-none);
   --semantic-typography-mono-xs-letter-spacing: var(--primitives-letterSpacing-normal);
+  --semantic-typography-title-font-family: var(--primitives-fontFamily-display);
+  --semantic-typography-title-font-weight: var(--primitives-fontWeight-regular);
+  --semantic-typography-title-font-size: clamp(2rem, 1.252rem + 1.56vw, 2.75rem);
+  --semantic-typography-title-line-height: var(--primitives-lineHeight-tight);
+  --semantic-typography-title-letter-spacing: var(--primitives-letterSpacing-tight);
+  --semantic-typography-body-font-family: var(--primitives-fontFamily-ui);
+  --semantic-typography-body-font-weight: var(--primitives-fontWeight-medium);
+  --semantic-typography-body-font-size: calc(var(--primitives-fontSize-md) * 1px);
+  --semantic-typography-body-line-height: var(--primitives-lineHeight-normal);
+  --semantic-typography-body-letter-spacing: var(--primitives-letterSpacing-normal);
+  --semantic-typography-detail-font-family: var(--primitives-fontFamily-ui);
+  --semantic-typography-detail-font-weight: var(--primitives-fontWeight-medium);
+  --semantic-typography-detail-font-size: calc(var(--primitives-fontSize-base) * 1px);
+  --semantic-typography-detail-line-height: var(--primitives-lineHeight-snug);
+  --semantic-typography-detail-letter-spacing: var(--primitives-letterSpacing-normal);
+  /* Site stack: 0.5× title size, 1.6× body size */
+  --semantic-spacing-site-title-to-body: calc(var(--semantic-typography-title-font-size) * 0.5);
+  --semantic-spacing-site-body-to-cta: calc(var(--semantic-typography-body-font-size) * 1.6);
 }
 
 .armada-text-display-hero-lg {
@@ -262,5 +280,43 @@
   font-size: var(--semantic-typography-mono-xs-font-size);
   line-height: var(--semantic-typography-mono-xs-line-height);
   letter-spacing: var(--semantic-typography-mono-xs-letter-spacing);
+}
+
+.armada-text-title {
+  font-family: var(--semantic-typography-title-font-family);
+  font-weight: var(--semantic-typography-title-font-weight);
+  font-size: var(--semantic-typography-title-font-size);
+  line-height: var(--semantic-typography-title-line-height);
+  letter-spacing: var(--semantic-typography-title-letter-spacing);
+}
+
+.armada-text-body {
+  font-family: var(--semantic-typography-body-font-family);
+  font-weight: var(--semantic-typography-body-font-weight);
+  font-size: var(--semantic-typography-body-font-size);
+  line-height: var(--semantic-typography-body-line-height);
+  letter-spacing: var(--semantic-typography-body-letter-spacing);
+}
+
+.armada-text-detail {
+  font-family: var(--semantic-typography-detail-font-family);
+  font-weight: var(--semantic-typography-detail-font-weight);
+  font-size: var(--semantic-typography-detail-font-size);
+  line-height: var(--semantic-typography-detail-line-height);
+  letter-spacing: var(--semantic-typography-detail-letter-spacing);
+}
+
+/* Site stack: title→body uses title-to-body; body→CTA uses body-to-cta; title→CTA (no body) uses title-to-body. */
+.armada-site-stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.armada-site-stack > * + * {
+  margin-top: var(--semantic-spacing-site-title-to-body);
+}
+
+.armada-site-stack > .armada-text-body + * {
+  margin-top: var(--semantic-spacing-site-body-to-cta);
 }
 

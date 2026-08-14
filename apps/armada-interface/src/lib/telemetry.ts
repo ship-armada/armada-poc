@@ -61,6 +61,12 @@ export type EventRegistry = {
   'tx.interrupted':           { id: string; kind: TxKind }
   'tx.cancel-all':            { reason: string; count: number }
 
+  // The storage OCC / terminal-state guard dropped a write for `id` — an EXPECTED outcome (a
+  // superseded/duplicate write for a tx whose newer state already persisted; the guard keeps disk ==
+  // atom). Info-level (NOT `trackError`) so a benign concurrency drop doesn't masquerade as an error or
+  // ship to Sentry. `reason`: `stale` = lower/equal updatedSeq; `terminal` = would resurrect a settled record.
+  'tx.storage.write-rejected': { id: string; reason: 'stale' | 'terminal' }
+
   // Relayer-mediated submit (Phase A). Fired by handlers that delegate broadcast to the relayer
   // instead of sending from the user's wallet. errorCode on `rejected` is the typed RelayerErrorCode
   // (FEE_EXPIRED / FEE_TOO_LOW / etc.) so dashboards can split out fee-staleness from genuine

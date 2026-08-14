@@ -1,13 +1,10 @@
-// ABOUTME: Barrel export for dashboard-specific components — ActionGrid, ActionCard, RecentActivityCard, InProgressCard.
-// ABOUTME: BalanceHero lives in components/balance/; it composes into the Dashboard layout but isn't dashboard-internal.
+// ABOUTME: Barrel for dashboard components — the Private-USDC BalanceCard, recent activity, deposit tooltip.
+// ABOUTME: Composed by pages/Dashboard.tsx into the centered card stack.
 
-export { ActionCard } from './ActionCard'
-export type { ActionCardProps } from './ActionCard'
+export { BalanceCard } from './BalanceCard'
+export type { BalanceCardProps } from './BalanceCard'
 
-export { ActionGrid } from './ActionGrid'
+export { RecentActivityList } from './RecentActivityList'
+export type { RecentActivityListProps } from './RecentActivityList'
 
-export { RecentActivityCard } from './RecentActivityCard'
-export type { RecentActivityCardProps } from './RecentActivityCard'
-
-export { InProgressCard } from './InProgressCard'
-export type { InProgressCardProps } from './InProgressCard'
+export { DepositTooltip } from './DepositTooltip'

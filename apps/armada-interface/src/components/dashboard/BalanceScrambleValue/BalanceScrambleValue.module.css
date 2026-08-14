@@ -1,0 +1,128 @@
+/* ABOUTME: Styles for BalanceScrambleValue — width anchor, spin/odometer columns, and settle animation. */
+/* ABOUTME: Ported from the armada-app design mockup. */
+.root {
+  display: inline-grid;
+  align-items: center;
+  white-space: nowrap;
+  vertical-align: top;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+}
+
+.widthAnchor,
+.displayLayer {
+  grid-area: 1 / 1;
+}
+
+.widthAnchor {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.displayLayer {
+  display: inline;
+  min-width: 0;
+}
+
+.glyph {
+  display: inline-block;
+  width: 1ch;
+  text-align: center;
+  vertical-align: top;
+}
+
+.spinColumn {
+  display: inline-block;
+  width: 1ch;
+  height: 1em;
+  overflow: hidden;
+  vertical-align: top;
+  perspective: 240px;
+}
+
+.spinTrack {
+  display: flex;
+  flex-direction: column;
+  transform: translateY(calc(-1 * var(--spin-offset, 0) * 1em));
+  will-change: transform;
+}
+
+.spinTrackTick {
+  transition: transform 55ms linear;
+}
+
+.spinCell {
+  display: block;
+  height: 1em;
+  line-height: 1em;
+  text-align: center;
+}
+
+.digitColumn {
+  display: inline-block;
+  width: 1ch;
+  height: 1em;
+  overflow: hidden;
+  vertical-align: top;
+}
+
+.digitTrack {
+  display: flex;
+  flex-direction: column;
+  transform: translateY(calc(-1 * var(--digit-offset, 0) * 1em));
+  will-change: transform;
+}
+
+.digitTrackRoll {
+  transition-property: transform;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.digitCell {
+  display: block;
+  height: 1em;
+  line-height: 1em;
+  text-align: center;
+}
+
+.settleGlyph {
+  display: inline-block;
+  width: 1ch;
+  text-align: center;
+  vertical-align: top;
+  opacity: 0;
+  transform: scale(0.7) translateY(0.16em);
+  filter: blur(4px);
+}
+
+.settleGlyphReveal {
+  animation: balanceCharSettle 320ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes balanceCharSettle {
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinTrackTick {
+    transition: none;
+  }
+
+  .settleGlyphReveal {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+
+  .digitTrackRoll {
+    transition: none;
+  }
+}

@@ -1,0 +1,51 @@
+/* ABOUTME: Styles for the ShieldedUsdcBadge — token glyph sizing and shield overlay placement. */
+/* ABOUTME: Ported from the armada-app design mockup. */
+.root {
+  --shielded-usdc-badge-size: calc(var(--primitives-spacing-10) - var(--primitives-spacing-1));
+  --shielded-usdc-overlay-size: var(--primitives-spacing-6);
+  position: relative;
+  flex-shrink: 0;
+  width: var(--shielded-usdc-badge-size);
+  height: var(--shielded-usdc-badge-size);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.tokenGlyph {
+  display: block;
+  flex-shrink: 0;
+}
+
+.tokenGlyph :global(svg) {
+  display: block;
+}
+
+.shieldOverlay {
+  position: absolute;
+  right: calc(var(--shielded-usdc-overlay-size) / -2);
+  bottom: calc(var(--primitives-spacing-1) * -0.5);
+  width: var(--shielded-usdc-overlay-size);
+  height: var(--shielded-usdc-overlay-size);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.shieldIcon {
+  width: var(--primitives-spacing-4);
+  height: var(--primitives-spacing-4);
+  display: block;
+  flex-shrink: 0;
+  overflow: visible;
+}
+
+.shieldPath {
+  /* Stay true white in light theme — `--primitives-color-white-full` remaps to dark ink there. */
+  stroke: var(--semantic-component-button-primary-text);
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+  paint-order: stroke fill;
+}

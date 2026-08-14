@@ -1,0 +1,6 @@
+/* ABOUTME: Monospace typography for USDC amounts (hero digits, "N USDC" rows, wallet balances). */
+/* ABOUTME: Ported from the armada-app design mockup. */
+.font {
+  font-family: var(--primitives-fontFamily-mono), ui-monospace, monospace;
+  letter-spacing: 0;
+}

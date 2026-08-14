@@ -1,0 +1,78 @@
+/* ABOUTME: Styles for RollingBalanceValue — digit columns, roll transition, and separator fade. */
+/* ABOUTME: Ported from the armada-app design mockup. */
+.root {
+  display: inline-flex;
+  align-items: center;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+}
+
+.digitColumn {
+  display: inline-block;
+  width: 1ch;
+  height: 1em;
+  overflow: hidden;
+  vertical-align: top;
+}
+
+.digitTrack {
+  display: flex;
+  flex-direction: column;
+  transform: translateY(calc(-1 * var(--digit-offset, 0) * 1em));
+  will-change: transform;
+}
+
+.digitTrackRoll {
+  display: flex;
+  flex-direction: column;
+  will-change: transform;
+  transform: translateY(calc(-1 * var(--digit-offset, 0) * 1em));
+  transition-property: transform;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.digitHidden {
+  opacity: 0;
+}
+
+.digitVisible {
+  opacity: 1;
+  transition: opacity 120ms ease-out;
+}
+
+.digitCell {
+  display: block;
+  height: 1em;
+  line-height: 1em;
+  text-align: center;
+}
+
+.separator {
+  display: inline-block;
+  width: 1ch;
+  text-align: center;
+  vertical-align: top;
+  opacity: 0;
+}
+
+.separatorVisible {
+  opacity: 1;
+  transition: opacity 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .digitTrackRoll {
+    transition: none;
+  }
+
+  .digitHidden {
+    opacity: 1;
+  }
+
+  .separator {
+    opacity: 1;
+  }
+}

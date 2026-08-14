@@ -1,0 +1,263 @@
+/* ABOUTME: Recent-activity list styling — icon-badge rows, scrollable preview viewport, empty state. */
+/* ABOUTME: Ported from the armada-app design mockup; drives the dashboard activity panel. */
+.root {
+  --activity-surface: color-mix(in srgb, var(--primitives-color-neutral-50) 20%, transparent);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-4);
+  animation: activityEnter 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes activityEnter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--primitives-spacing-2));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.heading {
+  composes: labelSmRegular from '../../../design/styles/typographyComposites.module.css';
+  margin: 0;
+  color: var(--semantic-color-text-muted);
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+}
+
+.viewAllButton {
+  composes: labelSm from '../../../design/styles/typographyComposites.module.css';
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  line-height: var(--primitives-lineHeight-tight);
+  color: var(--semantic-color-text-primary);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: calc(var(--primitives-spacing-1) * 0.5);
+}
+
+.viewAllButton:hover {
+  color: var(--semantic-color-text-muted);
+}
+
+.viewAllButton:focus-visible {
+  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
+  outline-offset: calc(var(--primitives-spacing-1) * 1px);
+  border-radius: calc(var(--primitives-spacing-1) * 1px);
+}
+
+.rootFull {
+  animation: none;
+}
+
+.rootPreview {
+  min-height: 0;
+}
+
+.listViewport {
+  position: relative;
+  width: 100%;
+  min-height: 0;
+}
+
+.listScroll {
+  width: 100%;
+  max-height: calc(
+    3 * var(--primitives-spacing-16) + 2 * var(--primitives-spacing-2) +
+      var(--primitives-spacing-10)
+  );
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--semantic-color-text-muted) 35%, transparent) transparent;
+}
+
+.listScrollFaded {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 calc(100% - var(--activity-list-fade-height, 72px)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 calc(100% - var(--activity-list-fade-height, 72px)),
+    transparent 100%
+  );
+}
+
+.listScroll::-webkit-scrollbar {
+  width: var(--primitives-spacing-1);
+}
+
+.listScroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--semantic-color-text-muted) 35%, transparent);
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+  width: 100%;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  min-height: var(--primitives-spacing-16);
+  padding: var(--primitives-spacing-3);
+  border-radius: calc(var(--primitives-spacing-5) / 2);
+  background: var(--activity-surface);
+  box-sizing: border-box;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: background-color 160ms ease;
+}
+
+.item:hover {
+  background: var(--semantic-color-surface-hover);
+}
+
+.item:focus-visible {
+  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
+  outline-offset: calc(var(--primitives-spacing-1) * 1px);
+}
+
+.iconBadge {
+  width: var(--primitives-spacing-10);
+  height: var(--primitives-spacing-10);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: color-mix(in srgb, var(--primitives-color-purple-500) 15%, transparent);
+  color: var(--semantic-color-text-primary);
+}
+
+.icon {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+}
+
+.copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-1);
+  min-width: 0;
+  flex: 1;
+}
+
+.label {
+  composes: bodySmMedium from '../../../design/styles/typographyComposites.module.css';
+  line-height: var(--primitives-lineHeight-tight);
+  color: var(--semantic-color-text-primary);
+}
+
+.time {
+  composes: labelSmRegular from '../../../design/styles/typographyComposites.module.css';
+  line-height: var(--primitives-lineHeight-tight);
+  color: var(--semantic-color-text-muted);
+}
+
+.amount {
+  composes: monoSmMedium from '../../../design/styles/typographyComposites.module.css';
+  flex-shrink: 0;
+  line-height: var(--primitives-lineHeight-tight);
+  color: var(--semantic-color-text-primary);
+  text-align: right;
+}
+
+.amountPositive {
+  color: var(--semantic-color-status-success);
+}
+
+.amountNegative {
+  color: var(--semantic-color-text-primary);
+}
+
+@media (max-width: 767px) {
+  .copy {
+    min-width: 0;
+  }
+
+  .amount {
+    max-width: 46%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  width: 100%;
+  padding: var(--primitives-spacing-6) var(--primitives-spacing-5);
+  border-radius: calc(var(--primitives-spacing-5) / 2);
+  background: var(--activity-surface);
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.emptyIconBadge {
+  width: var(--primitives-spacing-10);
+  height: var(--primitives-spacing-10);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: color-mix(in srgb, var(--primitives-color-purple-500) 15%, transparent);
+  color: var(--semantic-color-text-muted);
+}
+
+.emptyIcon {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+}
+
+.emptyTitle {
+  composes: bodySmMedium from '../../../design/styles/typographyComposites.module.css';
+  margin: 0;
+  line-height: var(--primitives-lineHeight-tight);
+  color: var(--semantic-color-text-primary);
+}
+
+.emptyBody {
+  composes: bodySm from '../../../design/styles/typographyComposites.module.css';
+  margin: 0;
+  max-width: calc(var(--primitives-spacing-20) * 3);
+  line-height: var(--primitives-lineHeight-normal);
+  color: var(--semantic-color-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root {
+    animation: none;
+  }
+}

@@ -1,0 +1,160 @@
+/* ABOUTME: Styles for VaultPositionBar — row layout, icon badge, amount/earned typography, and hover surface. */
+/* ABOUTME: Ported from the armada-app design mockup. */
+.root {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: var(--primitives-spacing-16);
+  padding: var(--primitives-spacing-3);
+  border: none;
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: transparent;
+  box-sizing: border-box;
+  gap: var(--primitives-spacing-2);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  isolation: isolate;
+}
+
+.root::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--semantic-color-surface-default);
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+  z-index: -1;
+}
+
+button.root {
+  cursor: pointer;
+}
+
+button.root:hover::before {
+  opacity: 1;
+}
+
+:global([data-theme='light'][data-dashboard-bg='solid']) .root::before {
+  background: var(--primitives-color-neutral-100);
+  opacity: 1;
+}
+
+:global([data-theme='light'][data-dashboard-bg='solid']) button.root:hover::before {
+  background: var(--primitives-color-neutral-200);
+  opacity: 1;
+}
+
+.root:focus-visible {
+  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
+  outline-offset: calc(var(--primitives-spacing-1) * 1px);
+}
+
+.lead {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  min-width: 0;
+}
+
+.iconBadge {
+  width: var(--primitives-spacing-10);
+  height: var(--primitives-spacing-10);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: var(--primitives-color-purple-100);
+  color: var(--semantic-color-text-primary);
+}
+
+.icon {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+}
+
+.info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-1);
+  min-width: 0;
+}
+
+.amount {
+  display: flex;
+  align-items: baseline;
+  gap: var(--primitives-spacing-1);
+  font-family: var(--primitives-fontFamily-mono), ui-monospace, monospace;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  line-height: var(--primitives-lineHeight-tight);
+  color: var(--semantic-color-text-primary);
+  letter-spacing: 0;
+}
+
+.amountValue,
+.amountRoll {
+  flex-shrink: 0;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+}
+
+.amountSuffix {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  letter-spacing: inherit;
+}
+
+.trail {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.earned {
+  display: flex;
+  align-items: baseline;
+  flex-shrink: 0;
+  font-family: var(--primitives-fontFamily-mono), ui-monospace, monospace;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  line-height: var(--primitives-lineHeight-tight);
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.earnedPositive {
+  color: var(--semantic-color-status-success);
+}
+
+.apr {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  line-height: var(--primitives-lineHeight-tight);
+  color: var(--semantic-color-text-muted);
+}
+
+.chevron {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+  flex-shrink: 0;
+  color: var(--semantic-color-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .root::before {
+    transition: none;
+  }
+}

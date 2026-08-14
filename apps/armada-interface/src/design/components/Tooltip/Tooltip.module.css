@@ -1,0 +1,134 @@
+/* ABOUTME: Styles for the Tooltip — base chrome plus centered, rich, and action variants. */
+/* ABOUTME: Ported from the armada-app design mockup. */
+.wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* ── Tooltip base ── */
+.tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  padding: var(--primitives-spacing-5);
+  background: var(--semantic-color-surface-raised);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  pointer-events: none;
+  white-space: normal;
+}
+
+/* ── Centered variant — compact copy tooltips (matches action tooltip chrome) ── */
+.centered {
+  width: max-content;
+  max-width: calc(var(--primitives-spacing-20) * 3);
+  padding: var(--primitives-spacing-2) var(--primitives-spacing-3);
+  text-align: center;
+  background: var(--primitives-color-neutral-50);
+  border: none;
+  box-shadow: 0 10px 25px 0 color-mix(in srgb, var(--primitives-color-purple-300) 25%, transparent);
+}
+
+.centeredText {
+  composes: bodySm from '../../styles/typographyComposites.module.css';
+  color: var(--semantic-color-text-secondary);
+  margin: 0;
+  line-height: var(--primitives-lineHeight-normal);
+}
+
+/* ── Rich variant ── */
+.rich {
+  width: 260px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+}
+
+.title {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  margin: 0;
+}
+
+.description {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.bulletList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+}
+
+.bulletItem {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--primitives-spacing-2);
+}
+
+.bulletDot {
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background: var(--semantic-color-text-primary);
+  flex-shrink: 0;
+  margin-top: 7px;
+}
+
+.bulletText {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-muted);
+  line-height: 1.5;
+}
+
+/* ── Action label (balance card icon buttons) ── */
+.action {
+  bottom: calc(100% + var(--primitives-spacing-2));
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: var(--primitives-spacing-2);
+  width: max-content;
+  height: calc(var(--primitives-spacing-5) + var(--primitives-spacing-3) - var(--primitives-spacing-1) * 0.5);
+  padding: 0 var(--primitives-spacing-4);
+  background: var(--primitives-color-neutral-50);
+  border: none;
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  box-shadow: 0 10px 25px 0 color-mix(in srgb, var(--primitives-color-purple-300) 25%, transparent);
+  opacity: 1;
+}
+
+.actionText {
+  margin: 0;
+  font-family: var(--semantic-typography-ui-label-md-font-family);
+  font-weight: var(--semantic-typography-ui-label-md-font-weight);
+  font-size: var(--semantic-typography-ui-label-md-font-size);
+  line-height: var(--primitives-spacing-4);
+  letter-spacing: var(--semantic-typography-ui-label-md-letter-spacing);
+  color: var(--semantic-color-text-secondary);
+  white-space: nowrap;
+}
+
+.wrapper:focus-visible {
+  outline: 2px solid var(--semantic-color-brand-lavender);
+  outline-offset: 2px;
+  border-radius: 2px;
+}

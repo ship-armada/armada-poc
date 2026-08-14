@@ -24,3 +24,9 @@ export type { WalletPillMenuProps } from './components/Header/WalletPillMenu'
 
 export { WalletButton } from './components/WalletButton'
 export type { WalletButtonProps } from './components/WalletButton'
+
+export { IconButton } from './components/IconButton'
+export type { IconButtonProps, IconButtonVariant } from './components/IconButton'
+export { default as Tooltip } from './components/Tooltip/Tooltip'
+export { BottomSheet, afterBottomSheetHandoff, BOTTOM_SHEET_EXIT_MS, BOTTOM_SHEET_HANDOFF_MS } from './components/BottomSheet'
+export type { BottomSheetProps } from './components/BottomSheet'

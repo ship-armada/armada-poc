@@ -1,7 +1,7 @@
 // ABOUTME: Dedicated error screen rendered when signIn() detects a non-deterministic wallet — Path C routes users to backup/paste recovery rather than dead-ending.
 // ABOUTME: Two CTAs: primary "Use a backup file or recovery secret" (routes to UnlockFlow); secondary "Try a different wallet" (disconnects + back to welcome).
 
-import { Button, Text } from '@armada/ui'
+import { Button, Text } from '@/design'
 import type { NonDeterministicSignerErrorReason } from '@/lib/crypto/determinism'
 import styles from './NonDeterministicSignerScreen.module.css'
 

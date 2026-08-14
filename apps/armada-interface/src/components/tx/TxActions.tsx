@@ -1,7 +1,7 @@
 // ABOUTME: Per-record retry/cancel CTAs. Stage-aware: pre-broadcast records get "Cancel" (abort safely), post-broadcast records get "Stop tracking" (the on-chain tx still runs; we just stop watching).
 // ABOUTME: Rendered inside History's expanded detail and inside ProgressStep (cancel only). Operates on TxRecord directly — no `useTx` subscription needed.
 
-import { Button } from '@armada/ui'
+import { Button } from '@/design'
 import { cancelTx, canRetryTx, dismissTx, getIsLeader, retryTx } from '@/lib/tx/executor'
 import type { TxRecord } from '@/lib/tx/types'
 import styles from './TxActions.module.css'

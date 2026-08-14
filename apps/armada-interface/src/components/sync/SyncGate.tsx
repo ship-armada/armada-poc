@@ -2,7 +2,7 @@
 // ABOUTME: Centered progress meter while syncing; a "Try again" button (via useSyncRetry) when the scan failed.
 
 import { useAtomValue } from 'jotai'
-import { Button } from '@armada/ui'
+import { Button } from '@/design'
 import { syncStateAtom, type SyncState } from '@/state/wallet'
 import { useSyncRetry } from '@/hooks/useSyncRetry'
 import styles from './SyncGate.module.css'

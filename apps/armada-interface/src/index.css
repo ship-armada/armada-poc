@@ -1,11 +1,10 @@
-/* ABOUTME: App-level CSS entry — Tailwind v4 (for layout utilities) + @armada/ui design tokens + global reset. */
+/* ABOUTME: App-level CSS entry — Tailwind v4 (for layout utilities) + vendored design tokens + global reset. */
 /* ABOUTME: @theme maps Tailwind's named color slots to our --semantic-color-* tokens so utility classes like `text-foreground` resolve. */
 
 @import "tailwindcss";
-@source "../../../packages/ui/src";
 
-@import "@armada/ui/styles/tokens.css";
-@import "@armada/ui/styles/global.css";
+@import "./design/styles/tokens.css";
+@import "./design/styles/global.css";
 
 /*
  * Tailwind v4: any --color-* declared in @theme becomes a utility-class family

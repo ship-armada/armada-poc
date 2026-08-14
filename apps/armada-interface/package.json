@@ -15,7 +15,6 @@
   },
   "dependencies": {
     "@armada/sdk": "github:ship-armada/armada-sdk#67c1aab47cb9df940db78e46822ec0d82aa5fef8",
-    "@armada/ui": "*",
     "@heroicons/react": "^2.2.0",
     "@noble/ciphers": "^0.4.1",
     "@noble/hashes": "^1.8.0",

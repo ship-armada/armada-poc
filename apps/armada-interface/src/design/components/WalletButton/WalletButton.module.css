@@ -1,0 +1,84 @@
+/* ABOUTME: CSS Module for WalletButton — gradient-border pill matching the mockup Header's .walletBtn. */
+/* ABOUTME: Ported byte-equivalent from the mockup; tokens drive color, size, and the two-layer background. */
+
+.btn {
+  height: var(--semantic-component-navitem-height);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  padding: 0 var(--semantic-component-button-primary-md-padding-x);
+  padding-left: var(--primitives-spacing-2);
+  border-radius: var(--semantic-component-navitem-radius);
+  border: 1px solid transparent;
+  cursor: pointer;
+  color: var(--semantic-color-text-primary);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: var(--semantic-component-navitem-font-size);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: 0.02em;
+  background:
+    linear-gradient(var(--semantic-component-navbar-bg), var(--semantic-component-navbar-bg)) padding-box,
+    linear-gradient(90deg, var(--semantic-color-brand-amber), var(--semantic-color-brand-lavender)) border-box;
+  transition: background 0.15s, transform 0.1s, color 0.15s;
+}
+
+.btn:hover {
+  background:
+    linear-gradient(var(--semantic-component-navitem-default-bg-hover), var(--semantic-component-navitem-default-bg-hover)) padding-box,
+    linear-gradient(90deg, var(--semantic-color-brand-amber), var(--semantic-color-brand-lavender)) border-box;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--semantic-color-border-focus);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255,255,255,0.28), rgba(255,255,255,0) 55%),
+    color-mix(in srgb, var(--semantic-color-brand-lavender) 28%, transparent);
+  flex: 0 0 auto;
+}
+
+.text {
+  white-space: nowrap;
+}
+
+/* `default` variant is the mockup-as-shipped gradient-border look (rules above). */
+/* `destructive` variant — urgent state like wrong-network. Solid status.error
+   border, dark bg, error-tint icon circle, error text. Not in the mockup. */
+.destructive {
+  border: 1px solid var(--semantic-color-status-error);
+  color: var(--semantic-color-status-error);
+  background:
+    linear-gradient(var(--semantic-component-navbar-bg), var(--semantic-component-navbar-bg)) padding-box,
+    var(--semantic-color-status-error) border-box;
+}
+
+.destructive:hover {
+  background:
+    linear-gradient(var(--semantic-component-navitem-default-bg-hover), var(--semantic-component-navitem-default-bg-hover)) padding-box,
+    var(--semantic-color-status-error) border-box;
+}
+
+.destructive .icon {
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255,255,255,0.28), rgba(255,255,255,0) 55%),
+    color-mix(in srgb, var(--semantic-color-status-error) 28%, transparent);
+}

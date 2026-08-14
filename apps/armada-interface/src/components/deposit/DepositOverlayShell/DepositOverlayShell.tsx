@@ -4,7 +4,7 @@
 import { useEffect, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
-import { ArmadaSymbol } from '@armada/ui'
+import { ArmadaSymbol } from '@/design'
 import { OVERLAY_EXIT_MS } from '@/constants/overlayMotion'
 import { useOverlayExitTransition } from '@/hooks/useOverlayExitTransition'
 import {

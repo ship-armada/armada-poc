@@ -1,7 +1,7 @@
 // ABOUTME: Earn amount step — tab switcher, DepositAmountCard, APY hint (full-viewport earn flow).
 
 import { useMemo } from 'react'
-import { Button } from '@armada/ui'
+import { Button } from '@/design'
 import { DepositAmountCard } from '@/components/deposit/DepositAmountCard/DepositAmountCard'
 import { depositOverlayShellStyles } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
 import { GasBalanceNotice, Tabs } from '@/components/ui'

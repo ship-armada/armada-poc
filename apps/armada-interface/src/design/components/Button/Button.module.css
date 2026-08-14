@@ -1,0 +1,145 @@
+/* ABOUTME: CSS Module for the Button primitive — sizes, variants, focus, hover, and disabled states. */
+/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup; sources sizing from --semantic-component-button-* tokens. */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--primitives-spacing-1);
+  padding-top: 0;
+  padding-bottom: 0;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-family: "Geist", sans-serif;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, opacity 0.15s, transform 0.1s;
+  outline: none;
+  text-decoration: none;
+  box-sizing: border-box;
+}
+.btn:focus-visible { box-shadow: 0 0 0 2px var(--semantic-color-border-focus); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+.loading {
+  cursor: wait;
+  pointer-events: none;
+}
+
+.loading:disabled {
+  opacity: 1;
+  cursor: wait;
+}
+
+.loading.primary:disabled {
+  background: var(--semantic-component-button-primary-bg);
+  color: var(--semantic-component-button-primary-text);
+}
+
+.loading.secondary:disabled {
+  color: var(--semantic-component-button-secondary-text);
+  border-color: var(--semantic-component-button-secondary-border);
+}
+
+.spinner {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  opacity: 0.85;
+  animation: buttonSpin 700ms linear infinite;
+}
+
+.md .spinner {
+  width: 16px;
+  height: 16px;
+}
+
+.lg .spinner {
+  width: 18px;
+  height: 18px;
+}
+
+@keyframes buttonSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Sizes — Figma: fixed height, asymmetric horizontal padding, 4px gap */
+.sm {
+  height: var(--semantic-component-button-primary-sm-height);
+  padding-left: var(--semantic-component-button-primary-sm-padding-x);
+  padding-right: var(--semantic-component-button-primary-sm-padding-x-icon);
+  font-size: var(--semantic-component-button-primary-sm-font-size);
+}
+.md {
+  height: var(--semantic-component-button-primary-md-height);
+  padding-left: var(--semantic-component-button-primary-md-padding-x);
+  padding-right: var(--semantic-component-button-primary-md-padding-x-icon);
+  font-size: var(--semantic-component-button-primary-md-font-size);
+}
+.lg {
+  height: var(--semantic-component-button-primary-lg-height);
+  padding-left: var(--semantic-component-button-primary-lg-padding-x);
+  padding-right: var(--semantic-component-button-primary-lg-padding-x-icon);
+  font-size: var(--semantic-component-button-primary-lg-font-size);
+}
+
+/* No icon: symmetric horizontal padding (use left value on both sides) */
+.noIcon.sm {
+  padding-right: var(--semantic-component-button-primary-sm-padding-x);
+}
+.noIcon.md {
+  padding-right: var(--semantic-component-button-primary-md-padding-x);
+}
+.noIcon.lg {
+  padding-right: var(--semantic-component-button-primary-lg-padding-x);
+}
+
+/* Leading icon — mirror the trailing-icon left-padding token so the icon doesn't sit too tight
+   against the button's leading edge. Not in the mockup; added as a sibling to `.icon` to support
+   armada-interface's "Connect Wallet" pill. */
+.leading.sm { padding-left: var(--semantic-component-button-primary-sm-padding-x-icon); }
+.leading.md { padding-left: var(--semantic-component-button-primary-md-padding-x-icon); }
+.leading.lg { padding-left: var(--semantic-component-button-primary-lg-padding-x-icon); }
+
+/* Primary */
+.primary { background: var(--semantic-component-button-primary-bg); color: var(--semantic-component-button-primary-text); }
+.primary:hover:not(:disabled) { background: var(--semantic-component-button-primary-bg-hover); }
+.primary:active:not(:disabled) { background: var(--semantic-component-button-primary-bg-active); }
+.primary:disabled { background: var(--semantic-component-button-primary-bg-disabled); color: var(--semantic-component-button-primary-text-disabled); }
+
+/* Secondary */
+.secondary { background: transparent; color: var(--semantic-component-button-secondary-text); border-color: var(--semantic-component-button-secondary-border); }
+.secondary:hover:not(:disabled) { background: var(--semantic-component-button-secondary-bg-hover); border-color: var(--semantic-component-button-secondary-border-hover); }
+.secondary:active:not(:disabled) { background: var(--semantic-component-button-secondary-bg-active); }
+.secondary:disabled { color: var(--semantic-component-button-secondary-text-disabled); }
+
+/* Ghost — text matches secondary (no border) */
+.ghost { background: transparent; color: var(--semantic-component-button-secondary-text); }
+.ghost:hover:not(:disabled) { background: var(--semantic-component-button-ghost-bg-hover); color: var(--semantic-component-button-secondary-text); }
+.ghost:active:not(:disabled) { background: var(--semantic-component-button-ghost-bg-active); }
+.ghost:disabled { color: var(--semantic-component-button-secondary-text-disabled); }
+
+/* Gradient */
+.gradient { border: none; background: linear-gradient(to right, #F3D0A0 0%, #C491E5 100%); color: var(--semantic-component-button-gradient-text); }
+.gradient:hover:not(:disabled) { background: linear-gradient(to right, #f5d9ae 0%, #d4aff0 100%); }
+.gradient:active:not(:disabled) { background: linear-gradient(to right, #eab86a 0%, #b06fdf 100%); }
+
+/* Icon */
+.iconWrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.iconSvg {
+  display: block;
+  color: currentColor;
+}

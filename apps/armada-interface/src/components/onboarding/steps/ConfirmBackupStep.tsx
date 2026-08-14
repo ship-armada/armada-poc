@@ -2,7 +2,7 @@
 // ABOUTME: Pure dry-run: never touches keyManager, never calls SDK. Pass on success; surface decrypt failures inline.
 
 import { useEffect, useId, useState, type ChangeEvent, type FormEvent } from 'react'
-import { Text } from '@armada/ui'
+import { Text } from '@/design'
 import { FlowFooter } from '@/components/flow/FlowFooter'
 import { normalizeBackupUnlockError, verifyBackupFileText } from '@/lib/crypto/kdf'
 import styles from './PassphraseStep.module.css'

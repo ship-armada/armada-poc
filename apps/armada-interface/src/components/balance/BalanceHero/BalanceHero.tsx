@@ -3,7 +3,7 @@
 
 import { useAtomValue, useSetAtom } from 'jotai'
 import { Inbox } from 'lucide-react'
-import { Button } from '@armada/ui'
+import { Button } from '@/design'
 import TokenUSDC from '@web3icons/react/icons/tokens/TokenUSDC'
 import { Card } from '@/components/ui'
 import { formatUsdcAmount } from '@/lib/format'

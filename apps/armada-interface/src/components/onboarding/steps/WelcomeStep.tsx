@@ -1,7 +1,7 @@
 // ABOUTME: Step 1 of onboarding — welcomes the user and explains the private account before any keys are generated.
 // ABOUTME: Primary CTA "Create account"; optional ghost "Restore an account" when onRestore is supplied (returning user / new device path — routes to UnlockFlow whose Sign-in tab covers re-sign + the Backup/Paste tabs cover the recovery-material paths).
 
-import { Button, Text } from '@armada/ui'
+import { Button, Text } from '@/design'
 import styles from './WelcomeStep.module.css'
 
 export interface WelcomeStepProps {

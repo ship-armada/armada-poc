@@ -2,7 +2,7 @@
 // ABOUTME: After Download, advances on Continue; before Download the Continue CTA is disabled so the user can't skip the backup.
 
 import { useId, useState, type ChangeEvent, type FormEvent } from 'react'
-import { Text } from '@armada/ui'
+import { Text } from '@/design'
 import { FlowFooter } from '@/components/flow/FlowFooter'
 import type { BackupBlob } from '@/lib/crypto/kdf'
 import styles from './PassphraseStep.module.css'

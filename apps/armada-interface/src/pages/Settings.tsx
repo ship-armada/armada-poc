@@ -3,7 +3,7 @@
 
 import { useEffect, useState, type ChangeEvent } from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { Button } from '@armada/ui'
+import { Button } from '@/design'
 import { Card, SectionHeader } from '@/components/ui'
 import {
   ClearHistoryDialog,

@@ -1,8 +1,8 @@
 # components/ui/
 
-App-local UI primitives. Layered **above** `@armada/ui` (which holds design-system primitives like Button, Tag, Progress) and **below** feature components (BalanceHero, ShieldModal, etc.).
+App-local UI primitives. Layered **above** the vendored design system in `src/design` (imported as `@/design` — Button, Text, NavBar, WalletButton, WalletPillMenu, ArmadaLogo, ArmadaSymbol) and **below** feature components (BalanceHero, ShieldModal, etc.).
 
-These primitives are NOT in `@armada/ui` because they aren't yet stable enough to promote, and there's only one consumer. Promote a primitive when a second app needs it AND its shape is settled.
+These primitives are NOT in `src/design` because they aren't yet stable enough to fold into the design layer. Move a primitive into `src/design` once its shape is settled.
 
 ## Current contents
 
@@ -20,15 +20,15 @@ These primitives are NOT in `@armada/ui` because they aren't yet stable enough t
 | `Tabs` | Horizontal segmented control with ARIA tablist semantics. Generic over a string-id union. |
 | `TechnicalDetailsDisclosure` | Collapsible "Show technical details" wrapper built on native `<details>`. |
 
-## Conventions (mirror `@armada/ui`)
+## Conventions (mirror `src/design`)
 
 - Folder per primitive: `Primitive/Primitive.tsx` + `Primitive.module.css` + `index.ts`.
 - ABOUTME header on every file (two lines).
-- CSS Modules reference `var(--semantic-*)` tokens from `@armada/ui/styles/tokens.css`; never hardcode hex/px.
+- CSS Modules reference `var(--semantic-*)` tokens from `src/design/styles/tokens.css`; never hardcode hex/px.
 - No `clsx`, `classnames`, or `cva` — use the manual `[...].filter(Boolean).join(' ')` pattern.
 - No typography Tailwind classes in the `.tsx`. Tailwind is allowed for layout (`flex`, `gap`, `mx-auto`) but text size / weight / letter-spacing / line-height come from CSS Modules.
 - Each primitive ships a co-located `.test.tsx` file. Tests use `@testing-library/react`; we don't have `user-event` installed, so use `fireEvent` for interaction tests.
 
-## When to promote to `@armada/ui`
+## When to fold into `src/design`
 
-Promote when (a) a second app (crowdfund-committer/observer/admin) needs the primitive, AND (b) the shape has been stable for at least one feature pass. Until then, keep it app-local — premature promotion makes the design system harder to change.
+`src/design` is the app's own vendored design layer (severed from the shared `@armada/ui` so the app is self-contained ahead of its repo spin-out). Fold a primitive into `src/design` once its shape has been stable for at least one feature pass. Until then, keep it here — premature promotion makes the design layer harder to change.

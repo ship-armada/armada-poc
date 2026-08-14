@@ -27,6 +27,5 @@ Shared primitives `IconButton`, `Tooltip`, `BottomSheet` live in `@/design`; the
 
 ## Known follow-ups
 
-- The `⋯` More-menu "Earn" item shows a hardcoded `4.2% APR` (mockup value). Wire the real APY (`useYieldRate().apyBps`) — the VaultPositionBar already uses the real rate via its `vaultApy` prop.
 - `useDashboardBackground` is a stub returning `'gradient'`; the solid/gradient toggle UI is not ported.
 - `↓` maps to Receive as a placeholder; a dedicated payment-request flow is planned.

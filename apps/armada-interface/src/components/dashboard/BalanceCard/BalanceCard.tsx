@@ -92,6 +92,8 @@ interface BalanceCardMoreMenuItemsProps {
   hasActivityItems: boolean
   activityVisible: boolean
   canWithdraw: boolean
+  /** APR meta shown beside the Earn item (e.g. "4.2% APR"); omitted when the rate is unknown. */
+  earnMeta?: string
   onDeposit?: () => void
   onEarn?: () => void
   onWithdraw?: () => void
@@ -105,6 +107,7 @@ function BalanceCardMoreMenuItems({
   hasActivityItems,
   activityVisible,
   canWithdraw,
+  earnMeta,
   onDeposit,
   onEarn,
   onWithdraw,
@@ -147,7 +150,7 @@ function BalanceCardMoreMenuItems({
           </span>
           <span className={styles.moreMenuLabel}>Earn</span>
         </span>
-        <span className={styles.moreMenuMeta}>4.2% APR</span>
+        {earnMeta ? <span className={styles.moreMenuMeta}>{earnMeta}</span> : null}
       </button>
         <button
           type="button"
@@ -420,6 +423,7 @@ export function BalanceCard({
       hasActivityItems={hasActivityItems}
       activityVisible={activityVisible}
       canWithdraw={hasFunds}
+      earnMeta={vaultApy !== undefined ? `${vaultApy.toFixed(1)}% APR` : undefined}
       onDeposit={onDeposit}
       onEarn={onEarn}
       onWithdraw={onWithdraw}

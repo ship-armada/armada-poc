@@ -18,9 +18,8 @@
   gap: var(--primitives-spacing-8);
 }
 
-.cardStack > * {
-  width: 100%;
-}
+/* BalanceCard and RecentActivityList self-fill to 100%; the DepositTooltip keeps its natural
+   width (360px) and stays centered — matching the mockup's narrower callout under the card. */
 
 @media (max-width: 767px) {
   .page {

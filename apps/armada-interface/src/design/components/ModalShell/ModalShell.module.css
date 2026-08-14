@@ -1,0 +1,352 @@
+/* ABOUTME: Styles for ModalShell — header/content layout, enter/exit keyframes, simple + immersive chrome variants.
+   ABOUTME: Ported from the armada-app design mockup. */
+.shell {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-height: 100dvh;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: var(--primitives-spacing-5);
+  box-sizing: border-box;
+}
+
+.shellSimple {
+  padding-top: calc(var(--primitives-spacing-4) + var(--mobile-safe-area-top, 0px));
+  padding-bottom: 0;
+  height: 100dvh;
+  min-height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+/* EXCEPTION — brand gradient fills the processing beat on mobile keypad deposit. */
+.shellImmersive {
+  background: linear-gradient(
+    165deg,
+    var(--semantic-color-brand-lavender) 0%,
+    var(--semantic-color-brand-amber) 100%
+  );
+  padding-bottom: calc(var(--primitives-spacing-5) + var(--mobile-safe-area-bottom, 0px));
+}
+
+.headerImmersive .headerTitle,
+.headerImmersive .back,
+.headerImmersive .closeImmersive {
+  color: var(--semantic-component-tag-label);
+}
+
+.closeImmersive:hover {
+  background: color-mix(in srgb, var(--semantic-component-tag-label) 14%, transparent);
+}
+
+.contentImmersive {
+  margin-top: var(--primitives-spacing-4);
+  flex: 1;
+  min-height: 0;
+}
+
+.contentExit {
+  opacity: 1;
+  transform: translateY(0);
+  animation: modalContentExit var(--modal-content-exit-ms, 260ms)
+    var(--modal-exit-easing, cubic-bezier(0.22, 1, 0.36, 1)) forwards;
+}
+
+.contentExit .stepBodyEnter,
+.contentExit .actionRowEnter > * {
+  animation: none !important;
+  opacity: 1;
+  transform: none;
+}
+
+.headerExit {
+  opacity: 1;
+  transform: translateY(0);
+  animation: modalHeaderExit var(--modal-header-exit-ms, 260ms)
+    var(--modal-exit-easing, cubic-bezier(0.22, 1, 0.36, 1)) var(--modal-header-exit-delay, 180ms)
+    forwards !important;
+}
+
+@keyframes modalHeaderExit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(var(--primitives-spacing-10));
+  }
+}
+
+@keyframes modalContentExit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(var(--primitives-spacing-10));
+  }
+}
+
+.header {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  height: calc(var(--primitives-spacing-11) + var(--primitives-spacing-1) * 0.5);
+  animation: modalHeaderEnter 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.headerSimple {
+  display: grid;
+  grid-template-columns:
+    var(--mobile-touch-target-min, var(--primitives-spacing-11))
+    minmax(0, 1fr)
+    var(--mobile-touch-target-min, var(--primitives-spacing-11));
+  align-items: center;
+  justify-content: unset;
+  height: var(--mobile-touch-target-min, var(--primitives-spacing-11));
+}
+
+.headerSideSlot {
+  width: var(--mobile-touch-target-min, var(--primitives-spacing-11));
+  height: var(--mobile-touch-target-min, var(--primitives-spacing-11));
+}
+
+.headerTitle {
+  margin: 0;
+  justify-self: center;
+  text-align: center;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-xl) * 1px);
+  font-weight: var(--primitives-fontWeight-semibold);
+  line-height: var(--primitives-lineHeight-tight);
+  letter-spacing: var(--primitives-letterSpacing-normal);
+  color: var(--semantic-color-text-primary);
+}
+
+.back {
+  width: var(--mobile-touch-target-min, var(--primitives-spacing-11));
+  height: var(--mobile-touch-target-min, var(--primitives-spacing-11));
+  margin-inline-start: calc(var(--primitives-spacing-2) * -1);
+  border: none;
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  color: var(--semantic-color-text-primary);
+  transition: background 0.15s ease;
+}
+
+.back:hover {
+  background: var(--semantic-component-button-secondary-bg-hover);
+}
+
+.back:focus-visible {
+  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
+  outline-offset: calc(var(--primitives-spacing-1) * 1px);
+}
+
+.backIcon {
+  width: var(--primitives-spacing-6);
+  height: var(--primitives-spacing-6);
+}
+
+@keyframes modalHeaderEnter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--primitives-spacing-10));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes modalContentEnter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--primitives-spacing-10));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes modalActionButtonEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+
+  48% {
+    opacity: 1;
+    transform: translateY(calc(var(--primitives-spacing-3) * -1));
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.headerNoSteps {
+  justify-content: space-between;
+}
+
+.logoSlot {
+  flex-shrink: 0;
+  padding-top: 3px;
+}
+
+.logo {
+  width: var(--primitives-spacing-10);
+  height: var(--primitives-spacing-10);
+  display: block;
+  color: var(--semantic-color-brand-deep);
+}
+
+.stepsWrap {
+  flex: 1;
+  max-width: calc(var(--primitives-spacing-20) * 4 + var(--primitives-spacing-10));
+  margin-inline: auto;
+}
+
+.close {
+  width: calc(var(--primitives-spacing-11) + var(--primitives-spacing-1) * 0.5);
+  height: calc(var(--primitives-spacing-11) + var(--primitives-spacing-1) * 0.5);
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  border: calc(var(--primitives-borderWidth-default) * 1px) solid
+    var(--semantic-component-button-secondary-border);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  color: var(--semantic-color-text-primary);
+  transition: background 0.15s ease;
+}
+
+.closeGhost {
+  width: var(--mobile-touch-target-min, var(--primitives-spacing-11));
+  height: var(--mobile-touch-target-min, var(--primitives-spacing-11));
+  margin-inline-end: calc(var(--primitives-spacing-2) * -1);
+  border: none;
+  background: transparent;
+}
+
+.closeGhost .closeIcon {
+  width: var(--primitives-spacing-6);
+  height: var(--primitives-spacing-6);
+}
+
+.closeGhost:hover {
+  background: var(--semantic-component-button-secondary-bg-hover);
+}
+
+.close:hover {
+  background: var(--semantic-component-button-secondary-bg-hover);
+}
+
+.close:focus-visible {
+  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
+  outline-offset: calc(var(--primitives-spacing-1) * 1px);
+}
+
+.closeIcon {
+  width: calc(var(--primitives-spacing-4) + var(--primitives-spacing-1) * 0.5);
+  height: calc(var(--primitives-spacing-4) + var(--primitives-spacing-1) * 0.5);
+}
+
+.content {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--primitives-spacing-8);
+  margin-top: calc(var(--primitives-spacing-16) + var(--primitives-spacing-2));
+}
+
+.contentSimple {
+  flex: 1;
+  min-height: 0;
+  margin-top: var(--primitives-spacing-5);
+  gap: 0;
+  align-items: stretch;
+}
+
+.stepShell {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.contentSimple .stepShell {
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+}
+
+.stepBodyEnter {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--primitives-spacing-8);
+  opacity: 0;
+  animation: modalContentEnter 360ms cubic-bezier(0.22, 1, 0.36, 1) 360ms both;
+}
+
+.actionRowEnter > * {
+  opacity: 0;
+  animation: modalActionButtonEnter 520ms cubic-bezier(0.34, 1.15, 0.64, 1) both;
+}
+
+.actionRowEnter > *:nth-child(1) {
+  animation-delay: 720ms;
+}
+
+.actionRowEnter > *:nth-child(2) {
+  animation-delay: 790ms;
+}
+
+.actionRowEnter > *:nth-child(3) {
+  animation-delay: 860ms;
+}
+
+.actionRowEnter > *:nth-child(4) {
+  animation-delay: 930ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .header,
+  .stepBodyEnter,
+  .actionRowEnter > * {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .contentExit,
+  .headerExit {
+    animation: none !important;
+    opacity: 0;
+    transform: none;
+  }
+}

@@ -1,0 +1,57 @@
+/* ABOUTME: Styles for the Steps progress indicator — header row typography and segmented progress-bar states.
+   ABOUTME: Ported from the armada-app design mockup. */
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+}
+
+.headerRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.stepName {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-weight: var(--primitives-fontWeight-medium);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  letter-spacing: var(--primitives-letterSpacing-wide);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-primary);
+}
+
+.stepCount {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-weight: var(--primitives-fontWeight-medium);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  letter-spacing: var(--primitives-letterSpacing-wide);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-muted);
+}
+
+.progressBar {
+  display: flex;
+  gap: var(--primitives-spacing-1);
+  width: 100%;
+}
+
+.segment {
+  flex: 1;
+  height: calc(var(--primitives-borderWidth-default) * 3px);
+  border-radius: calc(var(--primitives-borderWidth-default) * 2px);
+  background-color: var(--semantic-color-border-default);
+}
+
+.segment.active {
+  background-color: var(--semantic-color-brand-lavender);
+}
+
+.segment.error {
+  background-color: var(--semantic-color-status-error);
+}
+
+.segment.confirmed {
+  background-color: var(--semantic-color-status-success);
+}

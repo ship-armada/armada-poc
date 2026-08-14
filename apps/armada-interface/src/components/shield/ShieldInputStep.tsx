@@ -90,7 +90,7 @@ export function ShieldInputStepContent({
 
   return (
     <div className={styles.contentZone}>
-      <p className={styles.question}>How much USDC do you want to deposit?</p>
+      <h1 className={styles.title}>How much do you want to deposit?</h1>
       <DepositAmountCard
         chains={chains}
         chainId={fromChainId}
@@ -102,6 +102,7 @@ export function ShieldInputStepContent({
         flowBreakdown={flowBreakdown}
         feeLoading={feeLoading}
         onMax={() => onAmountChange(formatUsdcPlain(maxInput))}
+        maxInput={maxInput}
         error={errorMessage}
         amountAriaLabel="Deposit amount"
       />

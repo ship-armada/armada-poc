@@ -39,6 +39,12 @@ export interface DepositAmountCardProps {
    */
   flowBreakdown?: FlowFeeBreakdown
   onMax?: () => void
+  /**
+   * Raw 6-decimal cap the amount input accepts. When provided, the balance row renders
+   * 25% / 50% / 75% / Max percentage pills (each sets the amount to that fraction of `maxInput`);
+   * when omitted the card falls back to the single `Max` button (driven by `onMax`).
+   */
+  maxInput?: bigint
   error?: string
   /** Accessible name for the amount field (e.g. "Deposit amount", "Withdrawal amount"). */
   amountAriaLabel?: string
@@ -73,6 +79,7 @@ export function DepositAmountCard({
   feeLoading = false,
   flowBreakdown,
   onMax,
+  maxInput,
   error,
   amountAriaLabel = 'Amount',
 }: DepositAmountCardProps) {
@@ -103,6 +110,14 @@ export function DepositAmountCard({
   function handleAmountInput(raw: string) {
     const next = sanitizeAmountInput(raw)
     onAmountChange(hasActiveAmount(next) ? next : '')
+  }
+
+  // Percentage pills set the amount to a fraction of the raw input cap. Integer bigint math keeps
+  // full 6-decimal precision (no float rounding); Max reuses the caller's `onMax` when supplied so
+  // fee-on-top paths keep their exact cap, else it falls back to the full `maxInput`.
+  function applyPercent(percent: bigint) {
+    if (maxInput === undefined) return
+    onAmountChange(formatUsdcPlain((maxInput * percent) / 100n))
   }
 
   const showActiveAmount = hasActiveAmount(amount)
@@ -194,13 +209,34 @@ export function DepositAmountCard({
       ) : null}
 
       <div className={styles.bottomRow}>
-        <div className={styles.balanceGroup}>
-          <WalletIcon className={styles.walletIcon} aria-hidden />
-          <span className={styles.balanceText}>
-            {balance}
-            {pendingBalance ? ` · ${pendingBalance} pending` : ''}
-          </span>
-          {onMax ? (
+        <div className={styles.balanceControls}>
+          <div className={styles.balanceGroup}>
+            <WalletIcon className={styles.walletIcon} aria-hidden />
+            <span className={styles.balanceText}>
+              {balance}
+              {pendingBalance ? ` · ${pendingBalance} pending` : ''}
+            </span>
+          </div>
+          {maxInput !== undefined ? (
+            <div className={styles.pctPills}>
+              <button type="button" className={styles.pctPill} onClick={() => applyPercent(25n)}>
+                25%
+              </button>
+              <button type="button" className={styles.pctPill} onClick={() => applyPercent(50n)}>
+                50%
+              </button>
+              <button type="button" className={styles.pctPill} onClick={() => applyPercent(75n)}>
+                75%
+              </button>
+              <button
+                type="button"
+                className={styles.pctPill}
+                onClick={onMax ?? (() => applyPercent(100n))}
+              >
+                Max
+              </button>
+            </div>
+          ) : onMax ? (
             <button type="button" className={styles.maxBtn} onClick={onMax}>
               Max
             </button>

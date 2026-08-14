@@ -51,6 +51,13 @@ vi.mock('@/hooks/useDisplayFees', () => ({
   }),
 }))
 
+// ShieldModal reads the connected EVM address via wagmi's useAccount for the review-step summary;
+// these tests don't mount a WagmiProvider, so stub it with a fixed address.
+vi.mock('wagmi', async (importOriginal) => ({
+  ...await importOriginal<typeof import('wagmi')>(),
+  useAccount: () => ({ address: '0xabc' }),
+}))
+
 // useGasBalanceWarning calls wagmi's useAccount/useBalance — same provider requirement.
 // "No warning" keeps the GasBalanceNotice hidden; gasless-mode branching is asserted in
 // ShieldInputStep.test.tsx by directly setting gaslessMode (no integration concern here).
@@ -122,8 +129,8 @@ describe('<ShieldModal>', () => {
     renderModal({ open: true, max: 10_000_000n })
     fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
-    expect(screen.getByText('Review your deposit')).toBeInTheDocument()
-    // 5.00 appears in both the hero numeral and the FeeSummary net-amount row.
+    expect(screen.getByRole('heading', { name: 'Review' })).toBeInTheDocument()
+    // 5.00 renders in the coin+amount block (the summary Total row is "5.00 USDC", a distinct node).
     expect(screen.getAllByText('5.00').length).toBeGreaterThanOrEqual(1)
   })
 

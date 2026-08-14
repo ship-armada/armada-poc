@@ -61,6 +61,50 @@
   gap: var(--primitives-spacing-2);
 }
 
+.balanceControls {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  min-width: 0;
+}
+
+.pctPills {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-1);
+  flex-shrink: 0;
+}
+
+.pctPill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--primitives-spacing-5);
+  padding: 0 var(--primitives-spacing-2);
+  border: none;
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: var(--semantic-color-surface-raised);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-weight: var(--primitives-fontWeight-medium);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-primary);
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.pctPill:hover {
+  background: var(--semantic-color-surface-hover);
+}
+
+.pctPill:active {
+  transform: translateY(1px);
+}
+
+.pctPill:focus-visible {
+  outline: 2px solid var(--semantic-color-border-focus);
+  outline-offset: 1px;
+}
+
 .chainIconSlot,
 .tokenIconSlot {
   width: var(--primitives-spacing-8);

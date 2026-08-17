@@ -1,9 +1,13 @@
-// ABOUTME: ChainSelect — dropdown over the configured chains in network.ts (hub + clients by default).
-// ABOUTME: Renders a native <select> for v1; the styled-popover treatment can come later if real UX demands it.
+// ABOUTME: ChainSelect — full-width styled popover over the configured chains in network.ts (hub + clients by default).
+// ABOUTME: Trigger + listbox match the mockup's SendRecipientScreen network selector; icons via @web3icons, else a letter avatar.
 
-import { useId, useMemo } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { ChevronDownIcon } from '@heroicons/react/24/solid'
 import { getAllChainIdentities, type ChainIdentity } from '@/config/network'
+import { chainIconForChainId } from '@/components/ui/chainIcons'
 import styles from './ChainSelect.module.css'
+
+const ICON_SIZE = 32
 
 export interface ChainSelectProps {
   /** Selected chainId. */
@@ -11,37 +15,99 @@ export interface ChainSelectProps {
   onChange: (chainId: number) => void
   /** Subset of chains to offer; defaults to [hub, ...clients]. */
   chains?: ReadonlyArray<ChainIdentity>
+  /** Accessible name for the trigger (no visible label is rendered — matches the mockup). */
   label?: string
   disabled?: boolean
   className?: string
 }
 
+function ChainIcon({ chainId, name }: { chainId: number; name: string }) {
+  const Icon = chainIconForChainId(chainId)
+  if (Icon) {
+    // `background` variant carries the network's own dark circular backdrop (matches the mockup).
+    return (
+      <span className={styles.iconSlot} aria-hidden>
+        <Icon size={ICON_SIZE} variant="background" />
+      </span>
+    )
+  }
+  // Unmapped chain (e.g. local Anvil with no brand): letter avatar on a neutral slot.
+  return (
+    <span className={[styles.iconSlot, styles.iconSlotFallback].join(' ')} aria-hidden>
+      {name.charAt(0).toUpperCase()}
+    </span>
+  )
+}
+
 export function ChainSelect({ value, onChange, chains, label, disabled, className }: ChainSelectProps) {
-  const id = useId()
+  const listboxId = useId()
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+
   // useMemo so the default chain list is stable across renders without re-running getAllChainIdentities.
   const options = useMemo(() => chains ?? getAllChainIdentities(), [chains])
+  const selected = options.find(c => c.chainId === value) ?? options[0]
+  const selectable = !disabled && options.length > 1
+
+  useEffect(() => {
+    if (!menuOpen) return
+    function handlePointerDown(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    return () => document.removeEventListener('mousedown', handlePointerDown)
+  }, [menuOpen])
+
+  function selectChain(nextId: number) {
+    onChange(nextId)
+    setMenuOpen(false)
+  }
+
   const cls = [styles.root, className].filter(Boolean).join(' ')
 
   return (
-    <div className={cls}>
-      {label ? (
-        <label htmlFor={id} className={styles.label}>
-          {label}
-        </label>
+    <div className={cls} ref={rootRef}>
+      {selectable ? (
+        <button
+          type="button"
+          className={styles.trigger}
+          aria-haspopup="listbox"
+          aria-expanded={menuOpen}
+          aria-controls={listboxId}
+          aria-label={label}
+          onClick={() => setMenuOpen(open => !open)}
+        >
+          <ChainIcon chainId={selected?.chainId ?? value} name={selected?.name ?? ''} />
+          <span className={styles.name}>{selected?.name}</span>
+          <ChevronDownIcon className={styles.chevron} aria-hidden />
+        </button>
+      ) : (
+        <div className={styles.triggerStatic} aria-label={label}>
+          <ChainIcon chainId={selected?.chainId ?? value} name={selected?.name ?? ''} />
+          <span className={styles.name}>{selected?.name}</span>
+        </div>
+      )}
+
+      {menuOpen && selectable ? (
+        <ul id={listboxId} className={styles.menu} role="listbox" aria-label="Network">
+          {options.map(option => (
+            <li key={option.chainId} role="presentation">
+              <button
+                type="button"
+                role="option"
+                aria-selected={option.chainId === value}
+                className={styles.option}
+                onClick={() => selectChain(option.chainId)}
+              >
+                <ChainIcon chainId={option.chainId} name={option.name} />
+                <span className={styles.optionLabel}>{option.name}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
       ) : null}
-      <select
-        id={id}
-        className={styles.select}
-        value={value}
-        onChange={e => onChange(Number(e.target.value))}
-        disabled={disabled}
-      >
-        {options.map(c => (
-          <option key={c.chainId} value={c.chainId}>
-            {c.name}
-          </option>
-        ))}
-      </select>
     </div>
   )
 }

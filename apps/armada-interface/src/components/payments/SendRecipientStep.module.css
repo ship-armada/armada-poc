@@ -1,14 +1,123 @@
-/* ABOUTME: SendRecipientStep layout — question, recipient field, privacy indicator, optional chain selector. */
+/* ABOUTME: Send/Withdraw recipient step — serif prompt, neutral-50 address pill (Paste/Clear), and a reveal footer (privacy badge + Continue). */
+/* ABOUTME: Ported from the armada-app SendRecipientScreen mockup. */
 
 .root {
   display: flex;
   flex-direction: column;
-  gap: var(--primitives-spacing-6);
+  gap: var(--primitives-spacing-8);
   width: 100%;
 }
 
-.privacyIndicator {
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-8);
+  width: 100%;
+}
+
+.title {
+  composes: displayLg from '../../design/styles/displayLgTitle.module.css';
+  margin: 0;
+  width: 100%;
+  color: var(--semantic-color-text-primary);
+  text-align: center;
+}
+
+.addressBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+}
+
+.addressField {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-5);
+  width: 100%;
+  height: var(--primitives-spacing-16);
+  padding: 0 var(--primitives-spacing-5);
+  border-radius: calc(var(--primitives-spacing-5) / 2);
+  background: var(--primitives-color-neutral-50);
+  box-sizing: border-box;
+}
+
+.addressInput {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: var(--primitives-fontFamily-mono), ui-monospace, monospace;
+  /* ≥16px prevents iOS Safari zoom-on-focus */
+  font-size: calc(var(--primitives-fontSize-lg) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  outline: none;
+  height: 100%;
+  overflow: hidden;
+  text-overflow: clip;
+}
+
+.addressInput::placeholder {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-muted);
+}
+
+.pasteButton {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--primitives-spacing-8);
+  padding: 0 var(--primitives-spacing-4);
+  border: none;
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: var(--semantic-color-brand-lavender);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  cursor: pointer;
+  transition: transform 0.1s ease, opacity 0.15s ease;
+}
+
+.pasteButton:hover {
+  opacity: 0.92;
+}
+
+.pasteButton:active {
+  transform: translateY(1px);
+}
+
+.clearButton {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--primitives-spacing-8);
+  height: var(--primitives-spacing-8);
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: var(--semantic-color-surface-hover);
   color: var(--semantic-color-text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.clearButton:hover {
+  color: var(--semantic-color-text-primary);
+  background: var(--semantic-color-surface-raised);
+}
+
+.clearIcon {
+  width: var(--primitives-spacing-4);
+  height: var(--primitives-spacing-4);
+  display: block;
 }
 
 .chainSlot {
@@ -16,9 +125,110 @@
 }
 
 .destError {
-  background: rgba(248, 113, 113, 0.08);
-  border: 1px solid rgba(248, 113, 113, 0.24);
-  border-radius: calc(var(--semantic-borderRadius-input) * 1px);
-  padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
   color: var(--semantic-color-status-error);
+}
+
+/* Reveal footer — appears once the address is valid. */
+.footer {
+  flex-shrink: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--primitives-spacing-5);
+  box-sizing: border-box;
+}
+
+.actionRowReveal {
+  opacity: 0;
+  animation: recipientActionEnter 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: opacity, transform;
+}
+
+@keyframes recipientActionEnter {
+  from {
+    opacity: 0;
+    transform: translate3d(0, var(--primitives-spacing-2), 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.privacyBadge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  min-width: 0;
+}
+
+.privacyIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--primitives-spacing-10);
+  height: var(--primitives-spacing-10);
+  color: var(--semantic-component-tag-label);
+}
+
+.brandBadge {
+  border-radius: calc(var(--semantic-borderRadius-button) * 1px);
+  background: linear-gradient(
+    to bottom,
+    var(--semantic-component-button-gradient-default-from),
+    var(--semantic-component-button-gradient-default-to)
+  );
+}
+
+.brandMark {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+  color: var(--semantic-component-tag-label);
+}
+
+.privacyIconPublic {
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: var(--semantic-color-text-primary);
+}
+
+.privacyIconSvg {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+}
+
+.privacyCopy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--primitives-spacing-1);
+  min-width: 0;
+  text-align: center;
+}
+
+.privacyTitle {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-semibold);
+  line-height: var(--primitives-lineHeight-tight);
+  color: var(--semantic-color-text-primary);
+}
+
+.privacySubtitle {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  line-height: var(--primitives-lineHeight-tight);
+  color: var(--semantic-color-text-secondary);
+}
+
+.continueButton {
+  width: 100%;
+  max-width: none;
 }

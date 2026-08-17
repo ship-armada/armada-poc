@@ -1,13 +1,17 @@
-// ABOUTME: Tests for ChainSelect — renders chain options, fires onChange with the parsed chainId, honors custom chains list.
+// ABOUTME: Tests for ChainSelect — styled popover trigger + listbox, fires onChange with the chainId, honors custom chains list.
 // ABOUTME: Default-chains path is exercised via the network.ts local fixture (Anvil hub + 2 clients).
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { ChainSelect } from './ChainSelect'
 
+const MAINNET = { chainId: 1, domain: 0, name: 'Mainnet', rpcUrls: ['x'] as const }
+const OPTIMISM = { chainId: 10, domain: 2, name: 'Optimism', rpcUrls: ['y'] as const }
+
 describe('<ChainSelect>', () => {
-  it('renders all configured chains by default', () => {
+  it('renders all configured chains by default once opened', () => {
     render(<ChainSelect value={31337} onChange={() => {}} label="From chain" />)
+    fireEvent.click(screen.getByLabelText('From chain'))
     // Local mode: hub 31337 + clientA 31338 + clientB 31339
     expect(screen.getByRole('option', { name: /Anvil Hub/ })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: /Anvil Client A/ })).toBeInTheDocument()
@@ -15,23 +19,31 @@ describe('<ChainSelect>', () => {
   })
 
   it('honors the chains prop for a restricted list', () => {
-    const chains = [
-      { chainId: 1, domain: 0, name: 'Mainnet', rpcUrls: ['x'] as const },
-    ]
-    render(<ChainSelect value={1} onChange={() => {}} chains={chains} />)
+    render(<ChainSelect value={1} onChange={() => {}} chains={[MAINNET, OPTIMISM]} label="From chain" />)
+    fireEvent.click(screen.getByLabelText('From chain'))
     expect(screen.getByRole('option', { name: 'Mainnet' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Optimism' })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /Anvil/ })).toBeNull()
   })
 
-  it('fires onChange with the numeric chainId', () => {
+  it('fires onChange with the numeric chainId when an option is picked', () => {
     const onChange = vi.fn()
     render(<ChainSelect value={31337} onChange={onChange} label="From chain" />)
-    fireEvent.change(screen.getByLabelText('From chain'), { target: { value: '31338' } })
+    fireEvent.click(screen.getByLabelText('From chain'))
+    fireEvent.click(screen.getByRole('option', { name: /Anvil Client A/ }))
     expect(onChange).toHaveBeenCalledWith(31338)
   })
 
-  it('respects disabled', () => {
+  it('collapses to a static, non-interactive trigger with a single chain', () => {
+    render(<ChainSelect value={1} onChange={() => {}} chains={[MAINNET]} label="From chain" />)
+    // Only one chain → nothing to pick → no trigger button, just the label shown statically.
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.getByLabelText('From chain')).toHaveTextContent('Mainnet')
+  })
+
+  it('respects disabled — no interactive trigger', () => {
     render(<ChainSelect value={31337} onChange={() => {}} label="From chain" disabled />)
-    expect(screen.getByLabelText('From chain')).toBeDisabled()
+    expect(screen.queryByRole('button')).toBeNull()
+    expect(screen.getByLabelText('From chain')).toBeInTheDocument()
   })
 })

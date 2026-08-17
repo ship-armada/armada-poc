@@ -14,6 +14,12 @@
   box-sizing: border-box;
 }
 
+/* Chain-less card (Send flow): the amount is the top element, so the top padding is enlarged
+   to match the mockup, where the chain row's absence is compensated with extra headroom. */
+.cardNoChain {
+  padding-top: calc(var(--primitives-spacing-12) + var(--primitives-spacing-3));
+}
+
 .topRow,
 .bottomRow {
   display: flex;
@@ -144,6 +150,18 @@
   display: inline-flex;
   align-items: center;
   gap: var(--primitives-spacing-1);
+}
+
+/* Available-balance text — full match to the mockup (mono, base size, regular weight, secondary
+   color); without the explicit size it would inherit the larger 15px body baseline. Shared by the
+   deposit + send amount cards. */
+.balanceText {
+  font-family: var(--primitives-fontFamily-mono), ui-monospace, monospace;
+  font-weight: var(--primitives-fontWeight-regular);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-secondary);
+  white-space: nowrap;
+  letter-spacing: 0;
 }
 
 /* Fee row (mockup style): its own inset "card" below the balance controls — a muted, rounded,

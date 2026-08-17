@@ -1,5 +1,5 @@
-// ABOUTME: Maps chain IDs from network config to @web3icons/react network icons (crowdfund DepositAmountCard parity).
-// ABOUTME: Unknown chains (e.g. local Anvil) return null — DepositAmountCard falls back to a letter avatar.
+// ABOUTME: Maps chain IDs from network config to @web3icons/react network icons.
+// ABOUTME: Unknown chains (e.g. local Anvil) return null — callers fall back to a letter avatar.
 
 import NetworkArbitrumSepolia from '@web3icons/react/icons/networks/NetworkArbitrumSepolia'
 import NetworkBaseSepolia from '@web3icons/react/icons/networks/NetworkBaseSepolia'

@@ -1,26 +1,32 @@
-// ABOUTME: Send review step — surfaces the resolved kind label (Private transfer / External wallet ± cross-chain) so the user understands what they're confirming.
-// ABOUTME: Renders the same hero-numeral + facts-grid layout as Shield/Unshield review for consistency across flows.
+// ABOUTME: Send/Withdraw review step — serif title, USDC coin + full-precision amount block, shared TransferReviewSummary table, Confirm/Back CTAs.
+// ABOUTME: Delegates the summary rows (network, private account, recipient, privacy, amount, fees, total) to TransferReviewSummary; keeps the sync-gate notice + submit disabling.
 
-import { FlowFooter } from '@/components/flow/FlowFooter'
-import { FeeSummary } from '@/components/ui'
-import { formatUsdcAmount } from '@/lib/format'
-import { getChainById } from '@/config/network'
-import { truncateAddress } from '@/lib/format'
+import TokenUSDC from '@web3icons/react/icons/tokens/TokenUSDC'
+import { Button } from '@/design'
+import { TransferReviewSummary } from './TransferReviewSummary'
+import { formatUsdcPlain } from '@/lib/format'
+import usdcAmount from '@/design/styles/usdcAmount.module.css'
 import type { SendFlowVariant } from './SendRecipientStep'
 import styles from './SendReviewStep.module.css'
 
+const TOKEN_BADGE_PX = 40
+/** @web3icons branded assets use an 18px circle in a 24px viewBox — scale up to fill the badge. */
+const TOKEN_ICON_SIZE = Math.round((TOKEN_BADGE_PX * 24) / 18)
+
 export interface SendReviewStepProps {
   variant: SendFlowVariant
-  /** True when the recipient is a shielded 0zk address (private transfer); false for public 0x. */
-  isPrivate: boolean
-  destChainId: number
   recipient: string
+  /** The user's own shielded (Armada) address — rendered as the summary's "From your private account" row. */
+  armadaAddress?: string
   amount: bigint
   /** Inclusive Fee total — broadcaster + protocol + CCTP. Tooltip breaks it down on the input card. */
   fee: bigint | null
   /** USDC deducted from the user's shielded balance — `amount + fee` across all three kinds. */
   totalDeducted: bigint
-  isXchain: boolean
+  /** Destination chain name — shown on the summary's Network row for public (0x) recipients. */
+  networkName?: string
+  /** Wallet provider name for a public recipient's brand glyph (only when it's the user's own wallet). */
+  recipientWalletProvider?: string
   submitBlockedReason?: string | null
   /** True while a submit is in flight — disables Confirm so a double-click can't create two txs. */
   isSubmitting?: boolean
@@ -28,81 +34,66 @@ export interface SendReviewStepProps {
   onConfirm: () => void
 }
 
-function truncateRecipient(recipient: string): string {
-  // 0zk shielded addresses are long alphanumeric strings; reuse truncateAddress's 6+4 shape so they
-  // visually match EVM addresses in the same UI surface.
-  if (recipient.startsWith('0zk') && recipient.length > 14) {
-    return `${recipient.slice(0, 7)}…${recipient.slice(-4)}`
-  }
-  return truncateAddress(recipient)
-}
-
 export function SendReviewStep({
   variant,
-  isPrivate,
-  destChainId,
   recipient,
+  armadaAddress,
   amount,
   fee,
   totalDeducted,
-  isXchain,
+  networkName,
+  recipientWalletProvider,
   submitBlockedReason,
   isSubmitting,
   onBack,
   onConfirm,
 }: SendReviewStepProps) {
-  const destChain = isPrivate ? null : getChainById(destChainId)
-  const modeLabel = isPrivate ? 'Private transfer' : 'External wallet'
-  const headline = variant === 'withdraw' ? 'Review your withdrawal' : 'Review send'
+  const title = variant === 'withdraw' ? 'Review your withdrawal' : 'Review transfer'
   const confirmLabel = variant === 'withdraw' ? 'Confirm withdrawal' : 'Confirm send'
 
   return (
     <div className={styles.root}>
-      <div className={styles.headline}>{headline}</div>
-      <div className={styles.amountBlock}>
-        <span className={styles.amount}>{formatUsdcAmount(amount)}</span>
-        <span className={styles.unit}>USDC</span>
+      <h1 className={styles.title}>{title}</h1>
+
+      <div className={styles.amountRow}>
+        <div className={styles.amountGroup}>
+          <span className={styles.tokenBadge} aria-hidden="true">
+            <TokenUSDC size={TOKEN_ICON_SIZE} variant="branded" className={styles.tokenBadgeIcon} />
+          </span>
+          <span className={[styles.amountValue, usdcAmount.font].join(' ')}>
+            {formatUsdcPlain(amount)}
+          </span>
+        </div>
       </div>
-      <dl className={styles.facts}>
-        <div>
-          <dt>Mode</dt>
-          <dd>
-            {modeLabel}
-            {isXchain ? <span className={styles.xchainTag}>cross-chain</span> : null}
-          </dd>
-        </div>
-        {destChain ? (
-          <div>
-            <dt>To chain</dt>
-            <dd>{destChain.name}</dd>
-          </div>
-        ) : null}
-        <div>
-          <dt>Recipient</dt>
-          <dd className={styles.recipient} title={recipient}>
-            {truncateRecipient(recipient)}
-          </dd>
-        </div>
-      </dl>
-      <FeeSummary
+
+      <TransferReviewSummary
+        recipient={recipient}
+        armadaAddress={armadaAddress}
+        amount={amount}
         fee={fee}
-        netAmount={totalDeducted}
-        netLabel="Total deducted from balance"
+        totalDeducted={totalDeducted}
+        variant={variant}
+        networkName={networkName}
+        recipientWalletProvider={recipientWalletProvider}
       />
+
       {submitBlockedReason ? (
         <div className={styles.syncNotice} role="status" aria-live="polite">
           {submitBlockedReason}
         </div>
       ) : null}
-      <FlowFooter
-        className={styles.footer}
-        primary={{
-          label: confirmLabel,
-          onClick: onConfirm,
-          disabled: Boolean(submitBlockedReason) || isSubmitting,
-        }}
-        secondary={{ label: 'Back', onClick: onBack }}
-      />
+
+      <div className={styles.buttonRow}>
+        <Button variant="secondary" size="lg" label="Back" showIcon={false} onClick={onBack} />
+        <Button
+          variant="primary"
+          size="lg"
+          label={confirmLabel}
+          showIcon={false}
+          onClick={onConfirm}
+          disabled={Boolean(submitBlockedReason) || isSubmitting}
+        />
+      </div>
     </div>
   )
 }

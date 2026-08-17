@@ -6,11 +6,13 @@ import { FeeSummary } from '@/components/ui'
 import { formatUsdcAmount } from '@/lib/format'
 import { getChainById } from '@/config/network'
 import { truncateAddress } from '@/lib/format'
-import type { SendTab } from './SendInputStep'
+import type { SendFlowVariant } from './SendRecipientStep'
 import styles from './SendReviewStep.module.css'
 
 export interface SendReviewStepProps {
-  tab: SendTab
+  variant: SendFlowVariant
+  /** True when the recipient is a shielded 0zk address (private transfer); false for public 0x. */
+  isPrivate: boolean
   destChainId: number
   recipient: string
   amount: bigint
@@ -36,7 +38,8 @@ function truncateRecipient(recipient: string): string {
 }
 
 export function SendReviewStep({
-  tab,
+  variant,
+  isPrivate,
   destChainId,
   recipient,
   amount,
@@ -48,12 +51,14 @@ export function SendReviewStep({
   onBack,
   onConfirm,
 }: SendReviewStepProps) {
-  const destChain = tab === 'external' ? getChainById(destChainId) : null
-  const modeLabel = tab === 'private' ? 'Private transfer' : 'External wallet'
+  const destChain = isPrivate ? null : getChainById(destChainId)
+  const modeLabel = isPrivate ? 'Private transfer' : 'External wallet'
+  const headline = variant === 'withdraw' ? 'Review your withdrawal' : 'Review send'
+  const confirmLabel = variant === 'withdraw' ? 'Confirm withdrawal' : 'Confirm send'
 
   return (
     <div className={styles.root}>
-      <div className={styles.headline}>Review send</div>
+      <div className={styles.headline}>{headline}</div>
       <div className={styles.amountBlock}>
         <span className={styles.amount}>{formatUsdcAmount(amount)}</span>
         <span className={styles.unit}>USDC</span>
@@ -92,7 +97,7 @@ export function SendReviewStep({
       <FlowFooter
         className={styles.footer}
         primary={{
-          label: 'Confirm send',
+          label: confirmLabel,
           onClick: onConfirm,
           disabled: Boolean(submitBlockedReason) || isSubmitting,
         }}

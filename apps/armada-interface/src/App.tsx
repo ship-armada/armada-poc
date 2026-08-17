@@ -7,7 +7,6 @@ import { useAtomValue, useSetAtom } from 'jotai'
 import { AppLayout } from '@/components/AppLayout'
 import { OnboardingFlowV2, UnlockFlow } from '@/components/onboarding'
 import { ShieldModal } from '@/components/shield'
-import { UnshieldModal } from '@/components/unshield'
 import { SendModal } from '@/components/payments'
 import { ReceiveDialog } from '@/components/receive'
 import { EarnModal } from '@/components/yield'
@@ -59,7 +58,7 @@ export function App() {
   useIncomingTransferDetector() // re-scan on balance events so received transfers surface live (Phase 9.4)
   useAutoLock()  // idle-timer-driven lock for the shielded wallet
   // Mirror wagmi's connection state into evmAddressAtom for atom-consumers (OnboardingFlow's
-  // SignEnrollment step, UnshieldModal's recipient pre-fill, useShieldedWallet.enroll). Mounted
+  // SignEnrollment step, SendModal's withdraw-variant recipient pre-fill, useShieldedWallet.enroll). Mounted
   // before the onboarding/unlock guard so the atom is correct even before the user reaches /app.
   useWallet()
   // Subscribe to SDK balance-update events + drive initial scan whenever the wallet unlocks;
@@ -222,7 +221,6 @@ export function App() {
       </AppLayout>
       {/* Feature modals — mounted at App level so opening one doesn't depend on the current route. */}
       <ShieldModal />
-      <UnshieldModal />
       <SendModal />
       <EarnModal />
       <ReceiveDialog />

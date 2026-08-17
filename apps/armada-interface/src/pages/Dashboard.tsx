@@ -97,7 +97,7 @@ export function Dashboard() {
           onDeposit={() => openActionModal('shield')}
           onRequest={() => setOpenModal('receive')}
           onEarn={() => openActionModal('yield-deposit')}
-          onWithdraw={() => openActionModal('unshield')}
+          onWithdraw={() => openActionModal('withdraw')}
           onVaultOpen={() => openActionModal('yield-deposit')}
         />
 

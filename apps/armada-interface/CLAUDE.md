@@ -37,7 +37,7 @@ src/
 │   └── tx/                  lifecycle model — types, lifecycles, reducer, storage, poller
 ├── state/                   Jotai atoms (tx, wallet, fees, visibility, ui)
 ├── hooks/                   per-concern hooks (useWallet, useShieldedWallet, useBalances, useYieldRate, useFees, useTx, useTxHistory, useTabVisible)
-├── components/              AppLayout, WalletConnector, plus subfolders for each feature (dashboard/, shield/, unshield/, yield/, payments/, tx/, settings/)
+├── components/              AppLayout, WalletConnector, plus subfolders for each feature (dashboard/, shield/, yield/, payments/, tx/, settings/) — payments/ is the shared Send/Withdraw flow
 └── pages/                   Dashboard, History, Settings, AddressBook
 ```
 

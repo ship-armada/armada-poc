@@ -58,7 +58,7 @@ export function ShieldModal() {
 
   // Review-step summary addresses: the connected EVM wallet (source) + the shielded destination.
   // Both are optional — the review rows render only when a value is present.
-  const { address: evmAddress } = useAccount()
+  const { address: evmAddress, connector } = useAccount()
   const shieldedWallet = useAtomValue(shieldedWalletAtom)
 
   // Form state.
@@ -382,6 +382,7 @@ export function ShieldModal() {
           fee={fee + protocolFee + cctpFee}
           netAmount={netAmount}
           walletAddress={evmAddress}
+          walletProvider={connector?.name}
           shieldedAddress={shieldedWallet.shieldedAddress}
           isSubmitting={isSubmitting}
           duplicateWarning={duplicateWarning}
@@ -390,7 +391,26 @@ export function ShieldModal() {
         />
       )}
       {step === 'progress' && <ProgressStep record={record} />}
-      {step === 'complete' && <ShieldCompleteStep netAmount={netAmount} onDone={close} />}
+      {step === 'complete' && (
+        <ShieldCompleteStep
+          fromChainId={fromChainId}
+          amount={amount}
+          // Same inclusive fee expression passed to ShieldReviewStep — broadcaster + on-chain
+          // protocol fee + CCTP — so the confirmation echoes the number that derived `netAmount`.
+          fee={fee + protocolFee + cctpFee}
+          netAmount={netAmount}
+          walletAddress={evmAddress}
+          walletProvider={connector?.name}
+          shieldedAddress={shieldedWallet.shieldedAddress}
+          confirmedAt={record?.updatedAt ?? Date.now()}
+          explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
+          onViewExplorer={() => {
+            const url = txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))
+            if (url) window.open(url, '_blank', 'noopener,noreferrer')
+          }}
+          onGoToDashboard={close}
+        />
+      )}
       {step === 'error' && (
         <ErrorStep
           error={record?.artifacts.error ?? null}

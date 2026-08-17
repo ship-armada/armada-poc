@@ -1,4 +1,4 @@
-/* ABOUTME: ShieldCompleteStep layout — centered serif title, coin+amount block, flush footer. */
+/* ABOUTME: ShieldCompleteStep layout — centered serif title, coin+amount block, shared summary table, two-button CTA row. */
 /* ABOUTME: Mirrors the deposit-confirmed reference so success states feel consistent across the app. */
 
 .root {
@@ -60,7 +60,14 @@
   color: var(--semantic-color-text-primary);
 }
 
-.footer {
-  align-self: stretch;
-  margin: var(--primitives-spacing-6) calc(var(--primitives-spacing-6) * -1) calc(var(--primitives-spacing-6) * -1);
+/* Two-button CTA row — deposit-confirmed mockup: equal-width View on explorer / Go to dashboard, no divider above. */
+.buttonRow {
+  display: flex;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+}
+
+.buttonRow > * {
+  flex: 1;
+  max-width: 211px;
 }

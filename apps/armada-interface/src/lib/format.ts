@@ -104,6 +104,23 @@ export function usdcInputErrorMessage(error: UsdcInputError | undefined): string
   }
 }
 
+const TRANSACTION_DATE_FORMAT = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+})
+
+const TRANSACTION_TIME_FORMAT = new Intl.DateTimeFormat('en-US', {
+  hour: 'numeric',
+  minute: '2-digit',
+})
+
+/** Single-line absolute date and time for transaction confirmations, e.g. "Jan 5, 2026 · 3:42 PM". */
+export function formatTransactionDateTime(ms: number): string {
+  const date = new Date(ms)
+  return `${TRANSACTION_DATE_FORMAT.format(date)} · ${TRANSACTION_TIME_FORMAT.format(date)}`
+}
+
 /** Truncate an Ethereum address to "0x1234...abcd" (mockup convention: 6 chars before, 4 after). */
 export function truncateAddress(address: string): string {
   if (address.length <= 10) return address

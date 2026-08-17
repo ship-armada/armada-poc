@@ -68,7 +68,9 @@ body {
   background-attachment: fixed;
   font-family: var(--primitives-fontFamily-ui);
   font-size: 15px;
-  line-height: 1.5;
+  /* Match the mockup's global line-height (140%) — was hardcoded 1.5, which slightly inflated
+     inherited line-boxes app-wide vs the design. */
+  line-height: var(--primitives-lineHeight-normal);
   color: var(--semantic-color-text-primary);
 }
 

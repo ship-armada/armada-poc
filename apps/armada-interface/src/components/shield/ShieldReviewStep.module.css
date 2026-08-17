@@ -1,5 +1,5 @@
-/* ABOUTME: ShieldReviewStep layout — serif title, coin+amount block, borderless deposit summary table, flush footer. */
-/* ABOUTME: Summary table mirrors the deposit-review reference (network / addresses / fees / total). */
+/* ABOUTME: ShieldReviewStep layout — serif title, coin+amount block, non-blocking duplicate caution, two-button CTA row. */
+/* ABOUTME: The deposit summary table itself lives in the shared DepositReviewSummary component. */
 
 .root {
   display: flex;
@@ -59,67 +59,6 @@
   color: var(--semantic-color-text-primary);
 }
 
-/* Borderless summary table — deposit-review reference. */
-.summary {
-  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.summaryBody {
-  padding: var(--primitives-spacing-5);
-  display: flex;
-  flex-direction: column;
-  gap: var(--primitives-spacing-4);
-  background: var(--semantic-color-surface-main);
-}
-
-.summaryRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: var(--primitives-spacing-4);
-  gap: var(--primitives-spacing-3);
-}
-
-.summaryTotalRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--primitives-spacing-3);
-  padding: var(--primitives-spacing-5);
-  background: var(--semantic-color-surface-default);
-}
-
-.summaryLabel {
-  composes: bodySm from '../../design/styles/typographyComposites.module.css';
-  color: var(--semantic-color-text-muted);
-  flex-shrink: 0;
-}
-
-.summaryValue {
-  composes: bodySmMedium from '../../design/styles/typographyComposites.module.css';
-  color: var(--semantic-color-text-primary);
-  text-align: right;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.summaryTotalLabel,
-.summaryTotalValue {
-  composes: bodySmSemibold from '../../design/styles/typographyComposites.module.css';
-  color: var(--semantic-color-brand-deep);
-}
-
-.summaryTotalValue {
-  text-align: right;
-}
-
 /* S-L7: non-blocking caution when an unresolved same-amount deposit may still be on-chain. */
 .caution {
   display: flex;
@@ -137,7 +76,14 @@
   margin-top: 2px;
 }
 
-.footer {
-  align-self: stretch;
-  margin: var(--primitives-spacing-4) calc(var(--primitives-spacing-6) * -1) calc(var(--primitives-spacing-6) * -1);
+/* Two-button CTA row — deposit-review mockup: equal-width Back / Confirm, no divider above. */
+.buttonRow {
+  display: flex;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+}
+
+.buttonRow > * {
+  flex: 1;
+  max-width: 211px;
 }

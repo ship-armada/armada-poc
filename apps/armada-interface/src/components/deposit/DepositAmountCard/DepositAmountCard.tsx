@@ -12,6 +12,10 @@ import type { DisplayFees } from '@/lib/fees/displayFees'
 import styles from './DepositAmountCard.module.css'
 
 const ICON_SIZE = 32
+// USDC coin beside the amount: rendered oversized inside a 40px clipped badge (matches the mockup —
+// the web3icons glyph carries padding, so scaling up + clipping makes it fill the circle).
+const AMOUNT_TOKEN_BADGE_PX = 40
+const AMOUNT_TOKEN_ICON_SIZE = Math.round((AMOUNT_TOKEN_BADGE_PX * 24) / 18)
 
 export interface DepositChainOption {
   chainId: number
@@ -166,16 +170,13 @@ export function DepositAmountCard({
           ) : null}
         </div>
 
-        <div className={styles.tokenGroup}>
-          <span className={styles.tokenIconSlot} aria-hidden>
-            <TokenUSDC size={ICON_SIZE} variant="branded" />
-          </span>
-          <span className={styles.tokenName}>{token}</span>
-        </div>
       </div>
 
       <label className={styles.amountWrapper} htmlFor={amountInputId}>
         <span className={styles.visuallyHidden}>{amountAriaLabel}</span>
+        <span className={styles.amountTokenIcon} aria-hidden>
+          <TokenUSDC size={AMOUNT_TOKEN_ICON_SIZE} variant="branded" />
+        </span>
         <span
           className={[styles.amountField, showActiveAmount && styles.amountFieldHasValue]
             .filter(Boolean)
@@ -242,21 +243,24 @@ export function DepositAmountCard({
             </button>
           ) : null}
         </div>
-        {displayFees ? (
-          <span className={styles.feeGroup}>
-            <span className={styles.feeText}>
-              FEE {formatUsdcPlain(displayFees.totalFee + (flowBreakdown?.broadcasterFee ?? 0n) + (flowBreakdown?.cctpFee ?? 0n))}{' '}
-              {token}
+        {/* Fee surfaces only once an amount is entered (mockup behavior). The info tooltip with the
+            full breakdown is kept even though the mockup has no tooltip. */}
+        {showActiveAmount && displayFees ? (
+          <div className={styles.feeRow}>
+            <span className={styles.feeLabel}>Fee</span>
+            <span className={styles.feeValueGroup}>
+              <span className={styles.feeValue}>
+                {formatUsdcPlain(displayFees.totalFee + (flowBreakdown?.broadcasterFee ?? 0n) + (flowBreakdown?.cctpFee ?? 0n))}{' '}
+                {token}
+              </span>
+              <FeeBreakdownTooltip
+                fees={displayFees}
+                isLoading={feeLoading}
+                flowBreakdown={flowBreakdown}
+              />
             </span>
-            <FeeBreakdownTooltip
-              fees={displayFees}
-              isLoading={feeLoading}
-              flowBreakdown={flowBreakdown}
-            />
-          </span>
-        ) : (
-          <span className={styles.feeText}>FEE — {token}</span>
-        )}
+          </div>
+        ) : null}
       </div>
     </div>
   )

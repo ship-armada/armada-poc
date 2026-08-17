@@ -1,11 +1,11 @@
-// ABOUTME: Shield review step — serif title, USDC coin + amount block, borderless deposit summary table, Confirm/Back CTAs.
-// ABOUTME: Summary rows (network, wallet/shielded addresses, fees, total) replace the prior FeeSummary; duplicate caution + FlowFooter behavior preserved.
+// ABOUTME: Shield review step — serif title, USDC coin + full-precision amount block, shared DepositReviewSummary table, Confirm/Back CTAs.
+// ABOUTME: Delegates the summary rows (network, wallet/shielded addresses, deposit amount, fees, total) to DepositReviewSummary; duplicate caution preserved.
 
 import { AlertTriangle } from 'lucide-react'
 import TokenUSDC from '@web3icons/react/icons/tokens/TokenUSDC'
-import { FlowFooter } from '@/components/flow/FlowFooter'
-import { formatUsdcAmount, truncateAddress } from '@/lib/format'
-import { getChainById } from '@/config/network'
+import { Button } from '@/design'
+import { DepositReviewSummary } from '@/components/deposit/DepositReviewSummary'
+import { formatUsdcPlain } from '@/lib/format'
 import usdcAmount from '@/design/styles/usdcAmount.module.css'
 import styles from './ShieldReviewStep.module.css'
 
@@ -20,7 +20,9 @@ export interface ShieldReviewStepProps {
   netAmount: bigint
   /** Connected EVM wallet address — rendered (truncated) as the "From your wallet" row when present. */
   walletAddress?: string
-  /** Shielded (Armada) destination address — rendered (truncated) as the "To Armada" row when present. */
+  /** Connected wallet provider name (wagmi connector) — drives the "From your wallet" brand glyph. */
+  walletProvider?: string
+  /** Shielded (Armada) destination address — rendered (truncated) as the "To your private account" row when present. */
   shieldedAddress?: string
   /** True while a submit is in flight — disables Confirm so a double-click can't create two txs. */
   isSubmitting?: boolean
@@ -36,17 +38,16 @@ export function ShieldReviewStep({
   fee,
   netAmount,
   walletAddress,
+  walletProvider,
   shieldedAddress,
   isSubmitting,
   duplicateWarning,
   onBack,
   onConfirm,
 }: ShieldReviewStepProps) {
-  const fromChain = getChainById(fromChainId)
-  const feeValue = fee ?? 0n
   return (
     <div className={styles.root}>
-      <h1 className={styles.title}>Review</h1>
+      <h1 className={styles.title}>Review your deposit</h1>
 
       <div className={styles.amountRow}>
         <div className={styles.amountGroup}>
@@ -54,48 +55,20 @@ export function ShieldReviewStep({
             <TokenUSDC size={TOKEN_ICON_SIZE} variant="branded" className={styles.tokenBadgeIcon} />
           </span>
           <span className={[styles.amountValue, usdcAmount.font].join(' ')}>
-            {formatUsdcAmount(amount)}
+            {formatUsdcPlain(amount)}
           </span>
         </div>
       </div>
 
-      <div className={styles.summary}>
-        <div className={styles.summaryBody}>
-          <div className={styles.summaryRow}>
-            <span className={styles.summaryLabel}>Network</span>
-            <span className={styles.summaryValue}>
-              {fromChain?.name ?? `Chain ${fromChainId}`}
-            </span>
-          </div>
-          {walletAddress ? (
-            <div className={styles.summaryRow}>
-              <span className={styles.summaryLabel}>From your wallet</span>
-              <span className={styles.summaryValue}>{truncateAddress(walletAddress)}</span>
-            </div>
-          ) : null}
-          {shieldedAddress ? (
-            <div className={styles.summaryRow}>
-              <span className={styles.summaryLabel}>To Armada</span>
-              <span className={styles.summaryValue}>{truncateAddress(shieldedAddress)}</span>
-            </div>
-          ) : null}
-          <div className={styles.summaryRow}>
-            <span className={styles.summaryLabel}>Fees</span>
-            <span className={[styles.summaryValue, usdcAmount.font].join(' ')}>
-              {fee === null ? '—' : `${formatUsdcAmount(feeValue)} USDC`}
-            </span>
-          </div>
-        </div>
-        {/* Fees are inclusive (fee-from-recipient): the wallet is debited `amount` and the shielded
-            pool receives `amount - fees`. Show that net figure — the honest "what lands in your
-            account" — as the emphasized row, not a misleading amount+fee total. */}
-        <div className={styles.summaryTotalRow}>
-          <span className={styles.summaryTotalLabel}>You'll deposit</span>
-          <span className={[styles.summaryTotalValue, usdcAmount.font].join(' ')}>
-            {formatUsdcAmount(netAmount)} USDC
-          </span>
-        </div>
-      </div>
+      <DepositReviewSummary
+        fromChainId={fromChainId}
+        amount={amount}
+        fee={fee}
+        netAmount={netAmount}
+        walletAddress={walletAddress}
+        walletProvider={walletProvider}
+        shieldedAddress={shieldedAddress}
+      />
 
       {duplicateWarning ? (
         <div className={styles.caution} role="alert">
@@ -107,11 +80,17 @@ export function ShieldReviewStep({
         </div>
       ) : null}
 
-      <FlowFooter
-        className={styles.footer}
-        primary={{ label: 'Confirm deposit', onClick: onConfirm, disabled: isSubmitting }}
-        secondary={{ label: 'Back', onClick: onBack }}
-      />
+      <div className={styles.buttonRow}>
+        <Button variant="secondary" size="lg" label="Back" showIcon={false} onClick={onBack} />
+        <Button
+          variant="primary"
+          size="lg"
+          label="Confirm deposit"
+          showIcon={false}
+          onClick={onConfirm}
+          disabled={isSubmitting}
+        />
+      </div>
     </div>
   )
 }

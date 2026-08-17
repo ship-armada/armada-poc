@@ -3,6 +3,7 @@
 
 import type { ReactNode } from 'react'
 import { FlowModalOverlay, ModalShell } from '@/design'
+import styles from './FlowShell.module.css'
 
 /** Default 3-step deposit/action progress labels (Amount → Review → Confirm). */
 const DEFAULT_STEPS = ['Amount', 'Review', 'Confirm']
@@ -38,7 +39,7 @@ export function FlowShell({
         flowLabel={flowLabel}
         onClose={onClose}
       >
-        {children}
+        <div className={styles.stepColumn}>{children}</div>
       </ModalShell>
     </FlowModalOverlay>
   )

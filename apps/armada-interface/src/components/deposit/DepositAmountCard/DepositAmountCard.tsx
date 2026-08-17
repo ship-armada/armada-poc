@@ -12,6 +12,10 @@ import type { DisplayFees } from '@/lib/fees/displayFees'
 import styles from './DepositAmountCard.module.css'
 
 const ICON_SIZE = 32
+// USDC coin beside the amount: rendered oversized inside a 40px clipped badge (matches the mockup —
+// the web3icons glyph carries padding, so scaling up + clipping makes it fill the circle).
+const AMOUNT_TOKEN_BADGE_PX = 40
+const AMOUNT_TOKEN_ICON_SIZE = Math.round((AMOUNT_TOKEN_BADGE_PX * 24) / 18)
 
 export interface DepositChainOption {
   chainId: number
@@ -39,6 +43,12 @@ export interface DepositAmountCardProps {
    */
   flowBreakdown?: FlowFeeBreakdown
   onMax?: () => void
+  /**
+   * Raw 6-decimal cap the amount input accepts. When provided, the balance row renders
+   * 25% / 50% / 75% / Max percentage pills (each sets the amount to that fraction of `maxInput`);
+   * when omitted the card falls back to the single `Max` button (driven by `onMax`).
+   */
+  maxInput?: bigint
   error?: string
   /** Accessible name for the amount field (e.g. "Deposit amount", "Withdrawal amount"). */
   amountAriaLabel?: string
@@ -73,6 +83,7 @@ export function DepositAmountCard({
   feeLoading = false,
   flowBreakdown,
   onMax,
+  maxInput,
   error,
   amountAriaLabel = 'Amount',
 }: DepositAmountCardProps) {
@@ -103,6 +114,14 @@ export function DepositAmountCard({
   function handleAmountInput(raw: string) {
     const next = sanitizeAmountInput(raw)
     onAmountChange(hasActiveAmount(next) ? next : '')
+  }
+
+  // Percentage pills set the amount to a fraction of the raw input cap. Integer bigint math keeps
+  // full 6-decimal precision (no float rounding); Max reuses the caller's `onMax` when supplied so
+  // fee-on-top paths keep their exact cap, else it falls back to the full `maxInput`.
+  function applyPercent(percent: bigint) {
+    if (maxInput === undefined) return
+    onAmountChange(formatUsdcPlain((maxInput * percent) / 100n))
   }
 
   const showActiveAmount = hasActiveAmount(amount)
@@ -151,16 +170,13 @@ export function DepositAmountCard({
           ) : null}
         </div>
 
-        <div className={styles.tokenGroup}>
-          <span className={styles.tokenIconSlot} aria-hidden>
-            <TokenUSDC size={ICON_SIZE} variant="branded" />
-          </span>
-          <span className={styles.tokenName}>{token}</span>
-        </div>
       </div>
 
       <label className={styles.amountWrapper} htmlFor={amountInputId}>
         <span className={styles.visuallyHidden}>{amountAriaLabel}</span>
+        <span className={styles.amountTokenIcon} aria-hidden>
+          <TokenUSDC size={AMOUNT_TOKEN_ICON_SIZE} variant="branded" />
+        </span>
         <span
           className={[styles.amountField, showActiveAmount && styles.amountFieldHasValue]
             .filter(Boolean)
@@ -194,33 +210,57 @@ export function DepositAmountCard({
       ) : null}
 
       <div className={styles.bottomRow}>
-        <div className={styles.balanceGroup}>
-          <WalletIcon className={styles.walletIcon} aria-hidden />
-          <span className={styles.balanceText}>
-            {balance}
-            {pendingBalance ? ` · ${pendingBalance} pending` : ''}
-          </span>
-          {onMax ? (
+        <div className={styles.balanceControls}>
+          <div className={styles.balanceGroup}>
+            <WalletIcon className={styles.walletIcon} aria-hidden />
+            <span className={styles.balanceText}>
+              {balance}
+              {pendingBalance ? ` · ${pendingBalance} pending` : ''}
+            </span>
+          </div>
+          {maxInput !== undefined ? (
+            <div className={styles.pctPills}>
+              <button type="button" className={styles.pctPill} onClick={() => applyPercent(25n)}>
+                25%
+              </button>
+              <button type="button" className={styles.pctPill} onClick={() => applyPercent(50n)}>
+                50%
+              </button>
+              <button type="button" className={styles.pctPill} onClick={() => applyPercent(75n)}>
+                75%
+              </button>
+              <button
+                type="button"
+                className={styles.pctPill}
+                onClick={onMax ?? (() => applyPercent(100n))}
+              >
+                Max
+              </button>
+            </div>
+          ) : onMax ? (
             <button type="button" className={styles.maxBtn} onClick={onMax}>
               Max
             </button>
           ) : null}
         </div>
-        {displayFees ? (
-          <span className={styles.feeGroup}>
-            <span className={styles.feeText}>
-              FEE {formatUsdcPlain(displayFees.totalFee + (flowBreakdown?.broadcasterFee ?? 0n) + (flowBreakdown?.cctpFee ?? 0n))}{' '}
-              {token}
+        {/* Fee surfaces only once an amount is entered (mockup behavior). The info tooltip with the
+            full breakdown is kept even though the mockup has no tooltip. */}
+        {showActiveAmount && displayFees ? (
+          <div className={styles.feeRow}>
+            <span className={styles.feeLabel}>Fee</span>
+            <span className={styles.feeValueGroup}>
+              <span className={styles.feeValue}>
+                {formatUsdcPlain(displayFees.totalFee + (flowBreakdown?.broadcasterFee ?? 0n) + (flowBreakdown?.cctpFee ?? 0n))}{' '}
+                {token}
+              </span>
+              <FeeBreakdownTooltip
+                fees={displayFees}
+                isLoading={feeLoading}
+                flowBreakdown={flowBreakdown}
+              />
             </span>
-            <FeeBreakdownTooltip
-              fees={displayFees}
-              isLoading={feeLoading}
-              flowBreakdown={flowBreakdown}
-            />
-          </span>
-        ) : (
-          <span className={styles.feeText}>FEE — {token}</span>
-        )}
+          </div>
+        ) : null}
       </div>
     </div>
   )

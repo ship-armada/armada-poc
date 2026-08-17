@@ -1,10 +1,12 @@
-// ABOUTME: ShieldModal — orchestrator for the shield (deposit) action flow. Owns step + form state; renders DepositOverlayShell with InputStep/ReviewStep/ProgressStep/CompleteStep/ErrorStep.
+// ABOUTME: ShieldModal — orchestrator for the shield (deposit) action flow. Owns step + form state; renders FlowShell with InputStep/ReviewStep/ProgressStep/CompleteStep/ErrorStep.
 // ABOUTME: Dispatches between same-chain shield (hub source) and cross-chain shield-xchain (client source) based on fromChainId; B3 routes hub shield through GaslessShieldWrapper when available.
 
 import { useEffect, useRef, useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
+import { useAccount } from 'wagmi'
 import { useQuery } from '@tanstack/react-query'
 import { openModalAtom } from '@/state/ui'
+import { shieldedWalletAtom } from '@/state/wallet'
 import { preferencesAtom } from '@/state/preferences'
 import { useTx } from '@/hooks/useTx'
 import { useFees } from '@/hooks/useFees'
@@ -25,7 +27,7 @@ import {
   type FlowStep,
   type FlowVisibleStep,
 } from '@/components/flow'
-import { DepositOverlayShell } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
+import { FlowShell } from '@/components/flow/FlowShell'
 import { RelayerStatusBanner } from '@/components/RelayerStatusBanner'
 import { ShieldInputStepContent, ShieldInputStepFooter } from './ShieldInputStep'
 import { ShieldReviewStep } from './ShieldReviewStep'
@@ -53,6 +55,11 @@ export function ShieldModal() {
   const [openModal, setOpenModal] = useAtom(openModalAtom)
   const isOpen = openModal === 'shield'
   const prefs = useAtomValue(preferencesAtom)
+
+  // Review-step summary addresses: the connected EVM wallet (source) + the shielded destination.
+  // Both are optional — the review rows render only when a value is present.
+  const { address: evmAddress, connector } = useAccount()
+  const shieldedWallet = useAtomValue(shieldedWalletAtom)
 
   // Form state.
   const hubChainId = getNetworkConfig().hub.chainId
@@ -324,7 +331,7 @@ export function ShieldModal() {
 
   if (!isOpen) return null
 
-  // DepositOverlayShell renders a 3-segment indicator (Amount/Review/Confirm) — `progress`,
+  // FlowShell's ModalShell renders a 3-segment Steps indicator (Amount/Review/Confirm) — `progress`,
   // `complete`, and `error` all map to segment 3. `overlayIndicatorStatus` flips the bar green
   // on `complete` and red on `error`. Lavender otherwise. errorAtStep is no longer surfaced
   // through the shell (the legacy 4-segment bar used it); instead the ErrorStep itself owns
@@ -333,10 +340,9 @@ export function ShieldModal() {
   const indicatorStatus = overlayIndicatorStatus(step)
 
   return (
-    <DepositOverlayShell
+    <FlowShell
       open={isOpen}
       onClose={close}
-      dismissible={true}
       flowLabel="Deposit"
       currentStep={indicatorStep}
       status={indicatorStatus}
@@ -375,6 +381,9 @@ export function ShieldModal() {
           // the amount card already breaks it out into individual rows.
           fee={fee + protocolFee + cctpFee}
           netAmount={netAmount}
+          walletAddress={evmAddress}
+          walletProvider={connector?.name}
+          shieldedAddress={shieldedWallet.shieldedAddress}
           isSubmitting={isSubmitting}
           duplicateWarning={duplicateWarning}
           onBack={() => setStep('input')}
@@ -382,7 +391,26 @@ export function ShieldModal() {
         />
       )}
       {step === 'progress' && <ProgressStep record={record} />}
-      {step === 'complete' && <ShieldCompleteStep netAmount={netAmount} onDone={close} />}
+      {step === 'complete' && (
+        <ShieldCompleteStep
+          fromChainId={fromChainId}
+          amount={amount}
+          // Same inclusive fee expression passed to ShieldReviewStep — broadcaster + on-chain
+          // protocol fee + CCTP — so the confirmation echoes the number that derived `netAmount`.
+          fee={fee + protocolFee + cctpFee}
+          netAmount={netAmount}
+          walletAddress={evmAddress}
+          walletProvider={connector?.name}
+          shieldedAddress={shieldedWallet.shieldedAddress}
+          confirmedAt={record?.updatedAt ?? Date.now()}
+          explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
+          onViewExplorer={() => {
+            const url = txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))
+            if (url) window.open(url, '_blank', 'noopener,noreferrer')
+          }}
+          onGoToDashboard={close}
+        />
+      )}
       {step === 'error' && (
         <ErrorStep
           error={record?.artifacts.error ?? null}
@@ -423,6 +451,6 @@ export function ShieldModal() {
         />
       )}
       <RelayerStatusBanner isOpen={isOpen} />
-    </DepositOverlayShell>
+    </FlowShell>
   )
 }

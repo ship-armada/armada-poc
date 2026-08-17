@@ -1,61 +1,61 @@
-/* ABOUTME: ShieldReviewStep layout — centered big amount, From facts row, fee summary, footer. */
-/* ABOUTME: Matches the visual rhythm of the input step so the user's mental anchor (the big number) stays stable. */
+/* ABOUTME: ShieldReviewStep layout — serif title, coin+amount block, non-blocking duplicate caution, two-button CTA row. */
+/* ABOUTME: The deposit summary table itself lives in the shared DepositReviewSummary component. */
 
 .root {
   display: flex;
   flex-direction: column;
-  gap: var(--primitives-spacing-4);
+  gap: var(--primitives-spacing-8);
 }
 
-.headline {
-  color: var(--semantic-color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: var(--primitives-letterSpacing-wider);
-  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+.title {
+  composes: displayLg from '../../design/styles/displayLgTitle.module.css';
+  margin: 0;
+  width: 100%;
+  color: var(--semantic-color-text-primary);
   text-align: center;
 }
 
-.amountBlock {
+.amountRow {
   display: flex;
-  align-items: baseline;
   justify-content: center;
-  gap: var(--primitives-spacing-3);
+  align-items: center;
+  width: 100%;
 }
 
-.amount {
-  color: var(--semantic-color-text-primary);
-  font-family: "Charis SIL", serif;
-  font-size: calc(var(--primitives-fontSize-5xl) * 1px);
-  line-height: var(--primitives-lineHeight-tight);
-  font-weight: var(--primitives-fontWeight-regular);
-  font-variant-numeric: tabular-nums;
-}
-
-.unit {
-  color: var(--semantic-color-text-muted);
-  font-size: calc(var(--primitives-fontSize-lg) * 1px);
-}
-
-.facts {
-  display: flex;
-  flex-direction: column;
+.amountGroup {
+  display: inline-flex;
+  align-items: center;
   gap: var(--primitives-spacing-2);
-  margin: 0;
+  height: var(--primitives-spacing-10);
+  flex-shrink: 0;
 }
 
-.facts > div {
+.tokenBadge {
+  width: var(--primitives-spacing-10);
+  height: var(--primitives-spacing-10);
+  flex-shrink: 0;
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  overflow: hidden;
   display: flex;
-  justify-content: space-between;
-  gap: var(--primitives-spacing-3);
-  padding: var(--primitives-spacing-2) 0;
-  border-bottom: 1px solid var(--semantic-color-border-default);
+  align-items: center;
+  justify-content: center;
 }
 
-.facts dt {
-  color: var(--semantic-color-text-muted);
+.tokenBadgeIcon {
+  flex-shrink: 0;
+  display: block;
 }
 
-.facts dd {
+.tokenBadgeIcon :global(svg) {
+  display: block;
+}
+
+.amountValue {
+  display: block;
+  font-weight: var(--primitives-fontWeight-medium);
+  font-size: var(--primitives-spacing-10);
+  line-height: var(--primitives-spacing-10);
+  height: var(--primitives-spacing-10);
   color: var(--semantic-color-text-primary);
 }
 
@@ -76,7 +76,14 @@
   margin-top: 2px;
 }
 
-.footer {
-  align-self: stretch;
-  margin: var(--primitives-spacing-4) calc(var(--primitives-spacing-6) * -1) calc(var(--primitives-spacing-6) * -1);
+/* Two-button CTA row — deposit-review mockup: equal-width Back / Confirm, no divider above. */
+.buttonRow {
+  display: flex;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+}
+
+.buttonRow > * {
+  flex: 1;
+  max-width: 211px;
 }

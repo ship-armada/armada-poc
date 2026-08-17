@@ -7,8 +7,8 @@
   gap: var(--primitives-spacing-8);
   width: 100%;
   padding: var(--primitives-spacing-5);
-  background: var(--semantic-color-surface-default);
-  border-radius: calc(var(--semantic-borderRadius-card) * 1px);
+  background: var(--semantic-color-surface-main);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
   backdrop-filter: blur(15px);
   -webkit-backdrop-filter: blur(15px);
   box-sizing: border-box;
@@ -17,8 +17,9 @@
 .topRow,
 .bottomRow {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--primitives-spacing-4);
 }
 
 .chainRoot {
@@ -61,6 +62,52 @@
   gap: var(--primitives-spacing-2);
 }
 
+.balanceControls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  min-width: 0;
+}
+
+.pctPills {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-1);
+  flex-shrink: 0;
+}
+
+.pctPill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--primitives-spacing-5);
+  padding: 0 var(--primitives-spacing-2);
+  border: none;
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: var(--semantic-color-surface-raised);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-weight: var(--primitives-fontWeight-medium);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-primary);
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.pctPill:hover {
+  background: var(--semantic-color-surface-hover);
+}
+
+.pctPill:active {
+  transform: translateY(1px);
+}
+
+.pctPill:focus-visible {
+  outline: 2px solid var(--semantic-color-border-focus);
+  outline-offset: 1px;
+}
+
 .chainIconSlot,
 .tokenIconSlot {
   width: var(--primitives-spacing-8);
@@ -97,6 +144,40 @@
   display: inline-flex;
   align-items: center;
   gap: var(--primitives-spacing-1);
+}
+
+/* Fee row (mockup style): its own inset "card" below the balance controls — a muted, rounded,
+   fixed-height pill (the translucent fill stacks on the translucent card so it reads as inset).
+   "Fee" label left, mono value right. */
+.feeRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: calc(var(--primitives-spacing-10) - var(--primitives-spacing-1));
+  padding-inline: var(--primitives-spacing-3);
+  border-radius: calc(var(--primitives-borderRadius-sm) * 1px + 1px);
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
+}
+
+.feeLabel {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-weight: var(--primitives-fontWeight-regular);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-secondary);
+}
+
+.feeValueGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-1);
+}
+
+.feeValue {
+  font-family: var(--primitives-fontFamily-mono), ui-monospace, monospace;
+  font-weight: var(--primitives-fontWeight-medium);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-primary);
 }
 
 .feeText,
@@ -155,9 +236,33 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: var(--primitives-spacing-3);
   width: 100%;
   min-height: calc(var(--primitives-fontSize-4xl) * 1.2 * 1px);
   cursor: text;
+}
+
+/* USDC coin sits directly beside the amount (mockup places the token glyph next to the number,
+   not as a separate top-right label). */
+.amountTokenIcon {
+  width: var(--primitives-spacing-10);
+  height: var(--primitives-spacing-10);
+  flex-shrink: 0;
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The web3icons `size` prop doesn't reliably drive the rendered svg in this app (see .tokenIconSlot),
+   so size the coin via CSS: render it oversized (24/18 of the 40px badge) and let the badge's
+   overflow:hidden clip the glyph's built-in padding so the coin fills the circle — matches the mockup. */
+.amountTokenIcon :global(svg) {
+  width: calc(var(--primitives-spacing-10) * 24 / 18);
+  height: calc(var(--primitives-spacing-10) * 24 / 18);
+  display: block;
+  flex-shrink: 0;
 }
 
 .amountField {
@@ -168,9 +273,9 @@
 
 .amountDisplay,
 .amountInput {
-  font-family: var(--primitives-fontFamily-ui), sans-serif;
-  font-size: calc(var(--primitives-fontSize-4xl) * 1px);
-  font-weight: var(--primitives-fontWeight-regular);
+  font-family: var(--primitives-fontFamily-mono), ui-monospace, monospace;
+  font-size: var(--primitives-spacing-10);
+  font-weight: var(--primitives-fontWeight-medium);
   line-height: var(--primitives-lineHeight-snug);
   font-variant-numeric: tabular-nums;
 }
@@ -184,7 +289,7 @@
 }
 
 .amountDisplayActive {
-  color: var(--semantic-color-brand-lavender);
+  color: var(--semantic-color-text-primary);
 }
 
 .amountInput {

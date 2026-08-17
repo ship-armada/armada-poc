@@ -116,9 +116,10 @@
 .primary:disabled { background: var(--semantic-component-button-primary-bg-disabled); color: var(--semantic-component-button-primary-text-disabled); }
 
 /* Secondary */
-.secondary { background: transparent; color: var(--semantic-component-button-secondary-text); border-color: var(--semantic-component-button-secondary-border); }
-.secondary:hover:not(:disabled) { background: var(--semantic-component-button-secondary-bg-hover); border-color: var(--semantic-component-button-secondary-border-hover); }
+.secondary { background: var(--semantic-component-button-secondary-bg); color: var(--semantic-component-button-secondary-text); border-color: transparent; }
+.secondary:hover:not(:disabled) { background: var(--semantic-component-button-secondary-bg-hover); border-color: transparent; }
 .secondary:active:not(:disabled) { background: var(--semantic-component-button-secondary-bg-active); }
+:global([data-theme='light']) .secondary:active:not(:disabled) { background: var(--semantic-color-surface-hover); }
 .secondary:disabled { color: var(--semantic-component-button-secondary-text-disabled); }
 
 /* Ghost — text matches secondary (no border) */

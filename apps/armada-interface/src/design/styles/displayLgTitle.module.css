@@ -1,0 +1,11 @@
+/* ABOUTME: display-lg composite — Charis SIL 32px modal/flow headlines via composes. */
+/* ABOUTME: Ported verbatim from the armada-app design mockup. */
+
+/* display-lg composite — Charis SIL 32px modal headlines */
+.displayLg {
+  font-family: var(--semantic-typography-display-lg-font-family), serif;
+  font-weight: var(--semantic-typography-display-lg-font-weight);
+  font-size: var(--semantic-typography-display-lg-font-size);
+  line-height: var(--semantic-typography-display-lg-line-height);
+  letter-spacing: var(--semantic-typography-display-lg-letter-spacing);
+}

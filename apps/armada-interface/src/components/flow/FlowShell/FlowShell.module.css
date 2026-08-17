@@ -1,0 +1,11 @@
+/* ABOUTME: FlowShell layout — constrains step content to a centered column (matches the mockup's ~434px step width). */
+/* ABOUTME: ModalShell's content is full-width; the mockup relies on each step owning a column, so we center one here. */
+
+.stepColumn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-8);
+  width: 100%;
+  max-width: 27.25rem; /* ~436px — the mockup's step column width */
+  margin-inline: auto;
+}

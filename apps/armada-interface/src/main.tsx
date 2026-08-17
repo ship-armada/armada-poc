@@ -11,6 +11,7 @@ import { Toaster } from 'sonner'
 
 import { wagmiConfig } from '@/config/wagmi'
 import { installBisectingGetLogs } from '@/lib/rpc-bisecting'
+import { getSavedTheme, setTheme } from '@/design/utils/theme'
 import { AppErrorBoundary } from '@/components/AppErrorBoundary'
 import { initSentry } from '@/lib/sentry'
 import { trackError } from '@/lib/telemetry'
@@ -28,6 +29,12 @@ initSentry()
 // SDK's 499-block scan chunks. Idempotent + prototype-level, so all ethers
 // providers in the process (including the SDK's internal PollingJsonRpcProvider) pick it up.
 installBisectingGetLogs()
+
+// Apply the persisted theme, defaulting to light to match the design mockup. Runs before render
+// so the WalletPillMenu dark/light toggle survives reloads. index.html sets data-theme="light"
+// pre-paint to avoid a flash; this reconciles it with any saved choice.
+setTheme(getSavedTheme() ?? 'light')
+
 import { Dashboard } from '@/pages/Dashboard'
 import { History } from '@/pages/History'
 import { Settings } from '@/pages/Settings'

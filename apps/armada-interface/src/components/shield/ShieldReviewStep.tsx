@@ -1,18 +1,29 @@
-// ABOUTME: Shield review step — read-only echo of the deposit summary with Confirm + Back CTAs.
-// ABOUTME: Renders the same big Charis-SIL numeral as the input step so the user sees their amount in the same visual context.
+// ABOUTME: Shield review step — serif title, USDC coin + full-precision amount block, shared DepositReviewSummary table, Confirm/Back CTAs.
+// ABOUTME: Delegates the summary rows (network, wallet/shielded addresses, deposit amount, fees, total) to DepositReviewSummary; duplicate caution preserved.
 
 import { AlertTriangle } from 'lucide-react'
-import { FlowFooter } from '@/components/flow/FlowFooter'
-import { FeeSummary } from '@/components/ui'
-import { formatUsdcAmount } from '@/lib/format'
-import { getChainById } from '@/config/network'
+import TokenUSDC from '@web3icons/react/icons/tokens/TokenUSDC'
+import { Button } from '@/design'
+import { DepositReviewSummary } from '@/components/deposit/DepositReviewSummary'
+import { formatUsdcPlain } from '@/lib/format'
+import usdcAmount from '@/design/styles/usdcAmount.module.css'
 import styles from './ShieldReviewStep.module.css'
+
+const TOKEN_BADGE_PX = 40
+/** @web3icons branded assets use an 18px circle in a 24px viewBox — scale up to fill the badge. */
+const TOKEN_ICON_SIZE = Math.round((TOKEN_BADGE_PX * 24) / 18)
 
 export interface ShieldReviewStepProps {
   fromChainId: number
   amount: bigint
   fee: bigint | null
   netAmount: bigint
+  /** Connected EVM wallet address — rendered (truncated) as the "From your wallet" row when present. */
+  walletAddress?: string
+  /** Connected wallet provider name (wagmi connector) — drives the "From your wallet" brand glyph. */
+  walletProvider?: string
+  /** Shielded (Armada) destination address — rendered (truncated) as the "To your private account" row when present. */
+  shieldedAddress?: string
   /** True while a submit is in flight — disables Confirm so a double-click can't create two txs. */
   isSubmitting?: boolean
   /** S-L7: an unresolved same-amount deposit may still be on-chain — surface a non-blocking caution. */
@@ -26,26 +37,39 @@ export function ShieldReviewStep({
   amount,
   fee,
   netAmount,
+  walletAddress,
+  walletProvider,
+  shieldedAddress,
   isSubmitting,
   duplicateWarning,
   onBack,
   onConfirm,
 }: ShieldReviewStepProps) {
-  const fromChain = getChainById(fromChainId)
   return (
     <div className={styles.root}>
-      <div className={styles.headline}>Review your deposit</div>
-      <div className={styles.amountBlock}>
-        <span className={styles.amount}>{formatUsdcAmount(amount)}</span>
-        <span className={styles.unit}>USDC</span>
-      </div>
-      <dl className={styles.facts}>
-        <div>
-          <dt>From</dt>
-          <dd>{fromChain?.name ?? `Chain ${fromChainId}`}</dd>
+      <h1 className={styles.title}>Review your deposit</h1>
+
+      <div className={styles.amountRow}>
+        <div className={styles.amountGroup}>
+          <span className={styles.tokenBadge} aria-hidden="true">
+            <TokenUSDC size={TOKEN_ICON_SIZE} variant="branded" className={styles.tokenBadgeIcon} />
+          </span>
+          <span className={[styles.amountValue, usdcAmount.font].join(' ')}>
+            {formatUsdcPlain(amount)}
+          </span>
         </div>
-      </dl>
-      <FeeSummary fee={fee} netAmount={netAmount} netLabel="You'll deposit" />
+      </div>
+
+      <DepositReviewSummary
+        fromChainId={fromChainId}
+        amount={amount}
+        fee={fee}
+        netAmount={netAmount}
+        walletAddress={walletAddress}
+        walletProvider={walletProvider}
+        shieldedAddress={shieldedAddress}
+      />
+
       {duplicateWarning ? (
         <div className={styles.caution} role="alert">
           <AlertTriangle size={16} className={styles.cautionIcon} aria-hidden="true" />
@@ -55,11 +79,18 @@ export function ShieldReviewStep({
           </span>
         </div>
       ) : null}
-      <FlowFooter
-        className={styles.footer}
-        primary={{ label: 'Confirm deposit', onClick: onConfirm, disabled: isSubmitting }}
-        secondary={{ label: 'Back', onClick: onBack }}
-      />
+
+      <div className={styles.buttonRow}>
+        <Button variant="secondary" size="lg" label="Back" showIcon={false} onClick={onBack} />
+        <Button
+          variant="primary"
+          size="lg"
+          label="Confirm deposit"
+          showIcon={false}
+          onClick={onConfirm}
+          disabled={isSubmitting}
+        />
+      </div>
     </div>
   )
 }

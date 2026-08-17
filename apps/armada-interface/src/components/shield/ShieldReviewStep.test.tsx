@@ -23,9 +23,9 @@ function setup() {
 describe('<ShieldReviewStep>', () => {
   it('renders the amount and chain name', () => {
     setup()
-    // Amount appears in the hero numeral AND in the FeeSummary's net-amount row (fee=null →
-    // netAmount=amount in this test). Use getAllByText since both spots match.
-    expect(screen.getAllByText('100.50').length).toBeGreaterThanOrEqual(1)
+    // Amount renders full-precision in the coin+amount block ("100.5") and 2dp in the summary
+    // "Deposit amount" row ("100.50 USDC"); a regex resolves either. Chain name is the Network row.
+    expect(screen.getAllByText(/100\.5/).length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText(/Anvil Hub/)).toBeInTheDocument()
   })
 

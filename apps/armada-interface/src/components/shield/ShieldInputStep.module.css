@@ -1,10 +1,20 @@
 .contentZone {
   display: flex;
   flex-direction: column;
-  gap: var(--primitives-spacing-6);
+  gap: var(--primitives-spacing-8);
   width: 100%;
 }
 
+/* Serif display title for the shield amount step (matches the deposit-flow mockup). */
+.title {
+  composes: displayLg from '../../design/styles/displayLgTitle.module.css';
+  margin: 0;
+  width: 100%;
+  color: var(--semantic-color-text-primary);
+  text-align: center;
+}
+
+/* Sans question label — reused by the Send / Withdraw / Earn amount steps via shieldStyles.question. */
 .question {
   font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-weight: var(--primitives-fontWeight-medium);

@@ -1,0 +1,66 @@
+/* ABOUTME: Styles for FlowModalOverlay — fixed blurred backdrop, dialog surface, and enter/exit fade keyframes.
+   ABOUTME: Ported from the armada-app design mockup. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  overflow: auto;
+}
+
+.overlay::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--primitives-color-amber-300) 30%, transparent);
+  backdrop-filter: blur(100px);
+  -webkit-backdrop-filter: blur(100px);
+  opacity: 1;
+  animation: flowModalOverlayEnter 240ms ease-out both;
+}
+
+.overlayExiting::before {
+  animation: flowModalOverlayFadeOut var(--modal-overlay-exit-ms, 180ms) ease-out
+    var(--modal-overlay-exit-delay, 440ms) forwards;
+}
+
+.dialog {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-height: 100dvh;
+  box-sizing: border-box;
+}
+
+@keyframes flowModalOverlayEnter {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes flowModalOverlayFadeOut {
+  from {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overlay::before {
+    animation: none;
+    opacity: 1;
+  }
+
+  .overlayExiting::before {
+    animation: none;
+    opacity: 0;
+  }
+}

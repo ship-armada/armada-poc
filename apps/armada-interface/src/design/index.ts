@@ -30,3 +30,11 @@ export type { IconButtonProps, IconButtonVariant } from './components/IconButton
 export { default as Tooltip } from './components/Tooltip/Tooltip'
 export { BottomSheet, afterBottomSheetHandoff, BOTTOM_SHEET_EXIT_MS, BOTTOM_SHEET_HANDOFF_MS } from './components/BottomSheet'
 export type { BottomSheetProps } from './components/BottomSheet'
+
+export { ModalShell, modalActionRowEnter, modalStepBodyEnter, modalStepShell } from './components/ModalShell'
+export type { ModalShellProps, ModalShellChrome } from './components/ModalShell'
+export { MODAL_EXIT_TIMING_VARS, MODAL_EXIT_TOTAL_MS, MODAL_EXIT_EASING } from './components/ModalShell/modalExitMotion'
+export { FlowModalOverlay } from './components/FlowModalOverlay'
+export type { FlowModalOverlayProps } from './components/FlowModalOverlay'
+export { Steps } from './components/Steps'
+export type { StepsProps } from './components/Steps'

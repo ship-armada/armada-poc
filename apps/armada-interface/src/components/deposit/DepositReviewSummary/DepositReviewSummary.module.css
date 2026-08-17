@@ -1,0 +1,83 @@
+/* ABOUTME: DepositReviewSummary layout — borderless summary table (network / addresses / deposit amount / fees) + total row. */
+/* ABOUTME: Mirrors the deposit-review reference; shared by ShieldReviewStep and ShieldCompleteStep. */
+
+/* Borderless summary table — deposit-review reference. */
+.summary {
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.summaryBody {
+  padding: var(--primitives-spacing-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-4);
+  background: var(--semantic-color-surface-main);
+}
+
+.summaryRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* Match the mockup's measured 21px row height. Our body-sm line-box is 13px × 1.4 = 18.2px, so
+     pin the row so the vertical rhythm matches. */
+  min-height: 21px;
+  gap: var(--primitives-spacing-3);
+}
+
+.summaryTotalRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
+  padding: var(--primitives-spacing-5);
+  background: var(--semantic-color-surface-default);
+}
+
+.summaryLabel {
+  composes: bodySm from '../../../design/styles/typographyComposites.module.css';
+  color: var(--semantic-color-text-muted);
+  flex-shrink: 0;
+}
+
+.summaryValue {
+  composes: bodySmMedium from '../../../design/styles/typographyComposites.module.css';
+  color: var(--semantic-color-text-primary);
+  text-align: right;
+  min-width: 0;
+}
+
+.valueWithIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--primitives-spacing-2);
+  min-width: 0;
+}
+
+.valueWithIcon > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.armadaIcon {
+  width: var(--primitives-spacing-4);
+  height: var(--primitives-spacing-4);
+  flex-shrink: 0;
+  display: block;
+}
+
+.summaryTotalLabel,
+.summaryTotalValue {
+  composes: bodySmSemibold from '../../../design/styles/typographyComposites.module.css';
+  color: var(--semantic-color-brand-deep);
+}
+
+.summaryTotalValue {
+  text-align: right;
+}

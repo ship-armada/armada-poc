@@ -1,41 +1,121 @@
-/* ABOUTME: ChainSelect styling — surface-default chrome matching the AmountInput compact input look. */
-/* ABOUTME: Native <select> with a chevron via background-image; suitable for v1 until a designer ships a popover spec. */
+/* ABOUTME: ChainSelect styling — full-width neutral-50 pill trigger + popover listbox, ported from the mockup SendRecipientScreen. */
+/* ABOUTME: Trigger height/background match the recipient address field so the two pills line up. */
 
 .root {
+  position: relative;
+  width: 100%;
+}
+
+.trigger,
+.triggerStatic {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  height: var(--primitives-spacing-16);
+  padding: 0 var(--primitives-spacing-5);
+  border: none;
+  border-radius: calc(var(--primitives-spacing-5) / 2);
+  background: var(--primitives-color-neutral-50);
+  text-align: left;
+  box-sizing: border-box;
 }
 
-.label {
-  color: var(--semantic-color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: var(--primitives-letterSpacing-wider);
-  font-size: calc(var(--primitives-fontSize-xs) * 1px);
-  margin-bottom: var(--primitives-spacing-2);
-}
-
-.select {
-  appearance: none;
-  -webkit-appearance: none;
-  background: var(--semantic-color-surface-default);
-  border: 1px solid var(--semantic-color-border-default);
-  border-radius: calc(var(--semantic-borderRadius-input) * 1px);
-  padding: 10px 36px 10px 12px;
-  color: var(--semantic-color-text-primary);
-  outline: none;
+.trigger {
   cursor: pointer;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23c491e5' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
-  background-size: 12px;
 }
 
-.select:focus {
-  border-color: var(--semantic-color-border-focus);
-  box-shadow: 0 0 0 2px rgba(196, 145, 229, 0.18);
+.trigger:focus-visible {
+  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
+  outline-offset: calc(var(--primitives-spacing-1) * 0.5);
 }
 
-.select:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.iconSlot {
+  width: var(--primitives-spacing-8);
+  height: var(--primitives-spacing-8);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+}
+
+.iconSlot :global(svg) {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Letter-avatar fallback for chains with no brand icon (e.g. local Anvil). */
+.iconSlotFallback {
+  border: var(--primitives-borderWidth-default) solid
+    color-mix(in srgb, var(--primitives-color-white-full) 40%, transparent);
+  background: var(--semantic-color-surface-raised);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-secondary);
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+}
+
+.chevron {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+  color: var(--semantic-color-text-secondary);
+  flex-shrink: 0;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + var(--primitives-spacing-2));
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin: 0;
+  padding: var(--primitives-spacing-1);
+  list-style: none;
+  background: var(--semantic-color-surface-raised);
+  border: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-card) * 1px);
+  box-shadow: 0 var(--primitives-spacing-3) var(--primitives-spacing-6)
+    color-mix(in srgb, var(--semantic-color-surface-bg) 55%, transparent);
+}
+
+.option {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  width: 100%;
+  padding: var(--primitives-spacing-2) var(--primitives-spacing-3);
+  border: none;
+  border-radius: calc(var(--primitives-borderRadius-sm) * 1px);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.option:hover,
+.option[aria-selected='true'] {
+  background: var(--semantic-color-surface-hover);
+}
+
+.option:focus-visible {
+  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
+  outline-offset: calc(var(--primitives-spacing-1) * -0.5);
+}
+
+.optionLabel {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-weight: var(--primitives-fontWeight-regular);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-secondary);
 }

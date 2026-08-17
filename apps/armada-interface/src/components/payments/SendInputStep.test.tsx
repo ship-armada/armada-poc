@@ -1,4 +1,4 @@
-// ABOUTME: Tests for SendInputStep (amount step) — static chain display, amount gating, xchain notice, variant copy, Back/Review actions.
+// ABOUTME: Tests for SendInputStep (amount step) — no chain row, percent pills, amount gating, xchain notice, variant copy, Back/Review actions.
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
@@ -44,22 +44,35 @@ function setup(extras?: Partial<SendInputStepProps>) {
 }
 
 describe('<SendInputStep>', () => {
-  it('renders the send amount question', () => {
+  it('renders the amount question', () => {
     setup()
-    expect(screen.getByText(/How much USDC do you want to send/)).toBeInTheDocument()
+    expect(screen.getByText('How much USDC?')).toBeInTheDocument()
   })
 
-  it('withdraw variant: uses withdraw copy + the "Withdrawal amount" field', () => {
+  it('withdraw variant: keeps the static title + exposes the "Withdrawal amount" field', () => {
     setup({ variant: 'withdraw' })
-    expect(screen.getByText(/How much USDC do you want to withdraw/)).toBeInTheDocument()
+    expect(screen.getByText('How much USDC?')).toBeInTheDocument()
     expect(screen.getByLabelText('Withdrawal amount')).toBeInTheDocument()
   })
 
-  it('renders the chain statically (no interactive chain dropdown here)', () => {
-    setup()
-    // Chain is chosen on the recipient step; DepositAmountCard gets no onChainIdChange → static.
+  it('hides the chain row entirely (chosen on the recipient step; not in the mockup)', () => {
+    setup({ destChainId: 31337 })
+    // No chain name, no dropdown — the send amount card has no chain row.
+    expect(screen.queryByText(/Anvil Hub/)).toBeNull()
     expect(screen.queryByRole('listbox')).toBeNull()
-    expect(screen.queryByRole('button', { name: /Network/i })).toBeNull()
+  })
+
+  it('renders the 25% / 50% / 75% / Max percent pills', () => {
+    setup()
+    for (const label of ['25%', '50%', '75%', 'Max']) {
+      expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
+    }
+  })
+
+  it('a percent pill sets the amount to that fraction of the input cap', () => {
+    const props = setup({ maxInput: 5_000_000n, max: 5_000_000n })
+    fireEvent.click(screen.getByRole('button', { name: '50%' }))
+    expect(props.onAmountChange).toHaveBeenCalledWith('2.5')
   })
 
   it('gates Review on the amount — too much shows an error and disables Review', () => {

@@ -2,14 +2,20 @@
 // ABOUTME: One variant-driven modal (send | withdraw). Mounts three useTx hooks (transfer-shielded / unshield-local / unshield-xchain); submitted-kind state locks the subscription for the rest of the flow.
 
 import { useEffect, useRef, useState } from 'react'
+import { useAccount } from 'wagmi'
 import { useAtom, useAtomValue } from 'jotai'
 import { openModalAtom } from '@/state/ui'
 import { preferencesAtom } from '@/state/preferences'
-import { evmAddressAtom, shieldedUsdcAtom, shieldedUsdcSpendableAtom } from '@/state/wallet'
+import {
+  evmAddressAtom,
+  shieldedUsdcAtom,
+  shieldedUsdcSpendableAtom,
+  shieldedWalletAtom,
+} from '@/state/wallet'
 import { useTx } from '@/hooks/useTx'
 import { useFees } from '@/hooks/useFees'
 import { useSpendableSyncGate } from '@/hooks/useSpendableSyncGate'
-import { getNetworkConfig } from '@/config/network'
+import { getChainById, getNetworkConfig } from '@/config/network'
 import {
   findDeploymentForChain,
   loadDeployments,
@@ -23,14 +29,12 @@ import { canRetryTx } from '@/lib/tx/executor'
 import { trackError } from '@/lib/telemetry'
 import { assertSpendableForFeeOnTop } from '@/lib/tx/spendable'
 import {
-  overlayIndicatorStep,
-  overlayIndicatorStatus,
   ProgressStep,
   ErrorStep,
   type FlowStep,
   type FlowVisibleStep,
 } from '@/components/flow'
-import { DepositOverlayShell } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
+import { FlowShell } from '@/components/flow/FlowShell'
 import { SendRecipientStep, type SendFlowVariant } from './SendRecipientStep'
 import { SendInputStepContent, SendInputStepFooter } from './SendInputStep'
 import { useDisplayFees } from '@/hooks/useDisplayFees'
@@ -57,9 +61,16 @@ export function SendModal() {
   // A6 — frozen into the record's meta at submit-time so a mid-flight toggle doesn't strand the handler.
   const prefs = useAtomValue(preferencesAtom)
 
+  // The user's own shielded (Armada) address — rendered as the review/complete summary's
+  // "From your private account" row. Optional; the row is omitted when locked/absent.
+  const shieldedWallet = useAtomValue(shieldedWalletAtom)
+
   // Form state
   const hubChainId = getNetworkConfig().hub.chainId
   const connectedEvm = useAtomValue(evmAddressAtom)
+  // Connected wallet provider name (wagmi connector) — brands the recipient row glyph when the
+  // recipient is the user's own wallet (e.g. withdraw-to-self); mirrors the deposit "From your wallet" row.
+  const { connector } = useAccount()
   const [destChainId, setDestChainId] = useState<number>(hubChainId)
   const [recipient, setRecipient] = useState<string>('')
   const [amountStr, setAmountStr] = useState<string>('')
@@ -317,20 +328,38 @@ export function SendModal() {
 
   if (!isOpen) return null
 
-  // The recipient step precedes the 3-segment indicator (Amount / Review / Confirm); it maps to
-  // step 1 for now. The restyle PR adds a dedicated Recipient segment.
-  const indicatorStep = step === 'recipient' ? 1 : overlayIndicatorStep(step)
-  const indicatorStatus = step === 'recipient' ? 'default' : overlayIndicatorStatus(step)
+  // FlowShell renders a 4-segment Steps indicator (Recipient / Amount / Review / Confirm).
+  // progress / complete / error all map to the final Confirm segment; the ErrorStep itself owns
+  // the retry button + copy.
+  const currentStep =
+    step === 'recipient' ? 1
+    : step === 'input' ? 2
+    : step === 'review' ? 3
+    : 4
+  const status: 'default' | 'confirmed' | 'error' =
+    step === 'complete' ? 'confirmed'
+    : step === 'error' ? 'error'
+    : 'default'
   const flowLabel = variant === 'withdraw' ? 'Withdraw' : 'Send'
+  // Destination chain name for the summary's Network row — public (0x) recipients only; a private
+  // (0zk) transfer has no destination-chain concept.
+  const networkName = isPrivate ? undefined : getChainById(destChainId)?.name
+  // Brand the public recipient's glyph only when it's the user's own connected wallet — for an
+  // arbitrary recipient we don't know their provider, so the summary shows a generic wallet glyph.
+  const recipientIsConnectedWallet =
+    !isPrivate &&
+    connectedEvm != null &&
+    recipient.trim().toLowerCase() === connectedEvm.toLowerCase()
+  const recipientWalletProvider = recipientIsConnectedWallet ? connector?.name : undefined
 
   return (
-    <DepositOverlayShell
-      open
+    <FlowShell
+      open={isOpen}
       onClose={close}
-      dismissible={true}
       flowLabel={flowLabel}
-      currentStep={indicatorStep}
-      status={indicatorStatus}
+      steps={['Recipient', 'Amount', 'Review', 'Confirm']}
+      currentStep={currentStep}
+      status={status}
     >
       <RelayerStatusBanner isOpen={isOpen} />
       {step === 'recipient' && (
@@ -341,7 +370,6 @@ export function SendModal() {
           destChainId={destChainId}
           onDestChainIdChange={setDestChainId}
           destDeploymentError={destDeploymentError}
-          onCancel={close}
           onContinue={() => setStep('input')}
         />
       )}
@@ -378,13 +406,13 @@ export function SendModal() {
       {step === 'review' && (
         <SendReviewStep
           variant={variant}
-          isPrivate={isPrivate}
-          destChainId={destChainId}
           recipient={recipient}
+          armadaAddress={shieldedWallet.shieldedAddress}
           amount={amount}
           fee={displayedFee}
           totalDeducted={totalDeducted}
-          isXchain={isXchain}
+          networkName={networkName}
+          recipientWalletProvider={recipientWalletProvider}
           submitBlockedReason={syncGate.reason}
           onBack={() => setStep('input')}
           isSubmitting={isSubmitting}
@@ -395,15 +423,22 @@ export function SendModal() {
       {step === 'complete' && (
         <SendCompleteStep
           variant={variant}
-          isPrivate={isPrivate}
-          destChainId={destChainId}
           recipient={recipient}
-          recipientReceives={recipientReceives}
+          armadaAddress={shieldedWallet.shieldedAddress}
+          amount={amount}
+          fee={displayedFee}
           totalDeducted={totalDeducted}
+          networkName={networkName}
+          recipientWalletProvider={recipientWalletProvider}
+          confirmedAt={record?.updatedAt ?? Date.now()}
           // Hub-chain explorer link for the on-chain submission. The destination delivery for
           // xchain is a separate event tracked elsewhere; this is the source-chain action.
           explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
-          onDone={close}
+          onViewExplorer={() => {
+            const url = txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))
+            if (url) window.open(url, '_blank', 'noopener,noreferrer')
+          }}
+          onGoToDashboard={close}
         />
       )}
       {step === 'error' && (
@@ -445,6 +480,6 @@ export function SendModal() {
           }
         />
       )}
-    </DepositOverlayShell>
+    </FlowShell>
   )
 }

@@ -1,72 +1,101 @@
-// ABOUTME: Send complete step — success copy adapts to private vs external mode + chain (when external).
-// ABOUTME: Mirrors the Shield/Unshield CompleteStep shape so success states across flows feel consistent.
+// ABOUTME: Send/Withdraw complete step — serif "Send confirmed"/"Withdrawal complete" title, USDC coin + amount block, shared TransferReviewSummary (with date/time), and explorer/dashboard CTAs.
+// ABOUTME: Mirrors the send-confirmed reference — no divider between the summary card and the button row.
 
-import { CheckCircle2, ExternalLink } from 'lucide-react'
-import { FlowFooter } from '@/components/flow/FlowFooter'
-import { formatUsdcAmount, truncateAddress } from '@/lib/format'
-import { getChainById } from '@/config/network'
+import TokenUSDC from '@web3icons/react/icons/tokens/TokenUSDC'
+import { Button } from '@/design'
+import { TransferReviewSummary } from './TransferReviewSummary'
+import { formatUsdcPlain } from '@/lib/format'
+import usdcAmount from '@/design/styles/usdcAmount.module.css'
 import type { SendFlowVariant } from './SendRecipientStep'
 import styles from './SendCompleteStep.module.css'
 
+const TOKEN_BADGE_PX = 40
+/** @web3icons branded assets use an 18px circle in a 24px viewBox — scale up to fill the badge. */
+const TOKEN_ICON_SIZE = Math.round((TOKEN_BADGE_PX * 24) / 18)
+
 export interface SendCompleteStepProps {
   variant: SendFlowVariant
-  /** True when the recipient is a shielded 0zk address (private transfer); false for public 0x. */
-  isPrivate: boolean
-  destChainId: number
   recipient: string
-  /** USDC the recipient actually received on chain. See SendModal's per-kind comment. */
-  recipientReceives: bigint
-  /** USDC actually deducted from the user's shielded balance. Render a second line when this
-   *  exceeds `recipientReceives` (the unshield-local relayer-fee path); skip when they're equal. */
+  /** The user's own shielded (Armada) address — rendered as the summary's "From your private account" row. */
+  armadaAddress?: string
+  /** Gross amount sent/withdrawn (raw 6-decimal USDC) — shown full-precision in the coin block. */
+  amount: bigint
+  /** Inclusive Fee total — broadcaster + protocol + CCTP. Rendered as "—" when null. */
+  fee: bigint | null
+  /** USDC deducted from the user's shielded balance — `amount + fee`; the summary's Total row. */
   totalDeducted: bigint
-  /** Explorer URL for the hub-chain tx. Undefined for local Anvil; hidden when unset. */
+  /** Destination chain name — shown on the summary's Network row for public (0x) recipients. */
+  networkName?: string
+  /** Wallet provider name for a public recipient's brand glyph (only when it's the user's own wallet). */
+  recipientWalletProvider?: string
+  /** Completion timestamp (ms) — drives the summary's "Date and time" row. */
+  confirmedAt: number
+  /** Source-chain explorer URL for the tx; absent disables the "View on explorer" button. */
   explorerUrl?: string
-  onDone: () => void
+  onViewExplorer: () => void
+  onGoToDashboard: () => void
 }
 
 export function SendCompleteStep({
   variant,
-  isPrivate,
-  destChainId,
   recipient,
-  recipientReceives,
+  armadaAddress,
+  amount,
+  fee,
   totalDeducted,
+  networkName,
+  recipientWalletProvider,
+  confirmedAt,
   explorerUrl,
-  onDone,
+  onViewExplorer,
+  onGoToDashboard,
 }: SendCompleteStepProps) {
-  const destChain = isPrivate ? null : getChainById(destChainId)
-  const short = recipient.startsWith('0zk') && recipient.length > 14
-    ? `${recipient.slice(0, 7)}…${recipient.slice(-4)}`
-    : truncateAddress(recipient)
-  const title = variant === 'withdraw' ? 'Withdrawal complete' : 'Sent'
+  const title = variant === 'withdraw' ? 'Withdrawal complete' : 'Send confirmed'
 
   return (
     <div className={styles.root}>
-      <div className={styles.icon} aria-hidden="true">
-        <CheckCircle2 size={40} />
+      <h1 className={styles.title}>{title}</h1>
+
+      <div className={styles.amountRow}>
+        <div className={styles.amountGroup}>
+          <span className={styles.tokenBadge} aria-hidden="true">
+            <TokenUSDC size={TOKEN_ICON_SIZE} variant="branded" className={styles.tokenBadgeIcon} />
+          </span>
+          <span className={[styles.amountValue, usdcAmount.font].join(' ')}>
+            {formatUsdcPlain(amount)}
+          </span>
+        </div>
       </div>
-      <h3 className={styles.title}>{title}</h3>
-      <p className={styles.body}>
-        {isPrivate
-          ? <>Sent {formatUsdcAmount(recipientReceives)} USDC privately to {short}.</>
-          : <>Sent {formatUsdcAmount(recipientReceives)} USDC to {short} on {destChain?.name ?? `chain ${destChainId}`}.</>}
-      </p>
-      {totalDeducted !== recipientReceives ? (
-        <p className={styles.body}>
-          Total deducted from your private balance: {formatUsdcAmount(totalDeducted)} USDC.
-        </p>
-      ) : null}
-      {explorerUrl ? (
-        <p className={styles.body}>
-          <a href={explorerUrl} target="_blank" rel="noreferrer noopener" className={styles.explorerLink}>
-            View transaction <ExternalLink size={14} aria-hidden="true" />
-          </a>
-        </p>
-      ) : null}
-      <FlowFooter
-        className={styles.footer}
-        primary={{ label: 'Done', onClick: onDone }}
+
+      <TransferReviewSummary
+        recipient={recipient}
+        armadaAddress={armadaAddress}
+        amount={amount}
+        fee={fee}
+        totalDeducted={totalDeducted}
+        variant={variant}
+        networkName={networkName}
+        recipientWalletProvider={recipientWalletProvider}
+        confirmedAt={confirmedAt}
       />
+
+      <div className={styles.buttonRow}>
+        <Button
+          variant="secondary"
+          size="lg"
+          label="View on explorer"
+          showIcon={false}
+          onClick={onViewExplorer}
+          disabled={!explorerUrl}
+        />
+        <Button
+          variant="primary"
+          size="lg"
+          label="Go to dashboard"
+          showIcon={false}
+          onClick={onGoToDashboard}
+        />
+      </div>
     </div>
   )
 }

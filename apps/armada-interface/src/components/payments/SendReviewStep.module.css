@@ -1,82 +1,65 @@
-/* ABOUTME: SendReviewStep styling — matches UnshieldReviewStep proportions (hero numeral + facts grid + footer). */
-/* ABOUTME: Cross-chain tag reuses the amber accent so the visual vocabulary stays consistent across flows. */
+/* ABOUTME: SendReviewStep layout — serif title, coin+amount block, sync-gate notice, two-button CTA row. */
+/* ABOUTME: The send/withdraw summary table itself lives in the shared TransferReviewSummary component. */
 
 .root {
   display: flex;
   flex-direction: column;
-  gap: var(--primitives-spacing-4);
+  gap: var(--primitives-spacing-8);
 }
 
-.headline {
-  color: var(--semantic-color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: var(--primitives-letterSpacing-wider);
-  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+.title {
+  composes: displayLg from '../../design/styles/displayLgTitle.module.css';
+  margin: 0;
+  width: 100%;
+  color: var(--semantic-color-text-primary);
   text-align: center;
 }
 
-.amountBlock {
+.amountRow {
   display: flex;
-  align-items: baseline;
   justify-content: center;
-  gap: var(--primitives-spacing-3);
+  align-items: center;
+  width: 100%;
 }
 
-.amount {
-  color: var(--semantic-color-text-primary);
-  font-family: "Charis SIL", serif;
-  font-size: calc(var(--primitives-fontSize-5xl) * 1px);
-  line-height: var(--primitives-lineHeight-tight);
-  font-weight: var(--primitives-fontWeight-regular);
-  font-variant-numeric: tabular-nums;
+.amountGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  height: var(--primitives-spacing-10);
+  flex-shrink: 0;
 }
 
-.unit {
-  color: var(--semantic-color-text-muted);
-  font-size: calc(var(--primitives-fontSize-lg) * 1px);
-}
-
-.facts {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  margin: 0;
-}
-
-.facts > div {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--primitives-spacing-3);
-  padding: var(--primitives-spacing-2) 0;
-  border-bottom: 1px solid var(--semantic-color-border-default);
-}
-
-.facts dt {
-  color: var(--semantic-color-text-muted);
-}
-
-.facts dd {
-  color: var(--semantic-color-text-primary);
-}
-
-.xchainTag {
-  display: inline-block;
-  margin-left: var(--primitives-spacing-2);
-  padding: 2px 8px;
-  background: rgba(243, 208, 160, 0.12);
-  border: 1px solid var(--semantic-color-border-amber);
-  color: var(--semantic-color-text-amber);
+.tokenBadge {
+  width: var(--primitives-spacing-10);
+  height: var(--primitives-spacing-10);
+  flex-shrink: 0;
   border-radius: calc(var(--primitives-borderRadius-full) * 1px);
-  text-transform: uppercase;
-  letter-spacing: var(--primitives-letterSpacing-wider);
-  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.recipient {
-  font-family: "Geist Mono", monospace;
+.tokenBadgeIcon {
+  flex-shrink: 0;
+  display: block;
 }
 
+.tokenBadgeIcon :global(svg) {
+  display: block;
+}
+
+.amountValue {
+  display: block;
+  font-weight: var(--primitives-fontWeight-medium);
+  font-size: var(--primitives-spacing-10);
+  line-height: var(--primitives-spacing-10);
+  height: var(--primitives-spacing-10);
+  color: var(--semantic-color-text-primary);
+}
+
+/* Non-blocking notice while the initial shielded-balance sync is still completing. */
 .syncNotice {
   background: rgba(196, 145, 229, 0.08);
   border: 1px solid var(--semantic-color-border-lavender);
@@ -85,7 +68,14 @@
   color: var(--semantic-color-text-secondary);
 }
 
-.footer {
-  align-self: stretch;
-  margin: var(--primitives-spacing-4) calc(var(--primitives-spacing-6) * -1) calc(var(--primitives-spacing-6) * -1);
+/* Two-button CTA row — send-review mockup: equal-width Back / Confirm, no divider above. */
+.buttonRow {
+  display: flex;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+}
+
+.buttonRow > * {
+  flex: 1;
+  max-width: 211px;
 }

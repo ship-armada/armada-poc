@@ -1,4 +1,4 @@
-// ABOUTME: Send/Withdraw amount step — DepositAmountCard (chain shown statically; chosen on the recipient step) + gas notice.
+// ABOUTME: Send/Withdraw amount step — DepositAmountCard (no chain row; chosen on the recipient step) + percent pills + gas notice.
 // ABOUTME: Recipient + chain live on the preceding recipient step, so this step gates only on the amount.
 
 import { useMemo } from 'react'
@@ -12,7 +12,6 @@ import { useGasBalanceWarning } from '@/hooks/useGasBalanceWarning'
 import { getAllChainIdentities } from '@/config/network'
 import { formatUsdcPlain, parseUsdcInput, usdcInputErrorMessage } from '@/lib/format'
 import { hasActiveAmount } from '@/utils/amountInput'
-import shieldStyles from '@/components/shield/ShieldInputStep.module.css'
 import type { SendFlowVariant } from './SendRecipientStep'
 import styles from './SendInputStep.module.css'
 
@@ -88,20 +87,15 @@ export function SendInputStepContent({
   const amountError = usdcInputErrorMessage(parseError)
     ?? (tooMuch ? 'Amount exceeds your private balance after fees.' : undefined)
 
-  const question =
-    variant === 'withdraw'
-      ? 'How much USDC do you want to withdraw?'
-      : 'How much USDC do you want to send?'
-
   return (
     <div className={styles.sendContent}>
-      <p className={shieldStyles.question}>{question}</p>
+      <h1 className={styles.title}>How much USDC?</h1>
       <div className={styles.amountGroup}>
         <DepositAmountCard
           chains={allChains}
           chainId={destChainId}
-          // No onChainIdChange — the chain is chosen on the recipient step, so it renders as
-          // static text here.
+          // The chain is chosen on the recipient step; the mockup's send amount card has no chain row.
+          showChain={false}
           amount={amountStr}
           onAmountChange={onAmountChange}
           balance={formatUsdcPlain(max)}
@@ -109,6 +103,8 @@ export function SendInputStepContent({
           displayFees={displayFees}
           flowBreakdown={flowBreakdown}
           feeLoading={feeLoading}
+          // maxInput drives the 25% / 50% / 75% / Max percent pills; onMax keeps the exact fee-aware cap.
+          maxInput={maxInput}
           onMax={() => onAmountChange(formatUsdcPlain(maxInput))}
           error={amountError}
           amountAriaLabel={variant === 'withdraw' ? 'Withdrawal amount' : 'Send amount'}

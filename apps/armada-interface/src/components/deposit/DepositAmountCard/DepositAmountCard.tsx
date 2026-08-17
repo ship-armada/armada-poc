@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { ChevronDownIcon, WalletIcon } from '@heroicons/react/24/solid'
 import TokenUSDC from '@web3icons/react/icons/tokens/TokenUSDC'
 import { hasActiveAmount, sanitizeAmountInput } from '@/utils/amountInput'
-import { chainIconForChainId } from '@/components/deposit/depositChainIcons'
+import { chainIconForChainId } from '@/components/ui/chainIcons'
 import { FeeBreakdownTooltip, type FlowFeeBreakdown } from '@/components/ui/FeeBreakdownTooltip'
 import { formatUsdcPlain } from '@/lib/format'
 import type { DisplayFees } from '@/lib/fees/displayFees'
@@ -26,6 +26,8 @@ export interface DepositAmountCardProps {
   chains: ReadonlyArray<DepositChainOption>
   chainId: number
   onChainIdChange?: (chainId: number) => void
+  /** Hide the chain row entirely (e.g. the Send flow, where the chain is chosen on a prior step). */
+  showChain?: boolean
   token?: string
   amount: string
   onAmountChange: (value: string) => void
@@ -74,6 +76,7 @@ export function DepositAmountCard({
   chains,
   chainId,
   onChainIdChange,
+  showChain = true,
   token = 'USDC',
   amount,
   onAmountChange,
@@ -127,7 +130,8 @@ export function DepositAmountCard({
   const showActiveAmount = hasActiveAmount(amount)
 
   return (
-    <div className={styles.card}>
+    <div className={[styles.card, !showChain && styles.cardNoChain].filter(Boolean).join(' ')}>
+      {showChain ? (
       <div className={styles.topRow}>
         <div className={styles.chainRoot} ref={chainRootRef}>
           {chainSelectable ? (
@@ -171,6 +175,7 @@ export function DepositAmountCard({
         </div>
 
       </div>
+      ) : null}
 
       <label className={styles.amountWrapper} htmlFor={amountInputId}>
         <span className={styles.visuallyHidden}>{amountAriaLabel}</span>

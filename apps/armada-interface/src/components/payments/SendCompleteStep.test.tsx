@@ -1,74 +1,71 @@
-// ABOUTME: Tests for SendCompleteStep — copy adapts to private vs public + variant, Done dispatches onDone.
+// ABOUTME: Tests for SendCompleteStep — title + privacy/network summary rows by recipient format + variant, CTA wiring.
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { SendCompleteStep } from './SendCompleteStep'
+import { SendCompleteStep, type SendCompleteStepProps } from './SendCompleteStep'
 
 const VALID_EVM = '0xabcdef1234567890abcdef1234567890abcdef12'
 const VALID_0ZK = '0zkabcdefghijklmnopqrstuvwxyz0123456789aaaa'
 
+function renderComplete(extras?: Partial<SendCompleteStepProps>) {
+  const props: SendCompleteStepProps = {
+    variant: extras?.variant ?? 'send',
+    recipient: extras?.recipient ?? VALID_0ZK,
+    armadaAddress: extras?.armadaAddress,
+    amount: extras?.amount ?? 100_000_000n,
+    fee: extras?.fee ?? null,
+    totalDeducted: extras?.totalDeducted ?? 100_000_000n,
+    networkName: extras?.networkName,
+    confirmedAt: extras?.confirmedAt ?? Date.now(),
+    explorerUrl: extras?.explorerUrl,
+    onViewExplorer: extras?.onViewExplorer ?? vi.fn(),
+    onGoToDashboard: extras?.onGoToDashboard ?? vi.fn(),
+  }
+  render(<SendCompleteStep {...props} />)
+  return props
+}
+
 describe('<SendCompleteStep>', () => {
-  it("private: renders the 'sent privately' copy", () => {
-    render(
-      <SendCompleteStep
-        variant="send"
-        isPrivate
-        destChainId={31337}
-        recipient={VALID_0ZK}
-        recipientReceives={100_000_000n}
-        totalDeducted={100_000_000n}
-        onDone={() => {}}
-      />,
-    )
-    expect(screen.getByText(/privately/)).toBeInTheDocument()
-    expect(screen.getByText(/100\.00 USDC/)).toBeInTheDocument()
+  it('send: renders the "Send confirmed" title + a "Private" privacy row', () => {
+    renderComplete({ recipient: VALID_0ZK })
+    expect(screen.getByText('Send confirmed')).toBeInTheDocument()
+    expect(screen.getByText('Private')).toBeInTheDocument()
+    expect(screen.getAllByText(/100\.00 USDC/).length).toBeGreaterThan(0)
   })
 
-  it('public: renders the chain name in the copy', () => {
-    render(
-      <SendCompleteStep
-        variant="send"
-        isPrivate={false}
-        destChainId={31337}
-        recipient={VALID_EVM}
-        recipientReceives={50_000_000n}
-        totalDeducted={50_000_000n}
-        onDone={() => {}}
-      />,
-    )
-    expect(screen.getByText(/Anvil Hub/)).toBeInTheDocument()
-    expect(screen.getByText(/50\.00 USDC/)).toBeInTheDocument()
+  it('public: renders the network row + a "Public" privacy row', () => {
+    renderComplete({
+      recipient: VALID_EVM,
+      networkName: 'Anvil Hub (local)',
+      amount: 50_000_000n,
+      totalDeducted: 50_000_000n,
+    })
+    expect(screen.getByText('Anvil Hub (local)')).toBeInTheDocument()
+    expect(screen.getByText('Public')).toBeInTheDocument()
+    expect(screen.getAllByText(/50\.00 USDC/).length).toBeGreaterThan(0)
   })
 
   it('withdraw variant: uses the "Withdrawal complete" title', () => {
-    render(
-      <SendCompleteStep
-        variant="withdraw"
-        isPrivate={false}
-        destChainId={31337}
-        recipient={VALID_EVM}
-        recipientReceives={50_000_000n}
-        totalDeducted={50_000_000n}
-        onDone={() => {}}
-      />,
-    )
+    renderComplete({ variant: 'withdraw', recipient: VALID_EVM, networkName: 'Anvil Hub (local)' })
     expect(screen.getByText('Withdrawal complete')).toBeInTheDocument()
   })
 
-  it('fires onDone when the CTA is clicked', () => {
-    const onDone = vi.fn()
-    render(
-      <SendCompleteStep
-        variant="send"
-        isPrivate
-        destChainId={31337}
-        recipient={VALID_0ZK}
-        recipientReceives={1_000_000n}
-        totalDeducted={1_000_000n}
-        onDone={onDone}
-      />,
-    )
-    fireEvent.click(screen.getByRole('button', { name: /Done/ }))
-    expect(onDone).toHaveBeenCalledTimes(1)
+  it('disables "View on explorer" when no explorer URL is provided', () => {
+    renderComplete()
+    expect(screen.getByRole('button', { name: /View on explorer/ })).toBeDisabled()
+  })
+
+  it('fires onGoToDashboard when the primary CTA is clicked', () => {
+    const onGoToDashboard = vi.fn()
+    renderComplete({ onGoToDashboard })
+    fireEvent.click(screen.getByRole('button', { name: /Go to dashboard/ }))
+    expect(onGoToDashboard).toHaveBeenCalledTimes(1)
+  })
+
+  it('fires onViewExplorer when a URL is present', () => {
+    const onViewExplorer = vi.fn()
+    renderComplete({ explorerUrl: 'https://example.test/tx/0xabc', onViewExplorer })
+    fireEvent.click(screen.getByRole('button', { name: /View on explorer/ }))
+    expect(onViewExplorer).toHaveBeenCalledTimes(1)
   })
 })

@@ -12,6 +12,7 @@ import {
   shieldedUsdcSpendableAtom,
 } from '@/state/wallet'
 import { feeQuoteAtom, feeQuoteFetchedAtAtom } from '@/state/fees'
+import { getChainById } from '@/config/network'
 import { withTestQueryClient } from '@/test-utils/queryClient'
 
 // useDisplayFees + useGasBalanceWarning hit wagmi hooks that require a WagmiProvider; these
@@ -20,6 +21,13 @@ import { withTestQueryClient } from '@/test-utils/queryClient'
 vi.mock('@/lib/tx/executor', async (importActual) => ({
   ...await importActual<typeof import('@/lib/tx/executor')>(),
   getIsLeader: () => true,
+}))
+
+// SendModal reads the connected wallet's connector via wagmi's useAccount to brand the recipient
+// row glyph; these tests don't mount a WagmiProvider, so stub it with a MetaMask connector.
+vi.mock('wagmi', async (importOriginal) => ({
+  ...await importOriginal<typeof import('wagmi')>(),
+  useAccount: () => ({ connector: { name: 'MetaMask' } }),
 }))
 
 vi.mock('@/hooks/useDisplayFees', () => ({
@@ -100,11 +108,14 @@ function renderModal(opts?: {
   return store
 }
 
-/** Advance the recipient step: type an address, (optionally) pick a chain, click Continue. */
+/** Advance the recipient step: type an address, (optionally) pick a chain via the popover, click Continue. */
 function completeRecipientStep(recipient: string, chainValue?: string) {
   fireEvent.change(screen.getByLabelText('Recipient address'), { target: { value: recipient } })
   if (chainValue !== undefined) {
-    fireEvent.change(screen.getByLabelText('Destination chain'), { target: { value: chainValue } })
+    // Open the styled chain popover and click the option whose label matches the chainId.
+    fireEvent.click(screen.getByLabelText('Destination chain'))
+    const name = getChainById(Number(chainValue))?.name ?? chainValue
+    fireEvent.click(screen.getByRole('option', { name }))
   }
   fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
 }
@@ -121,12 +132,13 @@ describe('<SendModal>', () => {
     expect(screen.getByLabelText('Recipient address')).toBeInTheDocument()
   })
 
-  it('Continue is disabled until the recipient is a valid address', () => {
+  it('Continue reveals only once the recipient is a valid address', () => {
     renderModal({ open: 'payment', shielded: 10_000_000n })
-    expect(screen.getByRole('button', { name: /Continue/ })).toBeDisabled()
+    // Empty + invalid: no footer, so no Continue button at all (matches the mockup).
+    expect(screen.queryByRole('button', { name: /Continue/ })).toBeNull()
     fireEvent.change(screen.getByLabelText('Recipient address'), { target: { value: 'not-an-address' } })
     expect(screen.getByRole('alert')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Continue/ })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /Continue/ })).toBeNull()
     fireEvent.change(screen.getByLabelText('Recipient address'), { target: { value: VALID_0ZK } })
     expect(screen.getByRole('button', { name: /Continue/ })).not.toBeDisabled()
   })
@@ -143,29 +155,30 @@ describe('<SendModal>', () => {
     expect(screen.getByLabelText('Destination chain')).toBeInTheDocument()
   })
 
-  it('0zk recipient → transfer-shielded: review shows "Private transfer"', () => {
+  it('0zk recipient → transfer-shielded: review shows the "Private" privacy row + no network row', () => {
     renderModal({ open: 'payment', shielded: 10_000_000n })
     completeRecipientStep(VALID_0ZK)
     fireEvent.change(screen.getByLabelText('Send amount'), { target: { value: '3' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
-    expect(screen.getByText('Private transfer')).toBeInTheDocument()
+    expect(screen.getByText('Private')).toBeInTheDocument()
+    expect(screen.queryByText('Network')).toBeNull()
   })
 
-  it('0x recipient to hub → unshield-local: review shows "External wallet", no cross-chain tag', () => {
+  it('0x recipient to hub → unshield-local: review shows the "Public" privacy row + hub network', () => {
     renderModal({ open: 'payment', shielded: 10_000_000n })
     completeRecipientStep(VALID_EVM, '31337')
     fireEvent.change(screen.getByLabelText('Send amount'), { target: { value: '3' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
-    expect(screen.getByText('External wallet')).toBeInTheDocument()
-    expect(screen.queryByText('cross-chain')).toBeNull()
+    expect(screen.getByText('Public')).toBeInTheDocument()
+    expect(screen.getByText(/Anvil Hub/)).toBeInTheDocument()
   })
 
-  it('0x recipient to a client chain → unshield-xchain: review shows the cross-chain tag', () => {
+  it('0x recipient to a client chain → unshield-xchain: review shows the client network name', () => {
     renderModal({ open: 'payment', shielded: 10_000_000n })
     completeRecipientStep(VALID_EVM, '31338')
     fireEvent.change(screen.getByLabelText('Send amount'), { target: { value: '3' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
-    expect(screen.getByText('cross-chain')).toBeInTheDocument()
+    expect(screen.getByText(/Anvil Client A/)).toBeInTheDocument()
   })
 
   it('transfer-shielded Confirm advances to the progress step', async () => {
@@ -207,9 +220,9 @@ describe('<SendModal>', () => {
     })
   })
 
-  it('Cancel on the recipient step closes the modal', () => {
+  it('the close button closes the modal', () => {
     const store = renderModal({ open: 'payment', shielded: 10_000_000n })
-    fireEvent.click(screen.getByRole('button', { name: /Cancel/ }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(store.get(openModalAtom)).toBeNull()
   })
 
@@ -218,15 +231,15 @@ describe('<SendModal>', () => {
     completeRecipientStep(VALID_0ZK)
     // On the amount step now — go Back.
     fireEvent.click(screen.getByRole('button', { name: /Back/ }))
-    // Recipient input is editable again and retains the typed value.
-    expect(screen.getByLabelText('Recipient address')).toHaveValue(VALID_0ZK)
+    // Recipient input retains the address (shown middle-truncated when blurred; full value in `title`).
+    expect(screen.getByLabelText('Recipient address')).toHaveAttribute('title', VALID_0ZK)
   })
 
   describe('withdraw variant', () => {
     it('opens with the "Withdraw" title and prefills the connected wallet', () => {
       renderModal({ open: 'withdraw', shielded: 10_000_000n, evm: VALID_EVM })
       expect(screen.getByRole('dialog', { name: 'Withdraw' })).toBeInTheDocument()
-      expect(screen.getByLabelText('Recipient address')).toHaveValue(VALID_EVM)
+      expect(screen.getByLabelText('Recipient address')).toHaveAttribute('title', VALID_EVM)
     })
 
     it('the prefilled recipient is editable — can withdraw to any other 0x address', async () => {

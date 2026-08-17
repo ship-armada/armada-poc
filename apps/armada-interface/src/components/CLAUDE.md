@@ -22,8 +22,7 @@ UI components. **Dumb when possible.** State comes from hooks + atoms; effects b
 | `tx/` | TxLifecycleStepper, TxRow, TxStatusChip, stageCopy helpers — see `tx/CLAUDE.md` |
 | `dashboard/` | BalanceCard + numerals + RecentActivityList + DepositTooltip (centered card stack) — see `dashboard/CLAUDE.md` |
 | `shield/` | ShieldModal + steps — see `shield/CLAUDE.md` |
-| `unshield/` | UnshieldModal + steps — see `unshield/CLAUDE.md` |
-| `payments/` | SendModal + steps (Private / External tabs) — see `payments/CLAUDE.md` |
+| `payments/` | SendModal — the shared Send/Withdraw flow (variant-driven, address-picks-kind) — see `payments/CLAUDE.md` |
 | `yield/` | EarnModal + steps (Add / Withdraw tabs) — see `yield/CLAUDE.md` |
 | `onboarding/` | OnboardingFlow (5-step first-run), UnlockFlow, OnboardingShell — see `onboarding/CLAUDE.md` |
 | `settings/` | RecoverySecretExportDialog, ResetWalletDialog — see `settings/CLAUDE.md` |

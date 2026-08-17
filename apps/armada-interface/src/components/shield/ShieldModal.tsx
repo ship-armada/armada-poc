@@ -189,8 +189,8 @@ export function ShieldModal() {
   // prop so the user can't type a value that would inevitably revert. Zero for no-fee paths.
   const minAmount: bigint = fee
 
-  // Two useTx hooks mounted; only one gets a record per flow. Pattern mirrors SendModal +
-  // UnshieldModal where same-chain vs cross-chain are sibling kinds.
+  // Two useTx hooks mounted; only one gets a record per flow. Pattern mirrors SendModal
+  // where same-chain vs cross-chain are sibling kinds.
   const txShield = useTx({ kind: 'shield' })
   const txShieldXchain = useTx({ kind: 'shield-xchain' })
   const activeTx =

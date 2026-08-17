@@ -5,11 +5,13 @@ import { CheckCircle2, ExternalLink } from 'lucide-react'
 import { FlowFooter } from '@/components/flow/FlowFooter'
 import { formatUsdcAmount, truncateAddress } from '@/lib/format'
 import { getChainById } from '@/config/network'
-import type { SendTab } from './SendInputStep'
+import type { SendFlowVariant } from './SendRecipientStep'
 import styles from './SendCompleteStep.module.css'
 
 export interface SendCompleteStepProps {
-  tab: SendTab
+  variant: SendFlowVariant
+  /** True when the recipient is a shielded 0zk address (private transfer); false for public 0x. */
+  isPrivate: boolean
   destChainId: number
   recipient: string
   /** USDC the recipient actually received on chain. See SendModal's per-kind comment. */
@@ -23,7 +25,8 @@ export interface SendCompleteStepProps {
 }
 
 export function SendCompleteStep({
-  tab,
+  variant,
+  isPrivate,
   destChainId,
   recipient,
   recipientReceives,
@@ -31,19 +34,20 @@ export function SendCompleteStep({
   explorerUrl,
   onDone,
 }: SendCompleteStepProps) {
-  const destChain = tab === 'external' ? getChainById(destChainId) : null
+  const destChain = isPrivate ? null : getChainById(destChainId)
   const short = recipient.startsWith('0zk') && recipient.length > 14
     ? `${recipient.slice(0, 7)}…${recipient.slice(-4)}`
     : truncateAddress(recipient)
+  const title = variant === 'withdraw' ? 'Withdrawal complete' : 'Sent'
 
   return (
     <div className={styles.root}>
       <div className={styles.icon} aria-hidden="true">
         <CheckCircle2 size={40} />
       </div>
-      <h3 className={styles.title}>Sent</h3>
+      <h3 className={styles.title}>{title}</h3>
       <p className={styles.body}>
-        {tab === 'private'
+        {isPrivate
           ? <>Sent {formatUsdcAmount(recipientReceives)} USDC privately to {short}.</>
           : <>Sent {formatUsdcAmount(recipientReceives)} USDC to {short} on {destChain?.name ?? `chain ${destChainId}`}.</>}
       </p>

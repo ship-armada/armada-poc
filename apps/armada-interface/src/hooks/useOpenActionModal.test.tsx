@@ -45,14 +45,14 @@ describe('useOpenActionModal', () => {
     })
 
     act(() => {
-      result.current('unshield')
+      result.current('withdraw')
     })
     expect(store.get(openModalAtom)).toBeNull()
 
     isConnected = true
     rerender()
 
-    expect(store.get(openModalAtom)).toBe('unshield')
+    expect(store.get(openModalAtom)).toBe('withdraw')
   })
 
   it('opens the flow immediately when already connected', () => {

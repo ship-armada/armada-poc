@@ -1,11 +1,11 @@
-// ABOUTME: SendModal — pay someone in USDC, either privately (0zk → 0zk) or to an external wallet (0x). Picks among three kinds based on the tab + destination chain.
-// ABOUTME: Mounts three useTx hooks (transfer-shielded / unshield-local / unshield-xchain); submitted-kind state locks the subscription for the rest of the flow. External-tab + xchain reuses unshield-xchain — same contract path, different UI entry.
+// ABOUTME: SendModal — the shared Send/Withdraw flow. Pays USDC privately (0zk → 0zk) or to a public wallet (0x); the recipient address drives which of three kinds runs.
+// ABOUTME: One variant-driven modal (send | withdraw). Mounts three useTx hooks (transfer-shielded / unshield-local / unshield-xchain); submitted-kind state locks the subscription for the rest of the flow.
 
 import { useEffect, useRef, useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { openModalAtom } from '@/state/ui'
 import { preferencesAtom } from '@/state/preferences'
-import { shieldedUsdcAtom, shieldedUsdcSpendableAtom } from '@/state/wallet'
+import { evmAddressAtom, shieldedUsdcAtom, shieldedUsdcSpendableAtom } from '@/state/wallet'
 import { useTx } from '@/hooks/useTx'
 import { useFees } from '@/hooks/useFees'
 import { useSpendableSyncGate } from '@/hooks/useSpendableSyncGate'
@@ -31,36 +31,41 @@ import {
   type FlowVisibleStep,
 } from '@/components/flow'
 import { DepositOverlayShell } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
-import { SendInputStepContent, SendInputStepFooter, type SendTab } from './SendInputStep'
+import { SendRecipientStep, type SendFlowVariant } from './SendRecipientStep'
+import { SendInputStepContent, SendInputStepFooter } from './SendInputStep'
 import { useDisplayFees } from '@/hooks/useDisplayFees'
 import { SendReviewStep } from './SendReviewStep'
 import { SendCompleteStep } from './SendCompleteStep'
 import { RelayerStatusBanner } from '@/components/RelayerStatusBanner'
 
-type LocalStep = FlowStep
+// The recipient step precedes the shared 3-step overlay flow (input/review/progress/complete/error).
+type LocalStep = 'recipient' | FlowStep
 
 type SubmittedKind = 'transfer-shielded' | 'unshield-local' | 'unshield-xchain'
 
-function computeKind(tab: SendTab, destChainId: number, hubChainId: number): SubmittedKind {
-  if (tab === 'private') return 'transfer-shielded'
+// Address-driven kind selection: a valid shielded (0zk) recipient is an in-pool transfer; any other
+// (valid EVM 0x) recipient is an unshield, local when it targets the hub and cross-chain otherwise.
+function computeKind(recipient: string, destChainId: number, hubChainId: number): SubmittedKind {
+  if (isShieldedAddress(recipient.trim())) return 'transfer-shielded'
   return destChainId === hubChainId ? 'unshield-local' : 'unshield-xchain'
 }
 
 export function SendModal() {
   const [openModal, setOpenModal] = useAtom(openModalAtom)
-  const isOpen = openModal === 'payment'
+  const isOpen = openModal === 'payment' || openModal === 'withdraw'
+  const variant: SendFlowVariant = openModal === 'withdraw' ? 'withdraw' : 'send'
   // A6 — frozen into the record's meta at submit-time so a mid-flight toggle doesn't strand the handler.
   const prefs = useAtomValue(preferencesAtom)
 
   // Form state
   const hubChainId = getNetworkConfig().hub.chainId
-  const [tab, setTab] = useState<SendTab>('private')
+  const connectedEvm = useAtomValue(evmAddressAtom)
   const [destChainId, setDestChainId] = useState<number>(hubChainId)
   const [recipient, setRecipient] = useState<string>('')
   const [amountStr, setAmountStr] = useState<string>('')
 
   // Flow state
-  const [step, setStep] = useState<LocalStep>('input')
+  const [step, setStep] = useState<LocalStep>('recipient')
   const [errorAtStep, setErrorAtStep] = useState<FlowVisibleStep | undefined>(undefined)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submittedKind, setSubmittedKind] = useState<SubmittedKind | null>(null)
@@ -76,8 +81,8 @@ export function SendModal() {
   const pendingUsdc = (shieldedUsdc ?? 0n) - max
   const { value: amount } = parseUsdcInput(amountStr)
   const { quote, isStale, refresh } = useFees()
-  // Gate Confirm while the initial shielded-balance sync is incomplete. Both Send tabs
-  // (private + external) spend the user's shielded USDC, so the same gate applies.
+  // Gate Confirm while the initial shielded-balance sync is incomplete. Every kind spends the
+  // user's shielded USDC, so the same gate applies.
   const syncGate = useSpendableSyncGate()
 
   // Deployment manifests — used to validate that the chosen destination chain actually has a
@@ -100,8 +105,16 @@ export function SendModal() {
       })
     return () => { cancelled = true }
   }, [isOpen])
+
+  const computedKind: SubmittedKind = computeKind(recipient, destChainId, hubChainId)
+  // Private (0zk) recipient → in-pool transfer; otherwise the funds exit to a public wallet.
+  const isPrivate = computedKind === 'transfer-shielded'
+  const isXchain = computedKind === 'unshield-xchain'
+
+  // A private (0zk) transfer has no destination-chain concept — the deployment check only applies
+  // to public unshields to a specific chain.
   const destHasDeployment =
-    tab === 'private' || !deployments
+    isPrivate || !deployments
       ? true
       : findDeploymentForChain(deployments, destChainId) !== undefined
   const destDeploymentError = destHasDeployment
@@ -120,8 +133,6 @@ export function SendModal() {
     : null
   const record = activeTx?.record ?? null
 
-  const computedKind: SubmittedKind = computeKind(tab, destChainId, hubChainId)
-  const isXchain = computedKind === 'unshield-xchain'
   // Display fee per (kind, amount, quote):
   //   transfer-shielded → relayer's `transfer` tier from the quote (A4); 0n pre-quote-load
   //   unshield-local    → relayer's `unshield` tier from the quote (A3+); 0n pre-quote-load
@@ -141,7 +152,7 @@ export function SendModal() {
   const { fees: displayFees, isLoading: feeLoading } = useDisplayFees(
     computedKind,
     amount,
-    tab === 'external' && isXchain ? destChainId : hubChainId,
+    isXchain ? destChainId : hubChainId,
     quote,
   )
   const { recipientReceives, totalDeducted, inputMax } = computeFeeBreakdown(
@@ -166,14 +177,21 @@ export function SendModal() {
   // Reset local state on close.
   useEffect(() => {
     if (!isOpen) {
-      setStep('input')
+      setStep('recipient')
       setSubmitError(null)
       setErrorAtStep(undefined)
       setAmountStr('')
       setRecipient('')
-      setTab('private')
+      setDestChainId(hubChainId)
       setSubmittedKind(null)
     }
+  }, [isOpen])
+
+  // Withdraw variant prefills the recipient with the connected EVM wallet on open (still editable);
+  // Send starts empty. Fires once per open — a mid-flow wallet change must not clobber user edits.
+  useEffect(() => {
+    if (!isOpen) return
+    if (variant === 'withdraw') setRecipient(connectedEvm ?? '')
   }, [isOpen])
 
   // Watch the submitted record for terminal transitions. Dep is `record?.executionState` rather
@@ -218,8 +236,8 @@ export function SendModal() {
       if (computedKind === 'transfer-shielded') {
         // Strict-validate the user's typed 0zk recipient (bech32m checksum, not just shape) at the
         // funds-committing boundary — a transposed character would otherwise send a private
-        // transfer to a valid-shaped but wrong/unspendable address. The input step's regex is only
-        // a fast pre-filter; this is the authoritative check.
+        // transfer to a valid-shaped but wrong/unspendable address. The recipient step's regex is
+        // only a fast pre-filter; this is the authoritative check.
         if (!(await validateShieldedAddressStrict(recipient))) {
           throw new Error(
             'That shielded (0zk) address is not valid — double-check it for typos. Funds sent to a ' +
@@ -244,9 +262,8 @@ export function SendModal() {
           useWalletOverride: prefs.submitFromWallet,
         })
       } else if (computedKind === 'unshield-local') {
-        // Fail fast if the relayer published a malformed broadcaster address — see UnshieldModal's
-        // version of this check for the rationale (avoid a 20-30s proof gen that's doomed to
-        // surface an opaque SDK throw deep in the pipeline).
+        // Fail fast if the relayer published a malformed broadcaster address — avoid a 20-30s
+        // proof gen that's doomed to surface an opaque SDK throw deep in the pipeline.
         if (!isShieldedAddress(activeQuote.broadcasterShieldedAddress)) {
           throw new Error(
             'Relayer published an invalid broadcaster address. Refresh and try again; if the ' +
@@ -254,8 +271,8 @@ export function SendModal() {
           )
         }
         setSubmittedKind('unshield-local')
-        // Freeze the broadcaster context with the rest of the submit state — same rationale as
-        // UnshieldModal: the proof must embed these EXACT values to pass the relayer's verifier.
+        // Freeze the broadcaster context with the rest of the submit state — the proof must embed
+        // these EXACT values to pass the relayer's verifier.
         submittedId = await txUnshieldLocal.submit({
           amount,
           feeCacheId,
@@ -300,28 +317,40 @@ export function SendModal() {
 
   if (!isOpen) return null
 
+  // The recipient step precedes the 3-segment indicator (Amount / Review / Confirm); it maps to
+  // step 1 for now. The restyle PR adds a dedicated Recipient segment.
+  const indicatorStep = step === 'recipient' ? 1 : overlayIndicatorStep(step)
+  const indicatorStatus = step === 'recipient' ? 'default' : overlayIndicatorStatus(step)
+  const flowLabel = variant === 'withdraw' ? 'Withdraw' : 'Send'
+
   return (
     <DepositOverlayShell
       open
       onClose={close}
       dismissible={true}
-      flowLabel="Send"
-      currentStep={overlayIndicatorStep(step)}
-      status={overlayIndicatorStatus(step)}
+      flowLabel={flowLabel}
+      currentStep={indicatorStep}
+      status={indicatorStatus}
     >
       <RelayerStatusBanner isOpen={isOpen} />
+      {step === 'recipient' && (
+        <SendRecipientStep
+          variant={variant}
+          recipient={recipient}
+          onRecipientChange={setRecipient}
+          destChainId={destChainId}
+          onDestChainIdChange={setDestChainId}
+          destDeploymentError={destDeploymentError}
+          onCancel={close}
+          onContinue={() => setStep('input')}
+        />
+      )}
       {step === 'input' && (
         <>
           <SendInputStepContent
-            tab={tab}
-            onTabChange={t => {
-              setTab(t)
-              setRecipient('') // recipient format differs between tabs; clear on switch
-            }}
+            variant={variant}
             destChainId={destChainId}
-            onDestChainIdChange={setDestChainId}
-            recipient={recipient}
-            onRecipientChange={setRecipient}
+            isXchain={isXchain}
             amountStr={amountStr}
             onAmountChange={setAmountStr}
             max={max}
@@ -330,32 +359,26 @@ export function SendModal() {
             displayFees={displayFees}
             flowBreakdown={flowBreakdown}
             feeLoading={feeLoading}
-            // The user always signs on HUB regardless of tab — `transfer-shielded` runs the
+            // The user always signs on HUB regardless of kind — `transfer-shielded` runs the
             // proof-bearing tx on hub, `unshield-local` likewise, and `unshield-xchain` signs
             // `atomicCrossChainUnshield` on hub before CCTP delivers on the destination chain.
-            // Previously `tab === 'external' && isXchain ? destChainId : hubChainId` wrongly
-            // warned about ETH on the destination chain — no destination-chain tx is ever sent
-            // from the user's wallet.
             gasChainId={hubChainId}
             // SendModal's three kinds default to the relayer path; user pays gas only when
             // they've toggled Preferences → "Submit transactions from my wallet".
             gaslessMode={!prefs.submitFromWallet}
-            destDeploymentError={destDeploymentError}
           />
           <SendInputStepFooter
-            tab={tab}
-            recipient={recipient}
             amountStr={amountStr}
             maxInput={inputMax}
-            destDeploymentError={destDeploymentError}
-            onCancel={close}
+            onBack={() => setStep('recipient')}
             onContinue={() => setStep('review')}
           />
         </>
       )}
       {step === 'review' && (
         <SendReviewStep
-          tab={tab}
+          variant={variant}
+          isPrivate={isPrivate}
           destChainId={destChainId}
           recipient={recipient}
           amount={amount}
@@ -371,7 +394,8 @@ export function SendModal() {
       {step === 'progress' && <ProgressStep record={record} />}
       {step === 'complete' && (
         <SendCompleteStep
-          tab={tab}
+          variant={variant}
+          isPrivate={isPrivate}
           destChainId={destChainId}
           recipient={recipient}
           recipientReceives={recipientReceives}

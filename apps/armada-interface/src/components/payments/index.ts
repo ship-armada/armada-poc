@@ -3,8 +3,11 @@
 
 export { SendModal } from './SendModal'
 
+export { SendRecipientStep } from './SendRecipientStep'
+export type { SendRecipientStepProps, SendFlowVariant } from './SendRecipientStep'
+
 export { SendInputStep } from './SendInputStep'
-export type { SendInputStepProps, SendTab } from './SendInputStep'
+export type { SendInputStepProps } from './SendInputStep'
 
 export { SendReviewStep } from './SendReviewStep'
 export type { SendReviewStepProps } from './SendReviewStep'

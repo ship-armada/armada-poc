@@ -201,8 +201,8 @@ export function feeModelForKind(kind: TxKind, opts?: UserFeeOpts): FeeModel {
  *  - `inputMax`          — the cap the AmountInput should accept so `totalDeducted ≤ max` always
  *                          holds. Differs from `max` only on `fee-on-top` (must reserve fee).
  *
- * Single source of truth. UnshieldModal + SendModal call this; the per-step components just
- * receive the three numbers as props.
+ * Single source of truth. ShieldModal + SendModal (the shared Send/Withdraw flow) call this; the
+ * per-step components just receive the three numbers as props.
  */
 export interface FeeBreakdown {
   recipientReceives: bigint

@@ -1,8 +1,8 @@
-// ABOUTME: Tests for SendInputStep — tab switching, per-tab recipient validation, Review gating, xchain notice gating.
+// ABOUTME: Tests for SendInputStep (amount step) — static chain display, amount gating, xchain notice, variant copy, Back/Review actions.
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import { SendInputStep, type SendTab } from './SendInputStep'
+import { SendInputStep, type SendInputStepProps } from './SendInputStep'
 import type { DisplayFees } from '@/lib/fees/displayFees'
 
 // useGasBalanceWarning hits wagmi's useAccount/useBalance which need a WagmiProvider; these
@@ -15,9 +15,6 @@ vi.mock('@/hooks/useGasBalanceWarning', () => ({
   }),
 }))
 
-const VALID_EVM = '0x1234567890abcdef1234567890abcdef12345678'
-const VALID_0ZK = '0zk' + 'a'.repeat(40)
-
 const ZERO_FEES: DisplayFees = {
   protocolFee: 0n,
   gasFee: 0n,
@@ -26,92 +23,72 @@ const ZERO_FEES: DisplayFees = {
   feeInclusive: false,
 }
 
-function setup(extras?: {
-  tab?: SendTab
-  destChainId?: number
-  recipient?: string
-  amountStr?: string
-  max?: bigint
-}) {
+function setup(extras?: Partial<SendInputStepProps>) {
   const max = extras?.max ?? 5_000_000n
-  const props = {
-    tab: extras?.tab ?? 'private' as SendTab,
-    onTabChange: vi.fn(),
+  const props: SendInputStepProps = {
+    variant: extras?.variant ?? 'send',
     destChainId: extras?.destChainId ?? 31337,
-    onDestChainIdChange: vi.fn(),
-    recipient: extras?.recipient ?? '',
-    onRecipientChange: vi.fn(),
+    isXchain: extras?.isXchain ?? false,
     amountStr: extras?.amountStr ?? '',
-    onAmountChange: vi.fn(),
+    onAmountChange: extras?.onAmountChange ?? vi.fn(),
     max,
-    maxInput: max,
-    displayFees: ZERO_FEES,
+    maxInput: extras?.maxInput ?? max,
+    displayFees: extras?.displayFees ?? ZERO_FEES,
     feeLoading: false,
-    gasChainId: extras?.destChainId ?? 31337,
-    onCancel: vi.fn(),
-    onContinue: vi.fn(),
+    gasChainId: extras?.gasChainId ?? 31337,
+    onBack: extras?.onBack ?? vi.fn(),
+    onContinue: extras?.onContinue ?? vi.fn(),
   }
   render(<SendInputStep {...props} />)
   return props
 }
 
 describe('<SendInputStep>', () => {
-  it('renders the Private and External tabs', () => {
+  it('renders the send amount question', () => {
     setup()
-    expect(screen.getByRole('tab', { name: /Private/ })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /External wallet/ })).toBeInTheDocument()
+    expect(screen.getByText(/How much USDC do you want to send/)).toBeInTheDocument()
   })
 
-  it('private tab: hides the chain selector', () => {
-    setup({ tab: 'private' })
-    // Private mode locks to hub — DepositAmountCard renders chain name as static text only
-    // (no listbox role; chainSelectable is false when chains.length === 1).
+  it('withdraw variant: uses withdraw copy + the "Withdrawal amount" field', () => {
+    setup({ variant: 'withdraw' })
+    expect(screen.getByText(/How much USDC do you want to withdraw/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Withdrawal amount')).toBeInTheDocument()
+  })
+
+  it('renders the chain statically (no interactive chain dropdown here)', () => {
+    setup()
+    // Chain is chosen on the recipient step; DepositAmountCard gets no onChainIdChange → static.
     expect(screen.queryByRole('listbox')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Network/i })).toBeNull()
   })
 
-  it('external tab: shows the chain selector', () => {
-    setup({ tab: 'external' })
-    // External mode passes all chains — chain dropdown is interactive (aria-haspopup="listbox").
-    expect(screen.getByRole('button', { name: /Network|Anvil|Sepolia|Base|Arbitrum/i })).toBeInTheDocument()
-  })
-
-  it('private tab: rejects an EVM address with an inline error', () => {
-    setup({ tab: 'private', recipient: VALID_EVM, amountStr: '1' })
-    expect(screen.getByRole('alert')).toHaveTextContent(/valid shielded address/i)
+  it('gates Review on the amount — too much shows an error and disables Review', () => {
+    setup({ amountStr: '10', maxInput: 5_000_000n, max: 5_000_000n })
+    expect(screen.getByText(/exceeds your private balance/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Review/ })).toBeDisabled()
   })
 
-  it('private tab: accepts a 0zk address', () => {
-    setup({ tab: 'private', recipient: VALID_0ZK, amountStr: '1' })
-    expect(screen.queryByRole('alert')).toBeNull()
-    expect(screen.getByRole('button', { name: /Review/ })).not.toBeDisabled()
+  it('enables Review + fires onContinue for a valid amount', () => {
+    const props = setup({ amountStr: '2' })
+    const review = screen.getByRole('button', { name: /Review/ })
+    expect(review).not.toBeDisabled()
+    fireEvent.click(review)
+    expect(props.onContinue).toHaveBeenCalledTimes(1)
   })
 
-  it('external tab: rejects a 0zk address', () => {
-    setup({ tab: 'external', recipient: VALID_0ZK, amountStr: '1' })
-    expect(screen.getByRole('alert')).toHaveTextContent(/valid EVM address/i)
-    expect(screen.getByRole('button', { name: /Review/ })).toBeDisabled()
-  })
-
-  it('external tab + hub destination: no xchain notice', () => {
-    setup({ tab: 'external', destChainId: 31337, recipient: VALID_EVM, amountStr: '1' })
+  it('no xchain notice when isXchain is false', () => {
+    setup({ isXchain: false, amountStr: '1' })
     expect(screen.queryByText(/CCTP confirmation/)).toBeNull()
   })
 
-  it('external tab + client destination: shows xchain notice', () => {
-    setup({ tab: 'external', destChainId: 31338, recipient: VALID_EVM, amountStr: '1' })
+  it('shows the xchain notice when isXchain is true', () => {
+    setup({ isXchain: true, amountStr: '1' })
     expect(screen.getByText(/CCTP confirmation/)).toBeInTheDocument()
   })
 
-  it('fires onTabChange when a tab is clicked', () => {
-    const props = setup({ tab: 'private' })
-    fireEvent.click(screen.getByRole('tab', { name: /External wallet/ }))
-    expect(props.onTabChange).toHaveBeenCalledWith('external')
-  })
-
-  it('fires onContinue when valid', () => {
-    const props = setup({ tab: 'private', recipient: VALID_0ZK, amountStr: '2' })
-    fireEvent.click(screen.getByRole('button', { name: /Review/ }))
-    expect(props.onContinue).toHaveBeenCalledTimes(1)
+  it('fires onBack from the Back button', () => {
+    const props = setup()
+    fireEvent.click(screen.getByRole('button', { name: /Back/ }))
+    expect(props.onBack).toHaveBeenCalledTimes(1)
   })
 })

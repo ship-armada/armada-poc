@@ -1,4 +1,4 @@
-// ABOUTME: Tests for SendReviewStep — mode label per tab, optional chain row, cross-chain tag, recipient truncation (0zk vs 0x).
+// ABOUTME: Tests for SendReviewStep — mode label by isPrivate, optional chain row, cross-chain tag, variant copy, recipient truncation.
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
@@ -12,12 +12,12 @@ function renderPrivate() {
   const onConfirm = vi.fn()
   render(
     <SendReviewStep
-      tab="private"
+      variant="send"
+      isPrivate
       destChainId={31337}
       recipient={VALID_0ZK}
       amount={5_000_000n}
       fee={null}
-      cctpFee={0n}
       totalDeducted={5_000_000n}
       isXchain={false}
       onBack={onBack}
@@ -28,27 +28,27 @@ function renderPrivate() {
 }
 
 describe('<SendReviewStep>', () => {
-  it('private tab: shows "Private transfer" mode and no chain row', () => {
+  it('private: shows "Private transfer" mode and no chain row', () => {
     renderPrivate()
     expect(screen.getByText('Private transfer')).toBeInTheDocument()
     expect(screen.queryByText('To chain')).toBeNull()
   })
 
-  it('private tab: truncates 0zk recipient with leading 0zk + ellipsis + last 4 chars', () => {
+  it('private: truncates 0zk recipient with leading 0zk + ellipsis + last 4 chars', () => {
     renderPrivate()
     // 0zkabcd…aaaa
     expect(screen.getByText(/^0zkabcd…/)).toBeInTheDocument()
   })
 
-  it('external tab: shows the chain row and an EVM-style truncated recipient', () => {
+  it('public: shows the chain row and an EVM-style truncated recipient', () => {
     render(
       <SendReviewStep
-        tab="external"
+        variant="send"
+        isPrivate={false}
         destChainId={31337}
         recipient={VALID_EVM}
         amount={5_000_000n}
         fee={null}
-        cctpFee={0n}
         totalDeducted={5_000_000n}
         isXchain={false}
         onBack={() => {}}
@@ -60,15 +60,15 @@ describe('<SendReviewStep>', () => {
     expect(screen.getByText('0x1234...5678')).toBeInTheDocument()
   })
 
-  it('external + xchain: shows the cross-chain tag', () => {
+  it('public + xchain: shows the cross-chain tag', () => {
     render(
       <SendReviewStep
-        tab="external"
+        variant="send"
+        isPrivate={false}
         destChainId={31338}
         recipient={VALID_EVM}
         amount={5_000_000n}
         fee={null}
-        cctpFee={20_000n}
         totalDeducted={5_000_000n}
         isXchain
         onBack={() => {}}
@@ -78,7 +78,26 @@ describe('<SendReviewStep>', () => {
     expect(screen.getByText('cross-chain')).toBeInTheDocument()
   })
 
-  it('fires onConfirm on the primary CTA', () => {
+  it('withdraw variant: uses the withdrawal headline + confirm label', () => {
+    render(
+      <SendReviewStep
+        variant="withdraw"
+        isPrivate={false}
+        destChainId={31337}
+        recipient={VALID_EVM}
+        amount={5_000_000n}
+        fee={null}
+        totalDeducted={5_000_000n}
+        isXchain={false}
+        onBack={() => {}}
+        onConfirm={() => {}}
+      />,
+    )
+    expect(screen.getByText('Review your withdrawal')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Confirm withdrawal/ })).toBeInTheDocument()
+  })
+
+  it('send variant: fires onConfirm on the primary CTA', () => {
     const { onConfirm } = renderPrivate()
     fireEvent.click(screen.getByRole('button', { name: /Confirm send/ }))
     expect(onConfirm).toHaveBeenCalledTimes(1)

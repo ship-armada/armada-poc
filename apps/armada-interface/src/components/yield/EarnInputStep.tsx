@@ -1,10 +1,11 @@
-// ABOUTME: Earn amount step — tab switcher, DepositAmountCard, APY hint (full-viewport earn flow).
+// ABOUTME: Earn amount step — Add/Withdraw pill tabs, serif prompt, chain-less DepositAmountCard + percent pills, and an APY hint on the Add tab.
+// ABOUTME: The vault has no chain selection; the APY panel is shown only for deposits (matches the mockup).
 
 import { useMemo } from 'react'
 import { Button } from '@/design'
 import { DepositAmountCard } from '@/components/deposit/DepositAmountCard/DepositAmountCard'
 import { depositOverlayShellStyles } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
-import { GasBalanceNotice, Tabs } from '@/components/ui'
+import { GasBalanceNotice } from '@/components/ui'
 import type { DisplayFees } from '@/lib/fees/displayFees'
 import type { FlowFeeBreakdown } from '@/components/ui/FeeBreakdownTooltip'
 import { useGasBalanceWarning } from '@/hooks/useGasBalanceWarning'
@@ -13,7 +14,6 @@ import { formatUsdcPlain, parseUsdcInput, usdcInputErrorMessage } from '@/lib/fo
 import { rateToApy } from '@/lib/yield'
 import type { YieldRate } from '@/hooks/useYieldRate'
 import { hasActiveAmount } from '@/utils/amountInput'
-import shieldStyles from '@/components/shield/ShieldInputStep.module.css'
 import styles from './EarnInputStep.module.css'
 
 export type EarnTab = 'add' | 'withdraw'
@@ -121,12 +121,29 @@ export function EarnInputStepContent({
       : 'How much USDC do you want to withdraw from the vault?'
 
   return (
-    <div className={shieldStyles.contentZone}>
-      <Tabs items={TABS} selected={tab} onSelect={onTabChange} ariaLabel="Earn mode" />
-      <p className={shieldStyles.question}>{question}</p>
+    <div className={styles.root}>
+      <div className={styles.tabs} role="tablist" aria-label="Earn mode">
+        {TABS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === item.id}
+            className={[styles.tab, tab === item.id && styles.tabActive].filter(Boolean).join(' ')}
+            onClick={() => onTabChange(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      <h1 className={styles.title}>{question}</h1>
+
       <DepositAmountCard
         chains={chains}
         chainId={hub.chainId}
+        // The vault has no chain selection — the mockup's earn amount card has no chain row.
+        showChain={false}
         amount={amountStr}
         onAmountChange={onAmountChange}
         balance={formatUsdcPlain(max)}
@@ -134,28 +151,36 @@ export function EarnInputStepContent({
         displayFees={displayFees}
         flowBreakdown={flowBreakdown}
         feeLoading={feeLoading}
+        // maxInput drives the 25% / 50% / 75% / Max percent pills; onMax keeps the exact fee-aware cap.
+        maxInput={maxInput}
         onMax={() => onAmountChange(formatUsdcPlain(maxInput))}
         error={amountError}
         amountAriaLabel={tab === 'add' ? 'Vault deposit amount' : 'Vault withdrawal amount'}
       />
+
       {showGasNotice ? (
         <GasBalanceNotice
           nativeSymbol={gasWarning.nativeSymbol}
           formattedBalance={gasWarning.formattedBalance}
         />
       ) : null}
+
       {continueBlockedReason ? (
         <div className={styles.blockedReason} role="alert">
           {continueBlockedReason}
         </div>
       ) : null}
-      <div className={styles.apyBlock}>
-        <div className={styles.apyLabel}>Estimated APY</div>
-        <div className={styles.apyValue}>{formatApy(rate)}</div>
-        <div className={styles.apyCaveat}>
-          Based on the vault's recent rate; the actual yield earned will vary.
+
+      {/* APY hint is a deposit concern — shown on the Add tab only (matches the mockup). */}
+      {tab === 'add' ? (
+        <div className={styles.apyBlock}>
+          <span className={styles.apyLabel}>Estimated APY</span>
+          <span className={styles.apyValue}>{formatApy(rate)}</span>
+          <p className={styles.apyCaveat}>
+            Based on the vault&apos;s recent rate; the actual yield earned will vary.
+          </p>
         </div>
-      </div>
+      ) : null}
     </div>
   )
 }

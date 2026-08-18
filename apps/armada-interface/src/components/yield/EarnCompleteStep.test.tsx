@@ -1,85 +1,95 @@
-// ABOUTME: Tests for EarnCompleteStep — title + body copy adapts to add vs withdraw, second line + explorer link render conditionally.
+// ABOUTME: Tests for EarnCompleteStep — title + summary rows adapt to add vs withdraw; explorer/dashboard CTAs.
+// ABOUTME: The summary total row echoes the modal's per-tab netLabel/netAmount (not a blind amount + fee).
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { EarnCompleteStep } from './EarnCompleteStep'
+import type { YieldRate } from '@/hooks/useYieldRate'
+
+const RATE: YieldRate = { rate: 1_000_000_000_000_000_000n, apyBps: 420n, fetchedAt: 0 }
+const CONFIRMED_AT = 1_700_000_000_000
 
 describe('<EarnCompleteStep>', () => {
-  it("add tab: 'Earning' headline + matching body copy", () => {
+  it("add tab: 'Deposit to vault complete' title + Add-to-vault summary", () => {
     render(
       <EarnCompleteStep
         tab="add"
-        recipientReceives={100_000_000n}
-        totalDeducted={100_000_000n}
-        onDone={() => {}}
+        amount={100_000_000n}
+        rate={RATE}
+        fee={1_000_000n}
+        netAmount={101_000_000n}
+        netLabel="Total deducted from balance"
+        confirmedAt={CONFIRMED_AT}
+        explorerUrl="https://example.test/tx/0xabc"
+        onViewExplorer={() => {}}
+        onGoToDashboard={() => {}}
       />,
     )
-    expect(screen.getByRole('heading', { name: 'Earning' })).toBeInTheDocument()
-    expect(screen.getByText(/earning yield on 100\.00 USDC/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Deposit to vault complete' })).toBeInTheDocument()
+    expect(screen.getByText('Add to vault')).toBeInTheDocument()
+    expect(screen.getByText('Your deposit')).toBeInTheDocument()
+    expect(screen.getByText('Total deducted from balance')).toBeInTheDocument()
   })
 
-  it("withdraw tab: 'Withdrawn from vault' headline + matching body", () => {
+  it("withdraw tab: 'Withdrawal from vault complete' title + Withdraw summary", () => {
     render(
       <EarnCompleteStep
         tab="withdraw"
-        recipientReceives={50_000_000n}
-        totalDeducted={50_000_000n}
-        onDone={() => {}}
+        amount={50_000_000n}
+        rate={RATE}
+        fee={500_000n}
+        netAmount={50_000_000n}
+        netLabel="You'll receive into private balance"
+        confirmedAt={CONFIRMED_AT}
+        onViewExplorer={() => {}}
+        onGoToDashboard={() => {}}
       />,
     )
-    expect(screen.getByRole('heading', { name: 'Withdrawn from vault' })).toBeInTheDocument()
-    expect(screen.getByText(/Returned 50\.00 USDC/)).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Withdrawal from vault complete' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Withdraw from vault')).toBeInTheDocument()
+    expect(screen.getByText('Your withdrawal')).toBeInTheDocument()
+    expect(screen.getByText("You'll receive into private balance")).toBeInTheDocument()
   })
 
-  it("shows the 'Total deducted' second line when totalDeducted > recipientReceives", () => {
+  it('disables View on explorer when no explorerUrl is provided', () => {
     render(
       <EarnCompleteStep
         tab="add"
-        recipientReceives={100_000_000n}
-        totalDeducted={101_000_000n}
-        onDone={() => {}}
+        amount={1_000_000n}
+        rate={RATE}
+        fee={0n}
+        netAmount={1_000_000n}
+        netLabel="Total deducted from balance"
+        confirmedAt={CONFIRMED_AT}
+        onViewExplorer={() => {}}
+        onGoToDashboard={() => {}}
       />,
     )
-    expect(screen.getByText(/Total deducted from your private balance: 101\.00 USDC/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'View on explorer' })).toBeDisabled()
   })
 
-  it('hides the second line when totalDeducted equals recipientReceives', () => {
+  it('fires onViewExplorer + onGoToDashboard on the CTAs', () => {
+    const onViewExplorer = vi.fn()
+    const onGoToDashboard = vi.fn()
     render(
       <EarnCompleteStep
         tab="add"
-        recipientReceives={100_000_000n}
-        totalDeducted={100_000_000n}
-        onDone={() => {}}
-      />,
-    )
-    expect(screen.queryByText(/Total deducted from your private balance/)).not.toBeInTheDocument()
-  })
-
-  it('renders the explorer link when explorerUrl is provided', () => {
-    render(
-      <EarnCompleteStep
-        tab="add"
-        recipientReceives={1_000_000n}
-        totalDeducted={1_010_000n}
+        amount={1_000_000n}
+        rate={RATE}
+        fee={0n}
+        netAmount={1_000_000n}
+        netLabel="Total deducted from balance"
+        confirmedAt={CONFIRMED_AT}
         explorerUrl="https://example.test/tx/0xabc"
-        onDone={() => {}}
+        onViewExplorer={onViewExplorer}
+        onGoToDashboard={onGoToDashboard}
       />,
     )
-    const link = screen.getByRole('link', { name: /View transaction/ })
-    expect(link).toHaveAttribute('href', 'https://example.test/tx/0xabc')
-  })
-
-  it('fires onDone on the CTA', () => {
-    const onDone = vi.fn()
-    render(
-      <EarnCompleteStep
-        tab="add"
-        recipientReceives={1_000_000n}
-        totalDeducted={1_000_000n}
-        onDone={onDone}
-      />,
-    )
-    fireEvent.click(screen.getByRole('button', { name: /Done/ }))
-    expect(onDone).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: 'View on explorer' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Go to dashboard' }))
+    expect(onViewExplorer).toHaveBeenCalledTimes(1)
+    expect(onGoToDashboard).toHaveBeenCalledTimes(1)
   })
 })

@@ -80,13 +80,19 @@ export function ChainSelect({ value, onChange, chains, label, disabled, classNam
           onClick={() => setMenuOpen(open => !open)}
         >
           <ChainIcon chainId={selected?.chainId ?? value} name={selected?.name ?? ''} />
-          <span className={styles.name}>{selected?.name}</span>
+          <span className={styles.copy}>
+            <span className={styles.label}>Network</span>
+            <span className={styles.name}>{selected?.name}</span>
+          </span>
           <ChevronDownIcon className={styles.chevron} aria-hidden />
         </button>
       ) : (
         <div className={styles.triggerStatic} aria-label={label}>
           <ChainIcon chainId={selected?.chainId ?? value} name={selected?.name ?? ''} />
-          <span className={styles.name}>{selected?.name}</span>
+          <span className={styles.copy}>
+            <span className={styles.label}>Network</span>
+            <span className={styles.name}>{selected?.name}</span>
+          </span>
         </div>
       )}
 

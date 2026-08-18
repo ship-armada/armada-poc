@@ -89,12 +89,12 @@ export function SendInputStepContent({
 
   return (
     <div className={styles.sendContent}>
-      <h1 className={styles.title}>How much USDC?</h1>
       <div className={styles.amountGroup}>
         <DepositAmountCard
           chains={allChains}
           chainId={destChainId}
-          // The chain is chosen on the recipient step; the mockup's send amount card has no chain row.
+          // Title now lives inside the card; the chain is chosen on the recipient step (no chain row here).
+          title="How much USDC?"
           showChain={false}
           amount={amountStr}
           onAmountChange={onAmountChange}

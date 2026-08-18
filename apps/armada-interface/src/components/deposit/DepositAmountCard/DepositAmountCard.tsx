@@ -1,21 +1,16 @@
-// ABOUTME: Deposit amount card — chain dropdown, large mono amount, balance/fee row. Matches crowdfund showcase DepositAmountCard.
+// ABOUTME: Deposit amount card — optional in-card title, chain dropdown, left-aligned large mono amount, balance/fee row.
 // ABOUTME: Chain list from parent (network config); icons via @web3icons when mapped, else letter fallback.
 
 import { useEffect, useId, useRef, useState } from 'react'
 import { ChevronDownIcon, WalletIcon } from '@heroicons/react/24/solid'
-import TokenUSDC from '@web3icons/react/icons/tokens/TokenUSDC'
 import { hasActiveAmount, sanitizeAmountInput } from '@/utils/amountInput'
 import { chainIconForChainId } from '@/components/ui/chainIcons'
 import { FeeBreakdownTooltip, type FlowFeeBreakdown } from '@/components/ui/FeeBreakdownTooltip'
-import { formatUsdcPlain } from '@/lib/format'
+import { formatUsdcAmount, formatUsdcPlain } from '@/lib/format'
 import type { DisplayFees } from '@/lib/fees/displayFees'
 import styles from './DepositAmountCard.module.css'
 
 const ICON_SIZE = 32
-// USDC coin beside the amount: rendered oversized inside a 40px clipped badge (matches the mockup —
-// the web3icons glyph carries padding, so scaling up + clipping makes it fill the circle).
-const AMOUNT_TOKEN_BADGE_PX = 40
-const AMOUNT_TOKEN_ICON_SIZE = Math.round((AMOUNT_TOKEN_BADGE_PX * 24) / 18)
 
 export interface DepositChainOption {
   chainId: number
@@ -28,7 +23,8 @@ export interface DepositAmountCardProps {
   onChainIdChange?: (chainId: number) => void
   /** Hide the chain row entirely (e.g. the Send flow, where the chain is chosen on a prior step). */
   showChain?: boolean
-  token?: string
+  /** Optional heading rendered inside the card (left-aligned) above the amount. */
+  title?: string
   amount: string
   onAmountChange: (value: string) => void
   balance?: string
@@ -77,7 +73,7 @@ export function DepositAmountCard({
   chainId,
   onChainIdChange,
   showChain = true,
-  token = 'USDC',
+  title,
   amount,
   onAmountChange,
   balance = '0.00',
@@ -129,8 +125,18 @@ export function DepositAmountCard({
 
   const showActiveAmount = hasActiveAmount(amount)
 
+  // Total displayed fee (protocol + broadcaster + CCTP). Rendered as the under-amount caption
+  // ("+ $X.XX FEE") once an amount is entered and the fee is non-zero — matching the mockup, which
+  // moved the fee off a bottom row and into a caption directly below the amount.
+  const totalFeeRaw = displayFees
+    ? displayFees.totalFee + (flowBreakdown?.broadcasterFee ?? 0n) + (flowBreakdown?.cctpFee ?? 0n)
+    : 0n
+  const showFee = showActiveAmount && displayFees !== undefined && totalFeeRaw > 0n
+
   return (
-    <div className={[styles.card, !showChain && styles.cardNoChain].filter(Boolean).join(' ')}>
+    <div className={styles.card}>
+      <div className={styles.cardTop}>
+      {title ? <p className={styles.cardTitle}>{title}</p> : null}
       {showChain ? (
       <div className={styles.topRow}>
         <div className={styles.chainRoot} ref={chainRootRef}>
@@ -177,42 +183,60 @@ export function DepositAmountCard({
       </div>
       ) : null}
 
-      <label className={styles.amountWrapper} htmlFor={amountInputId}>
-        <span className={styles.visuallyHidden}>{amountAriaLabel}</span>
-        <span className={styles.amountTokenIcon} aria-hidden>
-          <TokenUSDC size={AMOUNT_TOKEN_ICON_SIZE} variant="branded" />
-        </span>
-        <span
-          className={[styles.amountField, showActiveAmount && styles.amountFieldHasValue]
-            .filter(Boolean)
-            .join(' ')}
-        >
+      <div className={styles.amountStack}>
+        <label className={styles.amountWrapper} htmlFor={amountInputId}>
+          <span className={styles.visuallyHidden}>{amountAriaLabel}</span>
           <span
-            className={[styles.amountDisplay, showActiveAmount && styles.amountDisplayActive]
+            className={[styles.amountField, showActiveAmount && styles.amountFieldHasValue]
               .filter(Boolean)
               .join(' ')}
-            aria-hidden="true"
           >
-            {showActiveAmount ? amount : '0'}
+            <span
+              className={[styles.amountDisplay, showActiveAmount && styles.amountDisplayActive]
+                .filter(Boolean)
+                .join(' ')}
+              aria-hidden="true"
+            >
+              {showActiveAmount ? amount : '0'}
+            </span>
+            <input
+              id={amountInputId}
+              type="text"
+              inputMode="decimal"
+              className={styles.amountInput}
+              value={amount}
+              onChange={(e) => handleAmountInput(e.target.value)}
+              aria-label={amountAriaLabel}
+              aria-invalid={Boolean(error)}
+            />
           </span>
-          <input
-            id={amountInputId}
-            type="text"
-            inputMode="decimal"
-            className={styles.amountInput}
-            value={amount}
-            onChange={(e) => handleAmountInput(e.target.value)}
-            aria-label={amountAriaLabel}
-            aria-invalid={Boolean(error)}
-          />
-        </span>
-      </label>
+        </label>
+
+        {/* Fee caption (mockup): "+ $X.XX FEE" directly under the amount. The line is always
+            reserved (non-breaking space when there's no fee) so the card height stays stable. The
+            breakdown tooltip is kept beside the value for the full protocol/broadcaster split. */}
+        <div className={`armada-text-ui-label-md ${styles.feeCaption}`} role="status">
+          {showFee && displayFees ? (
+            <>
+              <span>+ ${formatUsdcAmount(totalFeeRaw, { decimals: 2 })} FEE</span>
+              <FeeBreakdownTooltip
+                fees={displayFees}
+                isLoading={feeLoading}
+                flowBreakdown={flowBreakdown}
+              />
+            </>
+          ) : (
+            ' '
+          )}
+        </div>
+      </div>
 
       {error ? (
         <p className={styles.amountError} role="alert">
           {error}
         </p>
       ) : null}
+      </div>
 
       <div className={styles.bottomRow}>
         <div className={styles.balanceControls}>
@@ -248,24 +272,6 @@ export function DepositAmountCard({
             </button>
           ) : null}
         </div>
-        {/* Fee surfaces only once an amount is entered (mockup behavior). The info tooltip with the
-            full breakdown is kept even though the mockup has no tooltip. */}
-        {showActiveAmount && displayFees ? (
-          <div className={styles.feeRow}>
-            <span className={styles.feeLabel}>Fee</span>
-            <span className={styles.feeValueGroup}>
-              <span className={styles.feeValue}>
-                {formatUsdcPlain(displayFees.totalFee + (flowBreakdown?.broadcasterFee ?? 0n) + (flowBreakdown?.cctpFee ?? 0n))}{' '}
-                {token}
-              </span>
-              <FeeBreakdownTooltip
-                fees={displayFees}
-                isLoading={feeLoading}
-                flowBreakdown={flowBreakdown}
-              />
-            </span>
-          </div>
-        ) : null}
       </div>
     </div>
   )

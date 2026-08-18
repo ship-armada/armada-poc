@@ -18,7 +18,7 @@ the external path).
 | `SendRecipientStep` | First step. Editable recipient (0zk or 0x), a privacy indicator, and a destination-chain selector shown **only** for public 0x recipients. Continue is gated on a valid address. |
 | `SendInputStep` | Amount step. `DepositAmountCard` with the chain rendered **statically** (chosen on the recipient step). Gates Review on the amount only. |
 | `SendReviewStep` | Read-only echo. Shows the resolved mode label (Private transfer / External wallet) + cross-chain tag when applicable. Variant drives the headline + confirm label. |
-| `SendCompleteStep` | Success copy adapts to private vs public + variant (withdraw → "Withdrawal complete"). |
+| `SendCompleteStep` | Frost-card confirmation; title by variant (send → "USDC send confirmed", withdraw → "USDC unshield confirmed"). |
 
 ## Step machine
 

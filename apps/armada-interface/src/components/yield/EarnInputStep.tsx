@@ -137,12 +137,11 @@ export function EarnInputStepContent({
         ))}
       </div>
 
-      <h1 className={styles.title}>{question}</h1>
-
       <DepositAmountCard
         chains={chains}
         chainId={hub.chainId}
-        // The vault has no chain selection — the mockup's earn amount card has no chain row.
+        // Title now lives inside the card; the vault has no chain selection (no chain row here).
+        title={question}
         showChain={false}
         amount={amountStr}
         onAmountChange={onAmountChange}

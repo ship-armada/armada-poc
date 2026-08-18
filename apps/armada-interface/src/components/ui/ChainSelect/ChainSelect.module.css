@@ -1,5 +1,5 @@
-/* ABOUTME: ChainSelect styling — full-width neutral-50 pill trigger + popover listbox, ported from the mockup SendRecipientScreen. */
-/* ABOUTME: Trigger height/background match the recipient address field so the two pills line up. */
+/* ABOUTME: ChainSelect styling — full-width frost pill trigger (icon + Network/name copy) + popover listbox, ported from the mockup SendRecipientScreen. */
+/* ABOUTME: Trigger fill/radius match the recipient address field so the two pills line up. */
 
 .root {
   position: relative;
@@ -12,11 +12,11 @@
   align-items: center;
   gap: var(--primitives-spacing-3);
   width: 100%;
-  height: var(--primitives-spacing-16);
-  padding: 0 var(--primitives-spacing-5);
+  min-height: calc(var(--primitives-spacing-12) + var(--primitives-spacing-2));
+  padding: var(--primitives-spacing-2) var(--primitives-spacing-5);
   border: none;
-  border-radius: calc(var(--primitives-spacing-5) / 2);
-  background: var(--primitives-color-neutral-50);
+  border-radius: calc(var(--primitives-borderRadius-xl) * 1px);
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
   text-align: left;
   box-sizing: border-box;
 }
@@ -58,9 +58,27 @@
   color: var(--semantic-color-text-secondary);
 }
 
-.name {
-  flex: 1;
+/* Two-line trigger copy — muted "Network" caption above the selected chain name (mockup). */
+.copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--primitives-spacing-1);
   min-width: 0;
+  flex: 1;
+}
+
+.label {
+  font-family: var(--semantic-typography-ui-label-sm-font-family);
+  font-weight: var(--primitives-fontWeight-regular);
+  font-size: var(--semantic-typography-ui-label-sm-font-size);
+  line-height: var(--semantic-typography-ui-label-sm-line-height);
+  letter-spacing: var(--semantic-typography-ui-label-sm-letter-spacing);
+  color: var(--semantic-color-text-muted);
+}
+
+.name {
   font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-size: calc(var(--primitives-fontSize-base) * 1px);
   font-weight: var(--primitives-fontWeight-medium);
@@ -117,5 +135,5 @@
   font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-weight: var(--primitives-fontWeight-regular);
   font-size: calc(var(--primitives-fontSize-base) * 1px);
-  color: var(--semantic-color-text-secondary);
+  color: var(--semantic-color-text-primary);
 }

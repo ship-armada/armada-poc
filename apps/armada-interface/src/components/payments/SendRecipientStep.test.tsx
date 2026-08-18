@@ -1,5 +1,5 @@
-// ABOUTME: Tests for SendRecipientStep — address validity, private/public reveal badge, chain-selector visibility, deployment-error gating, Continue.
-// ABOUTME: The footer (privacy badge + Continue) reveals only once the address is valid — matches the mockup (no persistent buttons).
+// ABOUTME: Tests for SendRecipientStep — address validity, private/public badge, chain-selector visibility, deployment-error gating, Cancel/Continue.
+// ABOUTME: The action row is always visible — Continue stays disabled + labeled "Enter address" until the address is valid.
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
@@ -16,6 +16,7 @@ function setup(extras?: Partial<SendRecipientStepProps>) {
     destChainId: extras?.destChainId ?? 31337,
     onDestChainIdChange: extras?.onDestChainIdChange ?? vi.fn(),
     destDeploymentError: extras?.destDeploymentError,
+    onCancel: extras?.onCancel ?? vi.fn(),
     onContinue: extras?.onContinue ?? vi.fn(),
   }
   render(<SendRecipientStep {...props} />)
@@ -23,20 +24,26 @@ function setup(extras?: Partial<SendRecipientStepProps>) {
 }
 
 describe('<SendRecipientStep>', () => {
-  it('prompts "Where do you want to send your USDC?" (both variants)', () => {
-    setup()
-    expect(screen.getByRole('heading', { name: /Where do you want to/ })).toBeInTheDocument()
+  it('send variant prompts "Send your USDC to:"', () => {
+    setup({ variant: 'send' })
+    expect(screen.getByRole('heading', { name: /Send your USDC to:/ })).toBeInTheDocument()
   })
 
-  it('shows no Continue button while the recipient is empty', () => {
-    setup()
-    expect(screen.queryByRole('button', { name: /Continue/ })).toBeNull()
+  it('withdraw variant prompts "Where do you want to send your USDC?"', () => {
+    setup({ variant: 'withdraw' })
+    expect(screen.getByRole('heading', { name: /Where do you want to send your USDC\?/ })).toBeInTheDocument()
   })
 
-  it('shows an error and no Continue for a malformed address', () => {
+  it('shows a disabled "Enter address" CTA while the recipient is empty', () => {
+    setup()
+    expect(screen.getByRole('button', { name: /Enter address/ })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: /^Continue$/ })).toBeNull()
+  })
+
+  it('shows an error and keeps the CTA disabled + labeled "Enter address" for a malformed address', () => {
     setup({ recipient: 'nonsense' })
     expect(screen.getByRole('alert')).toHaveTextContent(/valid shielded .* or public wallet/i)
-    expect(screen.queryByRole('button', { name: /Continue/ })).toBeNull()
+    expect(screen.getByRole('button', { name: /Enter address/ })).toBeDisabled()
   })
 
   it('0zk recipient: private badge, no chain selector, Continue enabled', () => {
@@ -66,12 +73,19 @@ describe('<SendRecipientStep>', () => {
       destDeploymentError: 'This destination chain has no deployment manifest. Pick another chain.',
     })
     expect(screen.getByRole('alert')).toHaveTextContent(/no deployment manifest/i)
-    expect(screen.getByRole('button', { name: /Continue/ })).toBeDisabled()
+    // The address is valid so the label reads "Continue", but the deployment error keeps it disabled.
+    expect(screen.getByRole('button', { name: /^Continue$/ })).toBeDisabled()
   })
 
   it('fires onContinue for a valid recipient', () => {
     const props = setup({ recipient: VALID_0ZK })
     fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
     expect(props.onContinue).toHaveBeenCalledTimes(1)
+  })
+
+  it('fires onCancel when the Cancel button is clicked', () => {
+    const props = setup()
+    fireEvent.click(screen.getByRole('button', { name: /Cancel/ }))
+    expect(props.onCancel).toHaveBeenCalledTimes(1)
   })
 })

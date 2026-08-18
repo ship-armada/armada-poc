@@ -4,20 +4,47 @@
 .card {
   display: flex;
   flex-direction: column;
+  justify-content: space-between;
+  align-items: stretch;
   gap: var(--primitives-spacing-10);
   width: 100%;
-  padding: var(--primitives-spacing-5);
-  background: var(--semantic-color-surface-main);
+  padding: var(--primitives-spacing-8);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent) 0%,
+    color-mix(in srgb, var(--primitives-color-neutral-50) 20%, transparent) 100%
+  );
   border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
   backdrop-filter: blur(15px);
   -webkit-backdrop-filter: blur(15px);
   box-sizing: border-box;
 }
 
-/* Chain-less card (Send flow): the amount is the top element, so the top padding is enlarged
-   to match the mockup, where the chain row's absence is compensated with extra headroom. */
-.cardNoChain {
-  padding-top: calc(var(--primitives-spacing-12) + var(--primitives-spacing-3));
+/* Title + chain + amount cluster. Grouped so the card's `space-between` pushes the balance/fee
+   controls to the bottom while this cluster stays at the top — the amount then sits high (matching
+   the mockup) instead of floating in the vertical center. */
+.cardTop {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--primitives-spacing-6);
+  width: 100%;
+}
+
+/* In-card heading (left-aligned) — the amount step's title now lives inside the card. Self-contained
+   type (not the global body-lg class) so the medium weight reliably wins the cascade. */
+.cardTitle {
+  margin: 0;
+  width: 100%;
+  padding-left: var(--primitives-spacing-1);
+  text-align: left;
+  font-family: var(--semantic-typography-ui-body-lg-font-family);
+  font-size: var(--semantic-typography-ui-body-lg-font-size);
+  line-height: var(--semantic-typography-ui-body-lg-line-height);
+  letter-spacing: var(--semantic-typography-ui-body-lg-letter-spacing);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  box-sizing: border-box;
 }
 
 .topRow,
@@ -80,7 +107,7 @@
 .pctPills {
   display: flex;
   align-items: center;
-  gap: var(--primitives-spacing-1);
+  gap: var(--primitives-spacing-2);
   flex-shrink: 0;
 }
 
@@ -167,40 +194,6 @@
   letter-spacing: 0;
 }
 
-/* Fee row (mockup style): its own inset "card" below the balance controls — a muted, rounded,
-   fixed-height pill (the translucent fill stacks on the translucent card so it reads as inset).
-   "Fee" label left, mono value right. */
-.feeRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  height: calc(var(--primitives-spacing-10) - var(--primitives-spacing-1));
-  padding-inline: var(--primitives-spacing-3);
-  border-radius: calc(var(--primitives-borderRadius-sm) * 1px + 1px);
-  background: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
-}
-
-.feeLabel {
-  font-family: var(--primitives-fontFamily-ui), sans-serif;
-  font-weight: var(--primitives-fontWeight-regular);
-  font-size: calc(var(--primitives-fontSize-base) * 1px);
-  color: var(--semantic-color-text-secondary);
-}
-
-.feeValueGroup {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--primitives-spacing-1);
-}
-
-.feeValue {
-  font-family: var(--primitives-fontFamily-mono), ui-monospace, monospace;
-  font-weight: var(--primitives-fontWeight-medium);
-  font-size: calc(var(--primitives-fontSize-base) * 1px);
-  color: var(--semantic-color-text-primary);
-}
-
 .feeText,
 .chainOptionLabel {
   font-family: var(--primitives-fontFamily-ui), sans-serif;
@@ -253,37 +246,37 @@
   outline-offset: -2px;
 }
 
+/* Amount + fee caption cluster (mockup `.amountStack`) — the caption sits directly under the
+   amount and always reserves its line, so the card height stays stable whether or not a fee shows. */
+.amountStack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--primitives-spacing-2);
+  width: 100%;
+  min-width: 0;
+}
+
 .amountWrapper {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: var(--primitives-spacing-2);
   width: 100%;
-  min-height: calc(var(--primitives-fontSize-4xl) * 1.2 * 1px);
+  min-height: calc(var(--primitives-fontSize-4xl) * 1px);
   cursor: text;
 }
 
-/* USDC coin sits directly beside the amount (mockup places the token glyph next to the number,
-   not as a separate top-right label). */
-.amountTokenIcon {
-  width: var(--primitives-spacing-10);
-  height: var(--primitives-spacing-10);
-  flex-shrink: 0;
-  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
-  overflow: hidden;
-  display: flex;
+/* Fee caption ("+ $X.XX FEE") under the amount. Fixed line height reserves the row even when
+   empty. Inline-flex so the breakdown-tooltip icon sits beside the value. */
+.feeCaption {
+  margin: 0;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-}
-
-/* The web3icons `size` prop doesn't reliably drive the rendered svg in this app (see .tokenIconSlot),
-   so size the coin via CSS: render it oversized (24/18 of the 40px badge) and let the badge's
-   overflow:hidden clip the glyph's built-in padding so the coin fills the circle — matches the mockup. */
-.amountTokenIcon :global(svg) {
-  width: calc(var(--primitives-spacing-10) * 24 / 18);
-  height: calc(var(--primitives-spacing-10) * 24 / 18);
-  display: block;
-  flex-shrink: 0;
+  gap: var(--primitives-spacing-1);
+  min-height: var(--primitives-spacing-4);
+  line-height: var(--primitives-spacing-4);
+  color: var(--semantic-color-text-secondary);
 }
 
 .amountField {
@@ -295,9 +288,9 @@
 .amountDisplay,
 .amountInput {
   font-family: var(--primitives-fontFamily-mono), ui-monospace, monospace;
-  font-size: var(--primitives-spacing-10);
-  font-weight: var(--primitives-fontWeight-medium);
-  line-height: var(--primitives-lineHeight-snug);
+  font-size: calc(var(--primitives-fontSize-4xl) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  line-height: calc(var(--primitives-fontSize-4xl) * 1px);
   font-variant-numeric: tabular-nums;
 }
 

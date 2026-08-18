@@ -1,4 +1,4 @@
-// ABOUTME: Tests for SendCompleteStep — title + privacy/network summary rows by recipient format + variant, CTA wiring.
+// ABOUTME: Tests for SendCompleteStep — confirmed title by variant, date/network summary rows (privacy notice hidden once confirmed), CTA wiring.
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
@@ -26,14 +26,16 @@ function renderComplete(extras?: Partial<SendCompleteStepProps>) {
 }
 
 describe('<SendCompleteStep>', () => {
-  it('send: renders the "Send confirmed" title + a "Private" privacy row', () => {
+  it('send: renders the "USDC send confirmed" title + date row + amount (privacy notice hidden)', () => {
     renderComplete({ recipient: VALID_0ZK })
-    expect(screen.getByText('Send confirmed')).toBeInTheDocument()
-    expect(screen.getByText('Private')).toBeInTheDocument()
+    expect(screen.getByText('USDC send confirmed')).toBeInTheDocument()
+    expect(screen.getByText('Date and time')).toBeInTheDocument()
+    // The privacy notice is only shown pre-confirmation; the confirmed view omits it.
+    expect(screen.queryByText('Private transfer.')).toBeNull()
     expect(screen.getAllByText(/100\.00 USDC/).length).toBeGreaterThan(0)
   })
 
-  it('public: renders the network row + a "Public" privacy row', () => {
+  it('public: renders the network row + amount (no privacy notice once confirmed)', () => {
     renderComplete({
       recipient: VALID_EVM,
       networkName: 'Anvil Hub (local)',
@@ -41,13 +43,13 @@ describe('<SendCompleteStep>', () => {
       totalDeducted: 50_000_000n,
     })
     expect(screen.getByText('Anvil Hub (local)')).toBeInTheDocument()
-    expect(screen.getByText('Public')).toBeInTheDocument()
+    expect(screen.queryByText('Public transfer.')).toBeNull()
     expect(screen.getAllByText(/50\.00 USDC/).length).toBeGreaterThan(0)
   })
 
-  it('withdraw variant: uses the "Withdrawal complete" title', () => {
+  it('withdraw variant: uses the "USDC unshield confirmed" title', () => {
     renderComplete({ variant: 'withdraw', recipient: VALID_EVM, networkName: 'Anvil Hub (local)' })
-    expect(screen.getByText('Withdrawal complete')).toBeInTheDocument()
+    expect(screen.getByText('USDC unshield confirmed')).toBeInTheDocument()
   })
 
   it('disables "View on explorer" when no explorer URL is provided', () => {

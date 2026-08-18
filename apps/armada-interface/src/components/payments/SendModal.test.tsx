@@ -132,15 +132,15 @@ describe('<SendModal>', () => {
     expect(screen.getByLabelText('Recipient address')).toBeInTheDocument()
   })
 
-  it('Continue reveals only once the recipient is a valid address', () => {
+  it('Continue enables only once the recipient is a valid address', () => {
     renderModal({ open: 'payment', shielded: 10_000_000n })
-    // Empty + invalid: no footer, so no Continue button at all (matches the mockup).
-    expect(screen.queryByRole('button', { name: /Continue/ })).toBeNull()
+    // Empty + invalid: the CTA is always present but disabled + labeled "Enter address".
+    expect(screen.getByRole('button', { name: /Enter address/ })).toBeDisabled()
     fireEvent.change(screen.getByLabelText('Recipient address'), { target: { value: 'not-an-address' } })
     expect(screen.getByRole('alert')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Continue/ })).toBeNull()
+    expect(screen.getByRole('button', { name: /Enter address/ })).toBeDisabled()
     fireEvent.change(screen.getByLabelText('Recipient address'), { target: { value: VALID_0ZK } })
-    expect(screen.getByRole('button', { name: /Continue/ })).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: /^Continue$/ })).not.toBeDisabled()
   })
 
   it('a 0zk recipient hides the chain selector (private transfer)', () => {
@@ -160,7 +160,7 @@ describe('<SendModal>', () => {
     completeRecipientStep(VALID_0ZK)
     fireEvent.change(screen.getByLabelText('Send amount'), { target: { value: '3' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
-    expect(screen.getByText('Private')).toBeInTheDocument()
+    expect(screen.getByText('Private transfer.')).toBeInTheDocument()
     expect(screen.queryByText('Network')).toBeNull()
   })
 
@@ -169,7 +169,7 @@ describe('<SendModal>', () => {
     completeRecipientStep(VALID_EVM, '31337')
     fireEvent.change(screen.getByLabelText('Send amount'), { target: { value: '3' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
-    expect(screen.getByText('Public')).toBeInTheDocument()
+    expect(screen.getByText('Public transfer.')).toBeInTheDocument()
     expect(screen.getByText(/Anvil Hub/)).toBeInTheDocument()
   })
 
@@ -248,22 +248,22 @@ describe('<SendModal>', () => {
       fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
       fireEvent.change(screen.getByLabelText('Withdrawal amount'), { target: { value: '4' } })
       fireEvent.click(screen.getByRole('button', { name: /Review/ }))
-      expect(screen.getByText('Review your withdrawal')).toBeInTheDocument()
+      expect(screen.getByText('Review your USDC unshield')).toBeInTheDocument()
       await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: /Confirm withdrawal/ }))
+        fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
       })
       await waitFor(() => {
         expect(screen.getByText('Pending')).toBeInTheDocument()
       })
     })
 
-    it('uses withdraw copy — "Review your withdrawal" and "Confirm withdrawal"', () => {
+    it('uses withdraw copy — "Review your USDC unshield" and "Confirm"', () => {
       renderModal({ open: 'withdraw', shielded: 10_000_000n, evm: VALID_EVM })
       fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
       fireEvent.change(screen.getByLabelText('Withdrawal amount'), { target: { value: '5' } })
       fireEvent.click(screen.getByRole('button', { name: /Review/ }))
-      expect(screen.getByText('Review your withdrawal')).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: /Confirm withdrawal/ })).toBeInTheDocument()
+      expect(screen.getByText('Review your USDC unshield')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Confirm' })).toBeInTheDocument()
     })
   })
 })

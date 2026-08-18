@@ -1,110 +1,115 @@
-// ABOUTME: First-deposit prompt card guiding users into the shielded pool, with default and v2 layouts.
+// ABOUTME: Callout card guiding users into the shielded pool; doubles as an earn/APY banner via optional props.
 // ABOUTME: Ported from the armada-app design mockup.
-import { PlusIcon } from '@heroicons/react/24/outline'
+import type { ComponentType, SVGProps } from 'react'
+import { InformationCircleIcon, PlusIcon } from '@heroicons/react/24/outline'
 import { IconButton } from '@/design'
+import { Tooltip } from '@/design'
 import { TokenBadge } from '@/components/dashboard/TokenBadge'
-import { useMobileLayout } from '@/hooks/useMobileLayout'
 import styles from './DepositTooltip.module.css'
 
 const TOOLTIP_ICON_PX = 34
-/** Scaled for v2 illustration tile (102×102). */
-const TOOLTIP_ICON_PX_V2 = 51
+
+const DEFAULT_HEADLINE = 'Shield your USDC'
+const DEFAULT_BODY =
+  "Depositing into Armada's shielded pool is the first step to move funds privately."
 
 export interface DepositTooltipProps {
   variant?: 'default' | 'v2'
   onDeposit?: () => void
+  /** Info tooltip in the top-right (earn APY banner). */
+  infoTooltip?: string
+  headline?: string
+  hideHeadline?: boolean
+  body?: string
+  ariaLabel?: string
+  BadgeIcon?: ComponentType<SVGProps<SVGSVGElement>>
+  /** `white` = solid white badge (earn APY card). Default is the brand gradient. */
+  badgeBackground?: 'brand' | 'white'
+  /** Icon tile fill. Earn uses purple; deposit uses amber. */
+  iconTileTone?: 'amber' | 'purple'
+  stretch?: boolean
+  className?: string
 }
 
-export function DepositTooltip({ variant = 'default', onDeposit }: DepositTooltipProps) {
-  const isV2 = variant === 'v2'
-  const isMobile = useMobileLayout()
-  const isTapTarget = isMobile && Boolean(onDeposit)
+export function DepositTooltip({
+  onDeposit,
+  infoTooltip,
+  headline = DEFAULT_HEADLINE,
+  hideHeadline = false,
+  body = DEFAULT_BODY,
+  ariaLabel,
+  BadgeIcon = PlusIcon,
+  badgeBackground = 'brand',
+  iconTileTone = 'amber',
+  stretch = false,
+  className,
+}: DepositTooltipProps) {
+  const hasInfoTooltip = Boolean(infoTooltip)
+  const wrapAsButton = Boolean(onDeposit) && !hasInfoTooltip
+  const accessibleName = ariaLabel ?? headline
 
   const rootClassName = [
     styles.root,
-    isV2 && styles.rootV2,
-    isTapTarget && styles.rootInteractive,
+    stretch && styles.stretch,
+    wrapAsButton && styles.rootInteractive,
+    hasInfoTooltip && styles.rootDismissable,
+    className,
   ]
     .filter(Boolean)
     .join(' ')
 
   const content = (
     <>
-      {!isV2 ? <span className={styles.pointer} aria-hidden /> : null}
-
-      <div
-        className={[
-          styles.iconTile,
-          isV2 && styles.iconTileV2,
-          isTapTarget && styles.iconTileStatic,
-        ]
-          .filter(Boolean)
-          .join(' ')}
-      >
-        <div
-          className={[styles.iconCluster, isV2 && styles.iconClusterV2].filter(Boolean).join(' ')}
-          aria-hidden
-        >
+      <div className={[
+        styles.iconTile,
+        iconTileTone === 'purple' && styles.iconTilePurple,
+        (wrapAsButton || hasInfoTooltip) && styles.iconTileStatic,
+      ].filter(Boolean).join(' ')}>
+        <div className={styles.iconCluster} aria-hidden>
           <div className={styles.tokenBadgeSlot}>
-            <TokenBadge size={isV2 ? TOOLTIP_ICON_PX_V2 : TOOLTIP_ICON_PX} />
+            <TokenBadge size={TOOLTIP_ICON_PX} />
           </div>
           <div className={styles.depositButtonSlot}>
-            {isTapTarget ? (
-              <span
-                className={[
-                  styles.depositIcon,
-                  styles.depositIconDecor,
-                  isV2 && styles.depositIconV2,
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-                aria-hidden
-              >
-                <PlusIcon
-                  className={[styles.depositIconGlyph, isV2 && styles.depositIconGlyphV2]
-                    .filter(Boolean)
-                    .join(' ')}
-                  strokeWidth={1.5}
-                />
-              </span>
-            ) : (
-              <IconButton
-                variant="gradient"
-                className={[styles.depositIcon, isV2 && styles.depositIconV2].filter(Boolean).join(' ')}
-                iconClassName={[styles.depositIconGlyph, isV2 && styles.depositIconGlyphV2]
-                  .filter(Boolean)
-                  .join(' ')}
-                icon={<PlusIcon strokeWidth={1.5} aria-hidden />}
-                aria-label="Deposit"
-              />
-            )}
+            <span
+              className={[styles.depositIcon, badgeBackground === 'white' && styles.depositIconWhite]
+                .filter(Boolean)
+                .join(' ')}
+              aria-hidden
+            >
+              <BadgeIcon className={styles.depositIconGlyph} strokeWidth={1.5} />
+            </span>
           </div>
         </div>
       </div>
 
-      <div className={[styles.textBlock, isV2 && styles.textBlockV2].filter(Boolean).join(' ')}>
-        <div className={styles.textStack}>
-          <p className={styles.headline}>Make your first deposit</p>
-          <p className={`armada-text-ui-body-sm ${styles.body}`}>
-            Depositing into Armada&apos;s shielded pool is the first step to move funds privately.
-          </p>
-        </div>
-        {isV2 && !isTapTarget ? (
-          <button type="button" className={styles.depositCta} onClick={onDeposit} data-testing-click="deposit_first_button">
-            Deposit
-          </button>
-        ) : null}
+      <div className={styles.textBlock}>
+        {hideHeadline ? null : <p className={styles.headline}>{headline}</p>}
+        <p className={`armada-text-ui-body-sm ${styles.body}`}>{body}</p>
       </div>
     </>
   )
 
-  if (isTapTarget) {
+  const infoControl = infoTooltip ? (
+    <div className={styles.dismiss}>
+      <Tooltip variant="centered" content={infoTooltip}>
+        <IconButton
+          variant="frosted"
+          size="sm"
+          iconClassName={styles.dismissIcon}
+          icon={<InformationCircleIcon strokeWidth={1.5} aria-hidden />}
+          aria-label="About the APY estimate"
+        />
+      </Tooltip>
+    </div>
+  ) : null
+
+  if (wrapAsButton) {
     return (
       <button
         type="button"
         className={rootClassName}
         onClick={onDeposit}
-        aria-label="Make your first deposit"
+        aria-label={accessibleName}
         data-testing-click="deposit_first_button"
       >
         {content}
@@ -112,8 +117,25 @@ export function DepositTooltip({ variant = 'default', onDeposit }: DepositToolti
     )
   }
 
+  if (hasInfoTooltip && onDeposit) {
+    return (
+      <aside className={rootClassName}>
+        {infoControl}
+        <button
+          type="button"
+          className={styles.activate}
+          onClick={onDeposit}
+          aria-label={accessibleName}
+        >
+          {content}
+        </button>
+      </aside>
+    )
+  }
+
   return (
-    <aside className={rootClassName} aria-label="Deposit guidance">
+    <aside className={rootClassName} aria-label={accessibleName}>
+      {infoControl}
       {content}
     </aside>
   )

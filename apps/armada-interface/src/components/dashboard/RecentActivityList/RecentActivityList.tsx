@@ -23,6 +23,8 @@ import { BalanceScrambleValue } from '@/components/dashboard/BalanceScrambleValu
 import { formatUsdcAmount, formatTimeAgo } from '@/components/dashboard/dashboardFormat'
 import type { DashboardActivityItem, DashboardActivityKind } from '@/components/dashboard/txActivityAdapter'
 import usdcAmount from '@/design/styles/usdcAmount.module.css'
+import { hidePeekEventHandlers } from '@/hooks/useHidePeek'
+import { useMobileLayout } from '@/hooks/useMobileLayout'
 import styles from './RecentActivityList.module.css'
 
 /** Bottom-fade height for the scrollable preview viewport. */
@@ -72,16 +74,31 @@ function ActivityListItems({
   balanceRevealed: boolean
   onItemClick?: (item: DashboardActivityItem) => void
 }) {
+  const isMobile = useMobileLayout()
+  const [peekedId, setPeekedId] = useState<string | null>(null)
+
   return (
     <ul className={styles.list}>
       {items.map((item) => {
         const Icon = ACTIVITY_ICONS[item.kind]
         const amountLabel = formatActivityAmount(item)
-        const amountTone = activityAmountTone(item, balanceRevealed)
+        const itemRevealed = balanceRevealed || peekedId === item.id
+        const amountTone = activityAmountTone(item, itemRevealed)
+        const peekHandlers = hidePeekEventHandlers(
+          !balanceRevealed,
+          () => setPeekedId(item.id),
+          () => setPeekedId((current) => (current === item.id ? null : current)),
+          isMobile,
+        )
 
         return (
           <li key={item.id}>
-            <button type="button" className={styles.item} onClick={() => onItemClick?.(item)}>
+            <button
+              type="button"
+              className={styles.item}
+              onClick={() => onItemClick?.(item)}
+              {...peekHandlers}
+            >
               <span className={styles.iconBadge} aria-hidden>
                 <Icon className={styles.icon} strokeWidth={1.5} />
               </span>
@@ -91,9 +108,9 @@ function ActivityListItems({
               </div>
               <span
                 className={[styles.amount, usdcAmount.font, amountTone].filter(Boolean).join(' ')}
-                aria-label={balanceRevealed ? amountLabel : 'Amount hidden'}
+                aria-label={itemRevealed ? amountLabel : 'Amount hidden'}
               >
-                <BalanceScrambleValue value={amountLabel} revealed={balanceRevealed} />
+                <BalanceScrambleValue value={amountLabel} revealed={itemRevealed} />
               </span>
             </button>
           </li>

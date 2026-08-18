@@ -7,7 +7,6 @@ import { useSetAtom } from 'jotai'
 import { Cog6ToothIcon } from '@heroicons/react/24/outline'
 import { ArmadaLogo } from '@/design'
 import { WalletConnector } from './WalletConnector'
-import { AppFooter } from './AppFooter/AppFooter'
 import { SyncBanner } from './sync'
 import { HistoryRecoveryBanner } from './history'
 import { openModalAtom } from '@/state/ui'
@@ -56,11 +55,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
       {/* Inline paddingTop instead of a Tailwind utility — `pt-28` was getting eaten somewhere
           in the cascade (either not generated, or overridden by global.css's universal-selector
           reset). Inline style has the highest specificity short of !important and bypasses
-          generation issues entirely. 6.5rem seats the content below the fixed header, matching the
-          mockup's header→card gap. */}
+          generation issues entirely. Tied to the mockup's `page-block` token (the polish update's
+          header→card gap) so the two stay in sync. */}
       <main
         className="relative flex flex-1 flex-col items-center justify-start"
-        style={{ paddingTop: '6.5rem' }}
+        style={{ paddingTop: 'var(--semantic-spacing-page-block)' }}
       >
         {/* Status strips are overlaid (absolute) rather than in flow, so a transient banner
             appearing/disappearing never reflows the page content beneath it. pointer-events are
@@ -73,7 +72,6 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </div>
         {children}
       </main>
-      <AppFooter />
     </div>
   )
 }

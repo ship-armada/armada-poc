@@ -4,8 +4,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { useNavigate } from 'react-router-dom'
+import { ChartBarIcon } from '@heroicons/react/24/outline'
 import { BalanceCard } from '@/components/dashboard/BalanceCard'
 import { DepositTooltip } from '@/components/dashboard/DepositTooltip'
+import { DashboardScrollTopFade } from '@/components/dashboard/DashboardScrollTopFade'
 import { RecentActivityList } from '@/components/dashboard/RecentActivityList'
 import { txListToActivityItems } from '@/components/dashboard/txActivityAdapter'
 import { formatUsdcAmount } from '@/components/dashboard/dashboardFormat'
@@ -38,28 +40,35 @@ export function Dashboard() {
   // Actions
   const openActionModal = useOpenActionModal()
   const setOpenModal = useSetAtom(openModalAtom)
+  const openModal = useAtomValue(openModalAtom)
   const navigate = useNavigate()
 
   // Balance visibility is app-wide (shared with the wallet panel's hide toggle) via balanceHiddenAtom.
   const [balanceHidden, setBalanceHidden] = useAtom(balanceHiddenAtom)
-  // Local UI state — activity panel visibility (new dashboard affordance).
-  const [activityVisible, setActivityVisible] = useState(true)
 
   // Balance odometer roll: intro roll from zero on first paint, then roll from the previous value
-  // whenever the balance changes (e.g. after a deposit settles).
+  // whenever the balance changes (e.g. after a deposit settles). The roll is deferred until no tx
+  // modal is open, so it plays on the dashboard rather than behind a modal.
   const balanceNumber = usdcToNumber(displayBalance)
   const [rollTrigger, setRollTrigger] = useState(0)
   const [rollMode, setRollMode] = useState<BalanceRollMode>('fromZero')
   const [rollFromValue, setRollFromValue] = useState<string | undefined>(undefined)
+  const [pendingRollFrom, setPendingRollFrom] = useState<string | undefined>(undefined)
   const prevBalanceRef = useRef<number | null>(null)
   useEffect(() => {
     const prev = prevBalanceRef.current
     prevBalanceRef.current = balanceNumber
     if (prev === null || prev === balanceNumber) return
-    setRollMode('fromValue')
-    setRollFromValue(formatUsdcAmount(prev))
-    setRollTrigger((t) => t + 1)
+    // Match the card's full-precision display (up to 6 decimals) so the odometer digit counts line up.
+    setPendingRollFrom(formatUsdcAmount(prev, 6))
   }, [balanceNumber])
+  useEffect(() => {
+    if (openModal !== null || pendingRollFrom === undefined) return
+    setRollMode('fromValue')
+    setRollFromValue(pendingRollFrom)
+    setRollTrigger((t) => t + 1)
+    setPendingRollFrom(undefined)
+  }, [openModal, pendingRollFrom])
 
   // Derived vault position + activity.
   const earningUsdc =
@@ -71,7 +80,12 @@ export function Dashboard() {
     (r) => (r.kind === 'shield' || r.kind === 'shield-xchain') && r.executionState === 'completed',
   )
   const showDepositTooltip = balanceNumber <= 0 && !hasCompletedDeposit
-  const showActivity = activityVisible && activityItems.length > 0
+  // Activity shows automatically whenever there are items (the manual hide toggle was dropped in the
+  // polish redesign — the more-menu that held it is gone).
+  const showActivity = activityItems.length > 0
+  // Earn promo banner — nudge users with idle private USDC and no vault position yet to start earning.
+  const showEarnBanner =
+    !showDepositTooltip && balanceNumber > 0 && vaultNumber <= 0 && vaultApy !== undefined && vaultApy > 0
 
   // Gate the dashboard behind the initial shielded-balance sync. The navbar (AppLayout) stays visible.
   if (isInitialSyncGated(shielded, sync.status)) {
@@ -80,6 +94,7 @@ export function Dashboard() {
 
   return (
     <div className={styles.page}>
+      <DashboardScrollTopFade enabled={showActivity} />
       <div className={styles.cardStack}>
         <BalanceCard
           balance={balanceNumber}
@@ -89,21 +104,31 @@ export function Dashboard() {
           vaultBalance={vaultNumber}
           vaultApy={vaultApy}
           armadaAddress={shieldedWallet.shieldedAddress}
-          hasActivityItems={activityItems.length > 0}
-          activityVisible={activityVisible}
-          onToggleActivity={() => setActivityVisible((v) => !v)}
           balanceHidden={balanceHidden}
           onBalanceHiddenChange={setBalanceHidden}
           onSend={() => openActionModal('payment')}
           onDeposit={() => openActionModal('shield')}
           onRequest={() => setOpenModal('receive')}
           onEarn={() => openActionModal('yield-deposit')}
-          onWithdraw={() => openActionModal('withdraw')}
           onVaultOpen={() => openActionModal('yield-deposit')}
         />
 
         {showDepositTooltip ? (
-          <DepositTooltip onDeposit={() => openActionModal('shield')} />
+          <DepositTooltip stretch onDeposit={() => openActionModal('shield')} />
+        ) : null}
+
+        {showEarnBanner ? (
+          <DepositTooltip
+            stretch
+            BadgeIcon={ChartBarIcon}
+            badgeBackground="white"
+            iconTileTone="purple"
+            headline={`Earn ~${(vaultApy ?? 0).toFixed(1)}% APY`}
+            body="Deposit into the vault and start earning now."
+            infoTooltip="The APY is an estimate from recent vault performance."
+            ariaLabel={`Estimated yearly yield ~${(vaultApy ?? 0).toFixed(1)}%`}
+            onDeposit={() => openActionModal('yield-deposit')}
+          />
         ) : null}
 
         {showActivity ? (

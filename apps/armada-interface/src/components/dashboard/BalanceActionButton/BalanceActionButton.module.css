@@ -1,0 +1,145 @@
+/* ABOUTME: Styles for BalanceActionButton — glyph tile, label, and primary/subtle + circle/compact variants. */
+/* ABOUTME: Ported from the armada-app design mockup. */
+.button {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--primitives-spacing-2);
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--semantic-color-text-primary);
+  appearance: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.1s ease;
+}
+
+.button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.button:focus-visible {
+  outline: none;
+}
+
+.button:focus-visible .glyph {
+  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
+  outline-offset: calc(var(--primitives-spacing-1) * 1px);
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--primitives-spacing-16);
+  height: var(--primitives-spacing-16);
+  flex-shrink: 0;
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  color: currentColor;
+  transition: background 0.15s ease, filter 0.15s ease;
+}
+
+.glyph :global(svg) {
+  width: var(--primitives-spacing-6);
+  height: var(--primitives-spacing-6);
+}
+
+.label {
+  color: var(--semantic-color-text-primary);
+}
+
+.primary .glyph {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--semantic-color-brand-amber) 80%, transparent) 0%,
+    color-mix(in srgb, var(--semantic-color-brand-gradient-rose) 80%, transparent) 50%,
+    color-mix(in srgb, var(--semantic-color-brand-lavender) 80%, transparent) 100%
+  );
+}
+
+.primary:active:not(:disabled) .glyph {
+  filter: brightness(0.96);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .primary:hover:not(:disabled) .glyph {
+    filter: brightness(1.04);
+  }
+
+  .subtle:hover:not(:disabled) .glyph {
+    background: color-mix(in srgb, var(--primitives-color-neutral-50) 55%, transparent);
+  }
+
+  .compact.subtle:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--primitives-color-neutral-50) 55%, transparent);
+  }
+}
+
+.subtle .glyph {
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
+}
+
+.subtle:active:not(:disabled) .glyph {
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 70%, transparent);
+}
+
+.compact {
+  flex: 1 1 0;
+  width: 100%;
+  min-width: 0;
+  height: var(--primitives-spacing-20);
+  min-height: var(--primitives-spacing-20);
+  padding: var(--primitives-spacing-4);
+  gap: var(--primitives-spacing-2);
+  border-radius: calc(var(--primitives-borderRadius-xl) * 1px);
+  justify-content: center;
+}
+
+.compact.primary {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--semantic-color-brand-amber) 80%, transparent) 0%,
+    color-mix(in srgb, var(--semantic-color-brand-gradient-rose) 80%, transparent) 50%,
+    color-mix(in srgb, var(--semantic-color-brand-lavender) 80%, transparent) 100%
+  );
+}
+
+.compact.subtle {
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
+}
+
+.compact.subtle:active:not(:disabled) {
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 70%, transparent);
+}
+
+.compact .glyph {
+  width: var(--primitives-spacing-6);
+  height: var(--primitives-spacing-6);
+  background: transparent;
+  border-radius: 0;
+  filter: none;
+}
+
+.compact.primary .glyph,
+.compact.subtle .glyph {
+  background: transparent;
+}
+
+.compact:focus-visible {
+  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
+  outline-offset: calc(var(--primitives-spacing-1) * 1px);
+}
+
+.compact:focus-visible .glyph {
+  outline: none;
+}

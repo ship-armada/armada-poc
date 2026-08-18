@@ -1,5 +1,5 @@
-/* ABOUTME: Styles for the BalanceCard — card shell, gradient stroke, balance reveal, actions, and more-menu. */
-/* ABOUTME: Ported from the armada-app design mockup. */
+/* ABOUTME: BalanceCard styling — card shell, header/address, balance numeral font-fit + reveal motion, action row, vault bar. */
+/* ABOUTME: Ported from the armada-app design mockup (polish update). */
 .cardShell {
   position: relative;
   width: 100%;
@@ -22,12 +22,39 @@
   transition: stroke-dasharray 800ms ease, stroke-dashoffset 800ms ease;
 }
 
-.cardShell:has(.shieldedBalanceBadge:hover) .cardStrokeRect {
-  stroke-dasharray: 520 2000;
-  stroke-dashoffset: -180;
+@media (hover: hover) and (pointer: fine) {
+  .cardShell:has(.shieldedBalanceBadge:hover) .cardStrokeRect {
+    stroke-dasharray: 520 2000;
+    stroke-dashoffset: -180;
+  }
+
+  .visibilityToggle:hover {
+    background: color-mix(in srgb, var(--primitives-color-neutral-50) 55%, transparent);
+  }
+
+  .eyeBadge:hover {
+    background: color-mix(in srgb, var(--semantic-component-button-gradient-default-from) 32%, transparent);
+  }
+
+  .armadaAddress:hover {
+    color: var(--semantic-color-text-primary);
+    background: color-mix(in srgb, var(--semantic-color-text-primary) 8%, transparent);
+  }
+
+  .actionEnter .actionAmber:hover:not(:disabled) {
+    background: var(--primitives-color-purple-300);
+  }
+
+  .actionEnter .actionMore:hover:not(:disabled) {
+    background: var(--primitives-color-purple-200);
+  }
+
+  .moreMenuItem:hover:not(:disabled) .moreMenuIconBadge {
+    background: var(--primitives-color-purple-200);
+  }
 }
 
-@media (prefers-reduced-motion: reduce) {
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: reduce) {
   .cardShell:has(.shieldedBalanceBadge:hover) .cardStrokeRect {
     transition: none;
     stroke-dasharray: 2000 0;
@@ -39,14 +66,15 @@
   width: 100%;
   height: auto;
   background: var(--semantic-color-surface-main);
-  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  border-radius: var(--primitives-spacing-10);
   position: relative;
-  padding: var(--semantic-spacing-card-padding);
+  --balance-card-padding: var(--primitives-spacing-8);
+  padding: var(--balance-card-padding);
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   justify-content: flex-start;
-  gap: calc(var(--primitives-spacing-12) + var(--primitives-spacing-3) + var(--primitives-spacing-1));
+  gap: var(--balance-card-padding);
   box-sizing: border-box;
   animation: balanceCardEnter 480ms cubic-bezier(0.22, 1, 0.36, 1) 220ms both;
 }
@@ -105,18 +133,71 @@
   }
 }
 
-.cardBodyTop {
+.contentArea {
   width: 100%;
+  flex: 0 0 auto;
   display: flex;
-  justify-content: stretch;
-  opacity: 0;
-  animation: balanceTopRowEnter 360ms ease-out 480ms forwards;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: stretch;
+  gap: var(--balance-card-padding);
+  min-height: 0;
 }
 
-.cardBodyBalance {
-  width: 100%;
+.headerBlock {
   display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.headingStack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--primitives-spacing-4);
+  min-width: 0;
+  width: 100%;
+}
+
+.balanceStack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--primitives-spacing-2);
+  min-width: 0;
+  width: 100%;
+}
+
+.visibilityToggle {
+  position: absolute;
+  top: var(--balance-card-padding);
+  right: var(--balance-card-padding);
+  z-index: 3;
+  box-sizing: border-box;
+  width: var(--primitives-spacing-8);
+  height: var(--primitives-spacing-8);
+  padding: var(--primitives-spacing-2);
+  display: flex;
+  align-items: center;
   justify-content: center;
+  border: none;
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
+  color: var(--semantic-color-text-primary);
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.visibilityToggle:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.visibilityToggle:focus-visible {
+  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
+  outline-offset: calc(var(--primitives-spacing-1) * 1px);
 }
 
 @keyframes balanceTopRowEnter {
@@ -194,54 +275,30 @@
   transform: translateY(1px);
 }
 
-.eyeBadge:hover {
-  background: color-mix(in srgb, var(--semantic-component-button-gradient-default-from) 32%, transparent);
-}
-
 .badgeIcon {
   width: var(--primitives-spacing-4);
   height: var(--primitives-spacing-4);
 }
 
-.labelStack {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0;
-  min-width: 0;
-  text-align: center;
-}
-
 .label {
-  font-family: var(--primitives-fontFamily-ui), sans-serif;
-  font-size: var(--semantic-component-button-primary-sm-font-size);
-  font-weight: var(--primitives-fontWeight-medium);
-  letter-spacing: var(--primitives-letterSpacing-normal);
-  color: var(--semantic-color-text-muted);
+  color: var(--semantic-color-text-primary);
+  padding-left: var(--primitives-spacing-1);
 }
 
 .armadaAddress {
-  /* Shielded address renders in the sans UI font (matches the current mockup); size/spacing stay on
-     the mono-sm scale. Deviates from our vendored copy's Geist Mono — see the dashboard CLAUDE.md note. */
-  font-family: var(--primitives-fontFamily-ui), sans-serif;
-  font-size: var(--semantic-typography-mono-sm-font-size);
-  font-weight: var(--primitives-fontWeight-medium);
-  line-height: var(--semantic-typography-mono-sm-line-height);
-  letter-spacing: var(--semantic-typography-mono-sm-letter-spacing);
-  color: var(--semantic-color-text-secondary);
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  height: var(--primitives-spacing-6);
+  padding: 0 var(--primitives-spacing-3);
+  color: color-mix(in srgb, var(--semantic-color-text-primary) 60%, transparent);
   border: none;
   margin: 0;
-  padding: 0 var(--primitives-spacing-2);
-  background: none;
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
   cursor: pointer;
   border-radius: calc(var(--semantic-borderRadius-button) * 1px);
   -webkit-tap-highlight-color: transparent;
   transition: color 0.15s ease, background 0.15s ease;
-}
-
-.armadaAddress:hover {
-  color: var(--semantic-color-text-primary);
-  background: color-mix(in srgb, var(--semantic-color-text-primary) 8%, transparent);
 }
 
 .armadaAddress:active {
@@ -272,7 +329,7 @@
 .balanceRow {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   width: 100%;
 }
 
@@ -280,8 +337,9 @@
   display: inline-flex;
   flex-direction: row;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: var(--primitives-spacing-2);
+  width: max-content;
   max-width: 100%;
   min-width: 0;
 }
@@ -311,14 +369,15 @@
 
 .balanceValue {
   font-family: var(--primitives-fontFamily-mono), ui-monospace, monospace;
-  font-size: var(--balance-font-size, var(--primitives-spacing-10));
-  font-weight: var(--primitives-fontWeight-medium);
+  font-size: var(--balance-font-size, calc(var(--primitives-fontSize-4xl) * 1px));
+  font-weight: var(--primitives-fontWeight-regular);
   color: var(--semantic-color-text-primary);
-  line-height: var(--balance-font-size, var(--primitives-spacing-10));
+  line-height: var(--balance-font-size, calc(var(--primitives-fontSize-4xl) * 1px));
   display: inline-grid;
   align-items: center;
-  min-height: var(--balance-font-size, var(--primitives-spacing-10));
+  min-height: var(--balance-font-size, calc(var(--primitives-fontSize-4xl) * 1px));
   letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .balanceValueSizer {
@@ -327,7 +386,6 @@
   white-space: nowrap;
   line-height: var(--balance-font-size, var(--primitives-spacing-10));
   width: max-content;
-  max-width: 100%;
 }
 
 .balanceClusterPrivate {
@@ -366,12 +424,18 @@
 
 .actionRow {
   width: 100%;
-  min-height: var(--primitives-spacing-12);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: var(--primitives-spacing-4);
   position: relative;
   z-index: 10;
+}
+
+.actionRow .actionEnter {
+  flex: 0 0 auto;
+  min-width: 0;
+  display: flex;
 }
 
 .actionEnter {
@@ -421,7 +485,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .card,
-  .cardBodyTop,
   .balanceClusterIntro .balanceValue,
   .balanceClusterStable .balanceValue,
   .actionEnter {
@@ -447,10 +510,6 @@
   border-color: transparent;
 }
 
-.actionEnter .actionAmber:hover:not(:disabled) {
-  background: var(--primitives-color-purple-300);
-}
-
 .actionEnter .actionAmber:active:not(:disabled) {
   background: var(--primitives-color-purple-400);
 }
@@ -464,10 +523,6 @@
   background: color-mix(in srgb, var(--semantic-color-brand-lavender) 12%, transparent);
   border-color: transparent;
   color: var(--semantic-component-button-gradient-text);
-}
-
-.actionEnter .actionMore:hover:not(:disabled) {
-  background: var(--primitives-color-purple-200);
 }
 
 .actionEnter .actionMore:active:not(:disabled) {
@@ -524,7 +579,7 @@
   height: var(--primitives-spacing-4);
 }
 
-@media (hover: hover) {
+@media (hover: hover) and (pointer: fine) {
   .moreMenuRoot:hover:not([data-hover-suppressed='true']) .moreMenu {
     opacity: 1;
     pointer-events: auto;
@@ -561,10 +616,6 @@
 .moreMenuItem:disabled {
   cursor: default;
   opacity: 0.45;
-}
-
-.moreMenuItem:hover:not(:disabled) .moreMenuIconBadge {
-  background: var(--primitives-color-purple-200);
 }
 
 .moreMenuItemLead {
@@ -628,43 +679,16 @@
 }
 
 @media (max-width: 767px) {
-  .actionRow {
-    justify-content: flex-start;
-    gap: var(--primitives-spacing-3);
-  }
-
-  .actionRowV2 {
-    gap: var(--primitives-spacing-3);
-  }
-
-  .actionRow .actionEnter:first-child {
-    flex: 1 1 0;
-    min-width: 0;
-    display: flex;
-  }
-
-  .actionRow .actionEnter:not(:first-child) {
-    flex-shrink: 0;
-  }
-
-  .sendButton {
-    width: 100%;
-    display: flex;
-  }
-
-  .actionRowV2 .actionEnter:nth-child(1) {
-    flex: 1 1 0;
-    min-width: 0;
-    display: flex;
-  }
-
-  .actionRowV2 .actionEnter:nth-child(2) {
-    flex: 1 1 0;
-    min-width: 0;
-    display: flex;
-  }
-
   .balanceClusterPrivate {
     cursor: pointer;
+  }
+
+  .card {
+    --balance-card-padding: var(--primitives-spacing-6);
+  }
+
+  .actionRow,
+  .actionRowV2 {
+    gap: var(--primitives-spacing-3);
   }
 }

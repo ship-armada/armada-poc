@@ -1,0 +1,47 @@
+/* ABOUTME: Styles for DashboardScrollTopFade — fixed top gradient with theme-aware fills and reduced-motion. */
+/* ABOUTME: Ported from the armada-app design mockup. */
+.fade {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--dashboard-top-fade-height, 100px);
+  z-index: 99;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
+.fadeVisible {
+  opacity: 1;
+}
+
+:global([data-theme='light']) .fade {
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--semantic-color-brand-lavender) 40%, var(--semantic-color-surface-bg)) 0%,
+    transparent 100%
+  );
+}
+
+:global([data-theme='light'][data-dashboard-bg='solid']) .fade {
+  background: linear-gradient(
+    to bottom,
+    var(--semantic-color-surface-bg) 0%,
+    transparent 100%
+  );
+}
+
+:global([data-theme='dark']) .fade {
+  background: linear-gradient(
+    to bottom,
+    var(--semantic-color-surface-bg) 0%,
+    transparent 100%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fade {
+    transition: none;
+  }
+}

@@ -23,9 +23,9 @@ function record(): TxRecord<'unshield-xchain'> {
 }
 
 describe('<TxRow>', () => {
-  it('renders the kind-derived title (with destination chain for xchain)', () => {
+  it('renders the recipient-derived title for a public unshield', () => {
     render(<TxRow record={record()} />)
-    expect(screen.getByText(/^Withdraw to /)).toBeInTheDocument()
+    expect(screen.getByText(/^Sent to /)).toBeInTheDocument()
   })
 
   it('renders the formatted amount', () => {
@@ -64,10 +64,10 @@ describe('<TxRow>', () => {
     expect(onClick).toHaveBeenCalledTimes(1)
   })
 
-  it('renders a synthetic received-transfer record with the "Received" title and no status chip', () => {
+  it('renders a synthetic received-transfer record with the "Received payment" title and no status chip', () => {
     // WHY: incoming transfers are reconstructed from chain as terminal (completed) records with a
     // single 'observed' stage. They must render in the activity list like any other row — title
-    // from kindTitle, no Pending chip (completed surfaces the relative time instead).
+    // from recordTitle, no Pending chip (completed surfaces the relative time instead).
     const received: TxRecord<'transfer-shielded-received'> = {
       id: 'synth:0xabc:TransferReceiveERC20s',
       kind: 'transfer-shielded-received',
@@ -82,7 +82,7 @@ describe('<TxRow>', () => {
       walletContext: { evmAddress: undefined, shieldedWalletId: 'rg', sourceChainId: 31337 },
     }
     render(<TxRow record={received} />)
-    expect(screen.getByText('Received')).toBeInTheDocument()
+    expect(screen.getByText('Received payment')).toBeInTheDocument()
     expect(screen.getByText('$5')).toBeInTheDocument()
     expect(screen.queryByText('Pending')).toBeNull()
   })

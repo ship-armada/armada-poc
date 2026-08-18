@@ -1,46 +1,5 @@
-/* ABOUTME: AppLayout-local style overrides — feathered mask on the @armada/ui NavBar so the frosted-glass pill */
-/* ABOUTME: fades out at its left/right edges instead of cutting hard against the page gradient. */
-
-/* Applied via NavBar's `className` passthrough — merged with the shared `.navBar` class on the
-   same element, so the mask layers onto the existing pill (bg + backdrop-filter + border-radius).
-   Two linear-gradient mask layers combined via `intersect` so the visible region is the inner
-   rectangle where BOTH masks are opaque, with all four edges fading to transparent. The
-   horizontal fade (28px) sits inside the NavItem's 40px inner padding so item text stays opaque;
-   the vertical fade (6px) sits inside the 12px NavItem inner padding for the same reason. */
-.navBar {
-  mask-image:
-    linear-gradient(
-      to right,
-      transparent 0,
-      black 14px,
-      black calc(100% - 14px),
-      transparent 100%
-    ),
-    linear-gradient(
-      to bottom,
-      transparent 0,
-      black 6px,
-      black calc(100% - 6px),
-      transparent 100%
-    );
-  mask-composite: intersect;
-  -webkit-mask-image:
-    linear-gradient(
-      to right,
-      transparent 0,
-      black 14px,
-      black calc(100% - 14px),
-      transparent 100%
-    ),
-    linear-gradient(
-      to bottom,
-      transparent 0,
-      black 6px,
-      black calc(100% - 6px),
-      transparent 100%
-    );
-  -webkit-mask-composite: source-in;
-}
+/* ABOUTME: AppLayout-local chrome — network badge + settings gear in the header, plus the status-strip overlay. */
+/* ABOUTME: The center NavBar was removed (not in the mockup); Settings moved to a gear that opens the Settings overlay. */
 
 /* Network badge — flat fill + white text to match the wallet pill (no border). Sourced from the
    same tokens as @armada/ui's WalletButton so the two read as a set in the header. */
@@ -53,6 +12,34 @@
   background: var(--semantic-component-navbar-bg);
   color: var(--semantic-color-text-primary);
   white-space: nowrap;
+}
+
+/* Settings gear — circular button on the same navbar-bg fill as the network badge so it reads as
+   part of the header pill set. Sits to the left of the wallet pill. */
+.gearButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--primitives-spacing-10);
+  height: var(--primitives-spacing-10);
+  padding: 0;
+  border: none;
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: var(--semantic-component-navbar-bg);
+  color: var(--semantic-color-text-primary);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.gearButton:hover {
+  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 14%, var(--semantic-component-navbar-bg));
+}
+
+.gearIcon {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+  display: block;
 }
 
 /* Status-strip overlay — pulled out of flow so a transient sync/recovery banner appearing or
@@ -75,20 +62,4 @@
 
 .bannerOverlay > * {
   pointer-events: auto;
-}
-
-/* Active page indicator — bolder weight only. Targets NavItem's `aria-current="page"`
-   attribute (set by the shared component when `active === true`) so this rule is scoped
-   without forking the design-system primitive. */
-.navBar [aria-current="page"] {
-  font-weight: var(--primitives-fontWeight-semibold);
-}
-
-/* App-local radius override — the design-system NavBar + NavItem both ship with full pill
-   corners (100px) which the crowdfund apps keep. armada-interface's chrome reads better with a
-   tight `xs` corner on both the container and each item. Scoped via the local .navBar class +
-   the button element inside it so the design-system tokens stay untouched. */
-.navBar,
-.navBar button {
-  border-radius: calc(var(--primitives-borderRadius-xs) * 1px);
 }

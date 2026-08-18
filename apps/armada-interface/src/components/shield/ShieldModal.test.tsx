@@ -121,7 +121,7 @@ describe('<ShieldModal>', () => {
 
   it('renders the input step when open', () => {
     renderModal({ open: true, max: 10_000_000n })
-    expect(screen.getByRole('dialog', { name: 'Deposit' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Shield' })).toBeInTheDocument()
     expect(screen.getByLabelText('Deposit amount')).toBeInTheDocument()
   })
 
@@ -129,9 +129,9 @@ describe('<ShieldModal>', () => {
     renderModal({ open: true, max: 10_000_000n })
     fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
-    expect(screen.getByRole('heading', { name: 'Review your deposit' })).toBeInTheDocument()
-    // Amount renders full-precision ("5") in the coin+amount block and 2dp in the summary rows
-    // ("5.00 USDC"); match the summary rows.
+    expect(screen.getByRole('heading', { name: 'Review your USDC deposit' })).toBeInTheDocument()
+    // Amount renders full-precision ("5") in the big amount block and 2dp in the summary total
+    // ("5.00 USDC"); match the summary total.
     expect(screen.getAllByText(/5\.00/).length).toBeGreaterThanOrEqual(1)
   })
 
@@ -154,7 +154,7 @@ describe('<ShieldModal>', () => {
     fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Confirm deposit/ }))
+      fireEvent.click(screen.getByRole('button', { name: /^Confirm$/ }))
     })
     // ProgressStep renders the TxLifecycleStepper which surfaces the StatusChip; the initial
     // executionState is 'pending' which maps to the "Pending" chip. submit() awaits IDB
@@ -168,7 +168,7 @@ describe('<ShieldModal>', () => {
     const store = renderModal({ open: true, max: 10_000_000n })
     fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
-    const confirm = screen.getByRole('button', { name: /Confirm deposit/ })
+    const confirm = screen.getByRole('button', { name: /^Confirm$/ })
     // Fire twice before React can flush the disabled state — the synchronous submittingRef guard
     // must make the second click a no-op. Without it, a fast double-click = two real deposits.
     await act(async () => {
@@ -202,7 +202,7 @@ describe('<ShieldModal>', () => {
     fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Confirm deposit/ }))
+      fireEvent.click(screen.getByRole('button', { name: /^Confirm$/ }))
     })
     await waitFor(() => expect(screen.getAllByText('Pending').length).toBeGreaterThanOrEqual(1))
 

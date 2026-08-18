@@ -343,7 +343,7 @@ export function ShieldModal() {
     <FlowShell
       open={isOpen}
       onClose={close}
-      flowLabel="Deposit"
+      flowLabel="Shield"
       currentStep={indicatorStep}
       status={indicatorStatus}
     >

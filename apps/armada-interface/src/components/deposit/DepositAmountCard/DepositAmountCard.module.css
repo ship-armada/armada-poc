@@ -84,6 +84,7 @@
   flex-shrink: 0;
 }
 
+/* Frosted fill — mirrors IconButton's `.frostedFill` (translucent neutral-50 over the card blur). */
 .pctPill {
   display: inline-flex;
   align-items: center;
@@ -92,7 +93,7 @@
   padding: 0 var(--primitives-spacing-2);
   border: none;
   border-radius: calc(var(--primitives-borderRadius-full) * 1px);
-  background: var(--semantic-color-surface-raised);
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 60%, transparent);
   font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-weight: var(--primitives-fontWeight-medium);
   font-size: calc(var(--primitives-fontSize-sm) * 1px);
@@ -101,8 +102,10 @@
   transition: background 0.15s ease, transform 0.1s ease;
 }
 
-.pctPill:hover {
-  background: var(--semantic-color-surface-hover);
+@media (hover: hover) and (pointer: fine) {
+  .pctPill:hover:not(:disabled) {
+    background: var(--primitives-color-neutral-50);
+  }
 }
 
 .pctPill:active {

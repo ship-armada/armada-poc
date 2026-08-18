@@ -1,0 +1,13 @@
+/* ABOUTME: Accessibility utility classes — visually-hidden (screen-reader-only) content. */
+/* ABOUTME: Ported from the armada-app design mockup. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

@@ -4,3 +4,12 @@
 .wordmark {
   fill: var(--semantic-color-text-primary);
 }
+
+.markDeep,
+.fullDeep {
+  color: var(--semantic-color-brand-deep);
+}
+
+.fullDeep svg {
+  display: block;
+}

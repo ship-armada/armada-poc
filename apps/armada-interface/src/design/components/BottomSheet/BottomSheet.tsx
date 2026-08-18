@@ -27,6 +27,7 @@ export interface BottomSheetProps {
   /** When `title` is set, show the header close control. Default true. */
   showClose?: boolean
   sheetClassName?: string
+  scrimClassName?: string
   children: ReactNode
 }
 
@@ -38,6 +39,7 @@ export function BottomSheet({
   ariaLabel,
   showClose = true,
   sheetClassName,
+  scrimClassName,
   children,
 }: BottomSheetProps) {
   const titleId = useId()
@@ -71,13 +73,15 @@ export function BottomSheet({
 
   if (!mounted) return null
 
-  const scrimClassName = [styles.scrim, exiting && styles.scrimExit].filter(Boolean).join(' ')
+  const scrimClassNameResolved = [styles.scrim, scrimClassName, exiting && styles.scrimExit]
+    .filter(Boolean)
+    .join(' ')
   const sheetClassNameResolved = [styles.sheet, sheetClassName, exiting && styles.sheetExit]
     .filter(Boolean)
     .join(' ')
 
   return createPortal(
-    <div className={scrimClassName} role="presentation" onClick={onClose}>
+    <div className={scrimClassNameResolved} role="presentation" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"

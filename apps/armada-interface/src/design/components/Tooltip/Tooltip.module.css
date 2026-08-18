@@ -22,6 +22,12 @@
   white-space: normal;
 }
 
+@media (hover: none), (pointer: coarse) {
+  .tooltip {
+    pointer-events: auto;
+  }
+}
+
 /* ── Centered variant — compact copy tooltips (matches action tooltip chrome) ── */
 .centered {
   width: max-content;

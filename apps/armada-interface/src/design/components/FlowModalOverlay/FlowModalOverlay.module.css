@@ -4,7 +4,8 @@
   position: fixed;
   inset: 0;
   z-index: 100;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .overlay::before {
@@ -20,6 +21,11 @@
   animation: flowModalOverlayEnter 240ms ease-out both;
 }
 
+.overlaySkipEnter::before {
+  animation: none;
+  opacity: 1;
+}
+
 .overlayExiting::before {
   animation: flowModalOverlayFadeOut var(--modal-overlay-exit-ms, 180ms) ease-out
     var(--modal-overlay-exit-delay, 440ms) forwards;
@@ -30,6 +36,8 @@
   z-index: 1;
   width: 100%;
   min-height: 100dvh;
+  height: auto;
+  overflow: clip;
   box-sizing: border-box;
 }
 

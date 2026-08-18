@@ -61,12 +61,26 @@
   color: var(--semantic-component-button-primary-text);
 }
 
-.solid:hover:not(:disabled) {
-  background: var(--semantic-component-button-primary-bg-hover);
-}
-
 .solid:active:not(:disabled) {
   background: var(--semantic-component-button-primary-bg-active);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .solid:hover:not(:disabled) {
+    background: var(--semantic-component-button-primary-bg-hover);
+  }
+
+  .gradient:hover:not(:disabled) {
+    background: linear-gradient(
+      to right,
+      var(--semantic-component-button-gradient-hover-from) 0%,
+      var(--semantic-component-button-gradient-hover-to) 100%
+    );
+  }
+
+  .lavender:hover:not(:disabled) {
+    background: var(--primitives-color-purple-300);
+  }
 }
 
 .solid:disabled {
@@ -79,14 +93,6 @@
     to right,
     var(--semantic-component-button-gradient-default-from) 0%,
     var(--semantic-component-button-gradient-default-to) 100%
-  );
-}
-
-.gradient:hover:not(:disabled) {
-  background: linear-gradient(
-    to right,
-    var(--semantic-component-button-gradient-hover-from) 0%,
-    var(--semantic-component-button-gradient-hover-to) 100%
   );
 }
 
@@ -105,10 +111,6 @@
 .lavender {
   background: var(--primitives-color-purple-200);
   color: var(--semantic-component-button-gradient-text);
-}
-
-.lavender:hover:not(:disabled) {
-  background: var(--primitives-color-purple-300);
 }
 
 .lavender:active:not(:disabled) {

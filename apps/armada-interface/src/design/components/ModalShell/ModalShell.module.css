@@ -1,6 +1,7 @@
 /* ABOUTME: Styles for ModalShell — header/content layout, enter/exit keyframes, simple + immersive chrome variants.
    ABOUTME: Ported from the armada-app design mockup. */
 .shell {
+  --modal-header-height: calc(var(--primitives-spacing-11) + var(--primitives-spacing-1) * 0.5);
   position: relative;
   z-index: 1;
   width: 100%;
@@ -10,6 +11,7 @@
   flex-direction: column;
   align-items: stretch;
   padding: var(--primitives-spacing-5);
+  padding-bottom: var(--semantic-spacing-page-block);
   box-sizing: border-box;
 }
 
@@ -32,18 +34,35 @@
   padding-bottom: calc(var(--primitives-spacing-5) + var(--mobile-safe-area-bottom, 0px));
 }
 
+.headerImmersive {
+  position: relative;
+  z-index: 2;
+  display: block;
+  height: 0;
+  overflow: visible;
+}
+
+.headerImmersive .headerSideSlot,
+.headerImmersive .back,
+.headerImmersive .headerCenter {
+  display: none;
+}
+
 .headerImmersive .headerTitle,
 .headerImmersive .back,
 .headerImmersive .closeImmersive {
   color: var(--semantic-component-tag-label);
 }
 
-.closeImmersive:hover {
-  background: color-mix(in srgb, var(--semantic-component-tag-label) 14%, transparent);
+.headerImmersive .closeGhost,
+.headerImmersive .closeImmersive {
+  position: absolute;
+  top: 0;
+  right: 0;
 }
 
 .contentImmersive {
-  margin-top: var(--primitives-spacing-4);
+  margin-top: 0;
   flex: 1;
   min-height: 0;
 }
@@ -99,7 +118,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  height: calc(var(--primitives-spacing-11) + var(--primitives-spacing-1) * 0.5);
+  height: var(--modal-header-height);
   animation: modalHeaderEnter 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
@@ -112,6 +131,12 @@
   align-items: center;
   justify-content: unset;
   height: var(--mobile-touch-target-min, var(--primitives-spacing-11));
+}
+
+.headerSimple.headerImmersive {
+  display: block;
+  height: 0;
+  overflow: visible;
 }
 
 .headerSideSlot {
@@ -131,6 +156,14 @@
   color: var(--semantic-color-text-primary);
 }
 
+.headerCenter {
+  justify-self: center;
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
 .back {
   width: var(--mobile-touch-target-min, var(--primitives-spacing-11));
   height: var(--mobile-touch-target-min, var(--primitives-spacing-11));
@@ -148,8 +181,10 @@
   transition: background 0.15s ease;
 }
 
-.back:hover {
-  background: var(--semantic-component-button-secondary-bg-hover);
+@media (hover: hover) and (pointer: fine) {
+  .back:hover {
+    background: var(--semantic-component-button-secondary-bg-hover);
+  }
 }
 
 .back:focus-visible {
@@ -225,52 +260,14 @@
   margin-inline: auto;
 }
 
-.close {
-  width: calc(var(--primitives-spacing-11) + var(--primitives-spacing-1) * 0.5);
-  height: calc(var(--primitives-spacing-11) + var(--primitives-spacing-1) * 0.5);
-  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
-  border: calc(var(--primitives-borderWidth-default) * 1px) solid
-    var(--semantic-component-button-secondary-border);
-  background: transparent;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  padding: 0;
-  color: var(--semantic-color-text-primary);
-  transition: background 0.15s ease;
-}
-
-.closeGhost {
-  width: var(--mobile-touch-target-min, var(--primitives-spacing-11));
-  height: var(--mobile-touch-target-min, var(--primitives-spacing-11));
+button.closeGhost {
   margin-inline-end: calc(var(--primitives-spacing-2) * -1);
-  border: none;
   background: transparent;
 }
 
-.closeGhost .closeIcon {
-  width: var(--primitives-spacing-6);
-  height: var(--primitives-spacing-6);
-}
-
-.closeGhost:hover {
-  background: var(--semantic-component-button-secondary-bg-hover);
-}
-
-.close:hover {
-  background: var(--semantic-component-button-secondary-bg-hover);
-}
-
-.close:focus-visible {
-  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
-  outline-offset: calc(var(--primitives-spacing-1) * 1px);
-}
-
-.closeIcon {
-  width: calc(var(--primitives-spacing-4) + var(--primitives-spacing-1) * 0.5);
-  height: calc(var(--primitives-spacing-4) + var(--primitives-spacing-1) * 0.5);
+button.closeGhost:hover:not(:disabled),
+button.closeGhost:active:not(:disabled) {
+  background: transparent;
 }
 
 .content {
@@ -282,6 +279,15 @@
   margin-top: calc(var(--primitives-spacing-16) + var(--primitives-spacing-2));
 }
 
+@media (min-width: 768px) {
+  .content:not(.contentSimple) {
+    /* Match dashboard cardStack padding-top (--semantic-spacing-page-block). */
+    margin-top: calc(
+      var(--semantic-spacing-page-block) - var(--primitives-spacing-5) - var(--modal-header-height)
+    );
+  }
+}
+
 .contentSimple {
   flex: 1;
   min-height: 0;
@@ -290,11 +296,33 @@
   align-items: stretch;
 }
 
+.contentSimple.contentImmersive {
+  margin-top: 0;
+}
+
 .stepShell {
   width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
+  --modal-step-enter-delay: 360ms;
+}
+
+.stepShellFollowup {
+  --modal-step-enter-delay: 0ms;
+}
+
+.stepShellExit {
+  opacity: 1;
+  transform: translateY(0);
+  animation: modalContentExit var(--modal-step-exit-ms, 220ms)
+    var(--modal-exit-easing, cubic-bezier(0.22, 1, 0.36, 1)) forwards;
+}
+
+.stepShellExit * {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
 }
 
 .contentSimple .stepShell {
@@ -310,7 +338,8 @@
   align-items: stretch;
   gap: var(--primitives-spacing-8);
   opacity: 0;
-  animation: modalContentEnter 360ms cubic-bezier(0.22, 1, 0.36, 1) 360ms both;
+  animation: modalContentEnter 360ms cubic-bezier(0.22, 1, 0.36, 1)
+    var(--modal-step-enter-delay, 360ms) both;
 }
 
 .actionRowEnter > * {
@@ -319,19 +348,25 @@
 }
 
 .actionRowEnter > *:nth-child(1) {
-  animation-delay: 720ms;
+  animation-delay: calc(var(--modal-step-enter-delay, 360ms) + 360ms);
 }
 
 .actionRowEnter > *:nth-child(2) {
-  animation-delay: 790ms;
+  animation-delay: calc(var(--modal-step-enter-delay, 360ms) + 430ms);
 }
 
 .actionRowEnter > *:nth-child(3) {
-  animation-delay: 860ms;
+  animation-delay: calc(var(--modal-step-enter-delay, 360ms) + 500ms);
 }
 
 .actionRowEnter > *:nth-child(4) {
-  animation-delay: 930ms;
+  animation-delay: calc(var(--modal-step-enter-delay, 360ms) + 570ms);
+}
+
+@media (max-width: 767px) {
+  .shell:not(.shellSimple) {
+    padding-bottom: calc(var(--primitives-spacing-5) + var(--mobile-safe-area-bottom, 0px));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -344,7 +379,8 @@
   }
 
   .contentExit,
-  .headerExit {
+  .headerExit,
+  .stepShellExit {
     animation: none !important;
     opacity: 0;
     transform: none;

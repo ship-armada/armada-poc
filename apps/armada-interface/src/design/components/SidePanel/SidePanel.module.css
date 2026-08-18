@@ -16,7 +16,8 @@
 }
 
 .panel {
-  width: min(100%, calc(var(--primitives-spacing-20) * 5 + var(--primitives-spacing-10) * 0.5));
+  --side-panel-inset: var(--primitives-spacing-5);
+  width: min(100%, calc(var(--primitives-spacing-20) * 5 - var(--primitives-spacing-5)));
   height: 100%;
   max-height: 100dvh;
   display: flex;
@@ -30,6 +31,10 @@
   box-sizing: border-box;
 }
 
+.panel:focus {
+  outline: none;
+}
+
 .panelExit {
   animation: sidePanelSlideOut 240ms ease forwards;
 }
@@ -41,8 +46,8 @@
   gap: var(--primitives-spacing-3);
   flex-shrink: 0;
   padding:
-    calc(var(--primitives-spacing-5) + var(--mobile-safe-area-top, 0px))
-    var(--primitives-spacing-5)
+    calc(var(--side-panel-inset) + var(--mobile-safe-area-top, 0px))
+    calc(var(--side-panel-inset) + var(--side-panel-chrome-inline, 0px))
     var(--primitives-spacing-4);
 }
 
@@ -84,8 +89,8 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-inline: var(--primitives-spacing-5);
-  padding-bottom: calc(var(--primitives-spacing-5) + var(--mobile-safe-area-bottom, 0px));
+  padding-inline: var(--side-panel-inset);
+  padding-bottom: calc(var(--side-panel-inset) + var(--mobile-safe-area-bottom, 0px));
 }
 
 @keyframes sidePanelScrimIn {
@@ -106,6 +111,19 @@
 @keyframes sidePanelSlideOut {
   from { transform: translateX(0); }
   to { transform: translateX(100%); }
+}
+
+@media (min-width: 768px) {
+  .scrim {
+    padding: var(--primitives-spacing-6);
+  }
+
+  .panel {
+    height: 100%;
+    max-height: 100%;
+    border-radius: var(--primitives-spacing-10);
+    overflow: hidden;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

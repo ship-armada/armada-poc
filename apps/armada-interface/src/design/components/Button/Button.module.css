@@ -111,26 +111,22 @@
 
 /* Primary */
 .primary { background: var(--semantic-component-button-primary-bg); color: var(--semantic-component-button-primary-text); }
-.primary:hover:not(:disabled) { background: var(--semantic-component-button-primary-bg-hover); }
 .primary:active:not(:disabled) { background: var(--semantic-component-button-primary-bg-active); }
 .primary:disabled { background: var(--semantic-component-button-primary-bg-disabled); color: var(--semantic-component-button-primary-text-disabled); }
 
 /* Secondary */
 .secondary { background: var(--semantic-component-button-secondary-bg); color: var(--semantic-component-button-secondary-text); border-color: transparent; }
-.secondary:hover:not(:disabled) { background: var(--semantic-component-button-secondary-bg-hover); border-color: transparent; }
 .secondary:active:not(:disabled) { background: var(--semantic-component-button-secondary-bg-active); }
 :global([data-theme='light']) .secondary:active:not(:disabled) { background: var(--semantic-color-surface-hover); }
 .secondary:disabled { color: var(--semantic-component-button-secondary-text-disabled); }
 
 /* Ghost — text matches secondary (no border) */
 .ghost { background: transparent; color: var(--semantic-component-button-secondary-text); }
-.ghost:hover:not(:disabled) { background: var(--semantic-component-button-ghost-bg-hover); color: var(--semantic-component-button-secondary-text); }
 .ghost:active:not(:disabled) { background: var(--semantic-component-button-ghost-bg-active); }
 .ghost:disabled { color: var(--semantic-component-button-secondary-text-disabled); }
 
 /* Gradient */
 .gradient { border: none; background: linear-gradient(to right, #F3D0A0 0%, #C491E5 100%); color: var(--semantic-component-button-gradient-text); }
-.gradient:hover:not(:disabled) { background: linear-gradient(to right, #f5d9ae 0%, #d4aff0 100%); }
 .gradient:active:not(:disabled) { background: linear-gradient(to right, #eab86a 0%, #b06fdf 100%); }
 
 /* Icon */
@@ -143,4 +139,11 @@
 .iconSvg {
   display: block;
   color: currentColor;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .primary:hover:not(:disabled) { background: var(--semantic-component-button-primary-bg-hover); }
+  .secondary:hover:not(:disabled) { background: var(--semantic-component-button-secondary-bg-hover); border-color: transparent; }
+  .ghost:hover:not(:disabled) { background: var(--semantic-component-button-ghost-bg-hover); color: var(--semantic-component-button-secondary-text); }
+  .gradient:hover:not(:disabled) { background: linear-gradient(to right, #f5d9ae 0%, #d4aff0 100%); }
 }

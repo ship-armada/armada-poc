@@ -8,7 +8,7 @@ import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import styles from './SidePanel.module.css'
 
-const EXIT_MS = 240
+export const SIDE_PANEL_EXIT_MS = 240
 
 export interface SidePanelProps {
   open: boolean
@@ -16,11 +16,21 @@ export interface SidePanelProps {
   title?: string
   ariaLabel?: string
   panelClassName?: string
+  scrimClassName?: string
   children: ReactNode
 }
 
-export function SidePanel({ open, onClose, title, ariaLabel, panelClassName, children }: SidePanelProps) {
+export function SidePanel({
+  open,
+  onClose,
+  title,
+  ariaLabel,
+  panelClassName,
+  scrimClassName,
+  children,
+}: SidePanelProps) {
   const titleId = useId()
+  const dialogRef = useRef<HTMLDivElement>(null)
   const [mounted, setMounted] = useState(open)
   const [exiting, setExiting] = useState(false)
   const onCloseRef = useRef(onClose)
@@ -43,25 +53,34 @@ export function SidePanel({ open, onClose, title, ariaLabel, panelClassName, chi
     const timer = window.setTimeout(() => {
       setMounted(false)
       setExiting(false)
-    }, EXIT_MS)
+    }, SIDE_PANEL_EXIT_MS)
     return () => window.clearTimeout(timer)
   }, [open, mounted])
 
+  useEffect(() => {
+    if (!mounted || exiting || !open) return
+    dialogRef.current?.focus()
+  }, [mounted, exiting, open])
+
   if (!mounted) return null
 
-  const scrimClassName = [styles.scrim, exiting && styles.scrimExit].filter(Boolean).join(' ')
+  const scrimClassNameResolved = [styles.scrim, scrimClassName, exiting && styles.scrimExit]
+    .filter(Boolean)
+    .join(' ')
   const panelClassNameResolved = [styles.panel, panelClassName, exiting && styles.panelExit]
     .filter(Boolean)
     .join(' ')
 
   return createPortal(
-    <div className={scrimClassName} role="presentation" onClick={onClose}>
+    <div className={scrimClassNameResolved} role="presentation" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
         aria-label={title ? undefined : ariaLabel}
         className={panelClassNameResolved}
+        tabIndex={-1}
+        ref={dialogRef}
         onClick={(event) => event.stopPropagation()}
       >
         {title ? (

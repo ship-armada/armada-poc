@@ -1,18 +1,51 @@
 /* ABOUTME: Styles for the IconButton — variant surfaces, focus ring, and disabled states. */
 /* ABOUTME: Ported from the armada-app design mockup. */
+
+/* Shared fill for round icon buttons and % pills. */
+.frostedFill,
+.frosted {
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 60%, transparent);
+  border: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .frostedFill:hover:not(:disabled),
+  .frosted:hover:not(:disabled) {
+    background: var(--primitives-color-neutral-50);
+  }
+}
+
+.frosted {
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  color: var(--semantic-color-text-primary);
+}
+
 .button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: calc(var(--primitives-spacing-12) + var(--primitives-spacing-2));
-  height: calc(var(--primitives-spacing-12) + var(--primitives-spacing-2));
   padding: 0;
   border: calc(var(--primitives-borderWidth-default) * 1px) solid transparent;
   border-radius: calc(var(--semantic-borderRadius-button) * 1px);
   cursor: pointer;
   outline: none;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.sizeSm {
+  width: var(--primitives-spacing-10);
+  height: var(--primitives-spacing-10);
+}
+
+.sizeMd {
+  width: var(--primitives-spacing-11);
+  height: var(--primitives-spacing-11);
+}
+
+.sizeLg {
+  width: calc(var(--primitives-spacing-12) + var(--primitives-spacing-2));
+  height: calc(var(--primitives-spacing-12) + var(--primitives-spacing-2));
 }
 
 .button:active:not(:disabled) {
@@ -50,8 +83,10 @@
   color: var(--semantic-component-button-primary-text);
 }
 
-.solid:hover:not(:disabled) {
-  background: var(--semantic-component-button-primary-bg-hover);
+@media (hover: hover) and (pointer: fine) {
+  .solid:hover:not(:disabled) {
+    background: var(--semantic-component-button-primary-bg-hover);
+  }
 }
 
 .solid:active:not(:disabled) {
@@ -73,12 +108,14 @@
   color: var(--semantic-component-button-gradient-text);
 }
 
-.gradient:hover:not(:disabled) {
-  background: linear-gradient(
-    to right,
-    var(--semantic-component-button-gradient-hover-from) 0%,
-    var(--semantic-component-button-gradient-hover-to) 100%
-  );
+@media (hover: hover) and (pointer: fine) {
+  .gradient:hover:not(:disabled) {
+    background: linear-gradient(
+      to right,
+      var(--semantic-component-button-gradient-hover-from) 0%,
+      var(--semantic-component-button-gradient-hover-to) 100%
+    );
+  }
 }
 
 .gradient:active:not(:disabled) {
@@ -99,31 +136,19 @@
   color: var(--semantic-component-button-ghost-text);
 }
 
-.ghostActive:not(:hover):not(:disabled) {
+.ghostActive:not(:disabled) {
   background: var(--semantic-component-button-primary-bg);
   border-color: transparent;
   color: var(--semantic-component-button-primary-text);
 }
 
-.ghost:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 12%, transparent);
+@media (hover: hover) and (pointer: fine) {
+  .ghost:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--semantic-color-brand-lavender) 12%, transparent);
+  }
 }
 
 .ghost:active:not(:disabled) {
-  background: var(--semantic-component-button-ghost-bg-active);
-}
-
-.ghostSurface {
-  background: var(--semantic-color-surface-default);
-  border-color: var(--semantic-component-button-secondary-border);
-  color: var(--semantic-color-text-primary);
-}
-
-.ghostSurface:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 12%, transparent);
-}
-
-.ghostSurface:active:not(:disabled) {
   background: var(--semantic-component-button-ghost-bg-active);
 }
 
@@ -133,8 +158,10 @@
   color: var(--semantic-component-button-gradient-text);
 }
 
-.secondary:hover:not(:disabled) {
-  background: var(--primitives-color-purple-300);
+@media (hover: hover) and (pointer: fine) {
+  .secondary:hover:not(:disabled) {
+    background: var(--primitives-color-purple-300);
+  }
 }
 
 .secondary:active:not(:disabled) {

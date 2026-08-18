@@ -15,6 +15,8 @@ export interface FlowModalOverlayProps {
   exiting?: boolean
   onClose: () => void
   initialFocusRef?: RefObject<HTMLElement | null>
+  /** Skip overlay fade-in (e.g. Shield ↔ Unshield handoff). */
+  skipEnter?: boolean
   style?: CSSProperties
   children: ReactNode
 }
@@ -24,6 +26,7 @@ export function FlowModalOverlay({
   exiting = false,
   onClose,
   initialFocusRef,
+  skipEnter = false,
   style,
   children,
 }: FlowModalOverlayProps) {
@@ -42,7 +45,13 @@ export function FlowModalOverlay({
     target?.focus({ preventScroll: true })
   }, [exiting, focusTrapActive, initialFocusRef])
 
-  const overlayClassName = [styles.overlay, exiting && styles.overlayExiting].filter(Boolean).join(' ')
+  const overlayClassName = [
+    styles.overlay,
+    skipEnter && styles.overlaySkipEnter,
+    exiting && styles.overlayExiting,
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return createPortal(
     <div className={overlayClassName} style={style}>

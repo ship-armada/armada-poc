@@ -1,16 +1,17 @@
 // ABOUTME: Square icon button with solid/gradient/ghost/secondary variants for dashboard controls.
 // ABOUTME: Ported from the armada-app design mockup.
-import type { ReactNode } from 'react'
+import { forwardRef, type ReactNode } from 'react'
 import styles from './IconButton.module.css'
 
-export type IconButtonVariant = 'solid' | 'gradient' | 'ghost' | 'secondary'
+export type IconButtonVariant = 'solid' | 'gradient' | 'ghost' | 'secondary' | 'frosted'
+export type IconButtonSize = 'sm' | 'md' | 'lg'
 
 export interface IconButtonProps {
   variant: IconButtonVariant
+  /** Hit-target size. Icon stays 24px on every size. Default `lg` (56px). */
+  size?: IconButtonSize
   icon: ReactNode
   active?: boolean
-  /** Ghost on a raised white circle (dashboard “more” control). */
-  ghostSurface?: boolean
   onClick?: () => void
   disabled?: boolean
   className?: string
@@ -20,22 +21,28 @@ export interface IconButtonProps {
   testingClickId?: string
 }
 
-export function IconButton({
-  variant,
-  icon,
-  active = false,
-  ghostSurface = false,
-  onClick,
-  disabled = false,
-  className,
-  iconClassName,
-  'aria-label': ariaLabel,
-  testingClickId,
-}: IconButtonProps) {
+export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
+  {
+    variant,
+    size = 'lg',
+    icon,
+    active = false,
+    onClick,
+    disabled = false,
+    className,
+    iconClassName,
+    'aria-label': ariaLabel,
+    testingClickId,
+  },
+  ref,
+) {
+  const sizeClass =
+    size === 'sm' ? styles.sizeSm : size === 'md' ? styles.sizeMd : styles.sizeLg
+
   const classNames = [
     styles.button,
+    sizeClass,
     styles[variant],
-    variant === 'ghost' && ghostSurface ? styles.ghostSurface : '',
     variant === 'ghost' && active ? styles.ghostActive : '',
     className,
   ]
@@ -44,6 +51,7 @@ export function IconButton({
 
   return (
     <button
+      ref={ref}
       type="button"
       className={classNames}
       onClick={onClick}
@@ -56,4 +64,4 @@ export function IconButton({
       </span>
     </button>
   )
-}
+})

@@ -3,7 +3,9 @@
 import { useRef, type ReactNode, type Ref } from 'react'
 import { ArrowLeftIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { ArmadaLogo } from '@/design'
+import { IconButton } from '@/design'
 import { Steps } from '@/design'
+import a11y from '@/design/styles/formA11y.module.css'
 import { MODAL_EXIT_TIMING_VARS } from './modalExitMotion'
 import styles from './ModalShell.module.css'
 
@@ -27,6 +29,8 @@ export interface ModalShellProps {
   surface?: ModalShellSurface
   /** Centered header title when `chrome="simple"`. */
   headerTitle?: string
+  /** Replaces the centered title in `chrome="simple"` (e.g. Shield/Unshield tabs). */
+  headerCenter?: ReactNode
   /** Back control for `chrome="simple"` (always shown when provided). */
   onBack?: () => void
   exiting?: boolean
@@ -45,6 +49,7 @@ export function ModalShell({
   chrome = 'default',
   surface = 'default',
   headerTitle,
+  headerCenter,
   onBack,
   exiting = false,
   onClose,
@@ -80,11 +85,7 @@ export function ModalShell({
   ]
     .filter(Boolean)
     .join(' ')
-  const closeClassName = [
-    styles.close,
-    isSimple && styles.closeGhost,
-    isImmersive && styles.closeImmersive,
-  ]
+  const closeClassName = [isSimple && styles.closeGhost, isImmersive && styles.closeImmersive]
     .filter(Boolean)
     .join(' ')
 
@@ -100,18 +101,22 @@ export function ModalShell({
             ) : (
               <span className={styles.headerSideSlot} aria-hidden />
             )}
-            <h1 className={styles.headerTitle}>
-              {headerTitle !== undefined ? headerTitle : flowLabel}
-            </h1>
-            <button
+            {headerCenter ? (
+              <div className={styles.headerCenter}>{headerCenter}</div>
+            ) : (
+              <h1 className={isImmersive ? a11y.srOnly : styles.headerTitle}>
+                {headerTitle !== undefined ? headerTitle : flowLabel}
+              </h1>
+            )}
+            <IconButton
               ref={resolvedCloseRef}
-              type="button"
+              variant="frosted"
+              size="md"
               className={closeClassName}
-              onClick={onClose}
+              icon={<XMarkIcon strokeWidth={1.5} aria-hidden />}
               aria-label="Close"
-            >
-              <XMarkIcon className={styles.closeIcon} strokeWidth={1.5} aria-hidden />
-            </button>
+              onClick={onClose}
+            />
           </>
         ) : (
           <>
@@ -129,15 +134,14 @@ export function ModalShell({
                 />
               </div>
             )}
-            <button
+            <IconButton
               ref={resolvedCloseRef}
-              type="button"
-              className={styles.close}
-              onClick={onClose}
+              variant="frosted"
+              size="md"
+              icon={<XMarkIcon strokeWidth={1.5} aria-hidden />}
               aria-label="Close"
-            >
-              <XMarkIcon className={styles.closeIcon} strokeWidth={1.5} aria-hidden />
-            </button>
+              onClick={onClose}
+            />
           </>
         )}
       </header>

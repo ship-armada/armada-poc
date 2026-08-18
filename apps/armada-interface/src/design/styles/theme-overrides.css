@@ -5,15 +5,27 @@
   EXCEPTION — marketing gem gradient (logo + footer Figma stops).
   Overrides synced brand-lavender / brand-amber so animations match the footer.
 */
+:root,
 [data-theme='light'],
 [data-theme='dark'] {
   --semantic-color-brand-lavender: #ca8aea;
   --semantic-color-brand-amber: #f8d197;
   --semantic-color-brand-gradient-rose: #f39db0;
+
+  /*
+    Frost scale — white (neutral-50) mixed over the dashboard gradient.
+    Use these instead of one-off color-mix percentages.
+    quiet 20% → raised 40% → hover 55% → pressed 70%.
+    Solid --semantic-color-surface-hover stays for opaque chrome (panels, menus).
+  */
+  --semantic-color-frost: color-mix(in srgb, var(--primitives-color-neutral-50) 20%, transparent);
+  --semantic-color-frost-raised: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
+  --semantic-color-frost-hover: color-mix(in srgb, var(--primitives-color-neutral-50) 55%, transparent);
+  --semantic-color-frost-pressed: color-mix(in srgb, var(--primitives-color-neutral-50) 70%, transparent);
 }
 
 [data-theme='light'] {
-  --semantic-color-surface-main: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
+  --semantic-color-surface-main: var(--semantic-color-frost-raised);
   --semantic-component-button-secondary-bg: var(--semantic-color-surface-main);
 }
 

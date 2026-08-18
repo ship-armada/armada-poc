@@ -1,16 +1,10 @@
-// ABOUTME: Shield complete step — serif "Deposit confirmed" title, USDC coin + deposited-amount block, shared DepositReviewSummary (with date/time), and explorer/dashboard CTAs.
+// ABOUTME: Shield complete step — frost card with left-aligned "USDC deposit confirmed" title + big mono deposited-amount, shared DepositReviewSummary (with date/time), and explorer/dashboard CTAs.
 // ABOUTME: Mirrors the deposit-confirmed reference — no divider between the summary card and the button row.
 
-import TokenUSDC from '@web3icons/react/icons/tokens/TokenUSDC'
 import { Button } from '@/design'
 import { DepositReviewSummary } from '@/components/deposit/DepositReviewSummary'
 import { formatUsdcPlain } from '@/lib/format'
-import usdcAmount from '@/design/styles/usdcAmount.module.css'
 import styles from './ShieldCompleteStep.module.css'
-
-const TOKEN_BADGE_PX = 40
-/** @web3icons branded assets use an 18px circle in a 24px viewBox — scale up to fill the badge. */
-const TOKEN_ICON_SIZE = Math.round((TOKEN_BADGE_PX * 24) / 18)
 
 export interface ShieldCompleteStepProps {
   fromChainId: number
@@ -45,16 +39,10 @@ export function ShieldCompleteStep({
 }: ShieldCompleteStepProps) {
   return (
     <div className={styles.root}>
-      <h1 className={styles.title}>Deposit confirmed</h1>
-
-      <div className={styles.amountRow}>
-        <div className={styles.amountGroup}>
-          <span className={styles.tokenBadge} aria-hidden="true">
-            <TokenUSDC size={TOKEN_ICON_SIZE} variant="branded" className={styles.tokenBadgeIcon} />
-          </span>
-          <span className={[styles.amountValue, usdcAmount.font].join(' ')}>
-            {formatUsdcPlain(amount)}
-          </span>
+      <div className={styles.titleBlock}>
+        <h1 className={styles.title}>USDC deposit confirmed</h1>
+        <div className={styles.amountRow}>
+          <span className={styles.amountValue}>{formatUsdcPlain(amount)}</span>
         </div>
       </div>
 
@@ -75,6 +63,7 @@ export function ShieldCompleteStep({
           size="lg"
           label="View on explorer"
           showIcon={false}
+          className={styles.cancelButton}
           onClick={onViewExplorer}
           disabled={!explorerUrl}
         />
@@ -83,6 +72,7 @@ export function ShieldCompleteStep({
           size="lg"
           label="Go to dashboard"
           showIcon={false}
+          className={styles.confirmButton}
           onClick={onGoToDashboard}
         />
       </div>

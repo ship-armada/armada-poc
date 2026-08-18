@@ -1,9 +1,14 @@
-// ABOUTME: DepositReviewSummary — borderless deposit summary table (network / wallet / shielded account / amount / fees) with a "You'll receive" total.
+// ABOUTME: DepositReviewSummary — subtle bordered deposit summary table (network / wallet / Armada account / fees) with a "You'll receive" total.
 // ABOUTME: Shared by ShieldReviewStep and ShieldCompleteStep; an optional confirmedAt adds a leading "Date and time" row for confirmations.
 
 import { ArmadaLogo } from '@/design'
 import { WalletProviderIcon } from '@/components/ui/WalletProviderIcon'
-import { formatTransactionDateTime, formatUsdcAmount, truncateAddress } from '@/lib/format'
+import {
+  formatTransactionDateTime,
+  formatUsdcAmount,
+  truncateAddress,
+  truncateArmadaAddress,
+} from '@/lib/format'
 import { getChainById } from '@/config/network'
 import usdcAmount from '@/design/styles/usdcAmount.module.css'
 import styles from './DepositReviewSummary.module.css'
@@ -27,7 +32,6 @@ export interface DepositReviewSummaryProps {
 
 export function DepositReviewSummary({
   fromChainId,
-  amount,
   fee,
   netAmount,
   walletAddress,
@@ -65,21 +69,15 @@ export function DepositReviewSummary({
         ) : null}
         {shieldedAddress ? (
           <div className={styles.summaryRow}>
-            <span className={styles.summaryLabel}>To your private account</span>
+            <span className={styles.summaryLabel}>To Armada</span>
             <span className={styles.summaryValue}>
               <span className={styles.valueWithIcon}>
-                <ArmadaLogo variant="mark" className={styles.armadaIcon} />
-                <span>{truncateAddress(shieldedAddress)}</span>
+                <ArmadaLogo variant="mark" markTone="deep" className={styles.armadaIcon} />
+                <span>{truncateArmadaAddress(shieldedAddress)}</span>
               </span>
             </span>
           </div>
         ) : null}
-        <div className={styles.summaryRow}>
-          <span className={styles.summaryLabel}>Deposit amount</span>
-          <span className={[styles.summaryValue, usdcAmount.font].join(' ')}>
-            {formatUsdcAmount(amount)} USDC
-          </span>
-        </div>
         <div className={styles.summaryRow}>
           <span className={styles.summaryLabel}>Fees</span>
           <span className={[styles.summaryValue, usdcAmount.font].join(' ')}>

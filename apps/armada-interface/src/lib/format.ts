@@ -133,6 +133,12 @@ export function truncateAddressEnds(address: string, head = 6, tail = 6): string
   return `${address.slice(0, head)}...${address.slice(-tail)}`
 }
 
+/** Shielded / Armada zk address — slightly longer tail for readability. */
+export function truncateArmadaAddress(address: string): string {
+  if (address.length <= 15) return address
+  return `${address.slice(0, 6)}...${address.slice(-6)}`
+}
+
 /**
  * Compact relative-time formatter — "just now" / "12s ago" / "5m ago" / "3h ago" / "Yesterday" / "Mar 14".
  *

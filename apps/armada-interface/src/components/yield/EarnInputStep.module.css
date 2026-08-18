@@ -1,12 +1,68 @@
-/* ABOUTME: EarnInputStep layout — tabs + amount + APY block + fee summary + footer. */
-/* ABOUTME: APY block is its own panel: label, big value, and a caveat line in muted text. */
+/* ABOUTME: EarnInputStep layout — Add/Withdraw pill tabs, serif prompt, amount card, APY hint panel. */
+/* ABOUTME: Tabs + APY block ported from the mockup EarnAmountScreen; APY panel is a surface-main card. */
 
 .root {
   display: flex;
   flex-direction: column;
-  gap: var(--primitives-spacing-5);
+  gap: var(--primitives-spacing-8);
+  width: 100%;
 }
 
+/* Segmented Add/Withdraw pill toggle. */
+.tabs {
+  display: flex;
+  width: 100%;
+  padding: var(--primitives-spacing-1);
+  gap: var(--primitives-spacing-1);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: color-mix(in srgb, var(--semantic-color-text-primary) 6%, transparent);
+  box-sizing: border-box;
+}
+
+.tab {
+  flex: 1;
+  min-height: var(--primitives-spacing-8);
+  padding: 0 var(--primitives-spacing-3);
+  border: none;
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px - 2px);
+  background: transparent;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-secondary);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+}
+
+.tab:hover {
+  color: var(--semantic-color-text-primary);
+}
+
+.tab:active {
+  transform: translateY(1px);
+}
+
+.tabActive {
+  background: var(--primitives-color-neutral-50);
+  color: var(--semantic-color-text-primary);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--semantic-color-text-primary) 8%, transparent);
+}
+
+.tab:focus-visible {
+  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
+  outline-offset: calc(var(--primitives-spacing-1) * 0.5);
+}
+
+/* Serif display prompt (matches the flow mockup). */
+.title {
+  composes: displayLg from '../../design/styles/displayLgTitle.module.css';
+  margin: 0;
+  width: 100%;
+  color: var(--semantic-color-text-primary);
+  text-align: center;
+}
+
+/* Pre-flight gate (e.g. Withdraw fee shortfall). */
 .blockedReason {
   font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-size: calc(var(--primitives-fontSize-sm) * 1px);
@@ -17,37 +73,34 @@
   padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
 }
 
+/* APY hint — surface-main panel (Add tab only). */
 .apyBlock {
   display: flex;
   flex-direction: column;
   gap: var(--primitives-spacing-1);
-  background: var(--semantic-color-surface-default);
-  border: 1px solid var(--semantic-color-border-default);
-  border-radius: calc(var(--semantic-borderRadius-card) * 1px);
+  width: 100%;
   padding: var(--primitives-spacing-4) var(--primitives-spacing-5);
+  border-radius: calc(var(--semantic-borderRadius-card) * 1px);
+  background: var(--semantic-color-surface-main);
+  box-sizing: border-box;
 }
 
 .apyLabel {
-  color: var(--semantic-color-text-muted);
+  composes: labelXs from '../../design/styles/typographyComposites.module.css';
   text-transform: uppercase;
-  letter-spacing: var(--primitives-letterSpacing-wider);
-  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  color: var(--semantic-color-text-muted);
 }
 
 .apyValue {
-  color: var(--semantic-color-text-primary);
-  font-family: var(--primitives-fontFamily-ui), sans-serif;
-  font-size: calc(var(--primitives-fontSize-2xl) * 1px);
+  composes: headingLg from '../../design/styles/typographyComposites.module.css';
   line-height: var(--primitives-lineHeight-tight);
+  color: var(--semantic-color-text-primary);
   font-variant-numeric: tabular-nums;
 }
 
 .apyCaveat {
+  composes: bodySm from '../../design/styles/typographyComposites.module.css';
+  margin: var(--primitives-spacing-1) 0 0;
+  line-height: var(--primitives-lineHeight-normal);
   color: var(--semantic-color-text-muted);
-  margin-top: var(--primitives-spacing-1);
-}
-
-.footer {
-  align-self: stretch;
-  margin: var(--primitives-spacing-4) calc(var(--primitives-spacing-6) * -1) calc(var(--primitives-spacing-6) * -1);
 }

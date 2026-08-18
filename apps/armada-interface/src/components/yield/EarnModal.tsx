@@ -20,14 +20,12 @@ import { canRetryTx } from '@/lib/tx/executor'
 import { sharesToUsdc } from '@/lib/yield'
 import { assertSpendableForFeeOnTop } from '@/lib/tx/spendable'
 import {
-  overlayIndicatorStep,
-  overlayIndicatorStatus,
   ProgressStep,
   ErrorStep,
   type FlowStep,
   type FlowVisibleStep,
 } from '@/components/flow'
-import { DepositOverlayShell } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
+import { FlowShell } from '@/components/flow/FlowShell'
 import { EarnInputStepContent, EarnInputStepFooter, type EarnTab } from './EarnInputStep'
 import { useDisplayFees } from '@/hooks/useDisplayFees'
 import { EarnReviewStep } from './EarnReviewStep'
@@ -273,14 +271,25 @@ export function EarnModal() {
 
   if (!isOpen) return null
 
+  // FlowShell renders a 3-segment Steps indicator (Amount / Review / Confirm). progress / complete /
+  // error all map to the final Confirm segment; the ErrorStep itself owns the retry button + copy.
+  const currentStep =
+    step === 'input' ? 1
+    : step === 'review' ? 2
+    : 3
+  const status: 'default' | 'confirmed' | 'error' =
+    step === 'complete' ? 'confirmed'
+    : step === 'error' ? 'error'
+    : 'default'
+
   return (
-    <DepositOverlayShell
-      open
+    <FlowShell
+      open={isOpen}
       onClose={close}
-      dismissible={true}
       flowLabel="Earn"
-      currentStep={overlayIndicatorStep(step)}
-      status={overlayIndicatorStatus(step)}
+      steps={['Amount', 'Review', 'Confirm']}
+      currentStep={currentStep}
+      status={status}
     >
       <RelayerStatusBanner isOpen={isOpen} />
       {step === 'input' && (
@@ -335,15 +344,21 @@ export function EarnModal() {
       {step === 'complete' && (
         <EarnCompleteStep
           tab={tab}
-          // Add: vault gained `recipientReceives` (= amount) of USDC; user spent amount + fee.
-          // Withdraw: vault returned `amount` USDC into the user's private balance; the
-          // broadcaster fee was paid as a separate proof leg out of the user's existing private
-          // USDC. The success copy reads "Returned amount USDC" because that's literally what
-          // came back from the vault — the fee debit is accounted for separately.
-          recipientReceives={recipientReceives}
-          totalDeducted={totalDeducted}
+          amount={amount}
+          rate={yieldRate}
+          // Inclusive Fee total — broadcaster + protocol. No CCTP on yield kinds.
+          fee={fee + displayFees.protocolFee}
+          // Per-tab net figure: Add debits `amount + fee`; Withdraw returns `amount` in full (the
+          // broadcaster fee was paid as a separate proof leg out of existing private USDC).
+          netAmount={displayNetAmount}
+          netLabel={displayNetLabel}
+          confirmedAt={record?.updatedAt ?? Date.now()}
           explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
-          onDone={close}
+          onViewExplorer={() => {
+            const url = txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))
+            if (url) window.open(url, '_blank', 'noopener,noreferrer')
+          }}
+          onGoToDashboard={close}
         />
       )}
       {step === 'error' && (
@@ -385,6 +400,6 @@ export function EarnModal() {
           }
         />
       )}
-    </DepositOverlayShell>
+    </FlowShell>
   )
 }

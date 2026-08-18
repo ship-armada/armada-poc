@@ -56,6 +56,29 @@ describe('<EarnInputStep>', () => {
     expect(screen.getByRole('tab', { name: 'Withdraw' })).toBeInTheDocument()
   })
 
+  it('hides the chain row (the vault has no chain selection)', () => {
+    setup()
+    expect(screen.queryByText(/Anvil Hub/)).toBeNull()
+    expect(screen.queryByRole('listbox')).toBeNull()
+  })
+
+  it('renders the 25% / 50% / 75% / Max percent pills', () => {
+    setup()
+    for (const label of ['25%', '50%', '75%', 'Max']) {
+      expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
+    }
+  })
+
+  it('shows the APY hint on the Add tab', () => {
+    setup({ tab: 'add', rate: { rate: 1_000_000n, apyBps: 450n, fetchedAt: 0 } })
+    expect(screen.getByText('Estimated APY')).toBeInTheDocument()
+  })
+
+  it('hides the APY hint entirely on the Withdraw tab', () => {
+    setup({ tab: 'withdraw', rate: { rate: 1_000_000n, apyBps: 450n, fetchedAt: 0 } })
+    expect(screen.queryByText('Estimated APY')).toBeNull()
+  })
+
   it('uses the vault-deposit aria-label when tab=add', () => {
     setup({ tab: 'add' })
     expect(screen.getByLabelText('Vault deposit amount')).toBeInTheDocument()

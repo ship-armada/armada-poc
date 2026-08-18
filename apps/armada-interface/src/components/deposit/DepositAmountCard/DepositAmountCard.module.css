@@ -4,7 +4,7 @@
 .card {
   display: flex;
   flex-direction: column;
-  gap: var(--primitives-spacing-8);
+  gap: var(--primitives-spacing-10);
   width: 100%;
   padding: var(--primitives-spacing-5);
   background: var(--semantic-color-surface-main);
@@ -254,7 +254,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--primitives-spacing-3);
+  gap: var(--primitives-spacing-2);
   width: 100%;
   min-height: calc(var(--primitives-fontSize-4xl) * 1.2 * 1px);
   cursor: text;

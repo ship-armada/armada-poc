@@ -23,9 +23,9 @@ function setupAdd() {
 }
 
 describe('<EarnReviewStep>', () => {
-  it("tab=add: headline 'Review deposit' and mode 'Add to vault'", () => {
+  it("tab=add: title 'Review your deposit' and mode 'Add to vault'", () => {
     setupAdd()
-    expect(screen.getByText('Review deposit')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Review your deposit' })).toBeInTheDocument()
     expect(screen.getByText('Add to vault')).toBeInTheDocument()
   })
 
@@ -42,7 +42,7 @@ describe('<EarnReviewStep>', () => {
         onConfirm={() => {}}
       />,
     )
-    expect(screen.getByText('Review withdrawal')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Review your withdrawal' })).toBeInTheDocument()
     expect(screen.getByText('Withdraw from vault')).toBeInTheDocument()
   })
 

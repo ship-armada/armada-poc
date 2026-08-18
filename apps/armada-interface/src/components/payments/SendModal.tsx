@@ -370,6 +370,7 @@ export function SendModal() {
           destChainId={destChainId}
           onDestChainIdChange={setDestChainId}
           destDeploymentError={destDeploymentError}
+          onCancel={close}
           onContinue={() => setStep('input')}
         />
       )}

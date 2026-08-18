@@ -1,24 +1,18 @@
-// ABOUTME: Send/Withdraw complete step — serif "Send confirmed"/"Withdrawal complete" title, USDC coin + amount block, shared TransferReviewSummary (with date/time), and explorer/dashboard CTAs.
-// ABOUTME: Mirrors the send-confirmed reference — no divider between the summary card and the button row.
+// ABOUTME: Send/Withdraw complete step — frost card with left-aligned "USDC send/unshield confirmed" title + big mono amount, shared TransferReviewSummary (with date/time), and explorer/dashboard CTAs.
+// ABOUTME: Mirrors ShieldCompleteStep — no divider between the summary card and the button row.
 
-import TokenUSDC from '@web3icons/react/icons/tokens/TokenUSDC'
 import { Button } from '@/design'
 import { TransferReviewSummary } from './TransferReviewSummary'
 import { formatUsdcPlain } from '@/lib/format'
-import usdcAmount from '@/design/styles/usdcAmount.module.css'
 import type { SendFlowVariant } from './SendRecipientStep'
 import styles from './SendCompleteStep.module.css'
-
-const TOKEN_BADGE_PX = 40
-/** @web3icons branded assets use an 18px circle in a 24px viewBox — scale up to fill the badge. */
-const TOKEN_ICON_SIZE = Math.round((TOKEN_BADGE_PX * 24) / 18)
 
 export interface SendCompleteStepProps {
   variant: SendFlowVariant
   recipient: string
   /** The user's own shielded (Armada) address — rendered as the summary's "From your private account" row. */
   armadaAddress?: string
-  /** Gross amount sent/withdrawn (raw 6-decimal USDC) — shown full-precision in the coin block. */
+  /** Gross amount sent/withdrawn (raw 6-decimal USDC) — shown full-precision in the amount block. */
   amount: bigint
   /** Inclusive Fee total — broadcaster + protocol + CCTP. Rendered as "—" when null. */
   fee: bigint | null
@@ -50,27 +44,20 @@ export function SendCompleteStep({
   onViewExplorer,
   onGoToDashboard,
 }: SendCompleteStepProps) {
-  const title = variant === 'withdraw' ? 'Withdrawal complete' : 'Send confirmed'
+  const title = variant === 'withdraw' ? 'USDC unshield confirmed' : 'USDC send confirmed'
 
   return (
     <div className={styles.root}>
-      <h1 className={styles.title}>{title}</h1>
-
-      <div className={styles.amountRow}>
-        <div className={styles.amountGroup}>
-          <span className={styles.tokenBadge} aria-hidden="true">
-            <TokenUSDC size={TOKEN_ICON_SIZE} variant="branded" className={styles.tokenBadgeIcon} />
-          </span>
-          <span className={[styles.amountValue, usdcAmount.font].join(' ')}>
-            {formatUsdcPlain(amount)}
-          </span>
+      <div className={styles.titleBlock}>
+        <h1 className={styles.title}>{title}</h1>
+        <div className={styles.amountRow}>
+          <span className={styles.amountValue}>{formatUsdcPlain(amount)}</span>
         </div>
       </div>
 
       <TransferReviewSummary
         recipient={recipient}
         armadaAddress={armadaAddress}
-        amount={amount}
         fee={fee}
         totalDeducted={totalDeducted}
         variant={variant}
@@ -85,6 +72,7 @@ export function SendCompleteStep({
           size="lg"
           label="View on explorer"
           showIcon={false}
+          className={styles.cancelButton}
           onClick={onViewExplorer}
           disabled={!explorerUrl}
         />
@@ -93,6 +81,7 @@ export function SendCompleteStep({
           size="lg"
           label="Go to dashboard"
           showIcon={false}
+          className={styles.confirmButton}
           onClick={onGoToDashboard}
         />
       </div>

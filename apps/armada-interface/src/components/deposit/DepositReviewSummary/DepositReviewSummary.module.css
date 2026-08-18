@@ -86,3 +86,73 @@
   color: var(--semantic-color-text-primary);
   text-align: right;
 }
+
+/* Privacy notice — used by the send/withdraw flow's shared summary (unused by deposit itself). */
+.privacyNotice {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  margin: var(--primitives-spacing-2) 0 0;
+  padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: var(--semantic-color-surface-default);
+  text-align: left;
+}
+
+@media (max-width: 767px) {
+  .privacyNotice {
+    background: var(--primitives-color-purple-50);
+  }
+}
+
+.privacyNoticeIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--primitives-spacing-10);
+  height: var(--primitives-spacing-10);
+}
+
+.privacyNoticeIconPrivate {
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: linear-gradient(
+    to bottom,
+    var(--semantic-color-brand-lavender) 0%,
+    var(--semantic-color-brand-gradient-rose) 48%,
+    var(--semantic-color-brand-amber) 100%
+  );
+}
+
+.privacyNoticeIconPublic {
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: var(--semantic-color-text-primary);
+  color: var(--semantic-color-surface-default);
+}
+
+.privacyNoticeMark {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+}
+
+.privacyNoticeCopy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--primitives-spacing-1);
+  min-width: 0;
+}
+
+.privacyNoticeTitle {
+  composes: bodySmSemibold from '../../../design/styles/typographyComposites.module.css';
+  margin: 0;
+  color: var(--semantic-color-text-primary);
+}
+
+.privacyNoticeBody {
+  composes: bodySm from '../../../design/styles/typographyComposites.module.css';
+  margin: 0;
+  color: color-mix(in srgb, var(--semantic-color-text-primary) 80%, transparent);
+  line-height: var(--primitives-lineHeight-normal);
+}

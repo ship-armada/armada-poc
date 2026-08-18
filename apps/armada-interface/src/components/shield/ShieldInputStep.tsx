@@ -90,10 +90,10 @@ export function ShieldInputStepContent({
 
   return (
     <div className={styles.contentZone}>
-      <h1 className={styles.title}>Shield your USDC</h1>
       <DepositAmountCard
         chains={chains}
         chainId={fromChainId}
+        title="Shield your USDC"
         onChainIdChange={onFromChainIdChange}
         amount={amountStr}
         onAmountChange={onAmountChange}

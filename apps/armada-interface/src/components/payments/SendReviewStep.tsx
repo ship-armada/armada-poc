@@ -1,17 +1,11 @@
-// ABOUTME: Send/Withdraw review step — serif title, USDC coin + full-precision amount block, shared TransferReviewSummary table, Confirm/Back CTAs.
-// ABOUTME: Delegates the summary rows (network, private account, recipient, privacy, amount, fees, total) to TransferReviewSummary; keeps the sync-gate notice + submit disabling.
+// ABOUTME: Send/Withdraw review step — frost card with left-aligned UI title + big mono amount, shared TransferReviewSummary table, Confirm/Back CTAs.
+// ABOUTME: Delegates the summary rows (date, private account, recipient, fees, total + privacy notice) to TransferReviewSummary; keeps the sync-gate notice + submit disabling.
 
-import TokenUSDC from '@web3icons/react/icons/tokens/TokenUSDC'
 import { Button } from '@/design'
 import { TransferReviewSummary } from './TransferReviewSummary'
 import { formatUsdcPlain } from '@/lib/format'
-import usdcAmount from '@/design/styles/usdcAmount.module.css'
 import type { SendFlowVariant } from './SendRecipientStep'
 import styles from './SendReviewStep.module.css'
-
-const TOKEN_BADGE_PX = 40
-/** @web3icons branded assets use an 18px circle in a 24px viewBox — scale up to fill the badge. */
-const TOKEN_ICON_SIZE = Math.round((TOKEN_BADGE_PX * 24) / 18)
 
 export interface SendReviewStepProps {
   variant: SendFlowVariant
@@ -48,28 +42,21 @@ export function SendReviewStep({
   onBack,
   onConfirm,
 }: SendReviewStepProps) {
-  const title = variant === 'withdraw' ? 'Review your withdrawal' : 'Review transfer'
-  const confirmLabel = variant === 'withdraw' ? 'Confirm withdrawal' : 'Confirm send'
+  const title = variant === 'withdraw' ? 'Review your USDC unshield' : 'Review your USDC transfer'
+  const confirmLabel = variant === 'withdraw' ? 'Confirm' : 'Confirm send'
 
   return (
     <div className={styles.root}>
-      <h1 className={styles.title}>{title}</h1>
-
-      <div className={styles.amountRow}>
-        <div className={styles.amountGroup}>
-          <span className={styles.tokenBadge} aria-hidden="true">
-            <TokenUSDC size={TOKEN_ICON_SIZE} variant="branded" className={styles.tokenBadgeIcon} />
-          </span>
-          <span className={[styles.amountValue, usdcAmount.font].join(' ')}>
-            {formatUsdcPlain(amount)}
-          </span>
+      <div className={styles.titleBlock}>
+        <h1 className={styles.title}>{title}</h1>
+        <div className={styles.amountRow}>
+          <span className={styles.amountValue}>{formatUsdcPlain(amount)}</span>
         </div>
       </div>
 
       <TransferReviewSummary
         recipient={recipient}
         armadaAddress={armadaAddress}
-        amount={amount}
         fee={fee}
         totalDeducted={totalDeducted}
         variant={variant}
@@ -84,12 +71,20 @@ export function SendReviewStep({
       ) : null}
 
       <div className={styles.buttonRow}>
-        <Button variant="secondary" size="lg" label="Back" showIcon={false} onClick={onBack} />
+        <Button
+          variant="secondary"
+          size="lg"
+          label="Back"
+          showIcon={false}
+          className={styles.cancelButton}
+          onClick={onBack}
+        />
         <Button
           variant="primary"
           size="lg"
           label={confirmLabel}
           showIcon={false}
+          className={styles.confirmButton}
           onClick={onConfirm}
           disabled={Boolean(submitBlockedReason) || isSubmitting}
         />

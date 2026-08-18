@@ -1,4 +1,4 @@
-// ABOUTME: Tests for SendReviewStep — privacy row by recipient format, optional network row, variant copy, recipient truncation, CTAs.
+// ABOUTME: Tests for SendReviewStep — privacy notice by recipient format, optional network row, variant copy, recipient truncation, CTAs.
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
@@ -26,9 +26,9 @@ function renderReview(extras?: Partial<SendReviewStepProps>) {
 }
 
 describe('<SendReviewStep>', () => {
-  it('private: shows the "Private" privacy row and no network row', () => {
+  it('private: shows the "Private transfer." notice and no network row', () => {
     renderReview({ recipient: VALID_0ZK })
-    expect(screen.getByText('Private')).toBeInTheDocument()
+    expect(screen.getByText('Private transfer.')).toBeInTheDocument()
     expect(screen.queryByText('Network')).toBeNull()
   })
 
@@ -38,26 +38,26 @@ describe('<SendReviewStep>', () => {
     expect(screen.getByText('0zkabc...aaaa')).toBeInTheDocument()
   })
 
-  it('public: shows the network row + an EVM-style truncated recipient', () => {
+  it('public: shows the network row + a "Public transfer." notice + an EVM-style truncated recipient', () => {
     renderReview({
       recipient: VALID_EVM,
       networkName: 'Anvil Hub (local)',
     })
     expect(screen.getByText('Network')).toBeInTheDocument()
     expect(screen.getByText('Anvil Hub (local)')).toBeInTheDocument()
-    expect(screen.getByText('Public')).toBeInTheDocument()
+    expect(screen.getByText('Public transfer.')).toBeInTheDocument()
     expect(screen.getByText('0x1234...5678')).toBeInTheDocument()
   })
 
-  it('withdraw variant: uses the withdrawal title + confirm label', () => {
+  it('withdraw variant: uses the unshield title + "Confirm" label', () => {
     renderReview({ variant: 'withdraw', recipient: VALID_EVM, networkName: 'Anvil Hub (local)' })
-    expect(screen.getByText('Review your withdrawal')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Confirm withdrawal/ })).toBeInTheDocument()
+    expect(screen.getByText('Review your USDC unshield')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeInTheDocument()
   })
 
   it('send variant: uses the transfer title + fires onConfirm on the primary CTA', () => {
     const { onConfirm } = renderReview()
-    expect(screen.getByText('Review transfer')).toBeInTheDocument()
+    expect(screen.getByText('Review your USDC transfer')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Confirm send/ }))
     expect(onConfirm).toHaveBeenCalledTimes(1)
   })

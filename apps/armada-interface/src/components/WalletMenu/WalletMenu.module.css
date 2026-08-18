@@ -1,0 +1,257 @@
+/* ABOUTME: WalletMenu styling — pill trigger + side-panel content (close toolbar, identity hero, action row, inset USDC row, deposit CTA). */
+/* ABOUTME: Panel visuals ported from the armada-app mockup wallet panel; uses design tokens throughout. */
+
+/* Pill trigger — chrome matches the design secondary md button; label is mono-sm (matches the mockup). */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--primitives-spacing-2);
+  height: var(--semantic-component-button-primary-md-height);
+  padding-inline: var(--primitives-spacing-4);
+  border: none;
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  color: var(--semantic-color-text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease;
+}
+
+.pillIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--primitives-spacing-6);
+  height: var(--primitives-spacing-6);
+  flex-shrink: 0;
+}
+
+.pillLabel {
+  display: inline-block;
+  flex-shrink: 0;
+  font-family: var(--semantic-typography-mono-sm-font-family), var(--primitives-fontFamily-mono), monospace;
+  font-size: var(--semantic-typography-mono-sm-font-size);
+  font-weight: var(--semantic-typography-mono-sm-font-weight);
+  line-height: var(--semantic-typography-mono-sm-line-height);
+  letter-spacing: var(--semantic-typography-mono-sm-letter-spacing);
+  font-variant-numeric: tabular-nums;
+  color: var(--semantic-color-text-primary);
+  white-space: nowrap;
+}
+
+/* Panel content column inside the SidePanel body — top padding + toolbar→body gap match the mockup. */
+.panel {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--primitives-spacing-5);
+  width: 100%;
+  min-width: 0;
+  padding-top: calc(var(--primitives-spacing-5) + var(--mobile-safe-area-top, 0px));
+}
+
+/* Content column below the close toolbar. */
+.body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+/* Close toolbar — X at the panel's top-right (mockup has no title bar). */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--mobile-touch-target-min, var(--primitives-spacing-11));
+  height: var(--mobile-touch-target-min, var(--primitives-spacing-11));
+  padding: 0;
+  border: none;
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: transparent;
+  color: var(--semantic-color-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.close:hover {
+  color: var(--semantic-color-text-primary);
+}
+
+/* Identity hero — provider glyph + address + network tag, centered. */
+.identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  text-align: center;
+}
+
+.heroIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.heroIcon :global(svg) {
+  display: block;
+}
+
+.address {
+  margin: 0;
+  font-family: var(--semantic-typography-mono-lg-font-family);
+  font-size: var(--semantic-typography-mono-lg-font-size);
+  font-weight: var(--semantic-typography-mono-lg-font-weight);
+  line-height: var(--semantic-typography-mono-lg-line-height);
+  letter-spacing: var(--semantic-typography-mono-lg-letter-spacing);
+  color: var(--semantic-color-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Network tag — Tag-style: uppercase, tracked, filled pill. */
+.networkTag {
+  display: inline-flex;
+  align-items: center;
+  height: var(--semantic-component-tag-height);
+  padding: 0 var(--semantic-component-tag-padding-x);
+  border-radius: var(--semantic-component-tag-radius);
+  background: var(--semantic-component-tag-bg);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: var(--semantic-component-tag-font-size);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--semantic-component-tag-label);
+  white-space: nowrap;
+}
+
+/* Action row — hide / copy / explorer / disconnect. */
+.actionRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--primitives-spacing-3);
+  margin-top: var(--primitives-spacing-10);
+}
+
+.actionIcon {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+  display: block;
+}
+
+/* USDC balance row — inset card. */
+.usdcRow {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  margin-top: var(--primitives-spacing-10);
+  padding: var(--primitives-spacing-3);
+  border-radius: calc(var(--primitives-spacing-5) / 2);
+  background: var(--primitives-color-purple-50);
+  box-sizing: border-box;
+}
+
+/* Composite USDC glyph + small chain-network overlay badge. */
+.usdcIcon {
+  --overlay-size: var(--primitives-spacing-6);
+  position: relative;
+  flex-shrink: 0;
+  width: var(--primitives-spacing-10);
+  height: var(--primitives-spacing-10);
+  margin-right: calc(var(--overlay-size) / 2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.usdcGlyph {
+  display: block;
+  line-height: 0;
+}
+
+.usdcGlyph :global(svg) {
+  display: block;
+}
+
+.usdcOverlay {
+  position: absolute;
+  right: calc(var(--overlay-size) / -2);
+  bottom: calc(var(--primitives-spacing-1) * -0.25);
+  width: var(--overlay-size);
+  height: var(--overlay-size);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: var(--semantic-color-surface-default);
+  box-shadow: 0 0 0 calc(var(--primitives-borderWidth-default) * 1px)
+    color-mix(in srgb, var(--semantic-color-border-subtle) 50%, transparent);
+  line-height: 0;
+  overflow: hidden;
+}
+
+.usdcOverlay :global(svg) {
+  display: block;
+}
+
+.tokenIdentity {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-1);
+}
+
+.tokenName {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  line-height: var(--primitives-lineHeight-tight);
+  color: var(--semantic-color-text-primary);
+}
+
+.tokenNetwork {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  line-height: var(--primitives-lineHeight-tight);
+  color: var(--semantic-color-text-muted);
+}
+
+.tokenBalance {
+  margin: 0;
+  flex-shrink: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  line-height: var(--primitives-lineHeight-tight);
+  color: var(--semantic-color-text-primary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Deposit CTA. */
+.depositButton {
+  width: 100%;
+  margin-top: var(--primitives-spacing-4);
+}
+
+.depositIcon {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+  display: block;
+}

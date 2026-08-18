@@ -1,15 +1,17 @@
-// ABOUTME: Header wallet control — RainbowKit connect flow; connected state uses crowdfund-parity WalletPillMenu.
+// ABOUTME: Header wallet control — RainbowKit connect flow; connected state renders the WalletMenu pill + side panel.
 
 import { useMemo } from 'react'
+import { useAtom, useSetAtom } from 'jotai'
 import { Loader2, LogIn } from 'lucide-react'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { useAccount, useDisconnect } from 'wagmi'
-import { Button, WalletButton, WalletPillMenu } from '@/design'
+import { Button, WalletButton } from '@/design'
+import { WalletMenu } from '@/components/WalletMenu'
 import { useBalances } from '@/hooks/useBalances'
-import { useShieldedWallet } from '@/hooks/useShieldedWallet'
-import { truncateAddress, truncateAddressEnds } from '@/lib/format'
+import { openModalAtom, balanceHiddenAtom } from '@/state/ui'
+import { getChainById } from '@/config/network'
+import { truncateAddress } from '@/lib/format'
 import { walletProviderFromConnector } from '@/lib/walletProvider'
-import { ShieldedIdentitySection } from './ShieldedIdentitySection'
 import styles from './WalletConnector.module.css'
 
 function totalUnshieldedUsdc(unshielded: Record<number, bigint>): number {
@@ -26,21 +28,8 @@ export function WalletConnector() {
   const { unshielded } = useBalances()
   const usdcBalance = useMemo(() => totalUnshieldedUsdc(unshielded), [unshielded])
   const walletProvider = walletProviderFromConnector(connector)
-  // V2 Phase 3a: the EVM + shielded addresses share one pill. We only render the shielded
-  // section when the consuming app actually has a shielded-wallet record on hand; collapsing
-  // to undefined keeps the WalletPillMenu's dropdown looking native for the non-shielded path
-  // (which is unreachable from this component in practice — armada-interface always has a
-  // shielded wallet by the time WalletConnector is mounted in AppLayout — but kept defensive).
-  const shielded = useShieldedWallet()
-  const hasShieldedWallet = shielded.state !== null && shielded.state !== undefined
-  // When the shielded wallet is unlocked, surface a truncated 0zk... underneath the EVM
-  // address in the pill trigger (V2 Phase 3a — the EVM + shielded addresses are 1:1
-  // representations of one identity). When locked or never-unlocked, the trigger stays
-  // single-row so the user isn't shown a stale shielded address from a prior session.
-  const shieldedDisplay =
-    shielded.state?.status === 'unlocked' && shielded.state.shieldedAddress
-      ? truncateAddressEnds(shielded.state.shieldedAddress, 6, 4)
-      : undefined
+  const setOpenModal = useSetAtom(openModalAtom)
+  const [balanceHidden, setBalanceHidden] = useAtom(balanceHiddenAtom)
 
   return (
     <ConnectButton.Custom>
@@ -72,7 +61,7 @@ export function WalletConnector() {
 
         if (!isConnected) {
           // V2 redesign: the disconnected-state pill uses the same `secondary md` chrome as the
-          // connected `WalletPillMenu` trigger (solid black bg via `styles.trigger`), so the
+          // connected `WalletMenu` trigger (solid black bg via `styles.trigger`), so the
           // transition from "Connect Wallet" → "0xabcd…1234" reads as a state change on the
           // same pill rather than a swap to a different component. Replaces the legacy
           // `WalletButton` whose built-in radial-gradient circle icon no longer fits the design.
@@ -104,16 +93,26 @@ export function WalletConnector() {
           ? truncateAddress(account.address)
           : account.displayName
 
+        // Address explorer link — chain explorer base + /address/<addr>. Undefined on local Anvil
+        // (no explorer), which disables the "View on explorer" action in the panel.
+        const explorerBase = getChainById(chain.id)?.explorerUrl
+        const explorerUrl = explorerBase ? `${explorerBase}/address/${account.address}` : undefined
+        const networkLabel = chain.name ?? getChainById(chain.id)?.name ?? `Chain ${chain.id}`
+
         return (
-          <WalletPillMenu
+          <WalletMenu
             displayAddress={displayAddress}
-            copyAddress={account.address}
+            fullAddress={account.address}
             walletProvider={walletProvider}
+            chainId={chain.id}
             usdcBalance={usdcBalance}
+            networkLabel={networkLabel}
+            explorerUrl={explorerUrl}
+            balanceHidden={balanceHidden}
+            onBalanceHiddenChange={setBalanceHidden}
             onDisconnect={() => disconnect()}
+            onDeposit={() => setOpenModal('shield')}
             triggerClassName={styles.trigger}
-            extraSection={hasShieldedWallet ? <ShieldedIdentitySection /> : undefined}
-            shieldedAddress={shieldedDisplay}
           />
         )
       }}

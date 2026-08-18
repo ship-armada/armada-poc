@@ -19,9 +19,6 @@ export type { NavItemProps } from './components/NavItem'
 export { NavBar } from './components/NavBar'
 export type { NavBarProps, NavBarItem } from './components/NavBar'
 
-export { WalletPillMenu } from './components/Header/WalletPillMenu'
-export type { WalletPillMenuProps } from './components/Header/WalletPillMenu'
-
 export { WalletButton } from './components/WalletButton'
 export type { WalletButtonProps } from './components/WalletButton'
 
@@ -29,6 +26,8 @@ export { IconButton } from './components/IconButton'
 export type { IconButtonProps, IconButtonVariant } from './components/IconButton'
 export { default as Tooltip } from './components/Tooltip/Tooltip'
 export { BottomSheet, afterBottomSheetHandoff, BOTTOM_SHEET_EXIT_MS, BOTTOM_SHEET_HANDOFF_MS } from './components/BottomSheet'
+export { SidePanel } from './components/SidePanel'
+export type { SidePanelProps } from './components/SidePanel'
 export type { BottomSheetProps } from './components/BottomSheet'
 
 export { ModalShell, modalActionRowEnter, modalStepBodyEnter, modalStepShell } from './components/ModalShell'

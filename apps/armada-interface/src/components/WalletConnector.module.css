@@ -1,8 +1,14 @@
-/* ABOUTME: Local trigger override for the header's connected-wallet pill — solid black bg, originally chosen to pair with the (now-merged) shielded pill. Kept post V2 Phase 3a because the visual choice was independently good. */
-/* ABOUTME: Applied via WalletPillMenu's `triggerClassName` so we don't fork the shared pill component. */
+/* ABOUTME: Local trigger override for the header wallet pill — surface-main fill matching the mockup wallet pill (its `secondary` bg maps to surface-main); shared with the network badge + settings gear so the three header controls read as a set. */
+/* ABOUTME: Applied via the pill's `triggerClassName`; the design Button's `secondary` bg is transparent, so the header needs an explicit fill to show over the dashboard gradient. */
 
-.trigger,
-.trigger:hover:not(:disabled),
+.trigger {
+  background: var(--semantic-color-surface-main);
+}
+
+.trigger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 14%, var(--semantic-color-surface-main));
+}
+
 .trigger:active:not(:disabled) {
-  background: #000;
+  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 20%, var(--semantic-color-surface-main));
 }

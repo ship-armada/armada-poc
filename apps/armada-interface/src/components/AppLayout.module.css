@@ -1,21 +1,21 @@
 /* ABOUTME: AppLayout-local chrome — network badge + settings gear in the header, plus the status-strip overlay. */
 /* ABOUTME: The center NavBar was removed (not in the mockup); Settings moved to a gear that opens the Settings overlay. */
 
-/* Network badge — flat fill + white text to match the wallet pill (no border). Sourced from the
-   same tokens as @armada/ui's WalletButton so the two read as a set in the header. */
+/* Network badge — surface-main fill matching the mockup wallet pill, so the badge / gear / wallet
+   pill read as a set in the header. */
 .networkBadge {
   display: inline-flex;
   align-items: center;
   height: 24px;
   padding: 0 10px;
   border-radius: var(--semantic-component-navitem-radius);
-  background: var(--semantic-component-navbar-bg);
+  background: var(--semantic-color-surface-main);
   color: var(--semantic-color-text-primary);
   white-space: nowrap;
 }
 
-/* Settings gear — circular button on the same navbar-bg fill as the network badge so it reads as
-   part of the header pill set. Sits to the left of the wallet pill. */
+/* Settings gear — circular button on the same surface-main fill as the network badge + wallet pill
+   so it reads as part of the header set. Sits to the left of the wallet pill. */
 .gearButton {
   display: inline-flex;
   align-items: center;
@@ -26,14 +26,14 @@
   padding: 0;
   border: none;
   border-radius: calc(var(--primitives-borderRadius-full) * 1px);
-  background: var(--semantic-component-navbar-bg);
+  background: var(--semantic-color-surface-main);
   color: var(--semantic-color-text-primary);
   cursor: pointer;
   transition: background 0.15s ease;
 }
 
 .gearButton:hover {
-  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 14%, var(--semantic-component-navbar-bg));
+  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 14%, var(--semantic-color-surface-main));
 }
 
 .gearIcon {

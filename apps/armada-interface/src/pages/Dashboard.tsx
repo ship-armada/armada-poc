@@ -2,7 +2,7 @@
 // ABOUTME: Presentation from the armada-app mockup; wired to real shielded balance, yield, and tx history.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { useNavigate } from 'react-router-dom'
 import { BalanceCard } from '@/components/dashboard/BalanceCard'
 import { DepositTooltip } from '@/components/dashboard/DepositTooltip'
@@ -15,7 +15,7 @@ import { usePrivateUsdcDisplay } from '@/hooks/usePrivateUsdcDisplay'
 import { useYieldRate } from '@/hooks/useYieldRate'
 import { useOpenActionModal } from '@/hooks/useOpenActionModal'
 import { sharesToUsdc } from '@/lib/yield'
-import { openModalAtom } from '@/state/ui'
+import { openModalAtom, balanceHiddenAtom } from '@/state/ui'
 import { shieldedUsdcAtom, syncStateAtom, yieldSharesAtom, shieldedWalletAtom } from '@/state/wallet'
 import { activeTxListAtom } from '@/state/tx'
 import styles from './Dashboard.module.css'
@@ -40,8 +40,9 @@ export function Dashboard() {
   const setOpenModal = useSetAtom(openModalAtom)
   const navigate = useNavigate()
 
-  // Local UI state — hide/reveal balance + activity panel visibility (new dashboard affordances).
-  const [balanceHidden, setBalanceHidden] = useState(false)
+  // Balance visibility is app-wide (shared with the wallet panel's hide toggle) via balanceHiddenAtom.
+  const [balanceHidden, setBalanceHidden] = useAtom(balanceHiddenAtom)
+  // Local UI state — activity panel visibility (new dashboard affordance).
   const [activityVisible, setActivityVisible] = useState(true)
 
   // Balance odometer roll: intro roll from zero on first paint, then roll from the previous value

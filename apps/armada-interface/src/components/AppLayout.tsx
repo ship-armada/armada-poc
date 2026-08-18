@@ -56,11 +56,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
       {/* Inline paddingTop instead of a Tailwind utility — `pt-28` was getting eaten somewhere
           in the cascade (either not generated, or overridden by global.css's universal-selector
           reset). Inline style has the highest specificity short of !important and bypasses
-          generation issues entirely. 80px clears the fixed header (top-5 offset + logo/pill
-          height) with room to spare. */}
+          generation issues entirely. 6.5rem seats the content below the fixed header, matching the
+          mockup's header→card gap. */}
       <main
         className="relative flex flex-1 flex-col items-center justify-start"
-        style={{ paddingTop: '5rem' }}
+        style={{ paddingTop: '6.5rem' }}
       >
         {/* Status strips are overlaid (absolute) rather than in flow, so a transient banner
             appearing/disappearing never reflows the page content beneath it. pointer-events are

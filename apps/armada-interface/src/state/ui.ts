@@ -22,3 +22,9 @@ export type ActionModalKind = Exclude<
 >
 
 export const openModalAtom = atom<ModalKind>(null)
+
+/**
+ * Whether balances are hidden across the app. Shared so the dashboard eye toggle and the wallet
+ * panel's hide-balance control stay in sync — hiding in one place hides everywhere.
+ */
+export const balanceHiddenAtom = atom<boolean>(false)

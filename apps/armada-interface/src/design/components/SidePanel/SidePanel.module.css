@@ -1,0 +1,118 @@
+/* ABOUTME: SidePanel styling — right-edge slide-in panel + dimming scrim, ported from the armada-app mockup. */
+/* ABOUTME: Mobile safe-area / touch-target vars carry fallbacks since this app doesn't define them. */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  justify-content: flex-end;
+  background: color-mix(in srgb, var(--semantic-color-text-primary) 32%, transparent);
+  animation: sidePanelScrimIn 220ms ease;
+}
+
+.scrimExit {
+  animation: sidePanelScrimOut 200ms ease forwards;
+}
+
+.panel {
+  width: min(100%, calc(var(--primitives-spacing-20) * 5 + var(--primitives-spacing-10) * 0.5));
+  height: 100%;
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--semantic-color-surface-default);
+  box-shadow:
+    calc(var(--primitives-spacing-6) * -1) 0
+    calc(var(--primitives-spacing-12) + var(--primitives-spacing-1) * 0.5)
+    0 color-mix(in srgb, var(--semantic-color-text-primary) 12%, transparent);
+  animation: sidePanelSlideIn 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  box-sizing: border-box;
+}
+
+.panelExit {
+  animation: sidePanelSlideOut 240ms ease forwards;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
+  flex-shrink: 0;
+  padding:
+    calc(var(--primitives-spacing-5) + var(--mobile-safe-area-top, 0px))
+    var(--primitives-spacing-5)
+    var(--primitives-spacing-4);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-lg) * 1px);
+  font-weight: var(--primitives-fontWeight-semibold);
+  line-height: var(--primitives-lineHeight-tight);
+  color: var(--semantic-color-text-primary);
+}
+
+.closeButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--mobile-touch-target-min, var(--primitives-spacing-11));
+  height: var(--mobile-touch-target-min, var(--primitives-spacing-11));
+  margin: calc(var(--primitives-spacing-3) * -1);
+  padding: 0;
+  border: none;
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: transparent;
+  color: var(--semantic-color-text-muted);
+  cursor: pointer;
+}
+
+.closeButton:hover {
+  color: var(--semantic-color-text-primary);
+}
+
+.closeButton:focus-visible {
+  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
+  outline-offset: calc(var(--primitives-spacing-1) * 1px);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-inline: var(--primitives-spacing-5);
+  padding-bottom: calc(var(--primitives-spacing-5) + var(--mobile-safe-area-bottom, 0px));
+}
+
+@keyframes sidePanelScrimIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes sidePanelScrimOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes sidePanelSlideIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes sidePanelSlideOut {
+  from { transform: translateX(0); }
+  to { transform: translateX(100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrim,
+  .scrimExit,
+  .panel,
+  .panelExit {
+    animation: none;
+  }
+}

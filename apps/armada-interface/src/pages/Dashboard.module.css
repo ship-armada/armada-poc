@@ -6,7 +6,9 @@
   flex-direction: column;
   align-items: center;
   width: 100%;
-  padding-block: var(--primitives-spacing-8);
+  /* Top spacing comes from <main>'s page-block padding (matches the mockup's header→card gap);
+     only add bottom breathing here so the two don't stack. */
+  padding-bottom: var(--primitives-spacing-8);
 }
 
 .cardStack {
@@ -15,7 +17,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--primitives-spacing-8);
+  gap: var(--primitives-spacing-6);
 }
 
 /* BalanceCard and RecentActivityList self-fill to 100%; the DepositTooltip keeps its natural
@@ -23,7 +25,7 @@
 
 @media (max-width: 767px) {
   .page {
-    padding-block: var(--primitives-spacing-5);
+    padding-bottom: var(--primitives-spacing-5);
   }
 
   .cardStack {

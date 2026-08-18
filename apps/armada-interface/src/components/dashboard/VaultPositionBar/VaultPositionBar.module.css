@@ -9,7 +9,7 @@
   min-height: var(--primitives-spacing-16);
   padding: var(--primitives-spacing-3);
   border: none;
-  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
   background: transparent;
   box-sizing: border-box;
   gap: var(--primitives-spacing-2);
@@ -34,17 +34,19 @@ button.root {
   cursor: pointer;
 }
 
-button.root:hover::before {
-  opacity: 1;
+@media (hover: hover) and (pointer: fine) {
+  button.root:hover::before {
+    opacity: 1;
+  }
+
+  :global([data-theme='light'][data-dashboard-bg='solid']) button.root:hover::before {
+    background: var(--primitives-color-neutral-200);
+    opacity: 1;
+  }
 }
 
 :global([data-theme='light'][data-dashboard-bg='solid']) .root::before {
   background: var(--primitives-color-neutral-100);
-  opacity: 1;
-}
-
-:global([data-theme='light'][data-dashboard-bg='solid']) button.root:hover::before {
-  background: var(--primitives-color-neutral-200);
   opacity: 1;
 }
 
@@ -85,7 +87,9 @@ button.root:hover::before {
 }
 
 .amount {
-  display: flex;
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
   align-items: baseline;
   gap: var(--primitives-spacing-1);
   font-family: var(--primitives-fontFamily-mono), ui-monospace, monospace;
@@ -123,7 +127,8 @@ button.root:hover::before {
 }
 
 .earned {
-  display: flex;
+  display: inline-flex;
+  width: max-content;
   align-items: baseline;
   flex-shrink: 0;
   font-family: var(--primitives-fontFamily-mono), ui-monospace, monospace;
@@ -139,6 +144,9 @@ button.root:hover::before {
 }
 
 .apr {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--primitives-spacing-1);
   font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-size: calc(var(--primitives-fontSize-sm) * 1px);
   font-weight: var(--primitives-fontWeight-regular);

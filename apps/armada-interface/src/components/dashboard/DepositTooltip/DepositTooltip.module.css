@@ -1,59 +1,37 @@
-/* ABOUTME: Styles for DepositTooltip — gradient card, icon cluster, text block, and v2/mobile variants. */
+/* ABOUTME: Styles for DepositTooltip — gradient/frost card, icon cluster, text block, and earn-banner variants. */
 /* ABOUTME: Ported from the armada-app design mockup. */
 .root {
-  --deposit-tooltip-gradient: linear-gradient(
-    25deg,
-    var(--primitives-color-purple-400) 0%,
-    var(--primitives-color-amber-400) 100%
-  );
-  --deposit-tooltip-width: calc(var(--primitives-spacing-16) * 5 + var(--primitives-spacing-10));
-  --deposit-tooltip-height: calc(var(--primitives-spacing-11) + var(--primitives-spacing-10));
+  --deposit-tooltip-icon: calc(var(--primitives-spacing-20) + var(--primitives-spacing-1));
 
   position: relative;
   box-sizing: border-box;
-  width: var(--deposit-tooltip-width);
-  height: var(--deposit-tooltip-height);
+  width: 100%;
+  height: auto;
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: var(--primitives-spacing-3);
-  padding: var(--primitives-spacing-2) var(--primitives-spacing-5) var(--primitives-spacing-2)
-    var(--primitives-spacing-2);
+  justify-content: flex-start;
+  gap: var(--primitives-spacing-4);
+  padding: var(--primitives-spacing-2);
   border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
-  background: var(--deposit-tooltip-gradient);
-}
-
-.pointer {
-  position: absolute;
-  top: calc(var(--primitives-spacing-2) * -1);
-  left: 50%;
-  transform: translateX(-50%);
-  width: var(--primitives-spacing-4);
-  height: var(--primitives-spacing-2);
-  background-image: var(--deposit-tooltip-gradient);
-  background-size: var(--deposit-tooltip-width) var(--deposit-tooltip-height);
-  background-position: center 0;
-  background-repeat: no-repeat;
-  clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
-  pointer-events: none;
+  background: var(--semantic-color-surface-default);
 }
 
 .iconTile {
   box-sizing: border-box;
   flex-shrink: 0;
-  width: calc(var(--primitives-spacing-16) + var(--primitives-spacing-1));
-  height: calc(var(--primitives-spacing-16) + var(--primitives-spacing-1));
+  width: var(--deposit-tooltip-icon);
+  height: var(--deposit-tooltip-icon);
   display: flex;
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  padding: var(--primitives-spacing-3);
   border-radius: calc(var(--primitives-borderRadius-xl) * 1px);
-  background: linear-gradient(
-    180deg,
-    var(--primitives-color-amber-100) 0%,
-    var(--primitives-color-amber-300) 100%
-  );
+  background: var(--primitives-color-amber-100);
+}
+
+.iconTilePurple {
+  background: var(--primitives-color-purple-100);
 }
 
 .iconCluster {
@@ -75,9 +53,24 @@
 }
 
 .depositIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: calc(var(--primitives-spacing-8) + var(--primitives-spacing-1) * 0.5);
   height: calc(var(--primitives-spacing-8) + var(--primitives-spacing-1) * 0.5);
+  border-radius: calc(var(--semantic-borderRadius-button) * 1px);
+  background: linear-gradient(
+    135deg,
+    var(--semantic-color-brand-amber) 0%,
+    var(--semantic-color-brand-gradient-rose) 50%,
+    var(--semantic-color-brand-lavender) 100%
+  );
+  color: var(--semantic-color-text-primary);
   pointer-events: none;
+}
+
+.depositIconWhite {
+  background: var(--semantic-component-tag-label);
 }
 
 .depositIconGlyph {
@@ -85,115 +78,33 @@
   height: calc(var(--primitives-spacing-4) + var(--primitives-spacing-1) * 0.5);
 }
 
-.depositIconDecor {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: calc(var(--semantic-borderRadius-button) * 1px);
-  background: linear-gradient(
-    to right,
-    var(--semantic-component-button-gradient-default-from) 0%,
-    var(--semantic-component-button-gradient-default-to) 100%
-  );
-  pointer-events: none;
-}
-
 .textBlock {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0;
-}
-
-.textStack {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.textBlockV2 {
-  gap: var(--primitives-spacing-3);
-}
-
-.rootV2 {
-  --deposit-tooltip-v2-width: calc(var(--primitives-spacing-20) * 5 + var(--primitives-spacing-10) * 0.5);
-  --deposit-tooltip-v2-height: calc(
-    var(--primitives-spacing-12) * 2 + var(--primitives-spacing-6) + var(--primitives-spacing-1) * 1.5
-  );
-  --deposit-tooltip-v2-illustration: calc(
-    var(--primitives-spacing-20) + var(--primitives-spacing-5) + var(--primitives-spacing-1) * 0.5
-  );
-
-  width: var(--deposit-tooltip-v2-width);
-  height: var(--deposit-tooltip-v2-height);
-  align-items: center;
-  gap: var(--primitives-spacing-3);
-  padding: var(--primitives-spacing-3);
-}
-
-.iconTileV2 {
-  width: var(--deposit-tooltip-v2-illustration);
-  height: var(--deposit-tooltip-v2-illustration);
-  padding: 0;
-}
-
-.iconClusterV2 {
-  width: calc(var(--primitives-spacing-16) + var(--primitives-spacing-4) + var(--primitives-spacing-1) * 0.5);
-  height: calc(var(--primitives-spacing-16) + var(--primitives-spacing-3) + var(--primitives-spacing-1) * 0.25);
-}
-
-.depositIconV2 {
-  width: calc(var(--primitives-spacing-12) + var(--primitives-spacing-1) * 0.75);
-  height: calc(var(--primitives-spacing-12) + var(--primitives-spacing-1) * 0.75);
-}
-
-.depositIconGlyphV2 {
-  width: calc(var(--primitives-spacing-5) + var(--primitives-spacing-1) * 0.25);
-  height: calc(var(--primitives-spacing-5) + var(--primitives-spacing-1) * 0.25);
-}
-
-.depositCta {
-  align-self: flex-start;
-  height: var(--primitives-spacing-8);
-  padding-inline: var(--primitives-spacing-4);
-  border: none;
-  border-radius: calc(var(--semantic-borderRadius-button) * 1px);
-  background: var(--semantic-color-surface-default);
-  color: var(--semantic-color-text-primary);
-  font-family: var(--primitives-fontFamily-ui), sans-serif;
-  font-size: calc(var(--primitives-fontSize-sm) * 1px);
-  font-weight: var(--primitives-fontWeight-medium);
-  line-height: 1;
-  cursor: pointer;
-}
-
-.depositCta:hover {
-  background: var(--semantic-color-surface-hover);
-}
-
-.depositCta:active {
-  background: color-mix(in srgb, var(--semantic-color-surface-default) 88%, var(--semantic-color-text-primary));
-}
-
-.depositCta:focus-visible {
-  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
-  outline-offset: calc(var(--primitives-spacing-1) * 1px);
+  justify-content: center;
+  gap: var(--primitives-spacing-1);
 }
 
 .headline {
   margin: 0;
   font-family: var(--primitives-fontFamily-ui), sans-serif;
-  font-weight: 700;
+  font-weight: var(--primitives-fontWeight-semibold);
   font-size: calc(var(--primitives-fontSize-md) * 1px);
-  line-height: calc(var(--primitives-spacing-4) * 1px);
-  letter-spacing: -0.1px;
-  color: var(--semantic-component-tag-label);
+  line-height: var(--primitives-lineHeight-snug);
+  letter-spacing: var(--primitives-letterSpacing-normal);
+  color: var(--semantic-color-text-primary);
 }
 
 .body {
   margin: 0;
-  color: var(--semantic-component-tag-label);
+  color: color-mix(in srgb, var(--semantic-color-text-primary) 60%, transparent);
+}
+
+.root.stretch {
+  width: 100%;
+  max-width: none;
 }
 
 .rootInteractive {
@@ -211,31 +122,54 @@
   outline-offset: calc(var(--primitives-spacing-1) * 1px);
 }
 
-.rootInteractive:active {
-  filter: brightness(0.98);
-}
-
 .iconTileStatic {
   pointer-events: none;
 }
 
-@media (max-width: 767px) {
-  .root {
-    width: 100%;
-    height: var(--deposit-tooltip-height);
-    min-height: var(--deposit-tooltip-height);
-    padding: var(--primitives-spacing-2);
-    gap: var(--primitives-spacing-3);
-  }
-
-  .rootV2 {
-    width: 100%;
-    height: auto;
-    min-height: var(--deposit-tooltip-v2-height);
-    padding: var(--primitives-spacing-3);
-  }
-
-  .pointer {
-    display: none;
-  }
+.rootDismissable {
+  padding-right: var(--primitives-spacing-12);
 }
+
+.dismiss {
+  position: absolute;
+  top: var(--primitives-spacing-1);
+  right: var(--primitives-spacing-1);
+  z-index: 1;
+}
+
+.dismiss [role='tooltip'] {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+.dismiss .dismissIcon {
+  width: var(--primitives-spacing-4);
+  height: var(--primitives-spacing-4);
+}
+
+.activate {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--primitives-spacing-4);
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.activate:focus-visible {
+  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
+  outline-offset: calc(var(--primitives-spacing-1) * 1px);
+}
+

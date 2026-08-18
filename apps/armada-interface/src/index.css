@@ -77,8 +77,9 @@ body {
 [data-theme="light"] body {
   background-image: linear-gradient(
     to bottom,
-    color-mix(in srgb, var(--primitives-color-purple-300) 40%, var(--semantic-color-surface-bg)),
-    color-mix(in srgb, var(--primitives-color-amber-300) 40%, var(--semantic-color-surface-bg))
+    color-mix(in srgb, var(--semantic-color-brand-lavender) 40%, var(--semantic-color-surface-bg)) 0%,
+    color-mix(in srgb, var(--semantic-color-brand-gradient-rose) 40%, var(--semantic-color-surface-bg)) 50%,
+    color-mix(in srgb, var(--semantic-color-brand-amber) 40%, var(--semantic-color-surface-bg)) 100%
   );
 }
 

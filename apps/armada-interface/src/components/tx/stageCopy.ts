@@ -3,6 +3,7 @@
 
 import type { TxKind, TxRecord, TxExecutionState } from '@/lib/tx/types'
 import { getChainById } from '@/config/network'
+import { truncateAddress } from '@/lib/format'
 
 /** Copy entry — either a static string or active/waiting variants keyed on executionState. */
 type CopyEntry = string | { active: string; waiting: string }
@@ -99,23 +100,39 @@ export function kindTitle(kind: TxKind): string {
 }
 
 /**
- * Rich row title for an in-flight or historical record — appends destination chain for cross-chain kinds.
- * Falls back to the bare kind title when meta lacks the expected field (defensive — should not happen with
- * a well-formed record, but tx records are persisted so older schemas may surface).
+ * Rich row title for an in-flight or historical record — matches the dashboard mockup's activity
+ * copy: deposits name their source chain, public sends name the 0x recipient, private sends read
+ * "Sent to private address", vault ops read "Added to / Withdrawn from earn vault". Reads per-kind
+ * meta fields; TS can't narrow the union from `record.kind` (TxRecord is parametrised), so the
+ * runtime casts are safe — meta is shaped per-kind. Falls back to the bare kind title if a field
+ * is missing (defensive — persisted records may carry older schemas).
  */
 export function recordTitle(record: TxRecord): string {
-  const base = kindTitle(record.kind)
-  if (record.kind === 'unshield-xchain') {
-    // unshield-xchain meta carries toChainId. TS can't narrow the union from kind here because
-    // TxRecord is parametrised; the runtime read is safe — meta is shaped per-kind.
-    const meta = record.meta as { toChainId?: number }
-    const chain = meta.toChainId !== undefined ? getChainById(meta.toChainId) : undefined
-    if (chain) return `${base} to ${chain.name}`
+  switch (record.kind) {
+    case 'shield':
+    case 'shield-xchain': {
+      // Shields carry the source chain they deposited/bridged from.
+      const meta = record.meta as { fromChainId?: number }
+      const chain = meta.fromChainId !== undefined ? getChainById(meta.fromChainId) : undefined
+      return chain ? `Deposit from ${chain.name}` : 'Deposit'
+    }
+    case 'unshield-local':
+    case 'unshield-xchain': {
+      // Public unshields — external send + withdraw-to-own-wallet share this kind — carry the 0x recipient.
+      const meta = record.meta as { recipient?: string }
+      return meta.recipient ? `Sent to ${truncateAddress(meta.recipient)}` : 'Sent'
+    }
+    case 'transfer-shielded':
+      // Private (0zk → 0zk) send. The recipient stays private, so we don't surface the address.
+      return 'Sent to private address'
+    case 'transfer-shielded-received':
+      // Incoming private transfer — sender is private by design, so no address.
+      return 'Received payment'
+    case 'yield-deposit':
+      return 'Added to earn vault'
+    case 'yield-withdraw':
+      return 'Withdrawn from earn vault'
   }
-  if (record.kind === 'shield-xchain') {
-    const meta = record.meta as { fromChainId?: number }
-    const chain = meta.fromChainId !== undefined ? getChainById(meta.fromChainId) : undefined
-    if (chain) return `${base} from ${chain.name}`
-  }
-  return base
+  // Defensive fallback for any future kind not covered above.
+  return kindTitle(record.kind)
 }

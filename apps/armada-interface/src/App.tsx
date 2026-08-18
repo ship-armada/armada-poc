@@ -10,6 +10,7 @@ import { ShieldModal } from '@/components/shield'
 import { SendModal } from '@/components/payments'
 import { ReceiveDialog } from '@/components/receive'
 import { EarnModal } from '@/components/yield'
+import { SettingsModal } from '@/components/settings'
 import { useAutoLock } from '@/hooks/useAutoLock'
 import { useHistoryRecovery } from '@/hooks/useHistoryRecovery'
 import { useIncomingTransferDetector } from '@/hooks/useIncomingTransferDetector'
@@ -224,6 +225,7 @@ export function App() {
       <SendModal />
       <EarnModal />
       <ReceiveDialog />
+      <SettingsModal />
     </>
   )
 }

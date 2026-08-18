@@ -1,5 +1,7 @@
-// ABOUTME: Barrel export for Settings dialogs — RecoverySecretExportDialog, ResetWalletDialog, ClearHistoryDialog.
-// ABOUTME: The Settings page consumes all three directly; tests can import them individually.
+// ABOUTME: Barrel export for the Settings overlay + its auxiliary dialogs (RecoverySecretExportDialog, ResetWalletDialog, ClearHistoryDialog).
+// ABOUTME: SettingsModal consumes all three dialogs directly; tests can import them individually.
+
+export { SettingsModal } from './SettingsModal'
 
 export { RecoverySecretExportDialog } from './RecoverySecretExportDialog'
 export type { RecoverySecretExportDialogProps } from './RecoverySecretExportDialog'

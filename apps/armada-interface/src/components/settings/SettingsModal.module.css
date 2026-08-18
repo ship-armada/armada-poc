@@ -1,11 +1,92 @@
-/* ABOUTME: Settings page layout — vertical stack of section Cards. Horizontally auto-centered in AppLayout's top-aligned <main>, like Dashboard/History. */
-/* ABOUTME: Toggle switch is a styled checkbox; section title is a small uppercase eyebrow inside each Card. */
+/* ABOUTME: SettingsModal chrome + body — tx-flow shell (logo / centered title / close) modeled on ModalShell, over the FlowModalOverlay backdrop. */
+/* ABOUTME: Body styles (section cards, rows, toggle, select) carried over from the former Settings page. */
 
-.page {
+.shell {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-height: 100dvh;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: var(--primitives-spacing-5);
+  box-sizing: border-box;
+}
+
+/* Header — logo left, centered title, circular close right (mirrors ModalShell). */
+.header {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
+  height: calc(var(--primitives-spacing-11) + var(--primitives-spacing-1) * 0.5);
+}
+
+.logoSlot {
+  flex-shrink: 0;
+  padding-top: 3px;
+}
+
+.logo {
+  width: var(--primitives-spacing-10);
+  height: var(--primitives-spacing-10);
+  display: block;
+  color: var(--semantic-color-brand-deep);
+}
+
+.titleWrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  align-self: stretch;
+}
+
+.title {
+  margin: 0;
+  text-align: center;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-xl) * 1px);
+  font-weight: var(--primitives-fontWeight-semibold);
+  line-height: var(--primitives-lineHeight-tight);
+  letter-spacing: var(--primitives-letterSpacing-normal);
+  color: var(--semantic-color-text-primary);
+}
+
+.close {
+  width: calc(var(--primitives-spacing-11) + var(--primitives-spacing-1) * 0.5);
+  height: calc(var(--primitives-spacing-11) + var(--primitives-spacing-1) * 0.5);
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  border: calc(var(--primitives-borderWidth-default) * 1px) solid
+    var(--semantic-component-button-secondary-border);
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  color: var(--semantic-color-text-primary);
+  transition: background 0.15s ease;
+}
+
+.close:hover {
+  background: var(--semantic-color-surface-hover);
+}
+
+.closeIcon {
+  width: calc(var(--primitives-spacing-4) + var(--primitives-spacing-1) * 0.5);
+  height: calc(var(--primitives-spacing-4) + var(--primitives-spacing-1) * 0.5);
+}
+
+/* Body — centered column of section cards below the header. */
+.body {
   width: 100%;
   max-width: 720px;
-  margin: 0 auto auto;
-  padding: var(--primitives-spacing-6);
+  margin: calc(var(--primitives-spacing-12) + var(--primitives-spacing-2)) auto 0;
   display: flex;
   flex-direction: column;
   gap: var(--primitives-spacing-4);

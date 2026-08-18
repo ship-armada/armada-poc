@@ -1,14 +1,16 @@
-// ABOUTME: Tests for the Settings page — three sections render, gated buttons honor wallet state, preference selects/toggles wire to atom.
+// ABOUTME: Tests for the Settings overlay — opens via openModalAtom, three sections render, gated buttons honor wallet state, preference selects/toggles wire to atom.
 
 import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
-import { Settings } from './Settings'
+import { SettingsModal } from './SettingsModal'
+import { openModalAtom } from '@/state/ui'
 import { activeShieldedWalletIdAtom, shieldedWalletsAtom } from '@/state/wallet'
 import { preferencesAtom, DEFAULT_PREFERENCES } from '@/state/preferences'
 
 function renderSettings(opts?: { walletUnlocked?: boolean; noWallet?: boolean }) {
   const store = createStore()
+  store.set(openModalAtom, 'settings')
   if (!opts?.noWallet) {
     store.set(shieldedWalletsAtom, {
       'rg-1': {
@@ -21,13 +23,13 @@ function renderSettings(opts?: { walletUnlocked?: boolean; noWallet?: boolean })
   }
   render(
     <Provider store={store}>
-      <Settings />
+      <SettingsModal />
     </Provider>,
   )
   return store
 }
 
-describe('<Settings>', () => {
+describe('<SettingsModal>', () => {
   beforeEach(() => {
     window.localStorage.clear()
   })

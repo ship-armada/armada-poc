@@ -1,0 +1,164 @@
+/* ABOUTME: Styles for the in-progress hero card — brand-gradient surface + tick-ring sweep. */
+/* ABOUTME: Ported from the armada-app design mockup. */
+.card {
+  position: relative;
+  width: 100%;
+  height: auto;
+  max-width: 420px;
+  margin-inline: auto;
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  display: flex;
+  overflow: hidden;
+
+  /* EXCEPTION — brand gem as surface for the in-progress emotional beat. */
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--semantic-color-brand-lavender) 80%, transparent) 0%,
+    color-mix(in srgb, var(--semantic-color-brand-gradient-rose) 80%, transparent) 48%,
+    color-mix(in srgb, var(--semantic-color-brand-amber) 80%, transparent) 100%
+  );
+}
+
+/* Shell owns the gradient; hero stretches this block above the details card. */
+.cardImmersive {
+  aspect-ratio: unset;
+  max-width: none;
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  flex: 1;
+  margin-inline: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+}
+
+.tickRing {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  align-self: center;
+  width: var(--primitives-spacing-20);
+  height: var(--primitives-spacing-20);
+}
+
+.token {
+  position: relative;
+  z-index: 1;
+}
+
+.cardImmersive .tickRing {
+  width: var(--primitives-spacing-20);
+  height: var(--primitives-spacing-20);
+}
+
+.tick {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1.5px;
+  height: var(--primitives-spacing-2);
+  border-radius: calc(var(--primitives-borderRadius-sm) * 0.5px);
+  /* EXCEPTION — ticks stay white on the fixed light gradient surface. */
+  background: var(--semantic-component-tag-label);
+  transform-origin: 50% calc(var(--primitives-spacing-20) / 2);
+  transform: translate(-50%, calc(var(--primitives-spacing-20) / -2)) rotate(calc(var(--i) * 6deg));
+  opacity: 0.4;
+  animation: tickSweep 2.1s linear infinite;
+  animation-delay: calc(var(--i) * 0.035s);
+}
+
+@keyframes tickSweep {
+  0% {
+    opacity: 1;
+    width: 3px;
+  }
+
+  12% {
+    opacity: 0.7;
+    width: 2.25px;
+  }
+
+  30% {
+    opacity: 0.45;
+    width: 1.5px;
+  }
+
+  100% {
+    opacity: 0.4;
+    width: 1.5px;
+  }
+}
+
+.content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--primitives-spacing-5);
+  width: 100%;
+  padding: var(--primitives-spacing-20) var(--primitives-spacing-8);
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.cardImmersive .content {
+  height: 100%;
+  min-height: 0;
+  flex: 1;
+  padding: var(--primitives-spacing-20) var(--primitives-spacing-8);
+}
+
+.titleBlock {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+.cardImmersive .titleBlock {
+  flex: 0 0 auto;
+}
+
+.title {
+  composes: displayXl from '../../../../design/styles/displayXlTitle.module.css';
+  margin: 0;
+  /* EXCEPTION — headline stays white on the fixed light gradient surface. */
+  color: var(--semantic-component-tag-label);
+}
+
+.titleLine {
+  display: block;
+  white-space: nowrap;
+}
+
+.subtitle {
+  composes: labelSmRegular from '../../../../design/styles/typographyComposites.module.css';
+  margin: 0;
+  width: 100%;
+  line-height: var(--primitives-lineHeight-normal);
+  /* EXCEPTION — dark subtitle on the fixed light gradient surface. */
+  color: rgb(14 13 15 / 65%);
+}
+
+.subtitleLine {
+  display: block;
+}
+
+.cardImmersive .subtitle {
+  width: auto;
+  max-width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tick {
+    animation: none;
+    opacity: 0.55;
+    width: 1.5px;
+  }
+}

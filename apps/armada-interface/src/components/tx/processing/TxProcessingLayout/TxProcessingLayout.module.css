@@ -1,0 +1,50 @@
+/* ABOUTME: Layout styles composing the hero card + timeline disclosure (default + immersive). */
+/* ABOUTME: Ported from the armada-app design mockup. */
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-5);
+  width: 100%;
+}
+
+.rootImmersive {
+  flex: 1;
+  min-height: 0;
+  gap: 0;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-4);
+  width: 100%;
+}
+
+.bodyImmersive {
+  flex: 1;
+  min-height: 0;
+  gap: var(--primitives-spacing-5);
+}
+
+.heroImmersive {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* Keep in sync with TxProgressCard max-width */
+.belowCardStack {
+  width: 100%;
+  max-width: 420px;
+  margin-inline: auto;
+}
+
+.belowCardStackImmersive {
+  max-width: none;
+  margin-inline: 0;
+  flex-shrink: 0;
+  width: 100%;
+}

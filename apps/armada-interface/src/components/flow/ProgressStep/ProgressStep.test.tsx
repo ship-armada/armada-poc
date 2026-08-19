@@ -31,17 +31,11 @@ describe('<ProgressStep>', () => {
     expect(screen.getByText('Hang on a moment…')).toBeInTheDocument()
   })
 
-  it('delegates to TxLifecycleStepper when record is present', () => {
+  it('renders the processing layout (hero card + timeline) when a record is present', () => {
     render(<ProgressStep record={sampleRecord} />)
-    // TxLifecycleStepper renders one row per lifecycle stage; the first is "Preparing transaction"
-    // which is shield's build-proof copy. (The WalletConfirmList — S-M4 — also renders status
-    // labels including "Pending", so we assert the unique stepper copy rather than "Pending".)
+    // The hero card shows the per-kind title (rendered as two lines for shield); the timeline's
+    // active row shows the entry-stage label "Preparing transaction" (shield's build-proof copy).
+    expect(screen.getByText('being shielded')).toBeInTheDocument()
     expect(screen.getByText('Preparing transaction')).toBeInTheDocument()
-    expect(screen.getAllByText('Pending').length).toBeGreaterThanOrEqual(1)
-  })
-
-  it('renders the wallet-confirm checklist for shield kinds (S-M4)', () => {
-    render(<ProgressStep record={sampleRecord} />)
-    expect(screen.getByRole('list', { name: 'Wallet confirmations' })).toBeInTheDocument()
   })
 })

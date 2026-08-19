@@ -1,0 +1,11 @@
+/* ABOUTME: display-xl composite — Charis SIL 44px emotional headlines via composes. */
+/* ABOUTME: Ported verbatim from the armada-app design mockup. */
+
+/* display-xl composite — Charis SIL 44px emotional headlines */
+.displayXl {
+  font-family: var(--semantic-typography-display-xl-font-family), serif;
+  font-weight: var(--semantic-typography-display-xl-font-weight);
+  font-size: var(--semantic-typography-display-xl-font-size);
+  line-height: var(--semantic-typography-display-xl-line-height);
+  letter-spacing: var(--semantic-typography-display-xl-letter-spacing);
+}

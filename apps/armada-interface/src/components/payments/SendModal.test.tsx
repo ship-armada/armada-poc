@@ -190,7 +190,7 @@ describe('<SendModal>', () => {
       fireEvent.click(screen.getByRole('button', { name: /Confirm send/ }))
     })
     await waitFor(() => {
-      expect(screen.getByText('Pending')).toBeInTheDocument()
+      expect(screen.getByText('Preparing transaction')).toBeInTheDocument()
     })
   })
 
@@ -203,7 +203,7 @@ describe('<SendModal>', () => {
       fireEvent.click(screen.getByRole('button', { name: /Confirm send/ }))
     })
     await waitFor(() => {
-      expect(screen.getByText('Pending')).toBeInTheDocument()
+      expect(screen.getByText('Preparing transaction')).toBeInTheDocument()
     })
   })
 
@@ -216,7 +216,7 @@ describe('<SendModal>', () => {
       fireEvent.click(screen.getByRole('button', { name: /Confirm send/ }))
     })
     await waitFor(() => {
-      expect(screen.getByText('Pending')).toBeInTheDocument()
+      expect(screen.getByText('Preparing transaction')).toBeInTheDocument()
     })
   })
 
@@ -253,7 +253,7 @@ describe('<SendModal>', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
       })
       await waitFor(() => {
-        expect(screen.getByText('Pending')).toBeInTheDocument()
+        expect(screen.getByText('Preparing transaction')).toBeInTheDocument()
       })
     })
 

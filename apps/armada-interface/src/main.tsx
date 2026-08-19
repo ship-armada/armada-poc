@@ -36,7 +36,6 @@ installBisectingGetLogs()
 setTheme(getSavedTheme() ?? 'light')
 
 import { Dashboard } from '@/pages/Dashboard'
-import { History } from '@/pages/History'
 import { AddressBook } from '@/pages/AddressBook'
 import { Debug } from '@/pages/Debug'
 
@@ -84,7 +83,6 @@ createRoot(document.getElementById('root')!).render(
             <Routes>
               <Route element={<App />}>
                 <Route index element={<Dashboard />} />
-                <Route path="history" element={<History />} />
                 <Route path="address-book" element={<AddressBook />} />
                 {/* Debug page is available in both modes — contract addresses + per-chain
                     balances are useful diagnostics regardless. The local-only faucet UI is

@@ -3,12 +3,12 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
-import { useNavigate } from 'react-router-dom'
 import { ChartBarIcon } from '@heroicons/react/24/outline'
 import { BalanceCard } from '@/components/dashboard/BalanceCard'
 import { DepositTooltip } from '@/components/dashboard/DepositTooltip'
 import { DashboardScrollTopFade } from '@/components/dashboard/DashboardScrollTopFade'
-import { RecentActivityList } from '@/components/dashboard/RecentActivityList'
+import { RecentActivityList, ActivityAllPanel } from '@/components/dashboard/RecentActivityList'
+import { ActivityReceipt } from '@/components/dashboard/ActivityReceipt'
 import { txListToActivityItems } from '@/components/dashboard/txActivityAdapter'
 import { formatUsdcAmount } from '@/components/dashboard/dashboardFormat'
 import type { BalanceRollMode } from '@/components/dashboard/RollingBalanceValue'
@@ -18,7 +18,7 @@ import { useYieldRate } from '@/hooks/useYieldRate'
 import { useOpenActionModal } from '@/hooks/useOpenActionModal'
 import { sharesToUsdc } from '@/lib/yield'
 import { openModalAtom, balanceHiddenAtom } from '@/state/ui'
-import { shieldedUsdcAtom, syncStateAtom, yieldSharesAtom, shieldedWalletAtom } from '@/state/wallet'
+import { shieldedUsdcAtom, syncStateAtom, yieldSharesAtom, shieldedWalletAtom, evmAddressAtom } from '@/state/wallet'
 import { activeTxListAtom } from '@/state/tx'
 import styles from './Dashboard.module.css'
 
@@ -36,12 +36,16 @@ export function Dashboard() {
   const { rate: yieldRate } = useYieldRate()
   const shieldedWallet = useAtomValue(shieldedWalletAtom)
   const txList = useAtomValue(activeTxListAtom)
+  const evmAddress = useAtomValue(evmAddressAtom)
 
   // Actions
   const openActionModal = useOpenActionModal()
   const setOpenModal = useSetAtom(openModalAtom)
   const openModal = useAtomValue(openModalAtom)
-  const navigate = useNavigate()
+
+  // "All activity" side-panel + the per-tx receipt overlay (replaces the retired /history page).
+  const [activityPanelOpen, setActivityPanelOpen] = useState(false)
+  const [receiptId, setReceiptId] = useState<string | null>(null)
 
   // Balance visibility is app-wide (shared with the wallet panel's hide toggle) via balanceHiddenAtom.
   const [balanceHidden, setBalanceHidden] = useAtom(balanceHiddenAtom)
@@ -75,7 +79,10 @@ export function Dashboard() {
     yieldShares !== null && yieldRate !== null ? sharesToUsdc(yieldShares, yieldRate.rate) : 0n
   const vaultNumber = usdcToNumber(earningUsdc)
   const vaultApy = yieldRate !== null ? Number(yieldRate.apyBps) / 100 : undefined
-  const activityItems = useMemo(() => txListToActivityItems(txList), [txList])
+  const activityItems = useMemo(
+    () => txListToActivityItems(txList, evmAddress),
+    [txList, evmAddress],
+  )
   const hasCompletedDeposit = txList.some(
     (r) => (r.kind === 'shield' || r.kind === 'shield-xchain') && r.executionState === 'completed',
   )
@@ -135,11 +142,26 @@ export function Dashboard() {
           <RecentActivityList
             items={activityItems}
             balanceRevealed={!balanceHidden}
-            onViewAll={() => navigate('/history')}
-            onItemClick={() => navigate('/history')}
+            onViewAll={() => setActivityPanelOpen(true)}
+            onItemClick={(item) => setReceiptId(item.id)}
           />
         ) : null}
       </div>
+
+      {/* Full "all activity" panel (View all) + the per-tx receipt overlay — replace the old /history page. */}
+      <ActivityAllPanel
+        open={activityPanelOpen}
+        onClose={() => setActivityPanelOpen(false)}
+        items={activityItems}
+        balanceRevealed={!balanceHidden}
+        onItemClick={(item) => setReceiptId(item.id)}
+      />
+      <ActivityReceipt
+        record={txList.find((record) => record.id === receiptId) ?? null}
+        ownWalletAddress={evmAddress ?? undefined}
+        open={receiptId !== null}
+        onClose={() => setReceiptId(null)}
+      />
     </div>
   )
 }

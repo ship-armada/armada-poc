@@ -37,16 +37,48 @@ function usdcToNumber(amount: bigint): number {
   return Number(amount) / 1e6
 }
 
-export function txRecordToActivityItem(record: TxRecord): DashboardActivityItem {
-  const direction = DIRECTION[record.kind]
-  return {
+/**
+ * An `unshield-*` record covers BOTH "send to an external wallet" and "withdraw to your own wallet"
+ * — the same on-chain op, and the record doesn't store which the user intended. Heuristic: it's a
+ * withdraw when the recipient equals the user's own connected wallet, otherwise a send. This is the
+ * only signal available for chain-recovered txs too (the flow variant is never on-chain).
+ */
+export function isWithdrawToSelf(
+  recipient: string | undefined,
+  ownWallet: string | null | undefined,
+): boolean {
+  return Boolean(ownWallet && recipient && recipient.toLowerCase() === ownWallet.toLowerCase())
+}
+
+export function txRecordToActivityItem(
+  record: TxRecord,
+  ownWallet?: string | null,
+): DashboardActivityItem {
+  const base = {
     id: record.id,
-    kind: direction.kind,
-    label: recordTitle(record),
-    amount: direction.sign * usdcToNumber(record.meta.amount),
     occurredAt: historySortTime(record),
     txHash: record.artifacts.sourceTxHash,
     pending: !isTerminalState(record.executionState),
+  }
+
+  // Public unshields split into send-vs-withdraw by the recipient heuristic (both share this kind).
+  if (record.kind === 'unshield-local' || record.kind === 'unshield-xchain') {
+    const recipient = (record.meta as { recipient?: string }).recipient
+    const withdraw = isWithdrawToSelf(recipient, ownWallet)
+    return {
+      ...base,
+      kind: withdraw ? 'withdraw' : 'send',
+      label: withdraw ? 'Withdrawn to your wallet' : recordTitle(record),
+      amount: -usdcToNumber(record.meta.amount),
+    }
+  }
+
+  const direction = DIRECTION[record.kind]
+  return {
+    ...base,
+    kind: direction.kind,
+    label: recordTitle(record),
+    amount: direction.sign * usdcToNumber(record.meta.amount),
   }
 }
 
@@ -56,10 +88,11 @@ export function txRecordToActivityItem(record: TxRecord): DashboardActivityItem 
  */
 export function txListToActivityItems(
   list: readonly TxRecord[],
+  ownWallet?: string | null,
   max = 8,
 ): DashboardActivityItem[] {
   return [...list]
     .sort((a, b) => historySortTime(b) - historySortTime(a))
     .slice(0, max)
-    .map(txRecordToActivityItem)
+    .map((record) => txRecordToActivityItem(record, ownWallet))
 }

@@ -12,7 +12,10 @@ Dashboard presentation, ported from the armada-app design mockup. Composed by `p
 | `VaultPositionBar` | Vault (yield) position row inside BalanceCard; shows earned + APR. |
 | `SendButton`, `ShieldedUsdcBadge`, `TokenBadge` | Small presentational pieces of the card. |
 | `DepositTooltip` | First-run "Make your first deposit" callout under the card (empty state). |
-| `RecentActivityList` | Preview activity list — icon-badge rows with scrambled amounts; "View all" → `/history`. |
+| `RecentActivityList` | Activity list — icon-badge rows with scrambled amounts + per-item peek. `variant="preview"` (dashboard, with "View all" → the `ActivityAllPanel`) or `variant="full"` (inside the panel). |
+| `ActivityAllPanel` | "All activity" SidePanel/BottomSheet — kind filters + tx-hash search over the full list; a row click opens the `ActivityReceipt`. Replaces the retired `/history` page. |
+| `ActivityKindFilters` / `ActivityTxHashSearch` | Toolbar controls for the panel (kind chips + hash search); predicates in `activityFilters.ts`. |
+| `ActivityReceipt` | Per-tx receipt overlay — reopens a past tx's confirm-step summary (date/time, amount, fees, to/from) by reconstructing the review-summary props from its record. |
 | `txActivityAdapter.ts` | Maps `TxRecord[]` → `DashboardActivityItem[]` (direction/sign/label/pending). The data seam for the activity list. |
 | `dashboardFormat.ts` | Number-based `formatUsdcAmount` / `truncateArmadaAddress` / `formatTimeAgo` used by the ported (number-typed) components. Distinct from `@/lib/format` (bigint-based). |
 | `vaultEarnings.ts` | `DEMO_EARN_APY` + vault-earning label/amount-format helpers used by VaultPositionBar. |

@@ -1,0 +1,10 @@
+/* ABOUTME: Layout for the "All activity" side panel — constrained width and toolbar inline padding. */
+/* ABOUTME: Ported from the armada-app design mockup. */
+.panel {
+  width: min(100%, calc(var(--primitives-spacing-20) * 5 - var(--primitives-spacing-5)));
+  --side-panel-chrome-inline: var(--primitives-spacing-3);
+}
+
+.toolbar {
+  padding-inline: var(--primitives-spacing-3);
+}

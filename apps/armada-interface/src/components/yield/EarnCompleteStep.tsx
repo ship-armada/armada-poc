@@ -1,18 +1,12 @@
-// ABOUTME: Earn complete step — serif "Deposit to vault complete"/"Withdrawal from vault complete" title, coin + amount, EarnReviewSummary (with date/time), explorer/dashboard CTAs.
-// ABOUTME: Mirrors SendCompleteStep — no divider between the summary card and the button row.
+// ABOUTME: Earn complete step — frost card with left-aligned UI title + big mono amount, shared EarnReviewSummary (with date/time), explorer/dashboard CTAs.
+// ABOUTME: Mirrors SendCompleteStep — no divider between the summary and the button row.
 
-import TokenUSDC from '@web3icons/react/icons/tokens/TokenUSDC'
 import { Button } from '@/design'
 import { EarnReviewSummary } from './EarnReviewSummary'
 import { formatUsdcPlain } from '@/lib/format'
-import usdcAmount from '@/design/styles/usdcAmount.module.css'
 import type { YieldRate } from '@/hooks/useYieldRate'
 import type { EarnTab } from './EarnInputStep'
 import styles from './EarnCompleteStep.module.css'
-
-const TOKEN_BADGE_PX = 40
-/** @web3icons branded assets use an 18px circle in a 24px viewBox — scale up to fill the badge. */
-const TOKEN_ICON_SIZE = Math.round((TOKEN_BADGE_PX * 24) / 18)
 
 export interface EarnCompleteStepProps {
   tab: EarnTab
@@ -44,20 +38,14 @@ export function EarnCompleteStep({
   onViewExplorer,
   onGoToDashboard,
 }: EarnCompleteStepProps) {
-  const title = tab === 'add' ? 'Deposit to vault complete' : 'Withdrawal from vault complete'
+  const title = tab === 'add' ? 'USDC deposit complete' : 'USDC withdrawal complete'
 
   return (
     <div className={styles.root}>
-      <h1 className={styles.title}>{title}</h1>
-
-      <div className={styles.amountRow}>
-        <div className={styles.amountGroup}>
-          <span className={styles.tokenBadge} aria-hidden="true">
-            <TokenUSDC size={TOKEN_ICON_SIZE} variant="branded" className={styles.tokenBadgeIcon} />
-          </span>
-          <span className={[styles.amountValue, usdcAmount.font].join(' ')}>
-            {formatUsdcPlain(amount)}
-          </span>
+      <div className={styles.titleBlock}>
+        <h1 className={styles.title}>{title}</h1>
+        <div className={styles.amountRow}>
+          <span className={styles.amountValue}>{formatUsdcPlain(amount)}</span>
         </div>
       </div>
 
@@ -77,6 +65,7 @@ export function EarnCompleteStep({
           size="lg"
           label="View on explorer"
           showIcon={false}
+          className={styles.cancelButton}
           onClick={onViewExplorer}
           disabled={!explorerUrl}
         />
@@ -85,6 +74,7 @@ export function EarnCompleteStep({
           size="lg"
           label="Go to dashboard"
           showIcon={false}
+          className={styles.confirmButton}
           onClick={onGoToDashboard}
         />
       </div>

@@ -1,7 +1,7 @@
 // ABOUTME: Deposit amount card — optional in-card title, chain dropdown, left-aligned large mono amount, balance/fee row.
 // ABOUTME: Chain list from parent (network config); icons via @web3icons when mapped, else letter fallback.
 
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { ChevronDownIcon, WalletIcon } from '@heroicons/react/24/solid'
 import { hasActiveAmount, sanitizeAmountInput } from '@/utils/amountInput'
 import { chainIconForChainId } from '@/components/ui/chainIcons'
@@ -23,6 +23,11 @@ export interface DepositAmountCardProps {
   onChainIdChange?: (chainId: number) => void
   /** Hide the chain row entirely (e.g. the Send flow, where the chain is chosen on a prior step). */
   showChain?: boolean
+  /**
+   * Optional node rendered at the very top of the card, above the title (e.g. the Earn flow's
+   * Add/Withdraw SegmentedControl). Matches the mockup's in-card `headerSlot`.
+   */
+  header?: ReactNode
   /** Optional heading rendered inside the card (left-aligned) above the amount. */
   title?: string
   amount: string
@@ -73,6 +78,7 @@ export function DepositAmountCard({
   chainId,
   onChainIdChange,
   showChain = true,
+  header,
   title,
   amount,
   onAmountChange,
@@ -136,6 +142,7 @@ export function DepositAmountCard({
   return (
     <div className={styles.card}>
       <div className={styles.cardTop}>
+      {header ? <div className={styles.cardHeader}>{header}</div> : null}
       {title ? <p className={styles.cardTitle}>{title}</p> : null}
       {showChain ? (
       <div className={styles.topRow}>

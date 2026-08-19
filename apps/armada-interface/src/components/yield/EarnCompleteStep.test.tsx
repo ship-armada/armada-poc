@@ -10,7 +10,7 @@ const RATE: YieldRate = { rate: 1_000_000_000_000_000_000n, apyBps: 420n, fetche
 const CONFIRMED_AT = 1_700_000_000_000
 
 describe('<EarnCompleteStep>', () => {
-  it("add tab: 'Deposit to vault complete' title + Add-to-vault summary", () => {
+  it("add tab: 'USDC deposit complete' title + Add-to-vault summary", () => {
     render(
       <EarnCompleteStep
         tab="add"
@@ -25,32 +25,33 @@ describe('<EarnCompleteStep>', () => {
         onGoToDashboard={() => {}}
       />,
     )
-    expect(screen.getByRole('heading', { name: 'Deposit to vault complete' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'USDC deposit complete' })).toBeInTheDocument()
     expect(screen.getByText('Add to vault')).toBeInTheDocument()
     expect(screen.getByText('Your deposit')).toBeInTheDocument()
     expect(screen.getByText('Total deducted from balance')).toBeInTheDocument()
   })
 
-  it("withdraw tab: 'Withdrawal from vault complete' title + Withdraw summary", () => {
+  it("withdraw tab: 'USDC withdrawal complete' title + Withdraw summary", () => {
     render(
       <EarnCompleteStep
         tab="withdraw"
         amount={50_000_000n}
         rate={RATE}
         fee={500_000n}
-        netAmount={50_000_000n}
-        netLabel="You'll receive into private balance"
+        netAmount={49_500_000n}
+        netLabel="Received into private balance"
         confirmedAt={CONFIRMED_AT}
         onViewExplorer={() => {}}
         onGoToDashboard={() => {}}
       />,
     )
     expect(
-      screen.getByRole('heading', { name: 'Withdrawal from vault complete' }),
+      screen.getByRole('heading', { name: 'USDC withdrawal complete' }),
     ).toBeInTheDocument()
     expect(screen.getByText('Withdraw from vault')).toBeInTheDocument()
     expect(screen.getByText('Your withdrawal')).toBeInTheDocument()
-    expect(screen.getByText("You'll receive into private balance")).toBeInTheDocument()
+    // Past-tense on the confirmed screen (review says "You'll receive…"), net of the fee.
+    expect(screen.getByText('Received into private balance')).toBeInTheDocument()
   })
 
   it('disables View on explorer when no explorerUrl is provided', () => {

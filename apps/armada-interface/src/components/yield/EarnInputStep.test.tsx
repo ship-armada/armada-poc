@@ -50,9 +50,9 @@ function setup(extras?: {
 }
 
 describe('<EarnInputStep>', () => {
-  it('renders Add funds and Withdraw tabs', () => {
+  it('renders Add to vault and Withdraw tabs', () => {
     setup()
-    expect(screen.getByRole('tab', { name: 'Add funds' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Add to vault' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Withdraw' })).toBeInTheDocument()
   })
 
@@ -69,14 +69,14 @@ describe('<EarnInputStep>', () => {
     }
   })
 
-  it('shows the APY hint on the Add tab', () => {
+  it('shows the APY banner on the Add tab', () => {
     setup({ tab: 'add', rate: { rate: 1_000_000n, apyBps: 450n, fetchedAt: 0 } })
-    expect(screen.getByText('Estimated APY')).toBeInTheDocument()
+    expect(screen.getByText('Earn ~4.50% APY')).toBeInTheDocument()
   })
 
-  it('hides the APY hint entirely on the Withdraw tab', () => {
+  it('shows the APY banner on the Withdraw tab too (matches the mockup)', () => {
     setup({ tab: 'withdraw', rate: { rate: 1_000_000n, apyBps: 450n, fetchedAt: 0 } })
-    expect(screen.queryByText('Estimated APY')).toBeNull()
+    expect(screen.getByText('Earn ~4.50% APY')).toBeInTheDocument()
   })
 
   it('uses the vault-deposit aria-label when tab=add', () => {
@@ -89,19 +89,19 @@ describe('<EarnInputStep>', () => {
     expect(screen.getByLabelText('Vault withdrawal amount')).toBeInTheDocument()
   })
 
-  it('shows the syncing APY copy when rate is null', () => {
+  it('shows the syncing APY headline when rate is null', () => {
     setup({ rate: null })
-    expect(screen.getByText('syncing…')).toBeInTheDocument()
+    expect(screen.getByText('Estimating vault APY…')).toBeInTheDocument()
   })
 
-  it('shows the unavailable APY copy when the pool currently pays no yield', () => {
+  it('shows the no-yield APY headline when the pool currently pays no yield', () => {
     setup({ rate: { rate: 1_000_000n, apyBps: 0n, fetchedAt: 0 } })
-    expect(screen.getByText(/unavailable — pool currently pays no yield/)).toBeInTheDocument()
+    expect(screen.getByText('Vault currently pays no yield')).toBeInTheDocument()
   })
 
-  it('renders the APY percentage when apyBps is populated', () => {
+  it('renders the APY percentage headline when apyBps is populated', () => {
     setup({ rate: { rate: 1_000_000n, apyBps: 450n, fetchedAt: 0 } })
-    expect(screen.getByText('~4.50%')).toBeInTheDocument()
+    expect(screen.getByText('Earn ~4.50% APY')).toBeInTheDocument()
   })
 
   it('disables Review when amount exceeds maxInput', () => {

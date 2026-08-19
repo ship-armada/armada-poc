@@ -83,9 +83,9 @@ describe('<EarnModal>', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 
-  it("opens with Add funds selected when entry is 'yield-deposit'", () => {
+  it("opens with Add to vault selected when entry is 'yield-deposit'", () => {
     renderModal({ open: 'yield-deposit', shielded: 10_000_000n })
-    expect(screen.getByRole('tab', { name: 'Add funds' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Add to vault' })).toHaveAttribute('aria-selected', 'true')
   })
 
   it("opens with Withdraw selected when entry is 'yield-withdraw'", () => {
@@ -109,7 +109,7 @@ describe('<EarnModal>', () => {
     renderModal({ open: 'yield-deposit', shielded: 10_000_000n })
     fireEvent.change(screen.getByLabelText('Vault deposit amount'), { target: { value: '3' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
-    expect(screen.getByRole('heading', { name: 'Review your deposit' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Review your USDC deposit' })).toBeInTheDocument()
   })
 
   it('Confirm submits the tx and advances to the progress step', async () => {

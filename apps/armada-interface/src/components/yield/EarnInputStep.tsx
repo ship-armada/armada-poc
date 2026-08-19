@@ -1,11 +1,13 @@
-// ABOUTME: Earn amount step — Add/Withdraw pill tabs, serif prompt, chain-less DepositAmountCard + percent pills, and an APY hint on the Add tab.
-// ABOUTME: The vault has no chain selection; the APY panel is shown only for deposits (matches the mockup).
+// ABOUTME: Earn amount step — APY intro banner (DepositTooltip) above a chain-less DepositAmountCard whose in-card header holds the Add/Withdraw SegmentedControl.
+// ABOUTME: The vault has no chain selection; the banner headline is driven by the live vault rate and shows on both tabs (matches the mockup).
 
 import { useMemo } from 'react'
+import { ChartBarIcon } from '@heroicons/react/24/solid'
 import { Button } from '@/design'
 import { DepositAmountCard } from '@/components/deposit/DepositAmountCard/DepositAmountCard'
 import { depositOverlayShellStyles } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
-import { GasBalanceNotice } from '@/components/ui'
+import { DepositTooltip } from '@/components/dashboard/DepositTooltip'
+import { GasBalanceNotice, SegmentedControl } from '@/components/ui'
 import type { DisplayFees } from '@/lib/fees/displayFees'
 import type { FlowFeeBreakdown } from '@/components/ui/FeeBreakdownTooltip'
 import { useGasBalanceWarning } from '@/hooks/useGasBalanceWarning'
@@ -19,9 +21,13 @@ import styles from './EarnInputStep.module.css'
 export type EarnTab = 'add' | 'withdraw'
 
 const TABS = [
-  { id: 'add' as const, label: 'Add funds' },
+  { id: 'add' as const, label: 'Add to vault' },
   { id: 'withdraw' as const, label: 'Withdraw' },
 ] as const
+
+/** Static copy for the APY intro banner (the live rate fills the headline). */
+const EARN_APY_BANNER_BODY = 'Deposit into the vault and start earning now.'
+const EARN_APY_BANNER_TOOLTIP = 'The APY is an estimate from recent vault performance.'
 
 export interface EarnInputStepProps {
   tab: EarnTab
@@ -60,6 +66,14 @@ function formatApy(rate: YieldRate | null): string {
   const apy = rateToApy(rate.apyBps)
   if (apy === 0) return 'unavailable — pool currently pays no yield'
   return `~${apy.toFixed(2)}%`
+}
+
+/** Headline for the APY intro banner — driven by the live vault rate, with sync/zero states. */
+function apyBannerHeadline(rate: YieldRate | null): string {
+  if (!rate) return 'Estimating vault APY…'
+  const apy = rateToApy(rate.apyBps)
+  if (apy === 0) return 'Vault currently pays no yield'
+  return `Earn ~${apy.toFixed(2)}% APY`
 }
 
 export function EarnInputStepContent({
@@ -116,30 +130,35 @@ export function EarnInputStepContent({
       : undefined)
 
   const question =
-    tab === 'add'
-      ? 'How much USDC do you want to add to the vault?'
-      : 'How much USDC do you want to withdraw from the vault?'
+    tab === 'add' ? 'Deposit USDC to the vault' : 'Withdraw USDC from the vault'
 
   return (
     <div className={styles.root}>
-      <div className={styles.tabs} role="tablist" aria-label="Earn mode">
-        {TABS.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === item.id}
-            className={[styles.tab, tab === item.id && styles.tabActive].filter(Boolean).join(' ')}
-            onClick={() => onTabChange(item.id)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+      {/* APY intro banner — shown on both tabs (mockup). The live vault rate fills the headline. */}
+      <DepositTooltip
+        stretch
+        BadgeIcon={ChartBarIcon}
+        badgeBackground="white"
+        iconTileTone="purple"
+        headline={apyBannerHeadline(rate)}
+        ariaLabel={`Estimated yearly yield ${formatApy(rate)}`}
+        body={EARN_APY_BANNER_BODY}
+        infoTooltip={EARN_APY_BANNER_TOOLTIP}
+      />
 
       <DepositAmountCard
         chains={chains}
         chainId={hub.chainId}
+        // Add/Withdraw mode tabs live inside the card, above the title (mockup headerSlot).
+        header={
+          <SegmentedControl<EarnTab>
+            size="sm"
+            aria-label="Earn mode"
+            value={tab}
+            onChange={onTabChange}
+            options={TABS}
+          />
+        }
         // Title now lives inside the card; the vault has no chain selection (no chain row here).
         title={question}
         showChain={false}
@@ -167,17 +186,6 @@ export function EarnInputStepContent({
       {continueBlockedReason ? (
         <div className={styles.blockedReason} role="alert">
           {continueBlockedReason}
-        </div>
-      ) : null}
-
-      {/* APY hint is a deposit concern — shown on the Add tab only (matches the mockup). */}
-      {tab === 'add' ? (
-        <div className={styles.apyBlock}>
-          <span className={styles.apyLabel}>Estimated APY</span>
-          <span className={styles.apyValue}>{formatApy(rate)}</span>
-          <p className={styles.apyCaveat}>
-            Based on the vault&apos;s recent rate; the actual yield earned will vary.
-          </p>
         </div>
       ) : null}
     </div>

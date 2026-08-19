@@ -1,12 +1,12 @@
-// ABOUTME: EarnReviewSummary — borderless vault summary table (mode / APY / amount / fees) with a per-tab total row.
-// ABOUTME: Shared by EarnReviewStep and EarnCompleteStep; an optional confirmedAt adds a leading "Date and time" row.
+// ABOUTME: EarnReviewSummary — transparent vault summary table (mode / APY / amount / fees) with a per-tab total row.
+// ABOUTME: Shares DepositReviewSummary's CSS so the rows sit inside the review/complete frost card; confirmedAt adds a "Date and time" row.
 
 import { formatTransactionDateTime, formatUsdcAmount } from '@/lib/format'
 import { rateToApy } from '@/lib/yield'
 import type { YieldRate } from '@/hooks/useYieldRate'
 import usdcAmount from '@/design/styles/usdcAmount.module.css'
 import type { EarnTab } from '../EarnInputStep'
-import styles from './EarnReviewSummary.module.css'
+import styles from '../../deposit/DepositReviewSummary/DepositReviewSummary.module.css'
 
 export interface EarnReviewSummaryProps {
   tab: EarnTab

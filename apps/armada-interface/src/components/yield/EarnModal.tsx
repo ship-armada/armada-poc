@@ -126,14 +126,23 @@ export function EarnModal() {
   // Per-tab display values handed down to the step components. The step components stay dumb;
   // EarnModal owns the per-tab semantic translation.
   //
-  // For withdraw, the redeem proceeds (`amount`) are shielded back to the user IN FULL — that's
-  // the vault→private flow. The broadcaster fee is a SEPARATE leg (private→relayer) shown on
-  // its own row. Combining them into a single net line would frame two independent flows as
-  // one, surfacing "0 received" whenever fee >= amount even though the user did get `amount`
-  // back from the vault. Better to show both lines as-is and let the user compose mentally.
-  const displayNetAmount: bigint = tab === 'add' ? totalDeducted : amount
+  // Total displayed fee (broadcaster + any protocol fee) — the figure shown on the summary's
+  // "Fees" row. Hoisted so the net-received total below subtracts the SAME number.
+  const displayFeeTotal: bigint = fee + displayFees.protocolFee
+  // For withdraw, the vault redeem proceeds (`amount`) shield back to private balance IN FULL,
+  // while the broadcaster fee is unshielded from the user's pre-existing private USDC on a
+  // separate leg. Both hit the same private balance, so the honest "You'll receive into private
+  // balance" total is the NET change: `amount - fee`. The itemized "Your withdrawal" and "Fees"
+  // rows above keep the two legs visible. When the fee exceeds the withdrawal the net goes
+  // negative — shown as-is (a withdraw that costs more in fees than it returns is economically
+  // losing but permitted).
+  const displayNetAmount: bigint = tab === 'add' ? totalDeducted : amount - displayFeeTotal
   const displayNetLabel: string =
     tab === 'add' ? 'Total deducted from balance' : "You'll receive into private balance"
+  // Past-tense variant for the confirmed screen — the review says "You'll receive…", the
+  // completed screen says "Received…" for the same withdraw net.
+  const completeNetLabel: string =
+    tab === 'add' ? 'Total deducted from balance' : 'Received into private balance'
   // Pre-flight: the withdraw broadcaster fee is unshielded from the user's PRE-EXISTING private
   // USDC (the proof needs a USDC UTXO; the redeem proceeds aren't available at proof-construction
   // time). If the user's private USDC is below the fee, proof gen will fail 20-30s in. Block at
@@ -331,7 +340,7 @@ export function EarnModal() {
           amount={amount}
           rate={yieldRate}
           // Inclusive Fee total — broadcaster + protocol. No CCTP on yield kinds.
-          fee={fee + displayFees.protocolFee}
+          fee={displayFeeTotal}
           netAmount={displayNetAmount}
           netLabel={displayNetLabel}
           submitBlockedReason={submitBlockedReason}
@@ -347,11 +356,11 @@ export function EarnModal() {
           amount={amount}
           rate={yieldRate}
           // Inclusive Fee total — broadcaster + protocol. No CCTP on yield kinds.
-          fee={fee + displayFees.protocolFee}
-          // Per-tab net figure: Add debits `amount + fee`; Withdraw returns `amount` in full (the
-          // broadcaster fee was paid as a separate proof leg out of existing private USDC).
+          fee={displayFeeTotal}
+          // Per-tab net figure: Add debits `amount + fee`; Withdraw nets `amount - fee` into
+          // private balance (the broadcaster fee is a separate proof leg out of existing private USDC).
           netAmount={displayNetAmount}
-          netLabel={displayNetLabel}
+          netLabel={completeNetLabel}
           confirmedAt={record?.updatedAt ?? Date.now()}
           explorerUrl={txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))}
           onViewExplorer={() => {

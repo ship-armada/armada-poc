@@ -31,6 +31,12 @@
   width: 100%;
 }
 
+/* In-card header slot — sits at the very top of the card above the title (e.g. the Earn
+   Add/Withdraw SegmentedControl). Full width so a stretched control fills the card. */
+.cardHeader {
+  width: 100%;
+}
+
 /* In-card heading (left-aligned) — the amount step's title now lives inside the card. Self-contained
    type (not the global body-lg class) so the medium weight reliably wins the cascade. */
 .cardTitle {

@@ -58,9 +58,12 @@ function activityAmountTone(item: DashboardActivityItem, balanceRevealed: boolea
   return ''
 }
 
+export type RecentActivityListVariant = 'preview' | 'full'
+
 export interface RecentActivityListProps {
   items: readonly DashboardActivityItem[]
   balanceRevealed?: boolean
+  variant?: RecentActivityListVariant
   onViewAll?: () => void
   onItemClick?: (item: DashboardActivityItem) => void
 }
@@ -123,11 +126,13 @@ function ActivityListItems({
 export function RecentActivityList({
   items,
   balanceRevealed = true,
+  variant = 'preview',
   onViewAll,
   onItemClick,
 }: RecentActivityListProps) {
   const [showBottomFade, setShowBottomFade] = useState(false)
   const listScrollRef = useRef<HTMLDivElement>(null)
+  const isPreview = variant === 'preview'
 
   const updateBottomFade = useCallback(() => {
     const el = listScrollRef.current
@@ -141,13 +146,17 @@ export function RecentActivityList({
   }, [])
 
   useEffect(() => {
+    if (!isPreview) {
+      setShowBottomFade(false)
+      return
+    }
     updateBottomFade()
     const el = listScrollRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(() => updateBottomFade())
     observer.observe(el)
     return () => observer.disconnect()
-  }, [items, updateBottomFade])
+  }, [isPreview, items, updateBottomFade])
 
   function handleListScroll(event: UIEvent<HTMLDivElement>) {
     const el = event.currentTarget
@@ -156,24 +165,30 @@ export function RecentActivityList({
     setShowBottomFade(canScroll && !atBottom)
   }
 
+  const rootClassName = [styles.root, isPreview ? styles.rootPreview : styles.rootFull]
+    .filter(Boolean)
+    .join(' ')
+
   const previewStyle = {
     '--activity-list-fade-height': `${ACTIVITY_LIST_FADE_HEIGHT_PX}px`,
   } as CSSProperties
 
   return (
     <section
-      className={[styles.root, styles.rootPreview].join(' ')}
+      className={rootClassName}
       aria-label="Recent activity"
-      style={previewStyle}
+      style={isPreview ? previewStyle : undefined}
     >
-      <div className={styles.headerRow}>
-        <h2 className={styles.heading}>Recent activity</h2>
-        {onViewAll ? (
-          <button type="button" className={styles.viewAllButton} onClick={onViewAll}>
-            View all
-          </button>
-        ) : null}
-      </div>
+      {isPreview ? (
+        <div className={styles.headerRow}>
+          <h2 className={styles.heading}>Recent activity</h2>
+          {onViewAll ? (
+            <button type="button" className={styles.viewAllButton} onClick={onViewAll}>
+              View all
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {items.length === 0 ? (
         <div className={styles.emptyState}>
@@ -185,7 +200,7 @@ export function RecentActivityList({
             Deposits, sends, and earn moves will show up here.
           </p>
         </div>
-      ) : (
+      ) : isPreview ? (
         <div className={styles.listViewport}>
           <div
             ref={listScrollRef}
@@ -201,6 +216,12 @@ export function RecentActivityList({
             />
           </div>
         </div>
+      ) : (
+        <ActivityListItems
+          items={items}
+          balanceRevealed={balanceRevealed}
+          onItemClick={onItemClick}
+        />
       )}
     </section>
   )

@@ -16,6 +16,10 @@ export interface FlowShellProps {
   /** 1-based active step. */
   currentStep: number
   status?: 'default' | 'confirmed' | 'error'
+  /** Hide the step-progress bar (e.g. the standalone activity receipt, which isn't a live flow). */
+  hideSteps?: boolean
+  /** Play the close (slide-down) animation. The caller keeps `open` true until the exit completes. */
+  exiting?: boolean
   children: ReactNode
 }
 
@@ -26,16 +30,20 @@ export function FlowShell({
   steps = DEFAULT_STEPS,
   currentStep,
   status = 'default',
+  hideSteps = false,
+  exiting = false,
   children,
 }: FlowShellProps) {
-  if (!open) return null
+  if (!open && !exiting) return null
 
   return (
-    <FlowModalOverlay label={flowLabel} onClose={onClose}>
+    <FlowModalOverlay label={flowLabel} exiting={exiting} onClose={onClose}>
       <ModalShell
         steps={steps}
         currentStep={currentStep}
         status={status}
+        hideSteps={hideSteps}
+        exiting={exiting}
         flowLabel={flowLabel}
         onClose={onClose}
       >

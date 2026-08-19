@@ -13,6 +13,7 @@ function makeRecord(
     createdAt?: number
     updatedAt?: number
     sourceTxHash?: `0x${string}`
+    recipient?: string
   } = {},
 ): TxRecord {
   return {
@@ -21,7 +22,7 @@ function makeRecord(
     executionState: opts.executionState ?? 'completed',
     createdAt: opts.createdAt ?? 1000,
     updatedAt: opts.updatedAt ?? 1000,
-    meta: { amount: opts.amount ?? 1_000_000n },
+    meta: { amount: opts.amount ?? 1_000_000n, ...(opts.recipient ? { recipient: opts.recipient } : {}) },
     artifacts: opts.sourceTxHash ? { sourceTxHash: opts.sourceTxHash } : {},
   } as unknown as TxRecord
 }
@@ -35,10 +36,27 @@ describe('txRecordToActivityItem', () => {
     expect(item.pending).toBe(false)
   })
 
-  it('maps withdrawals (unshield) to a negative outflow', () => {
-    const item = txRecordToActivityItem(makeRecord('unshield-local', { amount: 2_000_000n }))
-    expect(item.kind).toBe('withdraw')
-    expect(item.amount).toBe(-2)
+  it('classifies an unshield as withdraw when the recipient is the connected wallet, else send', () => {
+    const own = '0xME00000000000000000000000000000000000000'
+    const other = '0xABCD000000000000000000000000000000000000'
+
+    const withdraw = txRecordToActivityItem(
+      makeRecord('unshield-local', { amount: 2_000_000n, recipient: own }),
+      own,
+    )
+    expect(withdraw.kind).toBe('withdraw')
+    expect(withdraw.amount).toBe(-2)
+
+    const send = txRecordToActivityItem(
+      makeRecord('unshield-local', { amount: 2_000_000n, recipient: other }),
+      own,
+    )
+    expect(send.kind).toBe('send')
+    expect(send.amount).toBe(-2)
+
+    // No connected wallet → can't tell → defaults to send.
+    const unknown = txRecordToActivityItem(makeRecord('unshield-local', { recipient: other }))
+    expect(unknown.kind).toBe('send')
   })
 
   it('maps outgoing transfers to send (negative) and incoming to receive (positive)', () => {
@@ -75,7 +93,7 @@ describe('txListToActivityItems', () => {
       makeRecord('shield', { id: 'new', createdAt: 300 }),
       makeRecord('shield', { id: 'mid', createdAt: 200 }),
     ]
-    const items = txListToActivityItems(list, 2)
+    const items = txListToActivityItems(list, null, 2)
     expect(items.map((i) => i.id)).toEqual(['new', 'mid'])
   })
 

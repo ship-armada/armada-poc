@@ -1,0 +1,52 @@
+/* ABOUTME: Styling for the activity kind-filter chips — horizontally scrollable segmented control. */
+/* ABOUTME: Ported from the armada-app design mockup; active chip uses the purple accent tint. */
+.root {
+  display: flex;
+  align-items: stretch;
+  gap: var(--primitives-spacing-2);
+  width: 100%;
+  margin-bottom: var(--primitives-spacing-4);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.root::-webkit-scrollbar {
+  display: none;
+}
+
+.filterBtn {
+  flex: 0 0 auto;
+  height: var(--primitives-spacing-10);
+  padding: 0 var(--primitives-spacing-3);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  border: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-default);
+  cursor: pointer;
+  background: var(--semantic-color-frost);
+  color: var(--semantic-color-text-primary);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  line-height: var(--primitives-lineHeight-tight);
+  text-align: center;
+  white-space: nowrap;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .filterBtn:hover:not(.filterBtnActive) {
+    background: var(--semantic-color-surface-hover);
+  }
+}
+
+.filterBtnActive {
+  background: color-mix(in srgb, var(--primitives-color-purple-500) 15%, transparent);
+  border-color: color-mix(in srgb, var(--primitives-color-purple-500) 35%, var(--semantic-color-border-default));
+  color: var(--semantic-color-text-primary);
+}
+
+.filterBtn:focus-visible {
+  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
+  outline-offset: calc(var(--primitives-spacing-1) * 1px);
+}

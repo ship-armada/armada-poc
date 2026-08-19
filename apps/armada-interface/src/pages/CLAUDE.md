@@ -4,8 +4,7 @@ Top-level route components. Each is a thin shell that composes header chrome (fr
 
 | Page | Route | Purpose |
 |---|---|---|
-| `Dashboard.tsx` | `/` | Balance overview + action triggers (shield/unshield/yield/pay modals) |
-| `History.tsx` | `/history` | Transaction history list |
+| `Dashboard.tsx` | `/` | Balance overview + action triggers (shield/unshield/yield/pay modals); hosts the "all activity" panel + per-tx receipt overlay |
 | `Settings.tsx` | `/settings` | Wallet unlock, passphrase, export, reset, debug |
 | `AddressBook.tsx` | `/address-book` | Parked placeholder — not in nav until built |
 | `Debug.tsx` | `/debug` | Developer panel — contract addresses, per-chain balances. Faucet drip column appears only in local mode (no faucet contracts on Sepolia). |

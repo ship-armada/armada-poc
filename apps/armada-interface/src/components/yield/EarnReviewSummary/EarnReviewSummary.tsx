@@ -26,6 +26,11 @@ export interface EarnReviewSummaryProps {
   netLabel: string
   /** Completion timestamp (ms) — when present, adds a leading "Date and time" row for confirmations. */
   confirmedAt?: number
+  /**
+   * Whether to render the "Estimated APY" row. Defaults to true (live review/complete). The activity
+   * receipt sets false — a historical tx's rate isn't stored, so the row would be meaningless.
+   */
+  showApy?: boolean
 }
 
 function formatApy(rate: YieldRate | null): string {
@@ -43,6 +48,7 @@ export function EarnReviewSummary({
   netAmount,
   netLabel,
   confirmedAt,
+  showApy = true,
 }: EarnReviewSummaryProps) {
   const modeLabel = tab === 'add' ? 'Add to vault' : 'Withdraw from vault'
   const amountLabel = tab === 'add' ? 'Your deposit' : 'Your withdrawal'
@@ -59,10 +65,12 @@ export function EarnReviewSummary({
           <span className={styles.summaryLabel}>Mode</span>
           <span className={styles.summaryValue}>{modeLabel}</span>
         </div>
-        <div className={styles.summaryRow}>
-          <span className={styles.summaryLabel}>Estimated APY</span>
-          <span className={styles.summaryValue}>{formatApy(rate)}</span>
-        </div>
+        {showApy ? (
+          <div className={styles.summaryRow}>
+            <span className={styles.summaryLabel}>Estimated APY</span>
+            <span className={styles.summaryValue}>{formatApy(rate)}</span>
+          </div>
+        ) : null}
         <div className={styles.summaryRow}>
           <span className={styles.summaryLabel}>{amountLabel}</span>
           <span className={[styles.summaryValue, usdcAmount.font].join(' ')}>

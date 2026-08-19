@@ -14,7 +14,19 @@
   color: var(--semantic-color-text-primary);
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, opacity 180ms ease;
+}
+
+/* Faded out while the panel opens (and until it finishes sliding out on close). */
+.pillHidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pill {
+    transition: background 0.15s ease;
+  }
 }
 
 .pillIcon {
@@ -39,51 +51,40 @@
   white-space: nowrap;
 }
 
-/* Panel content column inside the SidePanel body — top padding + toolbar→body gap match the mockup. */
+/* Panel content column inside the SidePanel body. The close floats top-right (mockup has no title bar). */
 .panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: var(--primitives-spacing-5);
   width: 100%;
   min-width: 0;
   padding-top: calc(var(--primitives-spacing-5) + var(--mobile-safe-area-top, 0px));
 }
 
-/* Content column below the close toolbar. */
+/* Content column — extra top padding clears the absolutely-positioned close button. */
 .body {
   display: flex;
   flex-direction: column;
   align-items: center;
   width: 100%;
   min-width: 0;
+  padding-top: var(--primitives-spacing-10);
 }
 
-/* Close toolbar — X at the panel's top-right (mockup has no title bar). */
-.toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  width: 100%;
-}
-
+/* Close — frosted IconButton pinned to the panel's top-right corner (mockup: 32px tile, 20px glyph). */
 .close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--mobile-touch-target-min, var(--primitives-spacing-11));
-  height: var(--mobile-touch-target-min, var(--primitives-spacing-11));
-  padding: 0;
-  border: none;
-  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
-  background: transparent;
-  color: var(--semantic-color-text-muted);
-  cursor: pointer;
-  flex-shrink: 0;
+  position: absolute;
+  top: var(--primitives-spacing-5);
+  right: 0;
+  z-index: 1;
+  width: var(--primitives-spacing-8);
+  height: var(--primitives-spacing-8);
 }
 
-.close:hover {
-  color: var(--semantic-color-text-primary);
+.close > span {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
 }
 
 /* Identity hero — provider glyph + address + network tag, centered. */
@@ -135,30 +136,65 @@
   white-space: nowrap;
 }
 
-/* Action row — hide / copy / explorer / disconnect. */
+/* Action row — labeled hide / copy / explorer / disconnect (shared BalanceActionButton). */
 .actionRow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  gap: var(--primitives-spacing-3);
+  gap: var(--primitives-spacing-5);
   margin-top: var(--primitives-spacing-10);
 }
 
-.actionIcon {
-  width: var(--primitives-spacing-5);
-  height: var(--primitives-spacing-5);
-  display: block;
+/* Wallet-panel tint for the BalanceActionButton glyph tile — smaller (48px) purple-50 chip. */
+.labeledAction > span:first-child {
+  width: var(--primitives-spacing-12);
+  height: var(--primitives-spacing-12);
+  background: var(--primitives-color-purple-50);
 }
 
-/* USDC balance row — inset card. */
+.labeledAction > span:first-child :global(svg) {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+}
+
+.labeledAction:active:not(:disabled) > span:first-child {
+  background: var(--primitives-color-purple-100);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .labeledAction:hover:not(:disabled) > span:first-child {
+    background: var(--primitives-color-purple-100);
+  }
+}
+
+/* USDC balance block — a muted caption above the inset row. */
+.usdcBlock {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--primitives-spacing-2);
+  width: 100%;
+  margin-top: var(--semantic-spacing-section-gap);
+}
+
+.usdcLabel {
+  margin: 0;
+  padding-left: var(--primitives-spacing-1);
+  font-family: var(--semantic-typography-ui-label-md-font-family);
+  font-size: var(--semantic-typography-ui-label-md-font-size);
+  font-weight: var(--semantic-typography-ui-label-md-font-weight);
+  letter-spacing: var(--semantic-typography-ui-label-md-letter-spacing);
+  color: var(--semantic-color-text-muted);
+}
+
+/* USDC balance row — inset purple pill. */
 .usdcRow {
   display: flex;
   align-items: center;
   gap: var(--primitives-spacing-3);
   width: 100%;
-  margin-top: var(--primitives-spacing-10);
   padding: var(--primitives-spacing-3);
-  border-radius: calc(var(--primitives-spacing-5) / 2);
+  border-radius: calc(var(--primitives-borderRadius-xl) * 1px);
   background: var(--primitives-color-purple-50);
   box-sizing: border-box;
 }
@@ -244,10 +280,33 @@
   white-space: nowrap;
 }
 
-/* Deposit CTA. */
+/* Deposit CTA. The brand gradient (amber → rose → lavender) overrides SendButton's default
+   gradient to match the mockup; scoped under .body so it wins over SendButton's hover/active. */
 .depositButton {
   width: 100%;
-  margin-top: var(--primitives-spacing-4);
+  margin-top: var(--primitives-spacing-5);
+}
+
+.body .depositButton,
+.body .depositButton:hover:not(:disabled),
+.body .depositButton:active:not(:disabled) {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--semantic-color-brand-amber) 80%, transparent) 0%,
+    color-mix(in srgb, var(--semantic-color-brand-gradient-rose) 80%, transparent) 50%,
+    color-mix(in srgb, var(--semantic-color-brand-lavender) 80%, transparent) 100%
+  );
+  color: var(--semantic-color-text-primary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .body .depositButton:hover:not(:disabled) {
+    filter: brightness(1.04);
+  }
+}
+
+.body .depositButton:active:not(:disabled) {
+  filter: brightness(0.96);
 }
 
 .depositIcon {

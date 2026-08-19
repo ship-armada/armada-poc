@@ -26,8 +26,10 @@ function setup(extra?: Partial<WalletMenuProps>) {
   return props
 }
 
-function openPanel() {
+// Opening fades the pill out, then reveals the panel on a short timer — await the dialog.
+async function openPanel() {
   fireEvent.click(screen.getByRole('button', { name: new RegExp(DISPLAY) }))
+  await screen.findByRole('dialog', { name: 'Wallet' })
 }
 
 describe('<WalletMenu>', () => {
@@ -36,10 +38,10 @@ describe('<WalletMenu>', () => {
     expect(screen.getByRole('button', { name: new RegExp(DISPLAY) })).toBeInTheDocument()
   })
 
-  it('opens the side panel on pill click', () => {
+  it('opens the side panel on pill click', async () => {
     setup()
     expect(screen.queryByRole('dialog', { name: 'Wallet' })).toBeNull()
-    openPanel()
+    await openPanel()
     expect(screen.getByRole('dialog', { name: 'Wallet' })).toBeInTheDocument()
   })
 
@@ -47,43 +49,43 @@ describe('<WalletMenu>', () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
     setup()
-    openPanel()
-    fireEvent.click(screen.getByRole('button', { name: 'Copy wallet address' }))
+    await openPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Copy' }))
     expect(writeText).toHaveBeenCalledWith(FULL)
     // Await the post-copy state flip so the async setState settles inside act (pristine output).
-    expect(await screen.findByRole('button', { name: 'Address copied' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Copied' })).toBeInTheDocument()
   })
 
-  it('fires onDisconnect', () => {
+  it('fires onDisconnect', async () => {
     const props = setup()
-    openPanel()
-    fireEvent.click(screen.getByRole('button', { name: 'Disconnect wallet' }))
+    await openPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }))
     expect(props.onDisconnect).toHaveBeenCalledTimes(1)
   })
 
-  it('fires onDeposit', () => {
+  it('fires onDeposit', async () => {
     const props = setup()
-    openPanel()
-    fireEvent.click(screen.getByRole('button', { name: 'DEPOSIT' }))
+    await openPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Shield your USDC' }))
     expect(props.onDeposit).toHaveBeenCalledTimes(1)
   })
 
-  it('requests a balance-visibility change (controlled, shared app-wide)', () => {
+  it('requests a balance-visibility change (controlled, shared app-wide)', async () => {
     const props = setup()
-    openPanel()
-    fireEvent.click(screen.getByRole('button', { name: 'Hide balance' }))
+    await openPanel()
+    fireEvent.click(screen.getByRole('button', { name: 'Hide' }))
     expect(props.onBalanceHiddenChange).toHaveBeenCalledWith(true)
   })
 
-  it('reflects the hidden state from props', () => {
+  it('reflects the hidden state from props', async () => {
     setup({ balanceHidden: true })
-    openPanel()
-    expect(screen.getByRole('button', { name: 'Show balance' })).toBeInTheDocument()
+    await openPanel()
+    expect(screen.getByRole('button', { name: 'Show' })).toBeInTheDocument()
   })
 
-  it('disables the explorer action when no URL is available', () => {
+  it('disables the explorer action when no URL is available', async () => {
     setup({ explorerUrl: undefined })
-    openPanel()
-    expect(screen.getByRole('button', { name: 'View wallet on explorer' })).toBeDisabled()
+    await openPanel()
+    expect(screen.getByRole('button', { name: 'Explorer' })).toBeDisabled()
   })
 })

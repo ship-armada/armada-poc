@@ -1,21 +1,22 @@
-// ABOUTME: Connected-wallet control — a pill trigger (provider icon + address) that opens a right-edge SidePanel with the EVM wallet identity, actions (hide/copy/explorer/disconnect, each tooltipped), USDC balance, and a Deposit CTA.
-// ABOUTME: Replaces the old dropdown WalletPillMenu; matches the mockup's side-panel design. Balance-hide is shared app-wide via balanceHiddenAtom (owned by the parent).
+// ABOUTME: Connected-wallet control — a pill trigger (provider icon + address) that opens a right-edge SidePanel with the EVM wallet identity, labeled actions (hide/copy/explorer/disconnect), USDC balance, and a Shield CTA.
+// ABOUTME: Matches the mockup's polished wallet panel; the pill fades out as the panel opens and back in as it closes. Balance-hide is shared app-wide via balanceHiddenAtom (owned by the parent).
 
 import { useEffect, useRef, useState } from 'react'
 import {
-  ArrowRightOnRectangleIcon,
   ArrowTopRightOnSquareIcon,
   CheckIcon,
   ClipboardDocumentIcon,
   EyeIcon,
   EyeSlashIcon,
   PlusIcon,
+  PowerIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 import TokenUSDC from '@web3icons/react/icons/tokens/TokenUSDC'
-import { IconButton, SidePanel, Tooltip } from '@/design'
+import { IconButton, SidePanel, SIDE_PANEL_EXIT_MS } from '@/design'
 import { WalletProviderIcon } from '@/components/ui/WalletProviderIcon'
 import { chainIconForChainId } from '@/components/ui/chainIcons'
+import { BalanceActionButton } from '@/components/dashboard/BalanceActionButton'
 import { SendButton } from '@/components/dashboard/SendButton'
 import { BalanceScrambleValue } from '@/components/dashboard/BalanceScrambleValue'
 import { formatUsdcAmount } from '@/components/dashboard/dashboardFormat'
@@ -25,6 +26,14 @@ const HERO_ICON_PX = 56
 const USDC_GLYPH_PX = 40
 const USDC_GLYPH_SIZE = Math.round((USDC_GLYPH_PX * 24) / 18)
 const USDC_OVERLAY_ICON_PX = 16
+
+/** Pill fade duration — the pill fades out before the panel opens (and back in after it closes). */
+const PILL_FADE_MS = 180
+
+function fadeDelayMs(): number {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return PILL_FADE_MS
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : PILL_FADE_MS
+}
 
 export interface WalletMenuProps {
   /** Truncated EVM address — shown on the pill + panel hero. */
@@ -39,7 +48,7 @@ export interface WalletMenuProps {
   usdcBalance: number
   /** Connected chain name — shown as the network tag + USDC row subtitle. */
   networkLabel: string
-  /** Address explorer URL; the "View on explorer" action is disabled when absent (e.g. local Anvil). */
+  /** Address explorer URL; the "Explorer" action is disabled when absent (e.g. local Anvil). */
   explorerUrl?: string
   /** Shared app-wide balance visibility (from balanceHiddenAtom). */
   balanceHidden: boolean
@@ -64,15 +73,59 @@ export function WalletMenu({
   onDeposit,
   triggerClassName,
 }: WalletMenuProps) {
-  const [open, setOpen] = useState(false)
+  const [panelOpen, setPanelOpen] = useState(false)
+  const [pillHidden, setPillHidden] = useState(false)
   const [copied, setCopied] = useState(false)
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const openTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function clearOpenCloseTimers() {
+    if (openTimerRef.current) clearTimeout(openTimerRef.current)
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    openTimerRef.current = null
+    closeTimerRef.current = null
+  }
 
   useEffect(() => {
     return () => {
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+      clearOpenCloseTimers()
     }
   }, [])
+
+  // While the pill is faded out but the panel hasn't opened yet, Escape restores the pill.
+  useEffect(() => {
+    if (!pillHidden || panelOpen) return
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return
+      clearOpenCloseTimers()
+      setPillHidden(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [pillHidden, panelOpen])
+
+  function openMenu() {
+    if (pillHidden || panelOpen) return
+    clearOpenCloseTimers()
+    setPillHidden(true)
+    openTimerRef.current = setTimeout(() => {
+      setPanelOpen(true)
+      openTimerRef.current = null
+    }, fadeDelayMs())
+  }
+
+  function closeMenu() {
+    clearOpenCloseTimers()
+    setPanelOpen(false)
+    // Wait for the panel's slide-out before fading the pill back in, so they hand off cleanly.
+    const restoreDelay = fadeDelayMs() === 0 ? 0 : SIDE_PANEL_EXIT_MS
+    closeTimerRef.current = setTimeout(() => {
+      setPillHidden(false)
+      closeTimerRef.current = null
+    }, restoreDelay)
+  }
 
   async function handleCopy() {
     try {
@@ -86,7 +139,7 @@ export function WalletMenu({
   }
 
   function handleDeposit() {
-    setOpen(false)
+    closeMenu()
     onDeposit()
   }
 
@@ -97,10 +150,13 @@ export function WalletMenu({
     <>
       <button
         type="button"
-        className={[styles.pill, triggerClassName].filter(Boolean).join(' ')}
+        className={[styles.pill, pillHidden && styles.pillHidden, triggerClassName]
+          .filter(Boolean)
+          .join(' ')}
         aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => setOpen(true)}
+        aria-expanded={panelOpen || pillHidden}
+        tabIndex={pillHidden ? -1 : undefined}
+        onClick={openMenu}
       >
         <span className={styles.pillIcon} aria-hidden>
           <WalletProviderIcon provider={walletProvider} size={24} />
@@ -109,100 +165,102 @@ export function WalletMenu({
       </button>
 
       {/* No SidePanel title — the mockup panel has no header bar; the close X floats top-right. */}
-      <SidePanel open={open} onClose={() => setOpen(false)} ariaLabel="Wallet">
+      <SidePanel open={panelOpen} onClose={closeMenu} ariaLabel="Wallet">
         <div className={styles.panel}>
-          <div className={styles.toolbar}>
-            <button type="button" className={styles.close} aria-label="Close" onClick={() => setOpen(false)}>
-              <XMarkIcon width={20} height={20} strokeWidth={2} aria-hidden />
-            </button>
-          </div>
+          <IconButton
+            variant="frosted"
+            size="sm"
+            className={styles.close}
+            aria-label="Close"
+            icon={<XMarkIcon strokeWidth={2} aria-hidden />}
+            onClick={closeMenu}
+          />
 
           <div className={styles.body}>
-          <div className={styles.identity}>
-            <span className={styles.heroIcon} aria-hidden>
-              <WalletProviderIcon provider={walletProvider} size={HERO_ICON_PX} />
-            </span>
-            <p className={styles.address}>{displayAddress}</p>
-            <span className={styles.networkTag}>{networkLabel}</span>
-          </div>
+            <div className={styles.identity}>
+              <span className={styles.heroIcon} aria-hidden>
+                <WalletProviderIcon provider={walletProvider} size={HERO_ICON_PX} />
+              </span>
+              <p className={styles.address}>{displayAddress}</p>
+              <span className={styles.networkTag}>{networkLabel}</span>
+            </div>
 
-          <div className={styles.actionRow}>
-            <Tooltip variant="action" content={balanceHidden ? 'Show balance' : 'Hide balance'}>
-              <IconButton
-                variant="secondary"
+            <div className={styles.actionRow}>
+              <BalanceActionButton
+                variant="subtle"
+                className={styles.labeledAction}
+                label={balanceHidden ? 'Show' : 'Hide'}
                 icon={
                   balanceHidden ? (
-                    <EyeSlashIcon className={styles.actionIcon} strokeWidth={1.5} aria-hidden />
+                    <EyeSlashIcon strokeWidth={1.5} aria-hidden />
                   ) : (
-                    <EyeIcon className={styles.actionIcon} strokeWidth={1.5} aria-hidden />
+                    <EyeIcon strokeWidth={1.5} aria-hidden />
                   )
                 }
-                aria-label={balanceHidden ? 'Show balance' : 'Hide balance'}
                 onClick={() => onBalanceHiddenChange(!balanceHidden)}
               />
-            </Tooltip>
-            <Tooltip variant="action" content={copied ? 'Copied' : 'Copy address'}>
-              <IconButton
-                variant="secondary"
+              <BalanceActionButton
+                variant="subtle"
+                className={styles.labeledAction}
+                label={copied ? 'Copied' : 'Copy'}
                 icon={
                   copied ? (
-                    <CheckIcon className={styles.actionIcon} strokeWidth={1.5} aria-hidden />
+                    <CheckIcon strokeWidth={1.5} aria-hidden />
                   ) : (
-                    <ClipboardDocumentIcon className={styles.actionIcon} strokeWidth={1.5} aria-hidden />
+                    <ClipboardDocumentIcon strokeWidth={1.5} aria-hidden />
                   )
                 }
-                aria-label={copied ? 'Address copied' : 'Copy wallet address'}
                 onClick={() => void handleCopy()}
               />
-            </Tooltip>
-            <Tooltip variant="action" content="View on explorer">
-              <IconButton
-                variant="secondary"
-                icon={<ArrowTopRightOnSquareIcon className={styles.actionIcon} strokeWidth={1.5} aria-hidden />}
-                aria-label="View wallet on explorer"
+              <BalanceActionButton
+                variant="subtle"
+                className={styles.labeledAction}
+                label="Explorer"
+                icon={<ArrowTopRightOnSquareIcon strokeWidth={1.5} aria-hidden />}
                 disabled={!explorerUrl}
                 onClick={() => {
                   if (explorerUrl) window.open(explorerUrl, '_blank', 'noopener,noreferrer')
                 }}
               />
-            </Tooltip>
-            <Tooltip variant="action" content="Disconnect">
-              <IconButton
-                variant="secondary"
-                icon={<ArrowRightOnRectangleIcon className={styles.actionIcon} strokeWidth={1.5} aria-hidden />}
-                aria-label="Disconnect wallet"
+              <BalanceActionButton
+                variant="subtle"
+                className={styles.labeledAction}
+                label="Disconnect"
+                icon={<PowerIcon strokeWidth={1.5} aria-hidden />}
                 onClick={onDisconnect}
               />
-            </Tooltip>
-          </div>
-
-          <div className={styles.usdcRow}>
-            <span className={styles.usdcIcon} aria-hidden>
-              <span className={styles.usdcGlyph}>
-                <TokenUSDC size={USDC_GLYPH_SIZE} variant="branded" />
-              </span>
-              {OverlayIcon ? (
-                <span className={styles.usdcOverlay}>
-                  <OverlayIcon size={USDC_OVERLAY_ICON_PX} variant="branded" />
-                </span>
-              ) : null}
-            </span>
-            <div className={styles.tokenIdentity}>
-              <p className={styles.tokenName}>USDC</p>
-              <p className={styles.tokenNetwork}>{networkLabel}</p>
             </div>
-            <p className={styles.tokenBalance}>
-              <BalanceScrambleValue value={balanceLabel} revealed={!balanceHidden} />
-            </p>
-          </div>
 
-          <SendButton
-            variant="gradient"
-            label="DEPOSIT"
-            icon={<PlusIcon className={styles.depositIcon} strokeWidth={1.5} aria-hidden />}
-            className={styles.depositButton}
-            onClick={handleDeposit}
-          />
+            <div className={styles.usdcBlock}>
+              <p className={styles.usdcLabel}>Your USDC wallet balance</p>
+              <div className={styles.usdcRow}>
+                <span className={styles.usdcIcon} aria-hidden>
+                  <span className={styles.usdcGlyph}>
+                    <TokenUSDC size={USDC_GLYPH_SIZE} variant="branded" />
+                  </span>
+                  {OverlayIcon ? (
+                    <span className={styles.usdcOverlay}>
+                      <OverlayIcon size={USDC_OVERLAY_ICON_PX} variant="branded" />
+                    </span>
+                  ) : null}
+                </span>
+                <div className={styles.tokenIdentity}>
+                  <p className={styles.tokenName}>USDC</p>
+                  <p className={styles.tokenNetwork}>{networkLabel}</p>
+                </div>
+                <p className={styles.tokenBalance}>
+                  <BalanceScrambleValue value={balanceLabel} revealed={!balanceHidden} />
+                </p>
+              </div>
+            </div>
+
+            <SendButton
+              variant="gradient"
+              label="Shield your USDC"
+              icon={<PlusIcon className={styles.depositIcon} strokeWidth={1.5} aria-hidden />}
+              className={styles.depositButton}
+              onClick={handleDeposit}
+            />
           </div>
         </div>
       </SidePanel>

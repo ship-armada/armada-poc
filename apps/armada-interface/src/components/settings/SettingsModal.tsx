@@ -5,6 +5,7 @@ import { useEffect, useState, type ChangeEvent } from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import { ArmadaLogo, Button, FlowModalOverlay } from '@/design'
+import { useFlowExit } from '@/components/flow/useFlowExit'
 import { Card } from '@/components/ui'
 import {
   ClearHistoryDialog,
@@ -43,9 +44,9 @@ export function SettingsModal() {
   const walletUnlocked = state?.status === 'unlocked'
   const isScanning = recovery.state === 'scanning'
 
-  function close() {
-    setOpenModal(null)
-  }
+  // Route the close through useFlowExit so the overlay fades + the panel sinks before unmounting.
+  // The atom stays set (isOpen true) until the animation completes; reduced motion closes instantly.
+  const { exiting, requestClose: close } = useFlowExit(() => setOpenModal(null))
 
   function handleRescan() {
     // Re-scan: drop the per-wallet checkpoint so useHistoryRecovery walks from the hub deploy
@@ -58,8 +59,8 @@ export function SettingsModal() {
   if (!isOpen) return null
 
   return (
-    <FlowModalOverlay label="Settings" onClose={close}>
-      <div className={styles.shell}>
+    <FlowModalOverlay label="Settings" exiting={exiting} onClose={close}>
+      <div className={[styles.shell, exiting && styles.shellExiting].filter(Boolean).join(' ')}>
         <header className={styles.header}>
           <div className={styles.logoSlot}>
             <ArmadaLogo variant="mark" markTone="white" className={styles.logo} />

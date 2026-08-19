@@ -6,11 +6,27 @@ import { ChevronDownIcon, WalletIcon } from '@heroicons/react/24/solid'
 import { hasActiveAmount, sanitizeAmountInput } from '@/utils/amountInput'
 import { chainIconForChainId } from '@/components/ui/chainIcons'
 import { FeeBreakdownTooltip, type FlowFeeBreakdown } from '@/components/ui/FeeBreakdownTooltip'
+import { RollingBalanceValue } from '@/components/dashboard/RollingBalanceValue'
+import {
+  BALANCE_ROLL_DURATION_MS,
+  BALANCE_ROLL_DIGIT_STAGGER_MS,
+} from '@/components/dashboard/BalanceCard/balanceRevealMotion'
 import { formatUsdcAmount, formatUsdcPlain } from '@/lib/format'
 import type { DisplayFees } from '@/lib/fees/displayFees'
 import styles from './DepositAmountCard.module.css'
 
 const ICON_SIZE = 32
+
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined') return false
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+/** Roll animation lifetime for a target value — long enough for the odometer + digit stagger to settle. */
+function amountRollMs(formatted: string): number {
+  const digitCount = formatted.replace(/\D/g, '').length
+  return BALANCE_ROLL_DURATION_MS + Math.max(0, digitCount - 1) * BALANCE_ROLL_DIGIT_STAGGER_MS + 80
+}
 
 export interface DepositChainOption {
   chainId: number
@@ -116,20 +132,87 @@ export function DepositAmountCard({
     setMenuOpen(false)
   }
 
+  // Odometer roll for preset/Max taps (mockup): the amount digit-spins from the old value to the new
+  // one. A preset handler records where we're rolling *from*; the effect below detects the resulting
+  // `amount` change and starts the roll. Typing clears the marker so keystrokes never roll.
+  const [amountRoll, setAmountRoll] = useState<{
+    fromValue: string
+    toValue: string
+    trigger: number
+  } | null>(null)
+  const rollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const rollCounterRef = useRef(0)
+  const pendingRollFromRef = useRef<string | null>(null)
+
+  function clearAmountRoll() {
+    if (rollTimerRef.current) {
+      clearTimeout(rollTimerRef.current)
+      rollTimerRef.current = null
+    }
+    setAmountRoll(null)
+  }
+
+  useEffect(
+    () => () => {
+      if (rollTimerRef.current) clearTimeout(rollTimerRef.current)
+    },
+    [],
+  )
+
+  // Start the roll once the preset-driven `amount` change lands. Typed changes leave the marker null.
+  useEffect(() => {
+    const fromValue = pendingRollFromRef.current
+    if (fromValue === null) return
+    pendingRollFromRef.current = null
+    const toValue = hasActiveAmount(amount) ? amount : '0'
+    if (prefersReducedMotion() || fromValue === toValue) {
+      clearAmountRoll()
+      return
+    }
+    rollCounterRef.current += 1
+    const trigger = rollCounterRef.current
+    setAmountRoll({ fromValue, toValue, trigger })
+    if (rollTimerRef.current) clearTimeout(rollTimerRef.current)
+    rollTimerRef.current = setTimeout(() => {
+      rollTimerRef.current = null
+      setAmountRoll(null)
+    }, amountRollMs(toValue))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- roll is keyed off the amount change only.
+  }, [amount])
+
   function handleAmountInput(raw: string) {
+    clearAmountRoll()
+    pendingRollFromRef.current = null
     const next = sanitizeAmountInput(raw)
     onAmountChange(hasActiveAmount(next) ? next : '')
   }
 
+  /** Mark the current display as the roll origin, then apply the preset amount (the effect rolls it). */
+  function applyPreset(nextAmount: string) {
+    pendingRollFromRef.current = hasActiveAmount(amount) ? amount : '0'
+    onAmountChange(nextAmount)
+  }
+
   // Percentage pills set the amount to a fraction of the raw input cap. Integer bigint math keeps
-  // full 6-decimal precision (no float rounding); Max reuses the caller's `onMax` when supplied so
-  // fee-on-top paths keep their exact cap, else it falls back to the full `maxInput`.
+  // full 6-decimal precision (no float rounding).
   function applyPercent(percent: bigint) {
     if (maxInput === undefined) return
-    onAmountChange(formatUsdcPlain((maxInput * percent) / 100n))
+    applyPreset(formatUsdcPlain((maxInput * percent) / 100n))
+  }
+
+  // Max reuses the caller's `onMax` when supplied so fee-on-top paths keep their exact cap, else it
+  // falls back to the full `maxInput`. Either way the roll origin is marked so the value spins.
+  function handleMax() {
+    if (onMax) {
+      pendingRollFromRef.current = hasActiveAmount(amount) ? amount : '0'
+      onMax()
+    } else {
+      applyPercent(100n)
+    }
   }
 
   const showActiveAmount = hasActiveAmount(amount)
+  const isAmountRolling = amountRoll !== null
 
   // Total displayed fee (protocol + broadcaster + CCTP). Rendered as the under-amount caption
   // ("+ $X.XX FEE") once an amount is entered and the fee is non-zero — matching the mockup, which
@@ -199,7 +282,11 @@ export function DepositAmountCard({
               .join(' ')}
           >
             <span
-              className={[styles.amountDisplay, showActiveAmount && styles.amountDisplayActive]
+              className={[
+                styles.amountDisplay,
+                showActiveAmount && styles.amountDisplayActive,
+                isAmountRolling && styles.amountValueHidden,
+              ]
                 .filter(Boolean)
                 .join(' ')}
               aria-hidden="true"
@@ -210,12 +297,27 @@ export function DepositAmountCard({
               id={amountInputId}
               type="text"
               inputMode="decimal"
-              className={styles.amountInput}
+              className={[styles.amountInput, isAmountRolling && styles.amountValueHidden]
+                .filter(Boolean)
+                .join(' ')}
               value={amount}
               onChange={(e) => handleAmountInput(e.target.value)}
               aria-label={amountAriaLabel}
               aria-invalid={Boolean(error)}
+              readOnly={isAmountRolling}
             />
+            {isAmountRolling && amountRoll ? (
+              <span className={styles.amountRollLayer} aria-hidden>
+                <RollingBalanceValue
+                  key={amountRoll.trigger}
+                  value={amountRoll.toValue}
+                  fromValue={amountRoll.fromValue}
+                  mode="fromValue"
+                  rollTrigger={amountRoll.trigger}
+                  rollStartMs={0}
+                />
+              </span>
+            ) : null}
           </span>
         </label>
 
@@ -265,16 +367,12 @@ export function DepositAmountCard({
               <button type="button" className={styles.pctPill} onClick={() => applyPercent(75n)}>
                 75%
               </button>
-              <button
-                type="button"
-                className={styles.pctPill}
-                onClick={onMax ?? (() => applyPercent(100n))}
-              >
+              <button type="button" className={styles.pctPill} onClick={handleMax}>
                 Max
               </button>
             </div>
           ) : onMax ? (
-            <button type="button" className={styles.maxBtn} onClick={onMax}>
+            <button type="button" className={styles.maxBtn} onClick={handleMax}>
               Max
             </button>
           ) : null}

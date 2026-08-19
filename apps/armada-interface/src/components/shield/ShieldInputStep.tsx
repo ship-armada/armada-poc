@@ -2,7 +2,7 @@
 // ABOUTME: gaslessMode hides the GasBalanceNotice on the relayer-mediated permit path; the wallet-submit fallback shows it when the wallet's native balance is low.
 
 import { useMemo } from 'react'
-import { Button } from '@/design'
+import { Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { DepositAmountCard } from '@/components/deposit/DepositAmountCard/DepositAmountCard'
 import { depositOverlayShellStyles } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
 import { GasBalanceNotice } from '@/components/ui'
@@ -89,7 +89,7 @@ export function ShieldInputStepContent({
   const balanceDisplay = formatUsdcPlain(max)
 
   return (
-    <div className={styles.contentZone}>
+    <div className={`${styles.contentZone} ${modalStepBodyEnter}`}>
       <DepositAmountCard
         chains={chains}
         chainId={fromChainId}
@@ -134,7 +134,7 @@ export function ShieldInputStepFooter({
   const canReview = hasActiveAmount(amountStr) && !tooMuch && !tooSmall && !parseError
 
   return (
-    <div className={depositOverlayShellStyles.buttonRow}>
+    <div className={`${depositOverlayShellStyles.buttonRow} ${modalActionRowEnter}`}>
       <Button
         variant="secondary"
         size="lg"

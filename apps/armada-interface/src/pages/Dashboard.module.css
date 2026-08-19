@@ -23,6 +23,36 @@
 /* BalanceCard and RecentActivityList self-fill to 100%; the DepositTooltip keeps its natural
    width (360px) and stays centered — matching the mockup's narrower callout under the card. */
 
+/* Tooltip/earn-banner slot: fades up shortly after the balance card's action row finishes entering,
+   so the callout arrives after the numbers settle rather than all at once. Delay comes from the
+   caller via --dashboard-tooltip-enter-delay (mockup DASHBOARD_TOOLTIP_ENTER_DELAY_MS). */
+.tooltipEnter {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  animation: dashboardTooltipFade 360ms ease-out var(--dashboard-tooltip-enter-delay, 1330ms) both;
+}
+
+@keyframes dashboardTooltipFade {
+  from {
+    opacity: 0;
+    transform: translateY(var(--primitives-spacing-3));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tooltipEnter {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media (max-width: 767px) {
   .page {
     padding-bottom: var(--primitives-spacing-5);

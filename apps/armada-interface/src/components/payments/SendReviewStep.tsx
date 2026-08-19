@@ -1,7 +1,7 @@
 // ABOUTME: Send/Withdraw review step — frost card with left-aligned UI title + big mono amount, shared TransferReviewSummary table, Confirm/Back CTAs.
 // ABOUTME: Delegates the summary rows (date, private account, recipient, fees, total + privacy notice) to TransferReviewSummary; keeps the sync-gate notice + submit disabling.
 
-import { Button } from '@/design'
+import { Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { TransferReviewSummary } from './TransferReviewSummary'
 import { formatUsdcPlain } from '@/lib/format'
 import type { SendFlowVariant } from './SendRecipientStep'
@@ -47,30 +47,32 @@ export function SendReviewStep({
 
   return (
     <div className={styles.root}>
-      <div className={styles.titleBlock}>
-        <h1 className={styles.title}>{title}</h1>
-        <div className={styles.amountRow}>
-          <span className={styles.amountValue}>{formatUsdcPlain(amount)}</span>
+      <div className={`${styles.body} ${modalStepBodyEnter}`}>
+        <div className={styles.titleBlock}>
+          <h1 className={styles.title}>{title}</h1>
+          <div className={styles.amountRow}>
+            <span className={styles.amountValue}>{formatUsdcPlain(amount)}</span>
+          </div>
         </div>
+
+        <TransferReviewSummary
+          recipient={recipient}
+          armadaAddress={armadaAddress}
+          fee={fee}
+          totalDeducted={totalDeducted}
+          variant={variant}
+          networkName={networkName}
+          recipientWalletProvider={recipientWalletProvider}
+        />
+
+        {submitBlockedReason ? (
+          <div className={styles.syncNotice} role="status" aria-live="polite">
+            {submitBlockedReason}
+          </div>
+        ) : null}
       </div>
 
-      <TransferReviewSummary
-        recipient={recipient}
-        armadaAddress={armadaAddress}
-        fee={fee}
-        totalDeducted={totalDeducted}
-        variant={variant}
-        networkName={networkName}
-        recipientWalletProvider={recipientWalletProvider}
-      />
-
-      {submitBlockedReason ? (
-        <div className={styles.syncNotice} role="status" aria-live="polite">
-          {submitBlockedReason}
-        </div>
-      ) : null}
-
-      <div className={styles.buttonRow}>
+      <div className={`${styles.buttonRow} ${modalActionRowEnter}`}>
         <Button
           variant="secondary"
           size="lg"

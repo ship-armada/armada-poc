@@ -9,7 +9,10 @@ import 'fake-indexeddb/auto'
 if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
   window.matchMedia = (query: string) =>
     ({
-      matches: false,
+      // Report reduced motion under test so motion helpers (useFlowExit exit delay, odometer rolls,
+      // step-switch exits) resolve synchronously instead of scheduling real timers — deterministic
+      // renders, no waiting on animation windows. Other queries stay non-matching.
+      matches: query.includes('prefers-reduced-motion'),
       media: query,
       onchange: null,
       addEventListener: () => {},

@@ -2,7 +2,7 @@
 // ABOUTME: Recipient + chain live on the preceding recipient step, so this step gates only on the amount.
 
 import { useMemo } from 'react'
-import { Button } from '@/design'
+import { Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { DepositAmountCard } from '@/components/deposit/DepositAmountCard/DepositAmountCard'
 import { depositOverlayShellStyles } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
 import { GasBalanceNotice } from '@/components/ui'
@@ -88,7 +88,7 @@ export function SendInputStepContent({
     ?? (tooMuch ? 'Amount exceeds your private balance after fees.' : undefined)
 
   return (
-    <div className={styles.sendContent}>
+    <div className={`${styles.sendContent} ${modalStepBodyEnter}`}>
       <div className={styles.amountGroup}>
         <DepositAmountCard
           chains={allChains}
@@ -136,7 +136,7 @@ export function SendInputStepFooter({
   const canReview = hasActiveAmount(amountStr) && !tooMuch && !parseError
 
   return (
-    <div className={depositOverlayShellStyles.buttonRow}>
+    <div className={`${depositOverlayShellStyles.buttonRow} ${modalActionRowEnter}`}>
       <Button
         variant="secondary"
         size="lg"

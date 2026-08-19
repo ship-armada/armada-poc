@@ -1,7 +1,7 @@
 // ABOUTME: Shield complete step — frost card with left-aligned "USDC deposit confirmed" title + big mono deposited-amount, shared DepositReviewSummary (with date/time), and explorer/dashboard CTAs.
 // ABOUTME: Mirrors the deposit-confirmed reference — no divider between the summary card and the button row.
 
-import { Button } from '@/design'
+import { Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { DepositReviewSummary } from '@/components/deposit/DepositReviewSummary'
 import { formatUsdcPlain } from '@/lib/format'
 import styles from './ShieldCompleteStep.module.css'
@@ -39,25 +39,27 @@ export function ShieldCompleteStep({
 }: ShieldCompleteStepProps) {
   return (
     <div className={styles.root}>
-      <div className={styles.titleBlock}>
-        <h1 className={styles.title}>USDC deposit confirmed</h1>
-        <div className={styles.amountRow}>
-          <span className={styles.amountValue}>{formatUsdcPlain(amount)}</span>
+      <div className={`${styles.body} ${modalStepBodyEnter}`}>
+        <div className={styles.titleBlock}>
+          <h1 className={styles.title}>USDC deposit confirmed</h1>
+          <div className={styles.amountRow}>
+            <span className={styles.amountValue}>{formatUsdcPlain(amount)}</span>
+          </div>
         </div>
+
+        <DepositReviewSummary
+          fromChainId={fromChainId}
+          amount={amount}
+          fee={fee}
+          netAmount={netAmount}
+          walletAddress={walletAddress}
+          walletProvider={walletProvider}
+          shieldedAddress={shieldedAddress}
+          confirmedAt={confirmedAt}
+        />
       </div>
 
-      <DepositReviewSummary
-        fromChainId={fromChainId}
-        amount={amount}
-        fee={fee}
-        netAmount={netAmount}
-        walletAddress={walletAddress}
-        walletProvider={walletProvider}
-        shieldedAddress={shieldedAddress}
-        confirmedAt={confirmedAt}
-      />
-
-      <div className={styles.buttonRow}>
+      <div className={`${styles.buttonRow} ${modalActionRowEnter}`}>
         <Button
           variant="secondary"
           size="lg"

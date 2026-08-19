@@ -1,18 +1,12 @@
-// ABOUTME: Earn review step — serif title, USDC coin + amount block, shared EarnReviewSummary table, Confirm/Back CTAs.
+// ABOUTME: Earn review step — frost card with left-aligned UI title + big mono amount, shared EarnReviewSummary table, Confirm/Back CTAs.
 // ABOUTME: Delegates the summary rows (mode, APY, amount, fees, total) to EarnReviewSummary; keeps the sync-gate + slippage notices.
 
-import TokenUSDC from '@web3icons/react/icons/tokens/TokenUSDC'
 import { Button } from '@/design'
 import { EarnReviewSummary } from './EarnReviewSummary'
 import { formatUsdcPlain } from '@/lib/format'
-import usdcAmount from '@/design/styles/usdcAmount.module.css'
 import type { YieldRate } from '@/hooks/useYieldRate'
 import type { EarnTab } from './EarnInputStep'
 import styles from './EarnReviewStep.module.css'
-
-const TOKEN_BADGE_PX = 40
-/** @web3icons branded assets use an 18px circle in a 24px viewBox — scale up to fill the badge. */
-const TOKEN_ICON_SIZE = Math.round((TOKEN_BADGE_PX * 24) / 18)
 
 export interface EarnReviewStepProps {
   tab: EarnTab
@@ -47,21 +41,15 @@ export function EarnReviewStep({
   onBack,
   onConfirm,
 }: EarnReviewStepProps) {
-  const title = tab === 'add' ? 'Review your deposit' : 'Review your withdrawal'
+  const title = tab === 'add' ? 'Review your USDC deposit' : 'Review your USDC withdrawal'
   const confirmLabel = tab === 'add' ? 'Confirm deposit' : 'Confirm withdrawal'
 
   return (
     <div className={styles.root}>
-      <h1 className={styles.title}>{title}</h1>
-
-      <div className={styles.amountRow}>
-        <div className={styles.amountGroup}>
-          <span className={styles.tokenBadge} aria-hidden="true">
-            <TokenUSDC size={TOKEN_ICON_SIZE} variant="branded" className={styles.tokenBadgeIcon} />
-          </span>
-          <span className={[styles.amountValue, usdcAmount.font].join(' ')}>
-            {formatUsdcPlain(amount)}
-          </span>
+      <div className={styles.titleBlock}>
+        <h1 className={styles.title}>{title}</h1>
+        <div className={styles.amountRow}>
+          <span className={styles.amountValue}>{formatUsdcPlain(amount)}</span>
         </div>
       </div>
 
@@ -87,12 +75,20 @@ export function EarnReviewStep({
       ) : null}
 
       <div className={styles.buttonRow}>
-        <Button variant="secondary" size="lg" label="Back" showIcon={false} onClick={onBack} />
+        <Button
+          variant="secondary"
+          size="lg"
+          label="Back"
+          showIcon={false}
+          className={styles.cancelButton}
+          onClick={onBack}
+        />
         <Button
           variant="primary"
           size="lg"
           label={confirmLabel}
           showIcon={false}
+          className={styles.confirmButton}
           onClick={onConfirm}
           disabled={Boolean(submitBlockedReason) || isSubmitting}
         />

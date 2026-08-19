@@ -9,6 +9,12 @@ export type { CardProps, CardVariant } from './Card'
 
 export { ChainSelect } from './ChainSelect'
 export type { ChainSelectProps } from './ChainSelect'
+export {
+  SegmentedControl,
+  type SegmentedControlOption,
+  type SegmentedControlProps,
+  type SegmentedControlSize,
+} from './SegmentedControl'
 
 export { EmptyState } from './EmptyState'
 export type { EmptyStateProps } from './EmptyState'

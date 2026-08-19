@@ -9,7 +9,6 @@ import { hidePeekEventHandlers } from '@/hooks/useHidePeek'
 import { useMobileLayout } from '@/hooks/useMobileLayout'
 import {
   DEMO_EARN_APY,
-  estimateVaultEarnedSoFar,
   formatEarnedSoFarAmount,
   formatVaultEarningLabel,
 } from '@/components/dashboard/vaultEarnings'
@@ -58,8 +57,11 @@ export function VaultPositionBar({
   if (balance <= 0 && !vaultRollActive) return null
 
   const formattedBalance = formatUsdcAmount(balance)
-  const resolvedEarned = earnedAmount ?? estimateVaultEarnedSoFar(balance, apy)
-  const formattedEarned = formatEarnedSoFarAmount(resolvedEarned)
+  // Real accrued yield isn't computed yet (it needs vault cost-basis tracking). When no explicit
+  // earnedAmount is supplied we show an obvious "???" placeholder rather than a realistic-looking
+  // estimate that could be mistaken for a wired, real value.
+  const formattedEarned =
+    earnedAmount !== undefined ? formatEarnedSoFarAmount(earnedAmount) : '???'
   const formattedApy = `${apy.toFixed(1)}%`
   const earningLabel = formatVaultEarningLabel(apy)
   const amountLabel = balanceRevealed ? `${formattedBalance} USDC` : 'Vault balance hidden'

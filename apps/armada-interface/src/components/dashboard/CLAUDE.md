@@ -15,7 +15,7 @@ Dashboard presentation, ported from the armada-app design mockup. Composed by `p
 | `RecentActivityList` | Preview activity list — icon-badge rows with scrambled amounts; "View all" → `/history`. |
 | `txActivityAdapter.ts` | Maps `TxRecord[]` → `DashboardActivityItem[]` (direction/sign/label/pending). The data seam for the activity list. |
 | `dashboardFormat.ts` | Number-based `formatUsdcAmount` / `truncateArmadaAddress` / `formatTimeAgo` used by the ported (number-typed) components. Distinct from `@/lib/format` (bigint-based). |
-| `vaultEarnings.ts` | `DEMO_EARN_APY` + vault-earning label/estimate helpers used by VaultPositionBar. |
+| `vaultEarnings.ts` | `DEMO_EARN_APY` + vault-earning label/amount-format helpers used by VaultPositionBar. |
 
 Shared primitives `IconButton`, `Tooltip`, `BottomSheet` live in `@/design`; the hooks (`useMobileLayout`, `useEscapeKey`, `useBodyScrollLock`, `useDashboardBackground`) live in `@/hooks`.
 
@@ -33,3 +33,4 @@ Shared primitives `IconButton`, `Tooltip`, `BottomSheet` live in `@/design`; the
 
 - `useDashboardBackground` is a stub returning `'gradient'`; the solid/gradient toggle UI is not ported.
 - `↓` maps to Receive as a placeholder; a dedicated payment-request flow is planned.
+- `VaultPositionBar` "earned" figure shows a literal `???` placeholder — real accrued yield needs vault cost-basis tracking (`sharesToUsdc(shares) − principal`), which isn't wired. Pass a real `earnedAmount` once that exists. Deliberately not a realistic-looking estimate, so the stub can't be mistaken for real data.

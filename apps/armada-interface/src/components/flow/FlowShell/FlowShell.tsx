@@ -53,15 +53,17 @@ export function FlowShell({
         flowLabel={flowLabel}
         onClose={onClose}
       >
-        <div className={styles.stepColumn}>
-          {stepKey !== undefined ? (
-            <ModalStepSwitch stepKey={stepKey} skipExit={exiting}>
-              {children}
-            </ModalStepSwitch>
-          ) : (
-            children
-          )}
-        </div>
+        {/* The .stepColumn (436px column + inter-element gap) lives INSIDE ModalStepSwitch so it
+            plays the role of the mockup's `modalStepShell`: ModalStepSwitch's own `.stepShell`
+            wrapper only centers + animates, so the column layout must wrap the content, not the
+            switch — otherwise the gap + width never reach the card/buttons. */}
+        {stepKey !== undefined ? (
+          <ModalStepSwitch stepKey={stepKey} skipExit={exiting}>
+            <div className={styles.stepColumn}>{children}</div>
+          </ModalStepSwitch>
+        ) : (
+          <div className={styles.stepColumn}>{children}</div>
+        )}
       </ModalShell>
     </FlowModalOverlay>
   )

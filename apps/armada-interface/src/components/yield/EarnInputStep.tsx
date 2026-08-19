@@ -3,7 +3,7 @@
 
 import { useMemo } from 'react'
 import { ChartBarIcon } from '@heroicons/react/24/solid'
-import { Button } from '@/design'
+import { Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { DepositAmountCard } from '@/components/deposit/DepositAmountCard/DepositAmountCard'
 import { depositOverlayShellStyles } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
 import { DepositTooltip } from '@/components/dashboard/DepositTooltip'
@@ -133,7 +133,7 @@ export function EarnInputStepContent({
     tab === 'add' ? 'Deposit USDC to the vault' : 'Withdraw USDC from the vault'
 
   return (
-    <div className={styles.root}>
+    <div className={`${styles.root} ${modalStepBodyEnter}`}>
       {/* APY intro banner — shown on both tabs (mockup). The live vault rate fills the headline. */}
       <DepositTooltip
         stretch
@@ -208,7 +208,7 @@ export function EarnInputStepFooter({
     hasActiveAmount(amountStr) && !tooMuch && !parseError && !continueBlockedReason
 
   return (
-    <div className={depositOverlayShellStyles.buttonRow}>
+    <div className={`${depositOverlayShellStyles.buttonRow} ${modalActionRowEnter}`}>
       <Button
         variant="secondary"
         size="lg"

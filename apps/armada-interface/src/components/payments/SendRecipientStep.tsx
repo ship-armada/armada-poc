@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react'
 import { XMarkIcon, GlobeAltIcon, ClipboardDocumentIcon } from '@heroicons/react/24/outline'
-import { ArmadaLogo, Button } from '@/design'
+import { ArmadaLogo, Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import iconButtonStyles from '@/design/components/IconButton/IconButton.module.css'
 import { ChainSelect } from '@/components/ui'
 import { isShieldedAddress, validateEvmAddress } from '@/lib/address'
@@ -106,7 +106,7 @@ export function SendRecipientStep({
 
   return (
     <div className={styles.root}>
-      <div className={styles.card}>
+      <div className={`${styles.card} ${modalStepBodyEnter}`}>
         <h1 className={`armada-text-ui-body-lg ${styles.cardTitle}`}>{title}</h1>
 
         <div className={styles.addressBlock}>
@@ -220,7 +220,7 @@ export function SendRecipientStep({
       </div>
 
       {/* Always-visible action row — Continue stays disabled + labeled "Enter address" until valid. */}
-      <div className={styles.buttonRow}>
+      <div className={`${styles.buttonRow} ${modalActionRowEnter}`}>
         <Button variant="secondary" size="lg" label="Cancel" showIcon={false} onClick={onCancel} />
         <Button
           variant="primary"

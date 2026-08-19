@@ -16,6 +16,15 @@
   );
 }
 
+/* Body group above the button row — keeps the column gap so the modalStepBodyEnter animation
+   layer doesn't collapse the internal spacing. */
+.body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--primitives-spacing-8);
+}
+
 .titleBlock {
   display: flex;
   flex-direction: column;

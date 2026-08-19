@@ -1,7 +1,7 @@
 // ABOUTME: Earn review step — frost card with left-aligned UI title + big mono amount, shared EarnReviewSummary table, Confirm/Back CTAs.
 // ABOUTME: Delegates the summary rows (mode, APY, amount, fees, total) to EarnReviewSummary; keeps the sync-gate + slippage notices.
 
-import { Button } from '@/design'
+import { Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { EarnReviewSummary } from './EarnReviewSummary'
 import { formatUsdcPlain } from '@/lib/format'
 import type { YieldRate } from '@/hooks/useYieldRate'
@@ -46,35 +46,38 @@ export function EarnReviewStep({
 
   return (
     <div className={styles.root}>
-      <div className={styles.titleBlock}>
-        <h1 className={styles.title}>{title}</h1>
-        <div className={styles.amountRow}>
-          <span className={styles.amountValue}>{formatUsdcPlain(amount)}</span>
+      <div className={`${styles.body} ${modalStepBodyEnter}`}>
+        <div className={styles.titleBlock}>
+          <h1 className={styles.title}>{title}</h1>
+          <div className={styles.amountRow}>
+            <span className={styles.amountValue}>{formatUsdcPlain(amount)}</span>
+          </div>
         </div>
+
+        <EarnReviewSummary
+          tab={tab}
+          amount={amount}
+          rate={rate}
+          fee={fee}
+          netAmount={netAmount}
+          netLabel={netLabel}
+        />
+
+        {tab === 'withdraw' ? (
+          <p className={styles.slippageNotice}>
+            The vault rate moves with each new block. Your final USDC may differ slightly from this
+            quote.
+          </p>
+        ) : null}
+
+        {submitBlockedReason ? (
+          <div className={styles.syncNotice} role="status" aria-live="polite">
+            {submitBlockedReason}
+          </div>
+        ) : null}
       </div>
 
-      <EarnReviewSummary
-        tab={tab}
-        amount={amount}
-        rate={rate}
-        fee={fee}
-        netAmount={netAmount}
-        netLabel={netLabel}
-      />
-
-      {tab === 'withdraw' ? (
-        <p className={styles.slippageNotice}>
-          The vault rate moves with each new block. Your final USDC may differ slightly from this quote.
-        </p>
-      ) : null}
-
-      {submitBlockedReason ? (
-        <div className={styles.syncNotice} role="status" aria-live="polite">
-          {submitBlockedReason}
-        </div>
-      ) : null}
-
-      <div className={styles.buttonRow}>
+      <div className={`${styles.buttonRow} ${modalActionRowEnter}`}>
         <Button
           variant="secondary"
           size="lg"

@@ -17,6 +17,12 @@ export interface TxLifecycleStepperProps {
   record: TxRecord
   /** Whether the technical-details disclosure starts open. Wired to user preference at the page level. */
   technicalDetailsDefaultOpen?: boolean
+  /**
+   * Render only the ETA + technical-details disclosure, hiding the status chip and stage list.
+   * The processing step uses this to keep the debug/ETA affordances beneath the new progress card
+   * without duplicating the (now timeline-rendered) stage list.
+   */
+  detailsOnly?: boolean
   className?: string
 }
 
@@ -58,6 +64,7 @@ function explorerLinkFor(chainId: number, txHash: `0x${string}`): string | null 
 export function TxLifecycleStepper({
   record,
   technicalDetailsDefaultOpen = false,
+  detailsOnly = false,
   className,
 }: TxLifecycleStepperProps) {
   const lifecycle = lifecycleFor(record.kind)
@@ -70,7 +77,9 @@ export function TxLifecycleStepper({
   return (
     <div className={cls}>
       <header className={styles.header}>
-        <TxStatusChip state={record.executionState} error={record.artifacts.error ?? null} />
+        {detailsOnly ? null : (
+          <TxStatusChip state={record.executionState} error={record.artifacts.error ?? null} />
+        )}
         {eta.label ? (
           <span className={[styles.eta, eta.overdue ? styles.etaOverdue : ''].filter(Boolean).join(' ')}>
             {eta.label}
@@ -78,6 +87,7 @@ export function TxLifecycleStepper({
         ) : null}
       </header>
 
+      {detailsOnly ? null : (
       <ol className={styles.stages}>
         {lifecycle.stages.map(stage => {
           const kind = rowKindFor(
@@ -135,6 +145,7 @@ export function TxLifecycleStepper({
           )
         })}
       </ol>
+      )}
 
       <TechnicalDetailsDisclosure defaultOpen={technicalDetailsDefaultOpen}>
         <dl className={styles.facts}>

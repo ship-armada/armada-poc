@@ -160,7 +160,7 @@ describe('<ShieldModal>', () => {
     // executionState is 'pending' which maps to the "Pending" chip. submit() awaits IDB
     // persistence so waitFor() handles the brief gap before the record reaches the atom.
     await waitFor(() => {
-      expect(screen.getAllByText('Pending').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getByText('Preparing transaction')).toBeInTheDocument()
     })
   })
 
@@ -176,7 +176,7 @@ describe('<ShieldModal>', () => {
       fireEvent.click(confirm)
     })
     await waitFor(() => {
-      expect(screen.getAllByText('Pending').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getByText('Preparing transaction')).toBeInTheDocument()
     })
     expect(store.get(txListAtom).length).toBe(1)
   })
@@ -204,7 +204,7 @@ describe('<ShieldModal>', () => {
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^Confirm$/ }))
     })
-    await waitFor(() => expect(screen.getAllByText('Pending').length).toBeGreaterThanOrEqual(1))
+    await waitFor(() => expect(screen.getByText('Preparing transaction')).toBeInTheDocument())
 
     // The Close affordance is present during progress now (was hidden pre-S-M2).
     await act(async () => {

@@ -120,7 +120,7 @@ describe('<EarnModal>', () => {
       fireEvent.click(screen.getByRole('button', { name: /Confirm deposit/ }))
     })
     await waitFor(() => {
-      expect(screen.getByText('Pending')).toBeInTheDocument()
+      expect(screen.getByText('Preparing transaction')).toBeInTheDocument()
     })
   })
 

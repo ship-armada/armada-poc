@@ -1,0 +1,175 @@
+/* ABOUTME: Styles for the timeline transaction-progress disclosure — slide/measure + bar travel. */
+/* ABOUTME: Ported from the armada-app design mockup (timeline variant only). */
+.root {
+  position: relative;
+  width: 100%;
+  /* EXCEPTION — solid white card on the modal processing surface. */
+  background: var(--semantic-color-surface-default);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  padding: var(--primitives-spacing-4) var(--primitives-spacing-5);
+  padding-right: var(--primitives-spacing-8);
+}
+
+.toggleButton {
+  position: absolute;
+  top: var(--primitives-spacing-4);
+  right: var(--primitives-spacing-5);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--primitives-spacing-6);
+  height: var(--primitives-spacing-6);
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--primitives-color-purple-100);
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.toggleButton:hover {
+  background: var(--primitives-color-purple-200);
+}
+
+.chevron {
+  color: var(--semantic-color-text-secondary);
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  flex-shrink: 0;
+}
+
+.toggleButton[aria-expanded='true'] .chevron {
+  transform: rotate(180deg);
+}
+
+.viewport {
+  overflow: hidden;
+  transition: height 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: height;
+}
+
+.track {
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.stepList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-4);
+}
+
+.stepItem {
+  margin: 0;
+}
+
+.stepRow {
+  display: flex;
+  align-items: stretch;
+  gap: var(--primitives-spacing-4);
+  min-width: 0;
+}
+
+.barTrack {
+  --bar-inset: var(--primitives-spacing-1);
+  --bar-indicator-size: 14px;
+  position: relative;
+  width: 4px;
+  align-self: stretch;
+  min-height: 3.25rem;
+  flex-shrink: 0;
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  overflow: hidden;
+}
+
+.barTrack_pending {
+  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 18%, transparent);
+}
+
+.barTrack_currentActive {
+  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 28%, transparent);
+}
+
+.barTrack_done,
+.barTrack_completedFinal {
+  background: var(--semantic-color-brand-lavender);
+}
+
+.barIndicator {
+  position: absolute;
+  left: 0;
+  width: 4px;
+  height: var(--bar-indicator-size);
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: var(--semantic-color-brand-lavender);
+  animation: barTravel 1.8s ease-in-out infinite;
+}
+
+@keyframes barTravel {
+  0%,
+  100% {
+    top: var(--bar-inset);
+  }
+
+  50% {
+    top: calc(100% - var(--bar-indicator-size) - var(--bar-inset));
+  }
+}
+
+.stepCopy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-1);
+  min-width: 0;
+}
+
+.counter {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-weight: var(--primitives-fontWeight-medium);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+.stepTitle {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-weight: var(--primitives-fontWeight-regular);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-primary);
+}
+
+.currentActive .stepTitle,
+.completedFinal .stepTitle {
+  color: var(--semantic-color-brand-lavender);
+  font-weight: var(--primitives-fontWeight-semibold);
+}
+
+.pending .stepTitle,
+.done .stepTitle {
+  color: var(--semantic-color-text-primary);
+  font-weight: var(--primitives-fontWeight-regular);
+}
+
+.stepSubtitle {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-weight: var(--primitives-fontWeight-regular);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron,
+  .toggleButton,
+  .viewport,
+  .track {
+    transition: none;
+  }
+
+  .barIndicator {
+    animation: none;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+}

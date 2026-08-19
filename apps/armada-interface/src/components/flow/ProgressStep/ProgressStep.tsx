@@ -1,28 +1,23 @@
-// ABOUTME: Shared progress step — renders the active tx's <TxLifecycleStepper> for any TxKind, with a Cancel CTA on in-flight records.
+// ABOUTME: Shared progress step — renders the processing layout (hero card + timeline) for any TxKind from the live record.
 // ABOUTME: When no record exists yet (user clicked Confirm but executor hasn't written the first transition), shows a preparing placeholder.
 
-import { useAtomValue } from 'jotai'
 import type { TxRecord } from '@/lib/tx/types'
-import { TxActions, TxLifecycleStepper } from '@/components/tx'
-import { WalletConfirmList } from '../WalletConfirmList/WalletConfirmList'
-import { shieldWalletSteps } from '@/lib/tx/shieldWalletSteps'
-import { preferencesAtom } from '@/state/preferences'
+import { TxProcessingLayout } from '@/components/tx/processing/TxProcessingLayout'
+import { buildProcessingView, type SendVariant } from '@/components/tx/processing/processingView'
 import styles from './ProgressStep.module.css'
 
 export interface ProgressStepProps {
   /** The in-flight tx record. Null when the executor hasn't created a record yet (e.g. user just clicked Confirm). */
   record: TxRecord | null
   /**
-   * Override the user's "Show technical details by default" preference. When undefined, falls back to
-   * preferencesAtom. Modals don't need to thread the preference; ProgressStep handles it once here.
+   * Send/Withdraw flow variant — disambiguates the shared `unshield-*` kinds so the hero title reads
+   * "Unshielding your USDC" (send) vs "Your withdraw is in progress" (withdraw). Only the SendModal
+   * passes it; other flows resolve their title from the kind alone.
    */
-  technicalDetailsDefaultOpen?: boolean
+  sendVariant?: SendVariant
 }
 
-export function ProgressStep({ record, technicalDetailsDefaultOpen }: ProgressStepProps) {
-  const prefs = useAtomValue(preferencesAtom)
-  const defaultOpen = technicalDetailsDefaultOpen ?? prefs.showTechnicalDetailsByDefault
-
+export function ProgressStep({ record, sendVariant }: ProgressStepProps) {
   if (!record) {
     return (
       <div className={styles.root}>
@@ -31,24 +26,17 @@ export function ProgressStep({ record, technicalDetailsDefaultOpen }: ProgressSt
       </div>
     )
   }
-  // S-M4: shield / shield-xchain surface a wallet-prompt checklist (approve + deposit, or a single
-  // "Authorize deposit" row on the gasless path) so the user can see which wallet prompts are
-  // pending vs done. Other kinds rely on the stepper's submit-relayer row alone.
-  const isShieldKind = record.kind === 'shield' || record.kind === 'shield-xchain'
+  const view = buildProcessingView(record, { sendVariant })
 
   return (
     <div className={styles.root}>
-      {isShieldKind ? (
-        <WalletConfirmList
-          steps={shieldWalletSteps(
-            record as TxRecord<'shield'> | TxRecord<'shield-xchain'>,
-            record.meta.amount,
-          )}
-        />
-      ) : null}
-      <TxLifecycleStepper record={record} technicalDetailsDefaultOpen={defaultOpen} />
-      {/* Cancel only — Retry on failure is handled by the modal's dedicated ErrorStep. */}
-      <TxActions record={record} variant="cancel" />
+      {/* Hero progress card + timeline stage disclosure (mockup), driven by the real lifecycle. */}
+      <TxProcessingLayout
+        cardCopy={view.cardCopy}
+        stages={view.stages}
+        activeStageIndex={view.activeStageIndex}
+        completed={view.completed}
+      />
     </div>
   )
 }

@@ -420,7 +420,7 @@ export function SendModal() {
           onConfirm={handleSubmit}
         />
       )}
-      {step === 'progress' && <ProgressStep record={record} />}
+      {step === 'progress' && <ProgressStep record={record} sendVariant={variant} />}
       {step === 'complete' && (
         <SendCompleteStep
           variant={variant}

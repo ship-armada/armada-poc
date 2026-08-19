@@ -1,9 +1,10 @@
 // ABOUTME: Activity receipt — reopens a past tx's confirm-step view (same FlowShell chrome + frost card + review summary).
 // ABOUTME: Reconstructs the summary props from the record's meta/artifacts (no stored snapshot — chunk 6b decision a); step-bar hidden, CTAs are View-on-explorer + Done.
 
-import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Button, modalStepBodyEnter, modalActionRowEnter, MODAL_EXIT_TOTAL_MS } from '@/design'
+import { type ReactNode } from 'react'
+import { Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { FlowShell } from '@/components/flow/FlowShell'
+import { useFlowExit } from '@/components/flow/useFlowExit'
 import { DepositReviewSummary } from '@/components/deposit/DepositReviewSummary'
 import { TransferReviewSummary } from '@/components/payments/TransferReviewSummary'
 import { EarnReviewSummary } from '@/components/yield/EarnReviewSummary'
@@ -156,23 +157,7 @@ export function ActivityReceipt({ record, ownWalletAddress, open, onClose }: Act
   const view = record ? buildReceiptView(record, ownWalletAddress) : null
 
   // Play the slide-down exit before the parent unmounts us (mockup parity with the flow modals).
-  const [exiting, setExiting] = useState(false)
-  const exitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => {
-    return () => {
-      if (exitTimerRef.current) clearTimeout(exitTimerRef.current)
-    }
-  }, [])
-
-  function requestClose() {
-    if (exiting) return
-    setExiting(true)
-    exitTimerRef.current = setTimeout(() => {
-      exitTimerRef.current = null
-      setExiting(false)
-      onClose()
-    }, MODAL_EXIT_TOTAL_MS)
-  }
+  const { exiting, requestClose } = useFlowExit(onClose)
 
   return (
     <FlowShell

@@ -12,6 +12,11 @@ ActionFlowShell + its supporting primitives. This is the shared chrome that wrap
 | `ActionFlowShell` | Combines Modal + FlowHeader + body. Controlled by parent (`step` prop). Auto-locks dismissal during `progress`. |
 | `ProgressStep` | Shared progress UI for any TxKind. **Stub** until `<TxLifecycleStepper>` lands in `components/tx/`. |
 | `ErrorStep` | Icon + headline + message + Try Again (disabled when `onRetry` omitted) + optional View Details. |
+| `useFlowExit` | Close hook — plays `FlowShell`'s slide-down before running the real `onClose` (holds `exiting` for `MODAL_EXIT_TOTAL_MS`; closes synchronously under reduced motion). Each modal wires `const { exiting, requestClose: close } = useFlowExit(() => setOpenModal(null))` and passes `exiting` to `FlowShell`; the atom stays set until the animation ends so the step content stays frozen. |
+
+## FlowShell motion
+
+`FlowShell` threads two motion props: `exiting` (drives the overlay/shell slide-down — set via `useFlowExit`) and `stepKey` (when it changes, the vendored `ModalStepSwitch` plays a short content exit then remounts the next step so its enter animations replay). Pass the modal's `step` string as `stepKey`; omit it for static shells (e.g. the activity receipt).
 
 ## Conventions
 

@@ -336,6 +336,27 @@
   outline: none;
 }
 
+/* Odometer overlay shown while a preset/Max roll plays — sits over the (hidden) static value,
+   right-aligned to match the amount. RollingBalanceValue owns the digit-spin motion. */
+.amountRollLayer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-family: var(--primitives-fontFamily-mono), ui-monospace, monospace;
+  font-size: calc(var(--primitives-fontSize-4xl) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  line-height: calc(var(--primitives-fontSize-4xl) * 1px);
+  color: var(--semantic-color-text-primary);
+  pointer-events: none;
+}
+
+/* Hide the static value + caret during the roll so only the odometer shows. */
+.amountValueHidden {
+  visibility: hidden;
+}
+
 .visuallyHidden {
   position: absolute;
   width: 1px;

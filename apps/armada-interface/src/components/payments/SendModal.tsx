@@ -35,6 +35,7 @@ import {
   type FlowVisibleStep,
 } from '@/components/flow'
 import { FlowShell } from '@/components/flow/FlowShell'
+import { useFlowExit } from '@/components/flow/useFlowExit'
 import { SendRecipientStep, type SendFlowVariant } from './SendRecipientStep'
 import { SendInputStepContent, SendInputStepFooter } from './SendInputStep'
 import { useDisplayFees } from '@/hooks/useDisplayFees'
@@ -217,9 +218,9 @@ export function SendModal() {
     }
   }, [record?.executionState])
 
-  function close() {
-    setOpenModal(null)
-  }
+  // Route the close through useFlowExit so FlowShell plays its slide-down before unmounting. The
+  // atom stays set (isOpen true) until the animation completes, which keeps the step content frozen.
+  const { exiting, requestClose: close } = useFlowExit(() => setOpenModal(null))
 
   async function handleSubmit() {
     if (submittingRef.current) return
@@ -356,6 +357,8 @@ export function SendModal() {
     <FlowShell
       open={isOpen}
       onClose={close}
+      exiting={exiting}
+      stepKey={step}
       flowLabel={flowLabel}
       steps={['Recipient', 'Amount', 'Review', 'Confirm']}
       currentStep={currentStep}

@@ -1,11 +1,12 @@
 // ABOUTME: Dashboard page — centered Private-USDC BalanceCard + deposit tooltip + recent activity.
 // ABOUTME: Presentation from the armada-app mockup; wired to real shielded balance, yield, and tx history.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ChartBarIcon } from '@heroicons/react/24/outline'
 import { BalanceCard } from '@/components/dashboard/BalanceCard'
 import { DepositTooltip } from '@/components/dashboard/DepositTooltip'
+import { DASHBOARD_TOOLTIP_ENTER_DELAY_MS } from '@/components/dashboard/BalanceCard/balanceRevealMotion'
 import { DashboardScrollTopFade } from '@/components/dashboard/DashboardScrollTopFade'
 import { RecentActivityList, ActivityAllPanel } from '@/components/dashboard/RecentActivityList'
 import { ActivityReceipt } from '@/components/dashboard/ActivityReceipt'
@@ -94,6 +95,11 @@ export function Dashboard() {
   const showEarnBanner =
     !showDepositTooltip && balanceNumber > 0 && vaultNumber <= 0 && vaultApy !== undefined && vaultApy > 0
 
+  // Tooltip/earn-banner enter delay — fades up after the balance card's action row settles.
+  const tooltipEnterStyle = {
+    '--dashboard-tooltip-enter-delay': `${DASHBOARD_TOOLTIP_ENTER_DELAY_MS}ms`,
+  } as CSSProperties
+
   // Gate the dashboard behind the initial shielded-balance sync. The navbar (AppLayout) stays visible.
   if (isInitialSyncGated(shielded, sync.status)) {
     return <SyncGate />
@@ -121,21 +127,25 @@ export function Dashboard() {
         />
 
         {showDepositTooltip ? (
-          <DepositTooltip stretch onDeposit={() => openActionModal('shield')} />
+          <div className={styles.tooltipEnter} style={tooltipEnterStyle}>
+            <DepositTooltip stretch onDeposit={() => openActionModal('shield')} />
+          </div>
         ) : null}
 
         {showEarnBanner ? (
-          <DepositTooltip
-            stretch
-            BadgeIcon={ChartBarIcon}
-            badgeBackground="white"
-            iconTileTone="purple"
-            headline={`Earn ~${(vaultApy ?? 0).toFixed(1)}% APY`}
-            body="Deposit into the vault and start earning now."
-            infoTooltip="The APY is an estimate from recent vault performance."
-            ariaLabel={`Estimated yearly yield ~${(vaultApy ?? 0).toFixed(1)}%`}
-            onDeposit={() => openActionModal('yield-deposit')}
-          />
+          <div className={styles.tooltipEnter} style={tooltipEnterStyle}>
+            <DepositTooltip
+              stretch
+              BadgeIcon={ChartBarIcon}
+              badgeBackground="white"
+              iconTileTone="purple"
+              headline={`Earn ~${(vaultApy ?? 0).toFixed(1)}% APY`}
+              body="Deposit into the vault and start earning now."
+              infoTooltip="The APY is an estimate from recent vault performance."
+              ariaLabel={`Estimated yearly yield ~${(vaultApy ?? 0).toFixed(1)}%`}
+              onDeposit={() => openActionModal('yield-deposit')}
+            />
+          </div>
         ) : null}
 
         {showActivity ? (

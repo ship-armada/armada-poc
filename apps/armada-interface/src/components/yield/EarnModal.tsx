@@ -26,6 +26,7 @@ import {
   type FlowVisibleStep,
 } from '@/components/flow'
 import { FlowShell } from '@/components/flow/FlowShell'
+import { useFlowExit } from '@/components/flow/useFlowExit'
 import { EarnInputStepContent, EarnInputStepFooter, type EarnTab } from './EarnInputStep'
 import { useDisplayFees } from '@/hooks/useDisplayFees'
 import { EarnReviewStep } from './EarnReviewStep'
@@ -200,9 +201,9 @@ export function EarnModal() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [record?.executionState])
 
-  function close() {
-    setOpenModal(null)
-  }
+  // Route the close through useFlowExit so FlowShell plays its slide-down before unmounting. The
+  // atom stays set (isOpen true) until the animation completes, which keeps the step content frozen.
+  const { exiting, requestClose: close } = useFlowExit(() => setOpenModal(null))
 
   async function handleSubmit() {
     if (submittingRef.current) return
@@ -295,6 +296,8 @@ export function EarnModal() {
     <FlowShell
       open={isOpen}
       onClose={close}
+      exiting={exiting}
+      stepKey={step}
       flowLabel="Earn"
       steps={['Amount', 'Review', 'Confirm']}
       currentStep={currentStep}

@@ -28,6 +28,7 @@ import {
   type FlowVisibleStep,
 } from '@/components/flow'
 import { FlowShell } from '@/components/flow/FlowShell'
+import { useFlowExit } from '@/components/flow/useFlowExit'
 import { RelayerStatusBanner } from '@/components/RelayerStatusBanner'
 import { ShieldInputStepContent, ShieldInputStepFooter } from './ShieldInputStep'
 import { ShieldReviewStep } from './ShieldReviewStep'
@@ -223,9 +224,9 @@ export function ShieldModal() {
     }
   }, [record?.executionState])
 
-  function close() {
-    setOpenModal(null)
-  }
+  // Route the close through useFlowExit so FlowShell plays its slide-down before unmounting. The
+  // atom stays set (isOpen true) until the animation completes, which keeps the step content frozen.
+  const { exiting, requestClose: close } = useFlowExit(() => setOpenModal(null))
 
   async function handleSubmit() {
     if (submittingRef.current) return
@@ -343,6 +344,8 @@ export function ShieldModal() {
     <FlowShell
       open={isOpen}
       onClose={close}
+      exiting={exiting}
+      stepKey={step}
       flowLabel="Shield"
       currentStep={indicatorStep}
       status={indicatorStatus}

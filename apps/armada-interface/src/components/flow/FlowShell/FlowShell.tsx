@@ -2,7 +2,7 @@
 // ABOUTME: Replaces DepositOverlayShell for the redesigned flows; renders the logo + Steps progress + close + backdrop/focus-trap.
 
 import type { ReactNode } from 'react'
-import { FlowModalOverlay, ModalShell } from '@/design'
+import { FlowModalOverlay, ModalShell, ModalStepSwitch } from '@/design'
 import styles from './FlowShell.module.css'
 
 /** Default 3-step deposit/action progress labels (Amount → Review → Confirm). */
@@ -20,6 +20,11 @@ export interface FlowShellProps {
   hideSteps?: boolean
   /** Play the close (slide-down) animation. The caller keeps `open` true until the exit completes. */
   exiting?: boolean
+  /**
+   * Current step identifier. When it changes, ModalStepSwitch plays a short content exit then
+   * remounts the new step so its enter animations replay. Omit for static shells (e.g. the receipt).
+   */
+  stepKey?: string
   children: ReactNode
 }
 
@@ -32,6 +37,7 @@ export function FlowShell({
   status = 'default',
   hideSteps = false,
   exiting = false,
+  stepKey,
   children,
 }: FlowShellProps) {
   if (!open && !exiting) return null
@@ -47,7 +53,15 @@ export function FlowShell({
         flowLabel={flowLabel}
         onClose={onClose}
       >
-        <div className={styles.stepColumn}>{children}</div>
+        <div className={styles.stepColumn}>
+          {stepKey !== undefined ? (
+            <ModalStepSwitch stepKey={stepKey} skipExit={exiting}>
+              {children}
+            </ModalStepSwitch>
+          ) : (
+            children
+          )}
+        </div>
       </ModalShell>
     </FlowModalOverlay>
   )

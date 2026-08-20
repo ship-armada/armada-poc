@@ -14,6 +14,8 @@ import {
   shieldedWalletAtom,
 } from '@/state/wallet'
 import { useTx } from '@/hooks/useTx'
+import { useRecentRecipients } from '@/hooks/useRecentRecipients'
+import type { RecentRecipient } from '@/lib/tx/recentRecipients'
 import { useFees } from '@/hooks/useFees'
 import { useSpendableSyncGate } from '@/hooks/useSpendableSyncGate'
 import { getChainById, getNetworkConfig } from '@/config/network'
@@ -156,6 +158,14 @@ export function SendModal() {
   const destDeploymentError = destHasDeployment
     ? undefined
     : 'This destination chain has no deployment manifest. Pick another chain.'
+
+  // Recently-used recipients (from settled history) offered on the recipient step. Selecting one
+  // fills the address and restores its destination chain (0zk transfers have none → back to hub).
+  const recentAddresses = useRecentRecipients(5)
+  function handleSelectRecent(item: RecentRecipient) {
+    setRecipient(item.address)
+    setDestChainId(item.destChainId ?? hubChainId)
+  }
 
   // Three useTx hooks mounted; only one gets a record per flow.
   const txTransfer = useTx({ kind: 'transfer-shielded' })
@@ -400,6 +410,8 @@ export function SendModal() {
           destChainId={destChainId}
           onDestChainIdChange={setDestChainId}
           destDeploymentError={destDeploymentError}
+          recentAddresses={recentAddresses}
+          onSelectRecent={handleSelectRecent}
           onCancel={close}
           onContinue={() => setStep('input')}
         />

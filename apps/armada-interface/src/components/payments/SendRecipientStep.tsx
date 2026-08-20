@@ -1,5 +1,5 @@
 // ABOUTME: Send/Withdraw recipient step — a frost card (title + address input with Clear + a paste row that
-// ABOUTME: previews a valid 0zk/0x on the clipboard + public-only chain selector + privacy badge once valid) over an always-visible Cancel / Continue action row.
+// ABOUTME: previews a valid 0zk/0x on the clipboard + public-only chain selector + privacy badge once valid) over an always-visible Cancel / Continue action row + a recent-recipients list.
 
 import { useEffect, useState } from 'react'
 import { XMarkIcon, GlobeAltIcon, ClipboardDocumentIcon } from '@heroicons/react/24/outline'
@@ -8,6 +8,9 @@ import iconButtonStyles from '@/design/components/IconButton/IconButton.module.c
 import { ChainSelect } from '@/components/ui'
 import { isShieldedAddress, validateEvmAddress } from '@/lib/address'
 import { truncateAddress } from '@/lib/format'
+import { useMobileLayout } from '@/hooks/useMobileLayout'
+import { RecentAddressList } from './RecentAddressList'
+import type { RecentRecipient } from '@/lib/tx/recentRecipients'
 import styles from './SendRecipientStep.module.css'
 
 /** Which flow the shared Send/Withdraw modal is running as — drives minimal copy differences. */
@@ -30,6 +33,10 @@ export interface SendRecipientStepProps {
   onDestChainIdChange: (chainId: number) => void
   /** Surfaced when the chosen public destination chain has no deployment manifest. */
   destDeploymentError?: string
+  /** Previously-used recipients, newest-first — rendered as one-tap rows below the action row. */
+  recentAddresses: RecentRecipient[]
+  /** Fills the recipient (and restores its destination chain) from a recent row. */
+  onSelectRecent: (item: RecentRecipient) => void
   /** Dismisses the flow — wired to the modal's close in SendModal. */
   onCancel: () => void
   onContinue: () => void
@@ -42,10 +49,13 @@ export function SendRecipientStep({
   destChainId,
   onDestChainIdChange,
   destDeploymentError,
+  recentAddresses,
+  onSelectRecent,
   onCancel,
   onContinue,
 }: SendRecipientStepProps) {
   const [inputFocused, setInputFocused] = useState(false)
+  const isMobile = useMobileLayout()
   // Trimmed clipboard content (null if empty / unreadable), used by the paste row. Probed on open +
   // whenever the tab regains focus (the user may copy then return).
   const [clipboardText, setClipboardText] = useState<string | null>(null)
@@ -231,6 +241,12 @@ export function SendRecipientStep({
           onClick={onContinue}
         />
       </div>
+
+      {/* Recent recipients — hidden on mobile once a valid address is entered so the keyboard + CTAs
+          own the viewport (matches the mockup); empty history renders nothing. */}
+      {!(isMobile && recipientValid) ? (
+        <RecentAddressList items={recentAddresses} onSelect={onSelectRecent} />
+      ) : null}
     </div>
   )
 }

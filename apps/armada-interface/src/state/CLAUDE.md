@@ -11,6 +11,7 @@ Jotai atoms. **Read-mostly from components.** Write paths go through hooks or `s
 | `ui.ts` | `openModalAtom`, `balanceHiddenAtom`, `paymentIntentAtom` (pay-via-link → Send prefill hand-off) |
 | `history.ts` | `historyRecoveryAtom` (`{ state: 'idle'\|'scanning'\|'failed', error?, lastRecordCount? }`) + `historyRecoveryEpochAtom` (bumped by detector + Settings Re-scan). Read by `HistoryRecoveryBanner` and the History page empty state. |
 | `time.ts` | `nowAtom` — Date.now() snapshot driven by `useNowTicker`. Consumed by relative-time labels (TxRow). |
+| `requestLinks.ts` | `requestLinksAtom` (created payment-request links for the active wallet, hydrated by `useRequestLinks` from the encrypted per-wallet store) + `requestShareIntentAtom` (re-open the Request flow at the Share step from an activity row). |
 
 ## Conventions
 

@@ -17,10 +17,12 @@ import {
   ArrowRightIcon,
   ChartBarIcon,
   ClockIcon,
+  LinkIcon,
   PlusIcon,
 } from '@heroicons/react/24/outline'
 import { BalanceScrambleValue } from '@/components/dashboard/BalanceScrambleValue'
 import { formatUsdcAmount, formatTimeAgo } from '@/components/dashboard/dashboardFormat'
+import { formatPaymentLinkExpiry } from '@/lib/payViaLink'
 import type { DashboardActivityItem, DashboardActivityKind } from '@/components/dashboard/txActivityAdapter'
 import usdcAmount from '@/design/styles/usdcAmount.module.css'
 import { hidePeekEventHandlers } from '@/hooks/useHidePeek'
@@ -36,10 +38,13 @@ const ACTIVITY_ICONS: Record<DashboardActivityKind, ComponentType<SVGProps<SVGSV
   earn: ChartBarIcon,
   withdraw: ArrowLeftIcon,
   receive: ArrowDownIcon,
+  requestLink: LinkIcon,
 }
 
 function formatActivityAmount(item: DashboardActivityItem): string {
   const absolute = formatUsdcAmount(Math.abs(item.amount))
+  // A created link moves no funds — show the requested amount with no +/- sign.
+  if (item.kind === 'requestLink') return absolute
   if (item.amount > 0) return `+${absolute}`
   if (item.amount < 0) return `-${absolute}`
   return absolute
@@ -47,12 +52,15 @@ function formatActivityAmount(item: DashboardActivityItem): string {
 
 function formatActivitySubtitle(item: DashboardActivityItem): string {
   const timeAgo = formatTimeAgo(item.occurredAt)
+  if (item.kind === 'requestLink' && item.expiresAt !== undefined) {
+    return `${timeAgo} • ${formatPaymentLinkExpiry(item.expiresAt)}`
+  }
   return item.pending ? `Pending • ${timeAgo}` : timeAgo
 }
 
 function activityAmountTone(item: DashboardActivityItem, balanceRevealed: boolean): string {
-  // Pending rows and hidden balances read neutral — no green/red inflow/outflow tint.
-  if (!balanceRevealed || item.pending) return ''
+  // Pending rows, request-link rows, and hidden balances read neutral — no green/red tint.
+  if (!balanceRevealed || item.pending || item.kind === 'requestLink') return ''
   if (item.amount > 0) return styles.amountPositive ?? ''
   if (item.amount < 0) return styles.amountNegative ?? ''
   return ''

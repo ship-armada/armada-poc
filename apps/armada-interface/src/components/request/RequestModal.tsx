@@ -4,7 +4,9 @@
 import { useEffect, useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { openModalAtom } from '@/state/ui'
-import { shieldedWalletAtom } from '@/state/wallet'
+import { shieldedWalletAtom, activeShieldedWalletIdAtom } from '@/state/wallet'
+import { requestShareIntentAtom } from '@/state/requestLinks'
+import { useAddRequestLink } from '@/hooks/useRequestLinks'
 import { FlowShell } from '@/components/flow/FlowShell'
 import { useFlowExit } from '@/components/flow/useFlowExit'
 import {
@@ -24,6 +26,9 @@ type RequestStep = 'receive' | 'link'
 export function RequestModal() {
   const [openModal, setOpenModal] = useAtom(openModalAtom)
   const shieldedWallet = useAtomValue(shieldedWalletAtom)
+  const activeWalletId = useAtomValue(activeShieldedWalletIdAtom)
+  const [shareIntent, setShareIntent] = useAtom(requestShareIntentAtom)
+  const addRequestLink = useAddRequestLink()
   const isOpen = openModal === 'request'
 
   const [step, setStep] = useState<RequestStep>('receive')
@@ -36,7 +41,22 @@ export function RequestModal() {
   // RequestLinkScreen's revoked variant is built + ready for when real revocation lands.
   const [linkRevoked] = useState(false)
 
-  // Reset on close so re-opening starts fresh at the compose step.
+  // Re-open at the Share step from a "Payment link created" activity row: seed the stored link
+  // synchronously on the open transition so FlowShell's stepKey is 'link' on the first paint (no
+  // compose-step flash). The intent is consumed in an effect below. See SendModal for the pattern.
+  const [wasOpen, setWasOpen] = useState(false)
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen)
+    if (isOpen && shareIntent) {
+      setAmount(shareIntent.amount)
+      setNote(shareIntent.note ?? '')
+      setPaymentLink(shareIntent.paymentLink)
+      setExpiresAt(shareIntent.expiresAt)
+      setStep('link')
+    }
+  }
+
+  // Reset on close so re-opening (without a share intent) starts fresh at the compose step.
   useEffect(() => {
     if (isOpen) return
     setStep('receive')
@@ -47,16 +67,22 @@ export function RequestModal() {
     setExpiresAt(0)
   }, [isOpen])
 
+  // Consume the share intent once opened (post-commit; the render-time block above already seeded).
+  useEffect(() => {
+    if (isOpen && shareIntent) setShareIntent(null)
+  }, [isOpen, shareIntent, setShareIntent])
+
   const { exiting, requestClose: close } = useFlowExit(() => setOpenModal(null))
 
   function handleCreateLink() {
     const recipientAddress = shieldedWallet.shieldedAddress
-    if (!recipientAddress) return
+    if (!recipientAddress || !activeWalletId) return
+    const requestId = createPaymentRequestId()
     const nextExpiresAt = Date.now() + requestLinkExpiryMs(expiryId)
     const trimmedNote = note.trim()
     const link = buildPayViaLinkUrl({
       recipientAddress,
-      requestId: createPaymentRequestId(),
+      requestId,
       expiresAt: nextExpiresAt,
       amount,
       note: trimmedNote || undefined,
@@ -64,6 +90,17 @@ export function RequestModal() {
     setPaymentLink(link)
     setExpiresAt(nextExpiresAt)
     setStep('link')
+    // Persist for Recent Activity (encrypted, per-wallet). Fire-and-forget — a storage failure
+    // shouldn't block showing the link the user just created.
+    void addRequestLink({
+      requestId,
+      paymentLink: link,
+      amount,
+      note: trimmedNote || undefined,
+      expiresAt: nextExpiresAt,
+      createdAt: Date.now(),
+      shieldedWalletId: activeWalletId,
+    })
   }
 
   if (!isOpen && !exiting) return null

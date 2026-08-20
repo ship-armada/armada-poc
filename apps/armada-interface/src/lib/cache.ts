@@ -2,11 +2,26 @@
 // ABOUTME: Stub now (typed signatures only); implementation lands when first consumer needs it.
 
 const DB_NAME = 'armada-interface'
-const DB_VERSION = 1
+// v2: adds the `requestLinks` store (created payment-request links). The upgrade is additive —
+// onupgradeneeded creates any missing store, leaving existing stores + data intact.
+const DB_VERSION = 2
 
-export type StoreName = 'txHistory' | 'feeQuotes' | 'ens' | 'shieldedBalances' | 'meta'
+export type StoreName =
+  | 'txHistory'
+  | 'feeQuotes'
+  | 'ens'
+  | 'shieldedBalances'
+  | 'meta'
+  | 'requestLinks'
 
-const STORES: ReadonlyArray<StoreName> = ['txHistory', 'feeQuotes', 'ens', 'shieldedBalances', 'meta']
+const STORES: ReadonlyArray<StoreName> = [
+  'txHistory',
+  'feeQuotes',
+  'ens',
+  'shieldedBalances',
+  'meta',
+  'requestLinks',
+]
 
 let dbPromise: Promise<IDBDatabase> | null = null
 

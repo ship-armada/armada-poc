@@ -20,6 +20,7 @@ One concern per hook. Hooks own the React lifecycle (effects, subscriptions, tim
 | `useTx({ kind })` | Per-tx submit/track/retry/cancel. Multi-instance — each call owns a ulid. | Working — all kinds run end-to-end via registered handlers; submit/retry/cancel wired |
 | `useTxHistory()` | Hydrates `txListAtom` from IDB on `activeShieldedWalletIdAtom` change (V2 Phase 6); clears the atom on lock. Only hydrates records belonging to the active walletId. | Working |
 | `useTxResume()` | On unlock (leader tab only), calls `executor.resumeForWallet(walletId)` — re-attaches watchers to already-broadcast txs (has `sourceTxHash`) and fails pre-broadcast interruptions as `INTERRUPTED`. Idempotent per (walletId, session). Mount once at App root. | Working |
+| `useRequestLinks()` / `useAddRequestLink()` | Hydrator (mount at App root) loads the active wallet's created payment-request links from the encrypted `requestLinks` store into `requestLinksAtom` on unlock; `useAddRequestLink` persists a new link + prepends it. Drives the "Payment link created" activity rows. | Working |
 
 ## Conventions
 

@@ -8,6 +8,7 @@ import { Modal } from '@/components/ui'
 import { FlowFooter } from '@/components/flow/FlowFooter'
 import { activeShieldedWalletIdAtom } from '@/state/wallet'
 import { txListAtom } from '@/state/tx'
+import { requestLinksAtom } from '@/state/requestLinks'
 import { historyRecoveryEpochAtom } from '@/state/history'
 import { cacheClear } from '@/lib/cache'
 import { clearHistoryCheckpoint } from '@/lib/shielded/history-checkpoint'
@@ -22,6 +23,7 @@ export interface ClearHistoryDialogProps {
 export function ClearHistoryDialog({ open, onClose }: ClearHistoryDialogProps) {
   const walletId = useAtomValue(activeShieldedWalletIdAtom)
   const setTxList = useSetAtom(txListAtom)
+  const setRequestLinks = useSetAtom(requestLinksAtom)
   const setEpoch = useSetAtom(historyRecoveryEpochAtom)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -41,11 +43,16 @@ export function ClearHistoryDialog({ open, onClose }: ClearHistoryDialogProps) {
       //    surprising — and they're equally re-recoverable from chain on next unlock. Cleaner
       //    to flush the whole store and let each wallet rebuild on its own scan.
       await cacheClear('txHistory')
+      // 1b. Also wipe created payment-request links. Unlike tx history these are NOT chain-
+      //     recoverable (local-only artifacts), so clearing is permanent — the shared links
+      //     themselves keep working; only the local activity records go.
+      await cacheClear('requestLinks')
       // 2. Drop the checkpoint so the next scan walks from the hub deploy block.
       if (walletId) clearHistoryCheckpoint(walletId)
-      // 3. Reset the in-memory atom so the UI immediately shows an empty activity feed.
+      // 3. Reset the in-memory atoms so the UI immediately shows an empty activity feed.
       //    Without this the rows would linger until the next walletId-change re-hydration.
       setTxList([])
+      setRequestLinks([])
       // 4. Bump the epoch so useHistoryRecovery's effect re-fires and starts the rescan.
       setEpoch((prev) => prev + 1)
       onClose()

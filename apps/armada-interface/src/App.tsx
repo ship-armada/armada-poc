@@ -23,6 +23,7 @@ import { useShieldedSyncPoll } from '@/hooks/useShieldedSyncPoll'
 import { useNullifierCrossCheck } from '@/hooks/useNullifierCrossCheck'
 import { useTabVisible } from '@/hooks/useTabVisible'
 import { useTxHistory } from '@/hooks/useTxHistory'
+import { useRequestLinks } from '@/hooks/useRequestLinks'
 import { useTxResume } from '@/hooks/useTxResume'
 import { useUsdcBalances } from '@/hooks/useUsdcBalances'
 import { useWallet } from '@/hooks/useWallet'
@@ -56,6 +57,7 @@ export function App() {
   useTabVisible()
   useNowTicker() // refresh "3m ago" labels on a 60s cadence
   useTxHistory() // hydrate tx history from IDB on cold load
+  useRequestLinks() // hydrate created payment-request links (encrypted, per-wallet) for Recent Activity
   useTxResume() // on unlock (leader only), resume watchers for broadcast txs / fail pre-broadcast interruptions (P0-2)
   useHistoryRecovery() // chain-recover synthetic rows on unlock + re-scan epoch (Phase 9.3)
   useIncomingTransferDetector() // re-scan on balance events so received transfers surface live (Phase 9.4)

@@ -16,6 +16,8 @@ export interface ActivityAllPanelProps {
   open: boolean
   onClose: () => void
   items: readonly DashboardActivityItem[]
+  /** When set, the list was capped to this many rows — surfaces a "showing latest N" note. */
+  truncatedCount?: number
   balanceRevealed?: boolean
   onItemClick?: (item: DashboardActivityItem) => void
 }
@@ -24,6 +26,7 @@ export function ActivityAllPanel({
   open,
   onClose,
   items,
+  truncatedCount,
   balanceRevealed = true,
   onItemClick,
 }: ActivityAllPanelProps) {
@@ -70,6 +73,11 @@ export function ActivityAllPanel({
           onItemClick={handleItemClick}
         />
       )}
+      {truncatedCount != null ? (
+        <p className={panelStyles.truncationNote}>
+          Showing your {truncatedCount} most recent transactions.
+        </p>
+      ) : null}
     </>
   )
 

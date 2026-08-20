@@ -1,9 +1,14 @@
-// ABOUTME: ShieldModal — dumb renderer for the shield (deposit) flow. Owns open/close chrome only.
-// ABOUTME: All form/fee/submit/step orchestration lives in useShieldFlow; the modal just wires steps to it.
+// ABOUTME: ShieldModal — Shield/Unshield tabbed flow. Dumb renderer composing useShieldFlow + useUnshieldFlow.
+// ABOUTME: Shield = public → private; Unshield = private → your own EVM wallet (to-chain picker). The typed amount carries across the tab toggle.
 
-import { useAtom } from 'jotai'
+import { useState } from 'react'
+import { useAtom, useAtomValue } from 'jotai'
 import { openModalAtom } from '@/state/ui'
+import { preferencesAtom } from '@/state/preferences'
 import { useShieldFlow } from '@/hooks/useShieldFlow'
+import { useUnshieldFlow } from '@/hooks/useUnshieldFlow'
+import { getNetworkConfig } from '@/config/network'
+import { formatUsdcPlain } from '@/lib/format'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import {
   ProgressStep,
@@ -14,106 +19,178 @@ import {
 import { FlowShell } from '@/components/flow/FlowShell'
 import { useFlowExit } from '@/components/flow/useFlowExit'
 import { RelayerStatusBanner } from '@/components/RelayerStatusBanner'
-import { ShieldInputStepContent, ShieldInputStepFooter } from './ShieldInputStep'
+import {
+  ShieldAmountStepContent,
+  ShieldAmountStepFooter,
+  type ShieldTab,
+} from './ShieldAmountStep'
 import { ShieldReviewStep } from './ShieldReviewStep'
 import { ShieldCompleteStep } from './ShieldCompleteStep'
+import { SendReviewStep } from '@/components/payments/SendReviewStep'
+import { SendCompleteStep } from '@/components/payments/SendCompleteStep'
+
+const SHIELD_STEPS = ['Amount', 'Review', 'Confirm']
 
 export function ShieldModal() {
   const [openModal, setOpenModal] = useAtom(openModalAtom)
-  const isOpen = openModal === 'shield'
-  const flow = useShieldFlow(isOpen)
+  const isOpen = openModal === 'shield' || openModal === 'unshield'
+  const initialTab: ShieldTab = openModal === 'unshield' ? 'unshield' : 'shield'
+  const prefs = useAtomValue(preferencesAtom)
+  const hubChainId = getNetworkConfig().hub.chainId
 
-  // Route the close through useFlowExit so FlowShell plays its slide-down before unmounting. The
-  // atom stays set (isOpen true) until the animation completes, which keeps the step content frozen.
+  const [tab, setTab] = useState<ShieldTab>(initialTab)
+  // Re-sync the tab to the entry point whenever the modal (re)opens.
+  const [wasOpen, setWasOpen] = useState(false)
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen)
+    if (isOpen) setTab(initialTab)
+  }
+
+  const shieldFlow = useShieldFlow(isOpen)
+  const unshieldFlow = useUnshieldFlow(isOpen)
   const { exiting, requestClose: close } = useFlowExit(() => setOpenModal(null))
+
+  function handleTabChange(next: ShieldTab) {
+    if (next === tab) return
+    // Carry the typed amount across the toggle (mockup behavior — the amount is shared).
+    if (next === 'unshield') unshieldFlow.setAmountStr(shieldFlow.amountStr)
+    else shieldFlow.setAmountStr(unshieldFlow.amountStr)
+    setTab(next)
+  }
 
   if (!isOpen) return null
 
-  const { record } = flow
+  const isShield = tab === 'shield'
+  // Common flow surface — both controllers expose these; the divergent bits are read off the
+  // specific flow inside each tab branch.
+  const active = isShield ? shieldFlow : unshieldFlow
+  const step = active.step
+  const record = active.record
   const explorerUrl = txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))
-
-  // FlowShell's ModalShell renders a 3-segment Steps indicator (Amount/Review/Confirm) — `progress`,
-  // `complete`, and `error` all map to segment 3. `overlayIndicatorStatus` flips the bar green on
-  // `complete` and red on `error`; lavender otherwise.
-  const indicatorStep = overlayIndicatorStep(flow.step)
-  const indicatorStatus = overlayIndicatorStatus(flow.step)
 
   return (
     <FlowShell
       open={isOpen}
       onClose={close}
       exiting={exiting}
-      stepKey={flow.step}
-      flowLabel="Shield"
-      currentStep={indicatorStep}
-      status={indicatorStatus}
+      stepKey={step}
+      flowLabel={isShield ? 'Shield' : 'Withdraw'}
+      steps={SHIELD_STEPS}
+      currentStep={overlayIndicatorStep(step)}
+      status={overlayIndicatorStatus(step)}
     >
-      {flow.step === 'input' && (
+      {step === 'input' && (
         <>
-          <ShieldInputStepContent
-            fromChainId={flow.fromChainId}
-            onFromChainIdChange={flow.setFromChainId}
-            amountStr={flow.amountStr}
-            onAmountChange={flow.setAmountStr}
-            max={flow.max}
-            maxInput={flow.inputMax}
-            minAmount={flow.minAmount}
-            displayFees={flow.displayFees}
-            flowBreakdown={flow.flowBreakdown}
-            feeLoading={flow.feeLoading}
-            gaslessMode={flow.useGasless}
+          <ShieldAmountStepContent
+            tab={tab}
+            onTabChange={handleTabChange}
+            chainId={isShield ? shieldFlow.fromChainId : unshieldFlow.toChainId}
+            onChainIdChange={isShield ? shieldFlow.setFromChainId : unshieldFlow.setToChainId}
+            amountStr={active.amountStr}
+            onAmountChange={active.setAmountStr}
+            balance={formatUsdcPlain(active.max)}
+            pendingBalance={
+              !isShield && unshieldFlow.pendingUsdc > 0n
+                ? formatUsdcPlain(unshieldFlow.pendingUsdc)
+                : undefined
+            }
+            maxInput={active.inputMax}
+            minAmount={isShield ? shieldFlow.minAmount : 0n}
+            displayFees={active.displayFees}
+            flowBreakdown={active.flowBreakdown}
+            feeLoading={active.feeLoading}
+            gaslessMode={isShield ? shieldFlow.useGasless : !prefs.submitFromWallet}
+            gasChainId={isShield ? shieldFlow.fromChainId : hubChainId}
           />
-          <ShieldInputStepFooter
-            amountStr={flow.amountStr}
-            maxInput={flow.inputMax}
-            minAmount={flow.minAmount}
+          <ShieldAmountStepFooter
+            amountStr={active.amountStr}
+            maxInput={active.inputMax}
+            minAmount={isShield ? shieldFlow.minAmount : 0n}
             onCancel={close}
-            onContinue={flow.onContinueToReview}
+            onContinue={active.onContinueToReview}
           />
         </>
       )}
-      {flow.step === 'review' && (
-        <ShieldReviewStep
-          fromChainId={flow.fromChainId}
-          amount={flow.amount}
-          // Inclusive "Fee" (broadcaster + on-chain protocol + CCTP) — the same number used to
-          // derive netAmount; the tooltip below the amount card breaks it into individual rows.
-          fee={flow.feeInclusive}
-          netAmount={flow.netAmount}
-          walletAddress={flow.evmAddress}
-          walletProvider={flow.walletProvider}
-          shieldedAddress={flow.shieldedAddress}
-          isSubmitting={flow.isSubmitting}
-          duplicateWarning={flow.duplicateWarning}
-          onBack={flow.onBackToInput}
-          onConfirm={flow.submit}
-        />
+
+      {step === 'review' &&
+        (isShield ? (
+          <ShieldReviewStep
+            fromChainId={shieldFlow.fromChainId}
+            amount={shieldFlow.amount}
+            fee={shieldFlow.feeInclusive}
+            netAmount={shieldFlow.netAmount}
+            walletAddress={shieldFlow.evmAddress}
+            walletProvider={shieldFlow.walletProvider}
+            shieldedAddress={shieldFlow.shieldedAddress}
+            isSubmitting={shieldFlow.isSubmitting}
+            duplicateWarning={shieldFlow.duplicateWarning}
+            onBack={shieldFlow.onBackToInput}
+            onConfirm={shieldFlow.submit}
+          />
+        ) : (
+          <SendReviewStep
+            variant="withdraw"
+            recipient={unshieldFlow.recipient}
+            armadaAddress={unshieldFlow.shieldedAddress}
+            amount={unshieldFlow.amount}
+            fee={unshieldFlow.feeInclusive}
+            totalDeducted={unshieldFlow.totalDeducted}
+            networkName={unshieldFlow.networkName}
+            recipientWalletProvider={unshieldFlow.recipientWalletProvider}
+            submitBlockedReason={unshieldFlow.submitBlockedReason}
+            onBack={unshieldFlow.onBackToInput}
+            isSubmitting={unshieldFlow.isSubmitting}
+            onConfirm={unshieldFlow.submit}
+          />
+        ))}
+
+      {step === 'progress' && (
+        <ProgressStep record={record} sendVariant={isShield ? undefined : 'withdraw'} />
       )}
-      {flow.step === 'progress' && <ProgressStep record={record} />}
-      {flow.step === 'complete' && (
-        <ShieldCompleteStep
-          fromChainId={flow.fromChainId}
-          amount={flow.amount}
-          fee={flow.feeInclusive}
-          netAmount={flow.netAmount}
-          walletAddress={flow.evmAddress}
-          walletProvider={flow.walletProvider}
-          shieldedAddress={flow.shieldedAddress}
-          confirmedAt={record?.updatedAt ?? Date.now()}
-          explorerUrl={explorerUrl}
-          onViewExplorer={() => {
-            if (explorerUrl) window.open(explorerUrl, '_blank', 'noopener,noreferrer')
-          }}
-          onGoToDashboard={close}
-        />
-      )}
-      {flow.step === 'error' && (
+
+      {step === 'complete' &&
+        (isShield ? (
+          <ShieldCompleteStep
+            fromChainId={shieldFlow.fromChainId}
+            amount={shieldFlow.amount}
+            fee={shieldFlow.feeInclusive}
+            netAmount={shieldFlow.netAmount}
+            walletAddress={shieldFlow.evmAddress}
+            walletProvider={shieldFlow.walletProvider}
+            shieldedAddress={shieldFlow.shieldedAddress}
+            confirmedAt={record?.updatedAt ?? Date.now()}
+            explorerUrl={explorerUrl}
+            onViewExplorer={() => {
+              if (explorerUrl) window.open(explorerUrl, '_blank', 'noopener,noreferrer')
+            }}
+            onGoToDashboard={close}
+          />
+        ) : (
+          <SendCompleteStep
+            variant="withdraw"
+            recipient={unshieldFlow.recipient}
+            armadaAddress={unshieldFlow.shieldedAddress}
+            amount={unshieldFlow.amount}
+            fee={unshieldFlow.feeInclusive}
+            totalDeducted={unshieldFlow.totalDeducted}
+            networkName={unshieldFlow.networkName}
+            recipientWalletProvider={unshieldFlow.recipientWalletProvider}
+            confirmedAt={record?.updatedAt ?? Date.now()}
+            explorerUrl={explorerUrl}
+            onViewExplorer={() => {
+              if (explorerUrl) window.open(explorerUrl, '_blank', 'noopener,noreferrer')
+            }}
+            onGoToDashboard={close}
+          />
+        ))}
+
+      {step === 'error' && (
         <ErrorStep
           error={record?.artifacts.error ?? null}
-          message={flow.submitError ?? undefined}
+          message={active.submitError ?? undefined}
           explorerUrl={explorerUrl}
-          primaryLabel={flow.errorPrimaryLabel}
-          onRetry={flow.onErrorPrimary}
+          primaryLabel={active.errorPrimaryLabel}
+          onRetry={active.onErrorPrimary}
         />
       )}
       <RelayerStatusBanner isOpen={isOpen} />

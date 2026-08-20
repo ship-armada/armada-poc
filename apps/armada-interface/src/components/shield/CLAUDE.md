@@ -1,22 +1,29 @@
 # components/shield/
 
-The deposit (public → private) flow. Owned by `ShieldModal`, opened via `setOpenModal('shield')`.
+The **Shield / Unshield** tabbed flow — deposit (public → private) OR unshield (private → your own
+EVM wallet), as two tabs on the amount step. Owned by `ShieldModal`, opened via `setOpenModal('shield')`
+(Shield tab) or `setOpenModal('unshield')` (Unshield tab).
 
 ## Contents
 
 | Component | Purpose |
 |---|---|
-| `ShieldModal` | **Dumb renderer** — owns only open/close chrome + step rendering. All form/fee/submit/step orchestration lives in `hooks/useShieldFlow.ts` (the flow controller); the modal just wires its return values into the step screens. |
-| `ShieldInputStep` | `DepositAmountCard` (chain selector inside the card) + `GasBalanceNotice` (wallet-submit path); fees surface via the card's `flowBreakdown` tooltip. Split into `ShieldInputStepContent` + `ShieldInputStepFooter`. Validates amount > 0 and ≤ max. |
-| `ShieldReviewStep` | Frost card — big-numeral amount + the shared `DepositReviewSummary` table (network / wallet / Armada addresses / fees / net) + Confirm CTA. |
-| `ShieldCompleteStep` | Frost-card confirmation ("USDC deposit confirmed") + View-on-explorer / Done CTAs. |
+| `ShieldModal` | **Dumb renderer** — open/close chrome + per-tab step rendering. Composes two controller hooks: `hooks/useShieldFlow.ts` (Shield) + `hooks/useUnshieldFlow.ts` (Unshield). The typed amount carries across the tab toggle. |
+| `ShieldAmountStep` | Shared amount step (`ShieldAmountStepContent` + `Footer`) — `DepositAmountCard` with the Shield/Unshield `SegmentedControl` in its header + a chain picker (source for shield / destination for unshield) + `GasBalanceNotice` (wallet-submit). Direction-driven title/aria; footer gates Review on amount (+ shield's fee floor). Replaced the retired `ShieldInputStep`. |
+| `ShieldReviewStep` / `ShieldCompleteStep` | **Shield direction** — frost card + `DepositReviewSummary`. |
+| (unshield direction review/complete) | Reuses `payments/SendReviewStep` + `SendCompleteStep` with `variant="withdraw"` (the "Review your USDC unshield" / "USDC unshield confirmed" copy). |
 
 ## State machinery
 
-- `openModalAtom === 'shield'` controls visibility.
-- Step state is local to `ShieldModal` — `'input' → 'review' → 'progress' → 'complete'` (or `'error'`).
-- Form state (`fromChainId`, `amountStr`) is reset when the modal closes.
-- `useTx({kind:'shield'}).submit(meta)` creates the record + dispatches the executor.
+- `openModalAtom === 'shield' \|\| 'unshield'` controls visibility; the value picks the initial tab.
+- **Shield tab** → `useShieldFlow`: `shield` / `shield-xchain` by from-chain; wallet-signs (or gasless permit).
+- **Unshield tab** → `useUnshieldFlow`: `unshield-local` / `unshield-xchain` by **to-chain picker**; recipient is pinned to the connected wallet; relayer-submitted.
+- Both tabs share the step machine `'input' → 'review' → 'progress' → 'complete'` (or `'error'`).
+- Each controller owns its chain + step + submit; the shared `amountStr` lives at the modal and is synced across the toggle.
+
+**Relationship to Send:** unshielding to your OWN wallet lives here (Unshield tab). Sending to an
+arbitrary `0x`/`0zk` recipient is the Send flow (`payments/`, "send" copy). Both public paths are
+`unshield-*` on-chain — the distinct copy is intentional (withdraw-to-self vs pay-someone).
 
 ## Wallet-signing UX
 

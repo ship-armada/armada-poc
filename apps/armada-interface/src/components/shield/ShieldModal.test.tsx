@@ -6,7 +6,13 @@ import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { ShieldModal } from './ShieldModal'
 import { openModalAtom } from '@/state/ui'
-import { activeShieldedWalletIdAtom, usdcBalancesAtom } from '@/state/wallet'
+import {
+  activeShieldedWalletIdAtom,
+  evmAddressAtom,
+  shieldedUsdcAtom,
+  shieldedUsdcSpendableAtom,
+  usdcBalancesAtom,
+} from '@/state/wallet'
 import { feeQuoteAtom, feeQuoteFetchedAtAtom } from '@/state/fees'
 import { txListAtom } from '@/state/tx'
 import { withTestQueryClient } from '@/test-utils/queryClient'
@@ -59,8 +65,7 @@ vi.mock('wagmi', async (importOriginal) => ({
 }))
 
 // useGasBalanceWarning calls wagmi's useAccount/useBalance — same provider requirement.
-// "No warning" keeps the GasBalanceNotice hidden; gasless-mode branching is asserted in
-// ShieldInputStep.test.tsx by directly setting gaslessMode (no integration concern here).
+// "No warning" keeps the GasBalanceNotice hidden; the amount-step gating is covered in ShieldAmountStep.test.tsx.
 vi.mock('@/hooks/useGasBalanceWarning', () => ({
   useGasBalanceWarning: () => ({
     show: false,
@@ -89,12 +94,23 @@ const FAKE_QUOTE = {
   fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0', shield: '0', shieldXchain: '0' },
 }
 
-function renderModal(opts?: { open?: boolean; max?: bigint }) {
+function renderModal(opts?: {
+  open?: boolean
+  kind?: 'shield' | 'unshield'
+  max?: bigint
+  spendable?: bigint
+  evm?: string
+}) {
   const store = createStore()
-  if (opts?.open) store.set(openModalAtom, 'shield')
+  if (opts?.open) store.set(openModalAtom, opts.kind ?? 'shield')
   if (opts?.max !== undefined) {
     store.set(usdcBalancesAtom, { 31337: opts.max })
   }
+  if (opts?.spendable !== undefined) {
+    store.set(shieldedUsdcSpendableAtom, opts.spendable)
+    store.set(shieldedUsdcAtom, opts.spendable) // no pending in tests → spendable == total
+  }
+  if (opts?.evm) store.set(evmAddressAtom, opts.evm)
   // useTx.submit() refuses to write a record without an active shielded walletId (Phase 6
   // scoping invariant — every TxRecord must be filterable by walletContext.shieldedWalletId).
   // Seed a placeholder id so the Confirm flow exercises the orchestration without tripping
@@ -217,5 +233,30 @@ describe('<ShieldModal>', () => {
     const rec = store.get(txListAtom).find(t => t.kind === 'shield')
     expect(rec).toBeDefined()
     expect(['cancelled', 'dismissed']).not.toContain(rec!.executionState)
+  })
+})
+
+describe('<ShieldModal> — Shield/Unshield tabs', () => {
+  const EVM = '0x1234567890abcdef1234567890abcdef12345678'
+
+  it('opens on the Unshield tab from openModal=unshield', () => {
+    renderModal({ open: true, kind: 'unshield', spendable: 10_000_000n, evm: EVM })
+    expect(screen.getByRole('dialog', { name: 'Withdraw' })).toBeInTheDocument()
+    expect(screen.getByText('Unshield your USDC')).toBeInTheDocument()
+    expect(screen.getByLabelText('Unshield amount')).toBeInTheDocument()
+  })
+
+  it('opens on the Shield tab from openModal=shield with both tabs present', () => {
+    renderModal({ open: true, kind: 'shield', max: 10_000_000n, spendable: 10_000_000n, evm: EVM })
+    expect(screen.getByText('Shield your USDC')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Shield' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Unshield' })).toBeInTheDocument()
+  })
+
+  it('carries the typed amount across the Shield → Unshield toggle', () => {
+    renderModal({ open: true, kind: 'shield', max: 10_000_000n, spendable: 10_000_000n, evm: EVM })
+    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '7' } })
+    fireEvent.click(screen.getByRole('tab', { name: 'Unshield' }))
+    expect(screen.getByLabelText('Unshield amount')).toHaveValue('7')
   })
 })

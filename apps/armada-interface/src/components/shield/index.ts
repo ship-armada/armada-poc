@@ -3,8 +3,8 @@
 
 export { ShieldModal } from './ShieldModal'
 
-export { ShieldInputStep } from './ShieldInputStep'
-export type { ShieldInputStepProps } from './ShieldInputStep'
+export { ShieldAmountStepContent, ShieldAmountStepFooter } from './ShieldAmountStep'
+export type { ShieldTab } from './ShieldAmountStep'
 
 export { ShieldReviewStep } from './ShieldReviewStep'
 export type { ShieldReviewStepProps } from './ShieldReviewStep'

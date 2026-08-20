@@ -6,7 +6,7 @@ import { atom } from 'jotai'
 export type ModalKind =
   | null
   | 'shield'
-  | 'withdraw'
+  | 'unshield'
   | 'yield-deposit'
   | 'yield-withdraw'
   | 'payment'

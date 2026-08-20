@@ -37,7 +37,19 @@ function openDb(): Promise<IDBDatabase> {
         }
       }
     }
-    req.onsuccess = () => resolve(req.result)
+    req.onsuccess = () => {
+      const db = req.result
+      // If another tab (or an HMR-reloaded module) requests a version upgrade, close this
+      // connection so we don't BLOCK the upgrade. Without this, a stale connection opened at an
+      // older version wedges the upgrade indefinitely — and since openDb caches the connection,
+      // every subsequent cache read (tx history, request links, …) fails, so the whole activity
+      // feed vanishes. Dropping the cached promise lets the next op reopen at the new version.
+      db.onversionchange = () => {
+        db.close()
+        if (dbPromise === promise) dbPromise = null
+      }
+      resolve(db)
+    }
     // Clear the cached promise on failure so a later call can retry. Without
     // this, a single transient open error (quota, blocked upgrade, etc.) would
     // poison every cache op for the rest of the page lifetime.

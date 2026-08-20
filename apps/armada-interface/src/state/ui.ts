@@ -11,6 +11,7 @@ export type ModalKind =
   | 'yield-withdraw'
   | 'payment'
   | 'receive'
+  | 'request'
   | 'settings'
   | 'wallet-unlock'
   | 'wallet-reset'

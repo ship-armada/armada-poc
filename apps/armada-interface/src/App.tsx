@@ -9,6 +9,7 @@ import { OnboardingFlowV2, UnlockFlow } from '@/components/onboarding'
 import { ShieldModal } from '@/components/shield'
 import { SendModal } from '@/components/payments'
 import { ReceiveDialog } from '@/components/receive'
+import { RequestModal } from '@/components/request'
 import { EarnModal } from '@/components/yield'
 import { SettingsModal } from '@/components/settings'
 import { useAutoLock } from '@/hooks/useAutoLock'
@@ -227,6 +228,7 @@ export function App() {
       <SendModal />
       <EarnModal />
       <ReceiveDialog />
+      <RequestModal />
       <SettingsModal />
     </>
   )

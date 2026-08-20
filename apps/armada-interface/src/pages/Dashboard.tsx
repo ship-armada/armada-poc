@@ -2,7 +2,7 @@
 // ABOUTME: Presentation from the armada-app mockup; wired to real shielded balance, yield, and tx history.
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { useAtom, useAtomValue, useSetAtom } from 'jotai'
+import { useAtom, useAtomValue } from 'jotai'
 import { ChartBarIcon } from '@heroicons/react/24/outline'
 import { BalanceCard } from '@/components/dashboard/BalanceCard'
 import { DepositTooltip } from '@/components/dashboard/DepositTooltip'
@@ -41,7 +41,6 @@ export function Dashboard() {
 
   // Actions
   const openActionModal = useOpenActionModal()
-  const setOpenModal = useSetAtom(openModalAtom)
   const openModal = useAtomValue(openModalAtom)
 
   // "All activity" side-panel + the per-tx receipt overlay (replaces the retired /history page).
@@ -121,7 +120,7 @@ export function Dashboard() {
           onBalanceHiddenChange={setBalanceHidden}
           onSend={() => openActionModal('payment')}
           onDeposit={() => openActionModal('shield')}
-          onRequest={() => setOpenModal('receive')}
+          onRequest={() => openActionModal('request')}
           onEarn={() => openActionModal('yield-deposit')}
           onVaultOpen={() => openActionModal('yield-deposit')}
         />

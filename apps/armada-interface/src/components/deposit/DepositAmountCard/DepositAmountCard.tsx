@@ -34,11 +34,17 @@ export interface DepositChainOption {
 }
 
 export interface DepositAmountCardProps {
-  chains: ReadonlyArray<DepositChainOption>
+  chains?: ReadonlyArray<DepositChainOption>
   chainId: number
   onChainIdChange?: (chainId: number) => void
   /** Hide the chain row entirely (e.g. the Send flow, where the chain is chosen on a prior step). */
   showChain?: boolean
+  /**
+   * Custom chain-row content rendered in place of the built-in picker (e.g. the shared `ChainSelect`
+   * so shield/unshield match the Send flow's network selector). When set, the built-in picker +
+   * `chains`/`showChain` are ignored.
+   */
+  chainSlot?: ReactNode
   /**
    * Optional node rendered at the very top of the card, above the title (e.g. the Earn flow's
    * Add/Withdraw SegmentedControl). Matches the mockup's in-card `headerSlot`.
@@ -90,10 +96,11 @@ function ChainIcon({ chainId, label }: { chainId: number; label: string }) {
 }
 
 export function DepositAmountCard({
-  chains,
+  chains = [],
   chainId,
   onChainIdChange,
   showChain = true,
+  chainSlot,
   header,
   title,
   amount,
@@ -227,7 +234,9 @@ export function DepositAmountCard({
       <div className={styles.cardTop}>
       {header ? <div className={styles.cardHeader}>{header}</div> : null}
       {title ? <p className={styles.cardTitle}>{title}</p> : null}
-      {showChain ? (
+      {chainSlot ? (
+        <div className={styles.topRow}>{chainSlot}</div>
+      ) : showChain ? (
       <div className={styles.topRow}>
         <div className={styles.chainRoot} ref={chainRootRef}>
           {chainSelectable ? (

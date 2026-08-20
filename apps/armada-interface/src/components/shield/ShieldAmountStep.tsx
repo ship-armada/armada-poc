@@ -1,14 +1,12 @@
 // ABOUTME: Shared amount step for the Shield/Unshield tabbed modal — DepositAmountCard with the direction tabs in its header + a chain picker.
 // ABOUTME: Direction-agnostic: the caller (ShieldModal) feeds it the active flow's values; footer gates Review on amount (+ shield's fee floor).
 
-import { useMemo } from 'react'
 import { Button } from '@/design'
-import { GasBalanceNotice, SegmentedControl } from '@/components/ui'
+import { ChainSelect, GasBalanceNotice, SegmentedControl } from '@/components/ui'
 import { DepositAmountCard } from '@/components/deposit/DepositAmountCard/DepositAmountCard'
 import { depositOverlayShellStyles } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
 import type { FlowFeeBreakdown } from '@/components/ui/FeeBreakdownTooltip'
 import type { DisplayFees } from '@/lib/fees/displayFees'
-import { getAllChainIdentities } from '@/config/network'
 import { formatUsdcPlain, parseUsdcInput, usdcInputErrorMessage } from '@/lib/format'
 import { useGasBalanceWarning } from '@/hooks/useGasBalanceWarning'
 import { hasActiveAmount } from '@/utils/amountInput'
@@ -63,10 +61,6 @@ export function ShieldAmountStepContent({
   gaslessMode = true,
   gasChainId,
 }: ShieldAmountStepContentProps) {
-  const chains = useMemo(
-    () => getAllChainIdentities().map((c) => ({ chainId: c.chainId, label: c.name })),
-    [],
-  )
   const gasWarning = useGasBalanceWarning(gasChainId)
   const showGasNotice = !gaslessMode && gasWarning.show
 
@@ -87,9 +81,10 @@ export function ShieldAmountStepContent({
   return (
     <div className={styles.contentZone}>
       <DepositAmountCard
-        chains={chains}
         chainId={chainId}
-        onChainIdChange={onChainIdChange}
+        // Match the Send flow's network selector — the shared ChainSelect instead of the card's
+        // built-in picker (which the mockup lacks; we keep a picker here but style it consistently).
+        chainSlot={<ChainSelect value={chainId} onChange={onChainIdChange} label="Network" />}
         header={
           <SegmentedControl<ShieldTab>
             size="sm"

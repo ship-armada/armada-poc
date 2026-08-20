@@ -1,53 +1,141 @@
 /* ABOUTME: SyncGate styling — centered, prominent initial-sync panel that stands in for the dashboard. */
 /* ABOUTME: Fills the main content area and centers a single narrow panel (progress meter or retry). */
 
-/* Top-anchored (not vertically centered) so the gate → dashboard handoff doesn't jump: the
-   dashboard content is top-aligned, so the gate must be too. A generous top pad keeps the panel
-   prominent in the upper-center while sharing that top anchor. */
+/* Centered horizontally, biased toward the upper-middle vertically (a large bottom pad lifts the
+   centered box above dead-center so it doesn't sit too far down the screen). */
 .root {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   width: 100%;
-  padding: var(--primitives-spacing-16) var(--primitives-spacing-4) var(--primitives-spacing-6);
+  flex: 1;
+  min-height: 60vh;
+  padding: var(--primitives-spacing-6) var(--primitives-spacing-4) 22vh;
 }
 
+/* Fixed box matching the balance card: the card stack is min(420px, 100%) and the card fills it,
+   so the meter takes that width and a fixed height. Content centers within the box. */
 .panel {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: var(--primitives-spacing-4);
-  width: 100%;
-  max-width: 440px;
+  width: min(420px, 100%);
+  height: auto;
   text-align: center;
+  box-sizing: border-box;
 }
 
+/* Same family as the body copy (ui sans), just a little larger + semibold for emphasis. Shared by
+   both the syncing ("Loading your private balance") and failed ("Sync interrupted") states. */
 .heading {
+  margin: 0;
+  font-family: var(--semantic-typography-body-font-family), sans-serif;
+  font-weight: var(--primitives-fontWeight-semibold);
+  font-size: calc(var(--primitives-fontSize-lg) * 1px);
+  line-height: var(--semantic-typography-body-line-height);
+  letter-spacing: var(--semantic-typography-body-letter-spacing);
   color: var(--semantic-color-text-primary);
 }
 
 .body {
-  color: var(--semantic-color-text-secondary);
+  margin: var(--primitives-spacing-2) 0 0;
   max-width: 38ch;
+  font-family: var(--semantic-typography-body-font-family), sans-serif;
+  font-weight: var(--semantic-typography-body-font-weight);
+  font-size: var(--semantic-typography-body-font-size);
+  line-height: var(--semantic-typography-body-line-height);
+  letter-spacing: var(--semantic-typography-body-letter-spacing);
+  color: var(--semantic-color-text-secondary);
 }
 
+/* Rotating tick ring around the Armada mark — mirrors the tx-processing ticker, retinted to the
+   theme lavender (the tx card's white ticks are an exception for its fixed gradient surface). */
+.tickRing {
+  --ring-size: 260px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: var(--ring-size);
+  height: var(--ring-size);
+}
+
+.ringLogo {
+  position: relative;
+  z-index: 1;
+}
+
+.tick {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 1.5px;
+  height: var(--primitives-spacing-2);
+  border-radius: calc(var(--primitives-borderRadius-sm) * 0.5px);
+  background: var(--semantic-color-text-lavender);
+  transform-origin: 50% calc(var(--ring-size) / 2);
+  transform: translate(-50%, calc(var(--ring-size) / -2)) rotate(calc(var(--i) * 6deg));
+  opacity: 0.4;
+  animation: tickSweep 2.1s linear infinite;
+  animation-delay: calc(var(--i) * 0.035s);
+}
+
+@keyframes tickSweep {
+  0% {
+    opacity: 1;
+    width: 3px;
+  }
+
+  12% {
+    opacity: 0.7;
+    width: 2.25px;
+  }
+
+  30% {
+    opacity: 0.45;
+    width: 1.5px;
+  }
+
+  100% {
+    opacity: 0.4;
+    width: 1.5px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tick {
+    animation: none;
+    opacity: 0.55;
+    width: 1.5px;
+  }
+}
+
+/* Dead-centered over the logo, on top of the ring. */
 .pct {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 2;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
   color: var(--semantic-color-text-lavender);
 }
 
-.track {
-  width: 100%;
-  max-width: 320px;
-  height: 6px;
-  background: var(--semantic-color-border-default);
-  border-radius: 999px;
-  overflow: hidden;
+/* Keeps the number + "%" inline on a shared baseline (the .pct grid centers this as one item). */
+.pctValue {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  transform: translateX(2px);
 }
 
-.fill {
-  display: block;
-  height: 100%;
-  background: var(--semantic-color-text-lavender);
-  border-radius: 999px;
-  transition: width 200ms ease-out;
+/* The trailing "%" — a touch smaller + muted so the number reads as the focus. */
+.pctSymbol {
+  font-size: 0.8em;
+  color: var(--semantic-color-text-muted);
 }

@@ -1,10 +1,10 @@
-// ABOUTME: Tests for HistoryRecoveryBanner — hidden when idle, "Recovering…" while scanning, error copy + Retry CTA on failure that bumps historyRecoveryEpochAtom.
+// ABOUTME: Tests for HistoryRecoveryBanner — hidden when idle, "Recovering…" while scanning, error copy + Retry CTA on failure that bumps historyRecoveryTriggerAtom.
 
 import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { HistoryRecoveryBanner } from './HistoryRecoveryBanner'
-import { historyRecoveryAtom, historyRecoveryEpochAtom } from '@/state/history'
+import { historyRecoveryAtom, historyRecoveryTriggerAtom } from '@/state/history'
 
 function renderWith(opts: { state: 'idle' | 'scanning' | 'failed'; error?: string }) {
   const store = createStore()
@@ -36,8 +36,10 @@ describe('<HistoryRecoveryBanner>', () => {
     const store = renderWith({ state: 'failed', error: 'rpc unreachable' })
     expect(screen.getByText(/Couldn't recover activity from chain/i)).toBeInTheDocument()
     expect(screen.getByText(/rpc unreachable/i)).toBeInTheDocument()
-    expect(store.get(historyRecoveryEpochAtom)).toBe(0)
+    expect(store.get(historyRecoveryTriggerAtom).id).toBe(0)
     fireEvent.click(screen.getByRole('button', { name: /Retry/i }))
-    expect(store.get(historyRecoveryEpochAtom)).toBe(1)
+    expect(store.get(historyRecoveryTriggerAtom).id).toBe(1)
+    // Retry is user-initiated → visible (not silent), so the banner shows during the rescan.
+    expect(store.get(historyRecoveryTriggerAtom).silent).toBe(false)
   })
 })

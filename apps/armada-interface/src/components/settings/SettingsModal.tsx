@@ -19,7 +19,7 @@ import {
   activeShieldedWalletIdAtom,
   autoLockDeadlineAtom,
 } from '@/state/wallet'
-import { historyRecoveryAtom, historyRecoveryEpochAtom } from '@/state/history'
+import { historyRecoveryAtom, historyRecoveryTriggerAtom } from '@/state/history'
 import { clearHistoryCheckpoint } from '@/lib/shielded/history-checkpoint'
 import { getNetworkMode } from '@/config/network'
 import styles from './SettingsModal.module.css'
@@ -39,7 +39,7 @@ export function SettingsModal() {
   const [clearHistoryOpen, setClearHistoryOpen] = useState(false)
   const activeWalletId = useAtomValue(activeShieldedWalletIdAtom)
   const recovery = useAtomValue(historyRecoveryAtom)
-  const setEpoch = useSetAtom(historyRecoveryEpochAtom)
+  const setTrigger = useSetAtom(historyRecoveryTriggerAtom)
 
   const walletUnlocked = state?.status === 'unlocked'
   const isScanning = recovery.state === 'scanning'
@@ -53,7 +53,7 @@ export function SettingsModal() {
     // block again, then bump the epoch to fire the effect. The user's existing rows stay in
     // place; the dedup guard inside runScanAndPersist prevents duplicates.
     if (activeWalletId) clearHistoryCheckpoint(activeWalletId)
-    setEpoch((prev) => prev + 1)
+    setTrigger((prev) => ({ id: prev.id + 1, silent: false }))
   }
 
   if (!isOpen) return null

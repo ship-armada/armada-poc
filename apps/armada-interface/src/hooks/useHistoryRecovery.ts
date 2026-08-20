@@ -6,7 +6,7 @@ import { useAtomValue, useSetAtom, useStore } from 'jotai'
 import { activeShieldedWalletAtom } from '@/state/wallet'
 import {
   historyRecoveryAtom,
-  historyRecoveryEpochAtom,
+  historyRecoveryTriggerAtom,
   type HistoryRecoveryStatus,
 } from '@/state/history'
 import { txListAtom, upsertTxAtom } from '@/state/tx'
@@ -161,13 +161,19 @@ async function resolveScanInputs(): Promise<{
 
 /**
  * Mount once at App root. Runs a one-time scan whenever a wallet unlocks, plus an additional
- * scan whenever `historyRecoveryEpochAtom` bumps (Settings → Re-scan history). Idempotent
- * within a session: a re-render of App.tsx doesn't trigger a duplicate scan because the
- * `runOnceRef` guard skips the effect body when the same walletId+epoch ran already.
+ * scan whenever `historyRecoveryTriggerAtom` bumps (Settings → Re-scan history, banner Retry,
+ * Clear history, and the incoming-transfer detector). Idempotent within a session: a re-render of
+ * App.tsx doesn't trigger a duplicate scan because the `lastRunRef` guard skips the effect body
+ * when the same walletId+trigger.id ran already.
+ *
+ * Banner visibility: the recovery banner is surfaced only for the initial recovery on unlock and
+ * for user-initiated re-scans (`trigger.silent === false`). Routine incremental delta scans from
+ * the incoming-transfer detector (`silent: true`) run without flipping to `scanning`, so a tx
+ * completing or a received transfer doesn't flash the banner on the dashboard.
  */
 export function useHistoryRecovery(): void {
   const active = useAtomValue(activeShieldedWalletAtom)
-  const epoch = useAtomValue(historyRecoveryEpochAtom)
+  const trigger = useAtomValue(historyRecoveryTriggerAtom)
   const setStatus = useSetAtom(historyRecoveryAtom)
   const upsert = useSetAtom(upsertTxAtom)
   const store = useStore()
@@ -184,13 +190,19 @@ export function useHistoryRecovery(): void {
       return
     }
     const walletId = active.id
-    const runKey = `${walletId}:${epoch}`
+    const runKey = `${walletId}:${trigger.id}`
     if (lastRunRef.current === runKey) return
+    // A run is "visible" (surfaces the recovery banner) when it's the initial recovery on unlock
+    // (`lastRunRef` is null = first run this unlocked session — always visible, even if the trigger's
+    // last `silent` value is stale-true from a prior session) OR a user-initiated re-scan
+    // (`!trigger.silent`). A run triggered only by the incoming-transfer detector (`silent: true`)
+    // runs silently so it doesn't flash the banner after every balance change.
+    const visible = lastRunRef.current === null || !trigger.silent
     lastRunRef.current = runKey
 
     let cancelled = false
     const isCancelled = () => cancelled
-    setStatus({ state: 'scanning' })
+    if (visible) setStatus({ state: 'scanning' })
 
     void (async () => {
       const inputs = await resolveScanInputs()
@@ -238,15 +250,21 @@ export function useHistoryRecovery(): void {
           scope: 'history.recovery',
           message: 'scan failed',
         })
-        setStatus({
-          state: 'failed',
-          error: err instanceof Error ? err.message : 'Scan failed',
-        })
+        // A silent (incoming-transfer detector) scan failing is background noise — telemetry only,
+        // no red banner. Visible scans surface the failure so the user can Retry.
+        if (visible) {
+          setStatus({
+            state: 'failed',
+            error: err instanceof Error ? err.message : 'Scan failed',
+          })
+        } else {
+          setStatus({ state: 'idle' })
+        }
       }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [active?.id, active?.status, epoch, setStatus, upsert])
+  }, [active?.id, active?.status, trigger, setStatus, upsert])
 }

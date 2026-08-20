@@ -9,7 +9,7 @@ import { FlowFooter } from '@/components/flow/FlowFooter'
 import { activeShieldedWalletIdAtom } from '@/state/wallet'
 import { txListAtom } from '@/state/tx'
 import { requestLinksAtom } from '@/state/requestLinks'
-import { historyRecoveryEpochAtom } from '@/state/history'
+import { historyRecoveryTriggerAtom } from '@/state/history'
 import { cacheClear } from '@/lib/cache'
 import { clearHistoryCheckpoint } from '@/lib/shielded/history-checkpoint'
 import { trackError } from '@/lib/telemetry'
@@ -24,7 +24,7 @@ export function ClearHistoryDialog({ open, onClose }: ClearHistoryDialogProps) {
   const walletId = useAtomValue(activeShieldedWalletIdAtom)
   const setTxList = useSetAtom(txListAtom)
   const setRequestLinks = useSetAtom(requestLinksAtom)
-  const setEpoch = useSetAtom(historyRecoveryEpochAtom)
+  const setTrigger = useSetAtom(historyRecoveryTriggerAtom)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -53,8 +53,9 @@ export function ClearHistoryDialog({ open, onClose }: ClearHistoryDialogProps) {
       //    Without this the rows would linger until the next walletId-change re-hydration.
       setTxList([])
       setRequestLinks([])
-      // 4. Bump the epoch so useHistoryRecovery's effect re-fires and starts the rescan.
-      setEpoch((prev) => prev + 1)
+      // 4. Bump the trigger so useHistoryRecovery's effect re-fires and starts the rescan. Not
+      //    silent — a user-initiated wipe + rebuild should surface the recovery banner as feedback.
+      setTrigger((prev) => ({ id: prev.id + 1, silent: false }))
       onClose()
     } catch (err) {
       trackError('history.clear', err, {

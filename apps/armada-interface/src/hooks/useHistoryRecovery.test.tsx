@@ -9,7 +9,7 @@ import {
   shieldedWalletsAtom,
 } from '@/state/wallet'
 import { txListAtom } from '@/state/tx'
-import { historyRecoveryAtom, historyRecoveryEpochAtom } from '@/state/history'
+import { historyRecoveryAtom, historyRecoveryTriggerAtom } from '@/state/history'
 import type { TxRecord } from '@/lib/tx/types'
 import type { HistoryScanResult } from '@/lib/shielded/history'
 
@@ -176,9 +176,9 @@ describe('useHistoryRecovery', () => {
     expect(hoisted.runHistoryScan).toHaveBeenCalledWith('rg-1', expect.anything(), 200_001)
   })
 
-  it('re-runs the scan when historyRecoveryEpochAtom bumps', async () => {
+  it('re-runs the scan when the trigger bumps', async () => {
     // WHY: Settings "Re-scan history" must force a fresh scan within the same session. The
-    // ref-based dedup must allow epoch changes through.
+    // ref-based dedup must allow trigger.id changes through.
     hoisted.runHistoryScan.mockResolvedValue(scanResult([], null))
     const store = makeStore({ unlocked: true })
     render(
@@ -190,11 +190,46 @@ describe('useHistoryRecovery', () => {
       expect(hoisted.runHistoryScan).toHaveBeenCalledTimes(1)
     })
     await act(async () => {
-      store.set(historyRecoveryEpochAtom, 1)
+      store.set(historyRecoveryTriggerAtom, { id: 1, silent: false })
     })
     await waitFor(() => {
       expect(hoisted.runHistoryScan).toHaveBeenCalledTimes(2)
     })
+  })
+
+  it('runs a silent (detector) scan without flipping to "scanning"', async () => {
+    // WHY: the incoming-transfer detector bumps silently after every balance change. That scan must
+    // still run + persist rows, but must NOT surface the recovery banner (state stays idle) — else
+    // every completing tx flashes "Recovering activity from chain…" on the dashboard.
+    let resolveScan: ((v: ReturnType<typeof scanResult>) => void) | null = null
+    hoisted.runHistoryScan.mockResolvedValueOnce(scanResult([], null)) // initial unlock scan
+    const store = makeStore({ unlocked: true })
+    render(
+      <Provider store={store}>
+        <Harness />
+      </Provider>,
+    )
+    await waitFor(() => {
+      expect(hoisted.runHistoryScan).toHaveBeenCalledTimes(1)
+    })
+    expect(store.get(historyRecoveryAtom).state).toBe('idle')
+
+    // Next scan (silent) — hold it open so we can observe the state mid-scan.
+    hoisted.runHistoryScan.mockImplementationOnce(
+      () => new Promise((resolve) => { resolveScan = resolve }),
+    )
+    await act(async () => {
+      store.set(historyRecoveryTriggerAtom, { id: 1, silent: true })
+    })
+    await waitFor(() => {
+      expect(hoisted.runHistoryScan).toHaveBeenCalledTimes(2)
+    })
+    // Mid-scan: a visible scan would read 'scanning' here; the silent one stays idle.
+    expect(store.get(historyRecoveryAtom).state).toBe('idle')
+    await act(async () => {
+      resolveScan?.(scanResult([], null))
+    })
+    expect(store.get(historyRecoveryAtom).state).toBe('idle')
   })
 
   it('skips synthesizing rows for txHashes already represented by an authored record', async () => {

@@ -2,7 +2,7 @@
 // ABOUTME: Mounted in AppLayout alongside SyncBanner so the user gets a uniform "we're working on it" status strip regardless of route.
 
 import { useAtomValue, useSetAtom } from 'jotai'
-import { historyRecoveryAtom, historyRecoveryEpochAtom } from '@/state/history'
+import { historyRecoveryAtom, historyRecoveryTriggerAtom } from '@/state/history'
 import styles from './HistoryRecoveryBanner.module.css'
 
 /**
@@ -17,7 +17,7 @@ import styles from './HistoryRecoveryBanner.module.css'
  */
 export function HistoryRecoveryBanner() {
   const recovery = useAtomValue(historyRecoveryAtom)
-  const setEpoch = useSetAtom(historyRecoveryEpochAtom)
+  const setTrigger = useSetAtom(historyRecoveryTriggerAtom)
 
   if (recovery.state === 'idle') return null
 
@@ -30,7 +30,7 @@ export function HistoryRecoveryBanner() {
         <button
           type="button"
           className={styles.retry}
-          onClick={() => setEpoch((prev) => prev + 1)}
+          onClick={() => setTrigger((prev) => ({ id: prev.id + 1, silent: false }))}
         >
           Retry
         </button>

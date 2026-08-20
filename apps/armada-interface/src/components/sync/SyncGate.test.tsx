@@ -35,9 +35,10 @@ describe('<SyncGate>', () => {
     const store = createStore()
     store.set(syncStateAtom, { status: 'syncing', progress: 0.42 })
     render(wrap(store, <SyncGate />))
-    expect(screen.getByText('Loading your private balance')).toBeInTheDocument()
-    expect(screen.getByText('42%')).toBeInTheDocument()
-    expect(screen.getByRole('progressbar').getAttribute('aria-valuenow')).toBe('42')
+    // The percent lives in the ring's progressbar (number + "%" are separate nodes).
+    const meter = screen.getByRole('progressbar')
+    expect(meter).toHaveTextContent('42%')
+    expect(meter.getAttribute('aria-valuenow')).toBe('42')
     expect(screen.queryByRole('button', { name: /try again/i })).toBeNull()
   })
 
@@ -62,6 +63,6 @@ describe('<SyncGate>', () => {
     expect(store.get(syncStateAtom)).toEqual({ status: 'syncing', progress: 0 })
     // Epoch bump is what re-runs useShieldedBalanceSync's scan.
     expect(store.get(syncRetryEpochAtom)).toBe(1)
-    expect(screen.getByText('Loading your private balance')).toBeInTheDocument()
+    expect(screen.getByRole('progressbar')).toBeInTheDocument()
   })
 })

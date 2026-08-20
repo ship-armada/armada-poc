@@ -1,10 +1,10 @@
-// ABOUTME: Bumps historyRecoveryEpochAtom whenever the SDK signals a balance change, so useHistoryRecovery runs an incremental scan and picks up freshly-received transfers from other wallets.
-// ABOUTME: Mount once at App root. Shares the scan path with useHistoryRecovery via the epoch atom — no parallel SDK calls, no separate persistence pipeline.
+// ABOUTME: Bumps historyRecoveryTriggerAtom (silently) whenever the SDK signals a balance change, so useHistoryRecovery runs an incremental scan and picks up freshly-received transfers from other wallets.
+// ABOUTME: Mount once at App root. Shares the scan path with useHistoryRecovery via the trigger atom — no parallel SDK calls, no separate persistence pipeline.
 
 import { useEffect } from 'react'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { activeShieldedWalletAtom } from '@/state/wallet'
-import { historyRecoveryEpochAtom } from '@/state/history'
+import { historyRecoveryTriggerAtom } from '@/state/history'
 import { subscribeBalanceUpdates } from '@/lib/shielded/sync'
 import { trackError } from '@/lib/telemetry'
 
@@ -18,8 +18,9 @@ const SCAN_DEBOUNCE_MS = 2_000
 
 /**
  * Subscribe to SDK balance-update events while the wallet is unlocked. On each event, bump
- * `historyRecoveryEpochAtom` — `useHistoryRecovery`'s effect re-runs and fetches the delta
- * since the persisted checkpoint. The dedup guard inside `runScanAndPersist` skips items
+ * `historyRecoveryTriggerAtom` silently — `useHistoryRecovery`'s effect re-runs and fetches the
+ * delta since the persisted checkpoint (without surfacing the recovery banner). The dedup guard
+ * inside `runScanAndPersist` skips items
  * whose `sourceTxHash` already matches a record in `txListAtom`, so the user's own outgoing
  * tx doesn't get a duplicate synthetic row tacked on.
  *
@@ -30,7 +31,7 @@ const SCAN_DEBOUNCE_MS = 2_000
  */
 export function useIncomingTransferDetector(): void {
   const active = useAtomValue(activeShieldedWalletAtom)
-  const setEpoch = useSetAtom(historyRecoveryEpochAtom)
+  const setTrigger = useSetAtom(historyRecoveryTriggerAtom)
 
   useEffect(() => {
     if (active?.status !== 'unlocked') return
@@ -44,13 +45,14 @@ export function useIncomingTransferDetector(): void {
         unsubscribe = await subscribeBalanceUpdates(() => {
           // Every event on the bus is already scoped to the unlocked wallet (the SDK read instance
           // is that wallet), so no per-wallet filtering is needed.
-          // Trailing-debounce the epoch bump: each event resets the timer, so a burst of SDK
+          // Trailing-debounce the trigger bump: each event resets the timer, so a burst of SDK
           // events during one scan collapses into a single bump after the quiet window. Bump as
-          // a function-update so it composes rather than racing on a stale read.
+          // a function-update so it composes rather than racing on a stale read. `silent: true`
+          // so this routine post-balance-change scan runs without flashing the recovery banner.
           if (debounceTimer) clearTimeout(debounceTimer)
           debounceTimer = setTimeout(() => {
             debounceTimer = null
-            setEpoch((prev) => prev + 1)
+            setTrigger((prev) => ({ id: prev.id + 1, silent: true }))
           }, SCAN_DEBOUNCE_MS)
         })
         if (cancelled && unsubscribe) {
@@ -70,5 +72,5 @@ export function useIncomingTransferDetector(): void {
       if (debounceTimer) clearTimeout(debounceTimer)
       if (unsubscribe) unsubscribe()
     }
-  }, [active?.id, active?.status, setEpoch])
+  }, [active?.id, active?.status, setTrigger])
 }

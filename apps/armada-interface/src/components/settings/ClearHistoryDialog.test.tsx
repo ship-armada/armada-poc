@@ -6,7 +6,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { txListAtom } from '@/state/tx'
 import { activeShieldedWalletIdAtom } from '@/state/wallet'
-import { historyRecoveryEpochAtom } from '@/state/history'
+import { historyRecoveryTriggerAtom } from '@/state/history'
 
 const hoisted = vi.hoisted(() => ({
   cacheClear: vi.fn(async () => {}),
@@ -65,14 +65,14 @@ describe('<ClearHistoryDialog>', () => {
     // the atom) leaves the UI showing stale rows. We verify every effect fires in one go.
     const store = setup({ open: true })
     expect(store.get(txListAtom).length).toBe(1)
-    expect(store.get(historyRecoveryEpochAtom)).toBe(0)
+    expect(store.get(historyRecoveryTriggerAtom).id).toBe(0)
     fireEvent.click(screen.getByRole('button', { name: /Clear history/i }))
     await waitFor(() => {
       expect(hoisted.cacheClear).toHaveBeenCalledWith('txHistory')
     })
     expect(hoisted.clearHistoryCheckpoint).toHaveBeenCalledWith('rg-1')
     expect(store.get(txListAtom).length).toBe(0)
-    expect(store.get(historyRecoveryEpochAtom)).toBe(1)
+    expect(store.get(historyRecoveryTriggerAtom).id).toBe(1)
   })
 
   it('shows the error inline + leaves the atom intact when cacheClear throws', async () => {
@@ -86,6 +86,6 @@ describe('<ClearHistoryDialog>', () => {
       expect(screen.getByRole('alert')).toHaveTextContent(/quota exceeded/i)
     })
     expect(store.get(txListAtom).length).toBe(1)
-    expect(store.get(historyRecoveryEpochAtom)).toBe(0)
+    expect(store.get(historyRecoveryTriggerAtom).id).toBe(0)
   })
 })

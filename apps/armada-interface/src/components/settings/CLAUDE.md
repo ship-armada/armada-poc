@@ -8,7 +8,7 @@ Auxiliary dialogs for the Settings page — destructive actions are gated here s
 |---|---|
 | `RecoverySecretExportDialog` | Tabs over two modes — encrypted backup file (passphrase + browser download) and raw hex (opt-in reveal). Clears state on close so revealed material never outlives the dialog. |
 | `ResetWalletDialog` | Destructive — requires typing "reset" before the Reset CTA enables. Calls `useShieldedWallet().reset()`. |
-| `ClearHistoryDialog` | V1 Phase 9 — wipes the local `txHistory` IDB store + per-wallet checkpoint, then bumps `historyRecoveryEpochAtom` so the recovery hook rebuilds from chain. Single-confirm (no typed phrase) because the action is reversible via re-scan. |
+| `ClearHistoryDialog` | V1 Phase 9 — wipes the local `txHistory` IDB store + per-wallet checkpoint, then bumps `historyRecoveryTriggerAtom` (`silent: false` — a user-initiated rebuild surfaces the recovery banner) so the recovery hook rebuilds from chain. Single-confirm (no typed phrase) because the action is reversible via re-scan. |
 
 ## Conventions
 

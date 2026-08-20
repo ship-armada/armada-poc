@@ -1,4 +1,4 @@
-// ABOUTME: Tests for useIncomingTransferDetector — subscribes on unlock, bumps historyRecoveryEpochAtom on each matching balance event, ignores events for other wallets, cleans up on lock/unmount.
+// ABOUTME: Tests for useIncomingTransferDetector — subscribes on unlock, bumps historyRecoveryTriggerAtom (silently) on each matching balance event, ignores events for other wallets, cleans up on lock/unmount.
 // ABOUTME: Stubs subscribeBalanceUpdates so we can drive synthetic events without a SDK runtime.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -8,7 +8,7 @@ import {
   activeShieldedWalletIdAtom,
   shieldedWalletsAtom,
 } from '@/state/wallet'
-import { historyRecoveryEpochAtom } from '@/state/history'
+import { historyRecoveryTriggerAtom } from '@/state/history'
 
 const hoisted = vi.hoisted(() => {
   let captured: ((event: { chain: { type: 0; id: number }; shieldedWalletID: string }) => void) | null = null
@@ -86,7 +86,7 @@ describe('useIncomingTransferDetector', () => {
         await Promise.resolve()
       })
       expect(hoisted.isSubscribed()).toBe(true)
-      expect(store.get(historyRecoveryEpochAtom)).toBe(0)
+      expect(store.get(historyRecoveryTriggerAtom).id).toBe(0)
 
       // Three rapid events within the window — no bump yet.
       act(() => {
@@ -94,13 +94,15 @@ describe('useIncomingTransferDetector', () => {
         hoisted.fire({ chain: { type: 0, id: 31337 }, shieldedWalletID: 'rg-1' })
         hoisted.fire({ chain: { type: 0, id: 31337 }, shieldedWalletID: 'rg-1' })
       })
-      expect(store.get(historyRecoveryEpochAtom)).toBe(0)
+      expect(store.get(historyRecoveryTriggerAtom).id).toBe(0)
 
       // After the 2s quiet window, exactly one bump.
       act(() => {
         vi.advanceTimersByTime(2_000)
       })
-      expect(store.get(historyRecoveryEpochAtom)).toBe(1)
+      expect(store.get(historyRecoveryTriggerAtom).id).toBe(1)
+      // The detector's scan is silent so it doesn't flash the recovery banner after a balance change.
+      expect(store.get(historyRecoveryTriggerAtom).silent).toBe(true)
 
       // A later, separate event bumps again after its own window.
       act(() => {
@@ -109,7 +111,7 @@ describe('useIncomingTransferDetector', () => {
       act(() => {
         vi.advanceTimersByTime(2_000)
       })
-      expect(store.get(historyRecoveryEpochAtom)).toBe(2)
+      expect(store.get(historyRecoveryTriggerAtom).id).toBe(2)
     } finally {
       vi.useRealTimers()
     }
@@ -130,7 +132,7 @@ describe('useIncomingTransferDetector', () => {
     await act(async () => {
       hoisted.fire({ chain: { type: 0, id: 31337 }, shieldedWalletID: 'rg-other' })
     })
-    expect(store.get(historyRecoveryEpochAtom)).toBe(0)
+    expect(store.get(historyRecoveryTriggerAtom).id).toBe(0)
   })
 
   it('unsubscribes when the wallet locks', async () => {

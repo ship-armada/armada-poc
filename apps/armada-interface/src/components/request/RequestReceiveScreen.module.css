@@ -176,19 +176,3 @@
   font-size: calc(var(--primitives-fontSize-4xl) * 1px);
   color: color-mix(in srgb, var(--semantic-color-text-primary) 30%, transparent);
 }
-/* Amount-less secondary path — subtle text button under the create-link CTA. */
-.copyAddressLink {
-  align-self: center;
-  margin: 0;
-  padding: var(--primitives-spacing-2);
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-family: var(--primitives-fontFamily-ui), sans-serif;
-  font-size: var(--semantic-typography-ui-body-sm-font-size);
-  font-weight: var(--primitives-fontWeight-medium);
-  color: var(--semantic-color-text-secondary);
-}
-.copyAddressLink:hover {
-  color: var(--semantic-color-text-primary);
-}

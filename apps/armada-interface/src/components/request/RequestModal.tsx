@@ -90,7 +90,6 @@ export function RequestModal() {
           onExpiryChange={setExpiryId}
           onCancel={close}
           onCreateLink={handleCreateLink}
-          onCopyAddress={() => setOpenModal('receive')}
         />
       ) : (
         <RequestLinkScreen

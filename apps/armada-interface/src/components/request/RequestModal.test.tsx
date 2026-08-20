@@ -65,9 +65,4 @@ describe('<RequestModal>', () => {
     expect(screen.getByText('Coming soon')).toBeInTheDocument()
   })
 
-  it('hands off the amount-less path to the copy-address dialog', () => {
-    const store = renderRequest()
-    fireEvent.click(screen.getByRole('button', { name: 'Copy your address instead' }))
-    expect(store.get(openModalAtom)).toBe('receive')
-  })
 })

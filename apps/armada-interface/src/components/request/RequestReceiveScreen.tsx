@@ -21,8 +21,6 @@ export interface RequestReceiveScreenProps {
   onExpiryChange: (expiryId: RequestLinkExpiryId) => void
   onCancel: () => void
   onCreateLink: () => void
-  /** Amount-less path — hand off to the plain address-copy dialog. */
-  onCopyAddress: () => void
 }
 
 export function RequestReceiveScreen({
@@ -34,7 +32,6 @@ export function RequestReceiveScreen({
   onExpiryChange,
   onCancel,
   onCreateLink,
-  onCopyAddress,
 }: RequestReceiveScreenProps) {
   const amountInputId = useId()
   const noteInputId = useId()
@@ -114,11 +111,6 @@ export function RequestReceiveScreen({
           onClick={onCreateLink}
         />
       </div>
-
-      {/* Amount-less path: no link, just share the raw 0zk address (the existing Receive dialog). */}
-      <button type="button" className={styles.copyAddressLink} onClick={onCopyAddress}>
-        Copy your address instead
-      </button>
     </div>
   )
 }

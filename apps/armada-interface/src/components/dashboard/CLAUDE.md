@@ -35,5 +35,5 @@ Shared primitives `IconButton`, `Tooltip`, `BottomSheet` live in `@/design`; the
 ## Known follow-ups
 
 - `useDashboardBackground` is a stub returning `'gradient'`; the solid/gradient toggle UI is not ported.
-- The `Request` action opens the request-via-link flow (`components/request/RequestModal`); its "Copy your address instead" secondary hands off to the plain `ReceiveDialog`.
+- The `Request` action opens the request-via-link flow (`components/request/RequestModal`).
 - `VaultPositionBar` "earned" figure shows a literal `???` placeholder — real accrued yield needs vault cost-basis tracking (`sharesToUsdc(shares) − principal`), which isn't wired. Pass a real `earnedAmount` once that exists. Deliberately not a realistic-looking estimate, so the stub can't be mistaken for real data.

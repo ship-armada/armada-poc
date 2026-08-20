@@ -4,6 +4,7 @@
 import { useId, useState, type ChangeEvent, type FormEvent } from 'react'
 import { useAccount, useDisconnect } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
+import { InformationCircleIcon } from '@heroicons/react/24/outline'
 import { Button, Text } from '@/design'
 import { OnboardingLayout } from '@/components/OnboardingLayout/OnboardingLayout'
 import { FlowFooter } from '@/components/flow/FlowFooter'
@@ -14,6 +15,7 @@ import {
   type NonDeterministicSignerErrorReason,
 } from '@/lib/crypto/determinism'
 import { normalizeEnrollmentError } from '@/lib/shielded/enrollmentErrors'
+import { readStoredWalletIdFor } from '@/lib/shielded/wallet'
 import { NonDeterministicSignerScreen } from './NonDeterministicSignerScreen'
 import styles from './SignInFlow.module.css'
 
@@ -163,6 +165,12 @@ export function SignInFlow({ onUnlocked }: SignInFlowProps) {
     return `${addr.slice(0, 6)}…${addr.slice(-4)}`
   }
 
+  // The double-signature determinism check runs only on the first sign-in for an EVM address on
+  // this device (no cached walletId yet). Show the two-signature banner only then — returning
+  // sign-ins are a single signature.
+  const isFirstTimeOnDevice =
+    isConnected && !!address && readStoredWalletIdFor(address) === null
+
   if (view === 'signer-error') {
     return (
       <OnboardingLayout>
@@ -185,61 +193,64 @@ export function SignInFlow({ onUnlocked }: SignInFlowProps) {
     <OnboardingLayout>
       <div className={styles.flow}>
         {view === 'sign-in' ? (
-          <section className={styles.shell} aria-label="Sign in to your account">
-            <Text variant="display-xl" as="h1" className={styles.title}>
-              Sign in
-            </Text>
-            <p className={styles.intro}>
-              Armada keeps your USDC balance and activity private. Your shielded wallet keys are
-              derived from a signature your EVM wallet produces — no passphrase, no recovery phrase.
-              Sign in from any device with the same wallet.
-            </p>
+          <section className={`${styles.shell} ${styles.shellSignIn}`} aria-label="Sign in to your account">
             <form className={styles.modeForm} onSubmit={handleSignInSubmit}>
-              <div className={styles.modeFormFields}>
-                <p className={styles.body}>
-                  {isConnected
-                    ? 'Sign with your connected wallet to open your private account.'
-                    : 'Connect your EVM wallet, then sign to open your private account.'}
+              {isConnected ? (
+                <Button
+                  variant="primary"
+                  size="lg"
+                  className={styles.signInButton}
+                  label={submitting ? 'Waiting for signature…' : 'Sign in'}
+                  type="submit"
+                  disabled={submitting}
+                  loading={submitting}
+                  showIcon={false}
+                />
+              ) : (
+                <Button
+                  variant="primary"
+                  size="lg"
+                  className={styles.signInButton}
+                  label="Connect wallet"
+                  type="button"
+                  onClick={openConnectModal}
+                  disabled={!openConnectModal}
+                  showIcon={false}
+                />
+              )}
+              {error ? (
+                <div role="alert" className={styles.error}>
+                  {error}
+                </div>
+              ) : null}
+              {isConnected ? (
+                <p className={`${styles.bodyMuted} ${styles.connectedAs}`}>
+                  Connected as <code>{truncate(address)}</code>
                 </p>
-                {isConnected ? (
-                  <p className={styles.bodyMuted}>
-                    Connected as <code>{truncate(address)}</code>
-                  </p>
-                ) : null}
-                <p className={styles.bodyMuted}>
-                  First time on this device? We&rsquo;ll ask for two signatures to confirm your
-                  wallet is compatible — after that it&rsquo;s a single signature.
-                </p>
-                {error ? (
-                  <div role="alert" className={styles.error}>
-                    {error}
-                  </div>
-                ) : null}
-              </div>
-              <FlowFooter
-                className={styles.footer}
-                layout="stack"
-                primary={
-                  isConnected
-                    ? {
-                        label: submitting ? 'Waiting for signature…' : 'Sign in',
-                        type: 'submit',
-                        disabled: submitting,
-                        loading: submitting,
-                        showIcon: false,
-                      }
-                    : {
-                        label: 'Connect wallet',
-                        type: 'button',
-                        onClick: openConnectModal,
-                        disabled: !openConnectModal,
-                        showIcon: false,
-                      }
-                }
-              />
+              ) : null}
             </form>
+            <div className={styles.copy}>
+              <p className={styles.intro}>
+                Your shielded wallet is derived from a signature your EVM wallet produces — no
+                passphrase, no recovery phrase. Sign in from any device with the same wallet.
+              </p>
+              {isFirstTimeOnDevice ? (
+                <div className={styles.firstTimeBanner}>
+                  <span className={styles.firstTimeIconTile} aria-hidden>
+                    <InformationCircleIcon className={styles.firstTimeIcon} strokeWidth={1.5} />
+                  </span>
+                  <div className={styles.firstTimeText}>
+                    <p className={styles.firstTimeHeadline}>First time on this device?</p>
+                    <p className={`armada-text-ui-body-sm ${styles.firstTimeBody}`}>
+                      We&rsquo;ll ask for two signatures to confirm your wallet is compatible. After
+                      that it&rsquo;s a single signature.
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+            </div>
             <button type="button" className={styles.textLink} onClick={() => goRestore('backup')}>
-              Restore wallet from backup
+              Restore wallet from backup instead
             </button>
           </section>
         ) : (

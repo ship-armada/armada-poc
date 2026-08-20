@@ -57,7 +57,7 @@ function renderWith(opts?: { isConnected?: boolean; address?: string }) {
 
 /** Reveal the restore view (backup form is the default restore mode). */
 function openRestore() {
-  fireEvent.click(screen.getByRole('button', { name: 'Restore wallet from backup' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Restore wallet from backup instead' }))
 }
 
 beforeEach(() => {
@@ -69,14 +69,24 @@ beforeEach(() => {
 })
 
 describe('<SignInFlow> — sign-in (default, state-agnostic)', () => {
-  it('renders the single sign-in screen with the two-signature note, no tabs', () => {
+  it('renders the single sign-in screen — no tabs, no create-account copy', () => {
     renderWith()
     expect(screen.getByRole('region', { name: 'Sign in to your account' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
-    expect(screen.getByText(/two signatures to confirm your wallet is compatible/i)).toBeInTheDocument()
-    // No tab UI, no "Create account" copy.
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
     expect(screen.queryByText(/create.*account/i)).not.toBeInTheDocument()
+  })
+
+  it('hides the first-time banner when disconnected (first-time is unknown)', () => {
+    renderWith({ isConnected: false })
+    expect(screen.queryByText(/two signatures to confirm your wallet is compatible/i)).toBeNull()
+  })
+
+  it('shows the first-time two-signature banner when connected with no cached wallet', () => {
+    // Empty localStorage (no cached walletId) → first sign on this device → banner shows.
+    renderWith({ isConnected: true, address: '0xabcdef0123456789abcdef0123456789abcdef01' })
+    expect(
+      screen.getByText(/two signatures to confirm your wallet is compatible/i),
+    ).toBeInTheDocument()
   })
 
   it('shows Connect wallet when disconnected and opens the RainbowKit modal', () => {

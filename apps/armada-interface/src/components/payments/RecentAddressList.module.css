@@ -1,0 +1,106 @@
+/* ABOUTME: Send flow "Recent address" list styles — ported from the armada-app SendRecipientScreen recent section. */
+/* ABOUTME: A labelled column of frosted recipient rows; enters after the card + CTAs, matching the step's staggered motion. */
+
+.recentSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+  width: 100%;
+  opacity: 0;
+  animation: recentSectionEnter 360ms cubic-bezier(0.22, 1, 0.36, 1)
+    calc(var(--modal-step-enter-delay, 360ms) + 500ms) both;
+}
+
+@keyframes recentSectionEnter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--primitives-spacing-10));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.recentLabel {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-muted);
+}
+
+.recentList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+  width: 100%;
+}
+
+.recentItem {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  min-height: var(--primitives-spacing-16);
+  padding: var(--primitives-spacing-3);
+  border: none;
+  border-radius: calc(var(--primitives-spacing-5) / 2);
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 20%, transparent);
+  cursor: pointer;
+  text-align: left;
+  box-sizing: border-box;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.recentItem:hover {
+  background: var(--semantic-color-surface-hover);
+}
+
+.recentItem:active {
+  transform: translateY(1px);
+}
+
+.recentIconBadge {
+  width: var(--primitives-spacing-10);
+  height: var(--primitives-spacing-10);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: color-mix(in srgb, var(--primitives-color-purple-500) 15%, transparent);
+  color: var(--semantic-color-text-primary);
+}
+
+.recentIcon {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+}
+
+.recentAddress {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+}
+
+.recentTime {
+  flex-shrink: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recentSection {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}

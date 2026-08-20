@@ -16,6 +16,8 @@ function setup(extras?: Partial<SendRecipientStepProps>) {
     destChainId: extras?.destChainId ?? 31337,
     onDestChainIdChange: extras?.onDestChainIdChange ?? vi.fn(),
     destDeploymentError: extras?.destDeploymentError,
+    recentAddresses: extras?.recentAddresses ?? [],
+    onSelectRecent: extras?.onSelectRecent ?? vi.fn(),
     onCancel: extras?.onCancel ?? vi.fn(),
     onContinue: extras?.onContinue ?? vi.fn(),
   }
@@ -87,5 +89,20 @@ describe('<SendRecipientStep>', () => {
     const props = setup()
     fireEvent.click(screen.getByRole('button', { name: /Cancel/ }))
     expect(props.onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders the recent-recipients list and fires onSelectRecent on a row click', () => {
+    const recent = [
+      { address: VALID_EVM, kind: 'unshield-local' as const, destChainId: 31337, lastAt: 0 },
+    ]
+    const props = setup({ recentAddresses: recent })
+    expect(screen.getByText('Recent address')).toBeInTheDocument()
+    fireEvent.click(screen.getByText(/0x1234\.\.\.5678/))
+    expect(props.onSelectRecent).toHaveBeenCalledWith(recent[0])
+  })
+
+  it('omits the recent section when there is no history', () => {
+    setup({ recentAddresses: [] })
+    expect(screen.queryByText('Recent address')).toBeNull()
   })
 })

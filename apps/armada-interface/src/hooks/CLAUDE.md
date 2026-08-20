@@ -23,6 +23,7 @@ One concern per hook. Hooks own the React lifecycle (effects, subscriptions, tim
 | `useRequestLinks()` / `useAddRequestLink()` | Hydrator (mount at App root) loads the active wallet's created payment-request links from the encrypted `requestLinks` store into `requestLinksAtom` on unlock; `useAddRequestLink` persists a new link + prepends it. Drives the "Payment link created" activity rows. | Working |
 | `useShieldFlow(isOpen)` | Shield (deposit) flow controller — owns form/fee/kind/submit/step orchestration for the Shield tab (`shield` / `shield-xchain`, gasless-wrapper vs direct). Consumed by the dumb `ShieldModal`. | Working |
 | `useUnshieldFlow(isOpen)` | Unshield-to-own-wallet flow controller — recipient pinned to the connected wallet; a to-chain picker drives `unshield-local` / `unshield-xchain`. The Shield modal's Unshield tab consumes it. | Working |
+| `useRecentRecipients(limit)` | Reads `txListAtom` and derives the Send flow's recent-recipients list (dedupe/sort/cap in `lib/tx/recentRecipients`). Settled sends only; each entry carries its destination chain. | Working |
 
 ## Conventions
 

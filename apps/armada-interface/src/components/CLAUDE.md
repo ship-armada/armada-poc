@@ -14,21 +14,27 @@ UI components. **Dumb when possible.** State comes from hooks + atoms; effects b
 
 | File / dir | Purpose |
 |---|---|
-| `AppLayout.tsx` | Fixed-inset header + nav + body wrap + global `AppFooter` |
-| `AppFooter/` | Minimal global footer — centered Discord / X / homepage icon links (inline brand SVGs + lucide `Globe`); links configured in `SOCIAL_LINKS` |
+| `AppLayout.tsx` | Fixed-inset header + nav + body wrap |
+| `AppErrorBoundary.tsx` | Top-level error boundary (outside the providers) — a render error anywhere surfaces a recoverable card instead of a white screen; funnels to Sentry via telemetry |
 | `WalletConnector.tsx` | Header wallet button — RainbowKit render-prop wired to the `@/design` `WalletButton` (all 4 states) |
-| `ui/` | App-local primitives (Card, Modal, AmountInput, ChainSelect, FeeSummary, RecipientInput, SectionHeader, StatusChip, Tabs, TechnicalDetailsDisclosure, EmptyState) — see `ui/CLAUDE.md` |
-| `flow/` | ActionFlowShell + FlowHeader + FlowFooter + FlowStepIndicator + ProgressStep + ErrorStep — see `flow/CLAUDE.md` |
-| `tx/` | TxLifecycleStepper, TxRow, TxStatusChip, stageCopy helpers — see `tx/CLAUDE.md` |
-| `dashboard/` | BalanceCard + numerals + RecentActivityList + DepositTooltip (centered card stack) — see `dashboard/CLAUDE.md` |
-| `shield/` | ShieldModal + steps — see `shield/CLAUDE.md` |
+| `WalletMenu/` | Wallet side-panel (pill → slide-out) — balance, address, hide toggle, actions; the redesigned wallet surface |
+| `RelayerStatusBanner/` | Banner shown when the relayer is unreachable / degraded |
+| `ui/` | App-local primitives (Card, Modal, AmountInput, ChainSelect, FeeSummary, RecipientInput, SectionHeader, StatusChip, Tabs, TechnicalDetailsDisclosure, EmptyState, SegmentedControl, Tooltip, FeeBreakdownTooltip, EstimatedFeeValue, GasBalanceNotice, WalletProviderIcon) — see `ui/CLAUDE.md` |
+| `flow/` | `FlowShell` (the live modal chrome, wrapping vendored `FlowModalOverlay + ModalShell + ModalStepSwitch`) + `useFlowExit` + `ErrorStep` + `ProgressStep`. Legacy `ActionFlowShell`/`FlowHeader`/`FlowFooter`/`FlowStepIndicator` are retained-but-unused — see `flow/CLAUDE.md` |
+| `deposit/` | Shared flow primitives — `DepositAmountCard` (amount + chain + fee caption + % pills), `DepositReviewSummary`, `DepositOverlayShell` — reused across shield/send/earn |
+| `tx/` | TxLifecycleStepper, TxRow, TxStatusChip, TxActions, stageCopy helpers, `processing/` (TxProgressCard + timeline) — see `tx/CLAUDE.md` |
+| `dashboard/` | BalanceCard + numerals + RecentActivityList (+ ActivityAllPanel / receipts) + DepositTooltip (centered card stack) — see `dashboard/CLAUDE.md` |
+| `shield/` | ShieldModal + steps (deposit; same-chain + cross-chain) — see `shield/CLAUDE.md` |
 | `payments/` | SendModal — the shared Send/Withdraw flow (variant-driven, address-picks-kind). Also seeds recipient/amount from a pay-via-link `paymentIntentAtom` on open — see `payments/CLAUDE.md` |
 | `yield/` | EarnModal + steps (Add / Withdraw tabs) — see `yield/CLAUDE.md` |
 | `receive/` | ReceiveDialog — plain 0zk address + copy (`openModalAtom='receive'`). Dormant: no entry point today (the Request flow is the dashboard's only receive affordance) |
 | `request/` | RequestModal — the "Request USDC via link" flow (compose amount/expiry/note → generated link screen). Revoke is disabled ("coming soon"); the Link-revoked variant is built but unreachable until backend-backed revocation lands |
 | `payViaLink/` | `PaymentLinkQrCode` — QR of a pay-via-link URL (`qrcode.react`). Shared by the payer landing (`pages/PayViaLinkLanding`) |
-| `onboarding/` | OnboardingFlow (5-step first-run), UnlockFlow, OnboardingShell — see `onboarding/CLAUDE.md` |
-| `settings/` | RecoverySecretExportDialog, ResetWalletDialog — see `settings/CLAUDE.md` |
+| `history/` | `HistoryRecoveryBanner` — chain-history-recovery status banner (mounted in AppLayout) |
+| `sync/` | `SyncGate` + `SyncBanner` — initial shielded-balance sync gate + banner |
+| `onboarding/` | `OnboardingFlowV2` (primary 4-step first-run: welcome → sign → checksum → complete) + `UnlockFlow` + `OnboardingLayout`/`OnboardingShell`; legacy 6-step `OnboardingFlow` retained — see `onboarding/CLAUDE.md` |
+| `OnboardingLayout/` | Shell chrome for the onboarding/unlock screens |
+| `settings/` | SettingsModal + RecoverySecretExportDialog, ResetWalletDialog, ClearHistoryDialog — see `settings/CLAUDE.md` |
 
 ## When you add a component
 

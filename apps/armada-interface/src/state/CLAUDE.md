@@ -4,7 +4,7 @@ Jotai atoms. **Read-mostly from components.** Write paths go through hooks or `s
 
 | File | Atoms |
 |---|---|
-| `tx.ts` | `txListAtom` (root, all wallets) + `activeTxListAtom` (V2 Phase 6: filtered to `activeShieldedWalletIdAtom`) + `pendingTxsAtom` (sources from `activeTxListAtom`), `txByIdAtom(id)`, `txsForKindAtom(K)`, `txsForStatusAtom(s)`, `upsertTxAtom` (write-only). UI surfaces (History page, RecentActivityCard, InProgressCard, usePrivateUsdcDisplay) MUST read `activeTxListAtom` so wallet switches can't leak prior history. |
+| `tx.ts` | `txListAtom` (root, all wallets) + `activeTxListAtom` (V2 Phase 6: filtered to `activeShieldedWalletIdAtom`) + `pendingTxsAtom` (sources from `activeTxListAtom`), `txByIdAtom(id)`, `txsForKindAtom(K)`, `txsForStatusAtom(s)`, `upsertTxAtom` (write-only). UI surfaces (the dashboard activity list + "all activity" panel, usePrivateUsdcDisplay) MUST read `activeTxListAtom` so wallet switches can't leak prior history. |
 | `wallet.ts` | `evmAddressAtom`, `shieldedWalletAtom`, `usdcBalancesAtom`, `shieldedUsdcAtom`, `yieldSharesAtom`, `syncStateAtom`, `syncRetryEpochAtom` (bumped by `useSyncRetry` to re-run the initial scan) |
 | `fees.ts` | `feeQuoteAtom`, `feeQuoteIsStaleAtom` (derived) |
 | `visibility.ts` | `tabVisibleAtom` (updated only by `useTabVisible()` — single listener) |

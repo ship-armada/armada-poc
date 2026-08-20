@@ -7,9 +7,9 @@ The deposit (public → private) flow. Owned by `ShieldModal`, opened via `setOp
 | Component | Purpose |
 |---|---|
 | `ShieldModal` | Orchestrator. Owns `step` + form state, wires `useTx({kind:'shield'})`, renders `FlowShell` (FlowModalOverlay + ModalShell) with the redesigned step screens. |
-| `ShieldInputStep` | From-chain `ChainSelect` + `AmountInput` (display variant) + `FeeSummary`. Validates amount > 0 and ≤ max. |
-| `ShieldReviewStep` | Read-only echo with the big-numeral amount + From chain row + FeeSummary + Confirm CTA. |
-| `ShieldCompleteStep` | Success panel ("Success — you've deposited X USDC") + Done CTA. |
+| `ShieldInputStep` | `DepositAmountCard` (chain selector inside the card) + `GasBalanceNotice` (wallet-submit path); fees surface via the card's `flowBreakdown` tooltip. Split into `ShieldInputStepContent` + `ShieldInputStepFooter`. Validates amount > 0 and ≤ max. |
+| `ShieldReviewStep` | Frost card — big-numeral amount + the shared `DepositReviewSummary` table (network / wallet / Armada addresses / fees / net) + Confirm CTA. |
+| `ShieldCompleteStep` | Frost-card confirmation ("USDC deposit confirmed") + View-on-explorer / Done CTAs. |
 
 ## State machinery
 
@@ -28,10 +28,14 @@ The deposit (public → private) flow. Owned by `ShieldModal`, opened via `setOp
 - `useUsdcBalances()` polls the connected wallet's hub USDC balance into `usdcBalancesAtom` so the MAX is populated.
 - After confirmation the handler triggers `refreshShieldedBalances`, which fires the SDK's onBalanceUpdate callback and `useShieldedBalanceSync` writes the new shielded total into `shieldedUsdcAtom`.
 
+## What's also wired
+
+- **Fees are live.** `ShieldModal` uses `useFees({ chainId })` (`quote` / `isStale` / `refresh()`); the gasless path reads `quote.fees.shield` / `quote.fees.shieldXchain` and submits a `feeCacheId`. Display flows through `useDisplayFees` + `computeFeeBreakdown` into the amount-card fee caption + breakdown tooltip.
+- **Cross-chain shield is wired.** `computeKind()` dispatches `shield` vs `shield-xchain`; the `shield-xchain` handler (per-client gasless wrapper + CCTP fast-fee via `cctpFastFeeForAmount`) runs end-to-end.
+
 ## Still stubbed
 
-- `useFees()` returns `quote=null`; FeeSummary renders "Loading…". Direct hub shield has no relayer fee today, so this is cosmetic — the handler doesn't read fees.
-- Cross-chain shield (from client chain via CCTP) — different contract surface; will land in its own commit.
+_none_
 
 ## Why the modal lives at App level
 

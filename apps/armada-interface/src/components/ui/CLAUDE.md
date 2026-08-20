@@ -19,6 +19,12 @@ These primitives are NOT in `src/design` because they aren't yet stable enough t
 | `StatusChip` | Color-coded status pill. Variants: `neutral`, `info`, `success`, `warning`, `error`. |
 | `Tabs` | Horizontal segmented control with ARIA tablist semantics. Generic over a string-id union. |
 | `TechnicalDetailsDisclosure` | Collapsible "Show technical details" wrapper built on native `<details>`. |
+| `SegmentedControl` | Pill track with a sliding indicator + roving-tabindex arrow-key nav (redesign primitive; used by the Earn Add/Withdraw toggle + request-link expiry). Generic over a string-id union. |
+| `Tooltip` | Portalled hover/focus tooltip. |
+| `FeeBreakdownTooltip` | Tooltip exposing the fee split (protocol + broadcaster + CCTP) behind the under-amount "+ $X FEE" caption. |
+| `EstimatedFeeValue` | Formatted fee value with loading state. |
+| `GasBalanceNotice` | Low-native-gas warning shown on wallet-submit (non-gasless) paths. |
+| `WalletProviderIcon` | Brand glyph for a wagmi connector (used on "From your wallet" rows). |
 
 ## Conventions (mirror `src/design`)
 

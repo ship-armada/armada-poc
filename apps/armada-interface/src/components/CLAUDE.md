@@ -22,8 +22,11 @@ UI components. **Dumb when possible.** State comes from hooks + atoms; effects b
 | `tx/` | TxLifecycleStepper, TxRow, TxStatusChip, stageCopy helpers — see `tx/CLAUDE.md` |
 | `dashboard/` | BalanceCard + numerals + RecentActivityList + DepositTooltip (centered card stack) — see `dashboard/CLAUDE.md` |
 | `shield/` | ShieldModal + steps — see `shield/CLAUDE.md` |
-| `payments/` | SendModal — the shared Send/Withdraw flow (variant-driven, address-picks-kind) — see `payments/CLAUDE.md` |
+| `payments/` | SendModal — the shared Send/Withdraw flow (variant-driven, address-picks-kind). Also seeds recipient/amount from a pay-via-link `paymentIntentAtom` on open — see `payments/CLAUDE.md` |
 | `yield/` | EarnModal + steps (Add / Withdraw tabs) — see `yield/CLAUDE.md` |
+| `receive/` | ReceiveDialog — plain 0zk address + copy (`openModalAtom='receive'`). Dormant: no entry point today (the Request flow is the dashboard's only receive affordance) |
+| `request/` | RequestModal — the "Request USDC via link" flow (compose amount/expiry/note → generated link screen). Revoke is disabled ("coming soon"); the Link-revoked variant is built but unreachable until backend-backed revocation lands |
+| `payViaLink/` | `PaymentLinkQrCode` — QR of a pay-via-link URL (`qrcode.react`). Shared by the payer landing (`pages/PayViaLinkLanding`) |
 | `onboarding/` | OnboardingFlow (5-step first-run), UnlockFlow, OnboardingShell — see `onboarding/CLAUDE.md` |
 | `settings/` | RecoverySecretExportDialog, ResetWalletDialog — see `settings/CLAUDE.md` |
 

@@ -2,11 +2,26 @@
 // ABOUTME: Stub now (typed signatures only); implementation lands when first consumer needs it.
 
 const DB_NAME = 'armada-interface'
-const DB_VERSION = 1
+// v2: adds the `requestLinks` store (created payment-request links). The upgrade is additive —
+// onupgradeneeded creates any missing store, leaving existing stores + data intact.
+const DB_VERSION = 2
 
-export type StoreName = 'txHistory' | 'feeQuotes' | 'ens' | 'shieldedBalances' | 'meta'
+export type StoreName =
+  | 'txHistory'
+  | 'feeQuotes'
+  | 'ens'
+  | 'shieldedBalances'
+  | 'meta'
+  | 'requestLinks'
 
-const STORES: ReadonlyArray<StoreName> = ['txHistory', 'feeQuotes', 'ens', 'shieldedBalances', 'meta']
+const STORES: ReadonlyArray<StoreName> = [
+  'txHistory',
+  'feeQuotes',
+  'ens',
+  'shieldedBalances',
+  'meta',
+  'requestLinks',
+]
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
@@ -22,7 +37,19 @@ function openDb(): Promise<IDBDatabase> {
         }
       }
     }
-    req.onsuccess = () => resolve(req.result)
+    req.onsuccess = () => {
+      const db = req.result
+      // If another tab (or an HMR-reloaded module) requests a version upgrade, close this
+      // connection so we don't BLOCK the upgrade. Without this, a stale connection opened at an
+      // older version wedges the upgrade indefinitely — and since openDb caches the connection,
+      // every subsequent cache read (tx history, request links, …) fails, so the whole activity
+      // feed vanishes. Dropping the cached promise lets the next op reopen at the new version.
+      db.onversionchange = () => {
+        db.close()
+        if (dbPromise === promise) dbPromise = null
+      }
+      resolve(db)
+    }
     // Clear the cached promise on failure so a later call can retry. Without
     // this, a single transient open error (quota, blocked upgrade, etc.) would
     // poison every cache op for the rest of the page lifetime.

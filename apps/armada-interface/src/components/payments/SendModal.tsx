@@ -4,7 +4,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAccount } from 'wagmi'
 import { useAtom, useAtomValue } from 'jotai'
-import { openModalAtom } from '@/state/ui'
+import { openModalAtom, paymentIntentAtom } from '@/state/ui'
+import { clearPendingPayViaLink } from '@/lib/payViaLink'
 import { preferencesAtom } from '@/state/preferences'
 import {
   evmAddressAtom,
@@ -57,6 +58,7 @@ function computeKind(recipient: string, destChainId: number, hubChainId: number)
 
 export function SendModal() {
   const [openModal, setOpenModal] = useAtom(openModalAtom)
+  const [paymentIntent, setPaymentIntent] = useAtom(paymentIntentAtom)
   const isOpen = openModal === 'payment' || openModal === 'withdraw'
   const variant: SendFlowVariant = openModal === 'withdraw' ? 'withdraw' : 'send'
   // A6 — frozen into the record's meta at submit-time so a mid-flight toggle doesn't strand the handler.
@@ -81,6 +83,25 @@ export function SendModal() {
   const [errorAtStep, setErrorAtStep] = useState<FlowVisibleStep | undefined>(undefined)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submittedKind, setSubmittedKind] = useState<SubmittedKind | null>(null)
+
+  // Seed the flow synchronously when it opens from a pay-via-link intent, so the modal starts on
+  // Review (recipient + amount are both known) rather than flashing the Recipient step. This runs
+  // during render (React's "adjust state on an incoming change" pattern) so FlowShell's stepKey is
+  // already 'review' on the first paint — no ModalStepSwitch transition. The atom + pending carrier
+  // are consumed in an effect below. Amount-less links land on the amount step instead.
+  const [wasOpen, setWasOpen] = useState(false)
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen)
+    if (isOpen && paymentIntent) {
+      setRecipient(paymentIntent.recipient)
+      if (paymentIntent.amount) {
+        setAmountStr(paymentIntent.amount)
+        setStep('review')
+      } else {
+        setStep('input')
+      }
+    }
+  }
   // Double-submit guard (P0-7): ref = synchronous gate (state is async), state = button disable.
   const submittingRef = useRef(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -205,6 +226,16 @@ export function SendModal() {
     if (!isOpen) return
     if (variant === 'withdraw') setRecipient(connectedEvm ?? '')
   }, [isOpen])
+
+  // Consume the pay-via-link intent once the modal has opened + seeded (the render-time block
+  // above applies recipient/amount/step). Clearing the atom + pending carrier here (post-commit)
+  // keeps the cross-component write out of render.
+  useEffect(() => {
+    if (isOpen && paymentIntent) {
+      setPaymentIntent(null)
+      clearPendingPayViaLink()
+    }
+  }, [isOpen, paymentIntent, setPaymentIntent])
 
   // Watch the submitted record for terminal transitions. Dep is `record?.executionState` rather
   // than `record` so artifact patches during xchain polling don't re-fire this needlessly — the

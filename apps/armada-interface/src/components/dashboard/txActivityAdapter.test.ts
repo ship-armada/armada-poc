@@ -2,7 +2,25 @@
 
 import { describe, it, expect } from 'vitest'
 import type { TxRecord, TxKind, TxExecutionState } from '@/lib/tx/types'
-import { txRecordToActivityItem, txListToActivityItems } from './txActivityAdapter'
+import type { RequestLinkRecord } from '@/lib/shielded/requestLinks'
+import {
+  buildActivityItems,
+  requestLinkToActivityItem,
+  txRecordToActivityItem,
+  txListToActivityItems,
+} from './txActivityAdapter'
+
+function makeLink(opts: Partial<RequestLinkRecord> = {}): RequestLinkRecord {
+  return {
+    requestId: opts.requestId ?? 'req_abc',
+    paymentLink: opts.paymentLink ?? 'https://app/pay-via-link?to=0zk&amount=25',
+    amount: opts.amount ?? '25',
+    note: opts.note,
+    expiresAt: opts.expiresAt ?? 2_000,
+    createdAt: opts.createdAt ?? 1_500,
+    shieldedWalletId: opts.shieldedWalletId ?? 'w1',
+  }
+}
 
 function makeRecord(
   kind: TxKind,
@@ -106,5 +124,35 @@ describe('txListToActivityItems', () => {
     const pending = items.find((i) => i.id === 'pending')
     expect(pending?.pending).toBe(true)
     expect(items).toHaveLength(2)
+  })
+})
+
+describe('requestLinkToActivityItem', () => {
+  it('maps a created link to a neutral "Payment link created" row', () => {
+    const item = requestLinkToActivityItem(makeLink({ amount: '25', createdAt: 1_500, expiresAt: 2_000 }))
+    expect(item.kind).toBe('requestLink')
+    expect(item.label).toBe('Payment link created')
+    expect(item.amount).toBe(25) // positive/neutral — no sign applied here
+    expect(item.pending).toBe(false)
+    expect(item.requestId).toBe('req_abc')
+    expect(item.expiresAt).toBe(2_000)
+    expect(item.occurredAt).toBe(1_500)
+  })
+})
+
+describe('buildActivityItems', () => {
+  it('merges tx + request-link rows newest-first', () => {
+    const tx = makeRecord('shield', { id: 'tx-old', amount: 1_000_000n, createdAt: 1_000, updatedAt: 1_000 })
+    const link = makeLink({ requestId: 'req_new', createdAt: 3_000 })
+    const items = buildActivityItems([tx], [link])
+    expect(items.map((i) => i.id)).toEqual(['req_new', 'tx-old']) // link is newer → first
+    expect(items[0]?.kind).toBe('requestLink')
+  })
+
+  it('caps the merged list at max', () => {
+    const links = Array.from({ length: 5 }, (_, i) =>
+      makeLink({ requestId: `req_${i}`, createdAt: 1_000 + i }),
+    )
+    expect(buildActivityItems([], links, null, 3)).toHaveLength(3)
   })
 })

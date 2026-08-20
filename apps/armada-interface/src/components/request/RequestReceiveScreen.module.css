@@ -1,0 +1,178 @@
+/* ABOUTME: RequestReceiveScreen styles — ported from the armada-app mockup src/pages/RequestReceiveScreen.module.css. */
+.column {
+  width: 100%;
+  max-width: 434px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--primitives-spacing-8);
+}
+
+.title,
+.cardTitle {
+  margin: 0;
+  width: 100%;
+  padding-left: var(--primitives-spacing-1);
+  color: var(--semantic-color-text-primary);
+  text-align: left;
+  box-sizing: border-box;
+  font-weight: var(--primitives-fontWeight-medium);
+}
+
+.linkCard {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-5);
+  padding: var(--primitives-spacing-8);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent) 0%,
+    color-mix(in srgb, var(--primitives-color-neutral-50) 20%, transparent) 100%
+  );
+  backdrop-filter: blur(calc(var(--primitives-spacing-24) * 3 + var(--primitives-spacing-3)));
+  -webkit-backdrop-filter: blur(calc(var(--primitives-spacing-24) * 3 + var(--primitives-spacing-3)));
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .linkCard {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .linkCard {
+    padding: var(--primitives-spacing-5);
+  }
+}
+
+.noteFieldBlock {
+  margin-top: 0;
+}
+
+.expiryFieldBlock {
+  margin-top: 0;
+}
+
+.buttonRow {
+  display: flex;
+  gap: var(--primitives-spacing-5);
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.buttonRow > * {
+  flex: 1;
+}
+
+.fieldBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+  width: 100%;
+}
+
+.fieldLabel {
+  margin: 0;
+  font-family: var(--semantic-typography-ui-label-xs-font-family);
+  font-size: var(--semantic-typography-ui-label-xs-font-size);
+  font-weight: var(--semantic-typography-ui-label-xs-font-weight);
+  line-height: var(--primitives-lineHeight-tight);
+  letter-spacing: var(--semantic-typography-ui-label-xs-letter-spacing);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-muted);
+}
+
+.fieldOptional {
+  text-transform: none;
+  font-weight: var(--primitives-fontWeight-regular);
+}
+
+.noteInput {
+  width: 100%;
+  min-height: var(--primitives-spacing-16);
+  padding: var(--primitives-spacing-4) var(--primitives-spacing-5);
+  border: none;
+  border-radius: calc(var(--primitives-borderRadius-xl) * 1px);
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
+  box-sizing: border-box;
+  resize: vertical;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  line-height: var(--primitives-lineHeight-normal);
+  color: var(--semantic-color-text-primary);
+}
+
+.noteInput:focus {
+  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
+  outline-offset: calc(var(--primitives-spacing-1) * 1px);
+}
+
+.noteInput::placeholder {
+  color: var(--semantic-color-text-muted);
+}
+
+.noteMeta {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  line-height: var(--primitives-lineHeight-tight);
+  color: var(--semantic-color-text-muted);
+  text-align: right;
+}
+
+.amountRow {
+  display: flex;
+  justify-content: flex-start;
+  align-items: flex-end;
+  width: 100%;
+}
+
+.amountGroup {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: var(--primitives-spacing-2);
+  height: auto;
+  min-height: calc(var(--primitives-fontSize-4xl) * 1px);
+  flex-shrink: 0;
+}
+
+.amountField {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: auto;
+  min-height: calc(var(--primitives-fontSize-4xl) * 1px);
+}
+
+.amountInput {
+  width: auto;
+  min-width: 1ch;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: var(--primitives-fontFamily-mono), ui-monospace, monospace;
+  font-weight: var(--primitives-fontWeight-regular);
+  font-size: calc(var(--primitives-fontSize-4xl) * 1px);
+  line-height: calc(var(--primitives-fontSize-4xl) * 1px);
+  height: auto;
+  min-height: calc(var(--primitives-fontSize-4xl) * 1px);
+  letter-spacing: 0;
+  color: var(--semantic-color-text-primary);
+  text-align: left;
+  outline: none;
+  field-sizing: content;
+}
+
+.amountInput::placeholder {
+  font-family: var(--primitives-fontFamily-mono), ui-monospace, monospace;
+  font-weight: var(--primitives-fontWeight-regular);
+  font-size: calc(var(--primitives-fontSize-4xl) * 1px);
+  color: color-mix(in srgb, var(--semantic-color-text-primary) 30%, transparent);
+}

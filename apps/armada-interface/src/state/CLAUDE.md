@@ -8,9 +8,10 @@ Jotai atoms. **Read-mostly from components.** Write paths go through hooks or `s
 | `wallet.ts` | `evmAddressAtom`, `shieldedWalletAtom`, `usdcBalancesAtom`, `shieldedUsdcAtom`, `yieldSharesAtom`, `syncStateAtom`, `syncRetryEpochAtom` (bumped by `useSyncRetry` to re-run the initial scan) |
 | `fees.ts` | `feeQuoteAtom`, `feeQuoteIsStaleAtom` (derived) |
 | `visibility.ts` | `tabVisibleAtom` (updated only by `useTabVisible()` — single listener) |
-| `ui.ts` | `openModalAtom` |
+| `ui.ts` | `openModalAtom`, `balanceHiddenAtom`, `paymentIntentAtom` (pay-via-link → Send prefill hand-off) |
 | `history.ts` | `historyRecoveryAtom` (`{ state: 'idle'\|'scanning'\|'failed', error?, lastRecordCount? }`) + `historyRecoveryEpochAtom` (bumped by detector + Settings Re-scan). Read by `HistoryRecoveryBanner` and the History page empty state. |
 | `time.ts` | `nowAtom` — Date.now() snapshot driven by `useNowTicker`. Consumed by relative-time labels (TxRow). |
+| `requestLinks.ts` | `requestLinksAtom` (created payment-request links for the active wallet, hydrated by `useRequestLinks` from the encrypted per-wallet store) + `requestShareIntentAtom` (re-open the Request flow at the Share step from an activity row). |
 
 ## Conventions
 

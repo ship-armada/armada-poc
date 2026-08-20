@@ -1,0 +1,19 @@
+/* ABOUTME: PaymentLinkQrCode styles — centered QR on a rounded surface; QR sized off spacing tokens. */
+
+.root {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: var(--primitives-spacing-4);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: var(--semantic-color-surface-main);
+  color: var(--semantic-color-text-primary);
+  box-sizing: border-box;
+}
+
+.qr {
+  display: block;
+  width: calc(var(--primitives-spacing-24) + var(--primitives-spacing-6));
+  height: calc(var(--primitives-spacing-24) + var(--primitives-spacing-6));
+}

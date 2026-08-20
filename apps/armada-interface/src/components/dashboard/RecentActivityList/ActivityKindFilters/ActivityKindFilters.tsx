@@ -1,15 +1,23 @@
-// ABOUTME: Segmented kind-filter chips for the activity panel — All / Deposit / Withdraw / Sent / Received.
-// ABOUTME: Ported from the armada-app mockup; earn items appear only under "All" (no dedicated chip).
+// ABOUTME: Segmented kind-filter chips for the activity panel — All / Deposit / Withdraw / Sent / Requests / Received / Earn.
+// ABOUTME: Ported from the armada-app mockup; the chip id equals the activity kind so the predicate is a direct match.
 
 import styles from './ActivityKindFilters.module.css'
 
-export type ActivityKindFilter = 'all' | 'deposit' | 'withdraw' | 'send' | 'receive' | 'earn'
+export type ActivityKindFilter =
+  | 'all'
+  | 'deposit'
+  | 'withdraw'
+  | 'send'
+  | 'requestLink'
+  | 'receive'
+  | 'earn'
 
 const FILTERS: Array<{ id: ActivityKindFilter; label: string }> = [
   { id: 'all', label: 'All' },
   { id: 'deposit', label: 'Deposit' },
   { id: 'withdraw', label: 'Withdraw' },
   { id: 'send', label: 'Sent' },
+  { id: 'requestLink', label: 'Requests' },
   { id: 'receive', label: 'Received' },
   { id: 'earn', label: 'Earn' },
 ]

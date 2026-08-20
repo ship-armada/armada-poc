@@ -4,20 +4,25 @@
 import type { TxRecord, TxKind } from '@/lib/tx/types'
 import { historySortTime, isTerminalState } from '@/lib/tx/types'
 import { recordTitle } from '@/components/tx/stageCopy'
+import type { RequestLinkRecord } from '@/lib/shielded/requestLinks'
 
 /** Icon/semantic kind for an activity row — a coarser grouping than TxKind. */
-export type DashboardActivityKind = 'send' | 'deposit' | 'earn' | 'withdraw' | 'receive'
+export type DashboardActivityKind = 'send' | 'deposit' | 'earn' | 'withdraw' | 'receive' | 'requestLink'
 
 export interface DashboardActivityItem {
   id: string
   kind: DashboardActivityKind
   label: string
-  /** Signed USDC amount as a plain number: positive = inflow, negative = outflow. */
+  /** Signed USDC amount as a plain number: positive = inflow, negative = outflow. `requestLink`
+   *  rows render this neutrally (no sign/tone) — a created link moves no funds. */
   amount: number
   occurredAt: number
   txHash?: string
   /** True while the underlying tx is non-terminal (still in flight). */
   pending: boolean
+  /** `requestLink` only — the request id (re-opens the Share step) + expiry (row subtitle). */
+  requestId?: string
+  expiresAt?: number
 }
 
 /** Per-TxKind direction: the activity icon-kind and the sign of the amount (inflow vs outflow). */
@@ -95,4 +100,33 @@ export function txListToActivityItems(
     .sort((a, b) => historySortTime(b) - historySortTime(a))
     .slice(0, max)
     .map((record) => txRecordToActivityItem(record, ownWallet))
+}
+
+/** A created payment-request link as an activity row. Neutral amount; clicking re-opens the link. */
+export function requestLinkToActivityItem(link: RequestLinkRecord): DashboardActivityItem {
+  const amount = Number(link.amount)
+  return {
+    id: link.requestId,
+    kind: 'requestLink',
+    label: 'Payment link created',
+    amount: Number.isFinite(amount) ? amount : 0,
+    occurredAt: link.createdAt,
+    pending: false,
+    requestId: link.requestId,
+    expiresAt: link.expiresAt,
+  }
+}
+
+/** Merge tx-derived + request-link activity rows into one newest-first list, capped. */
+export function buildActivityItems(
+  list: readonly TxRecord[],
+  links: readonly RequestLinkRecord[],
+  ownWallet?: string | null,
+  max = 8,
+): DashboardActivityItem[] {
+  const items = [
+    ...list.map((record) => txRecordToActivityItem(record, ownWallet)),
+    ...links.map(requestLinkToActivityItem),
+  ]
+  return items.sort((a, b) => b.occurredAt - a.occurredAt).slice(0, max)
 }

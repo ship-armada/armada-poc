@@ -11,6 +11,7 @@ export type ModalKind =
   | 'yield-withdraw'
   | 'payment'
   | 'receive'
+  | 'request'
   | 'settings'
   | 'wallet-unlock'
   | 'wallet-reset'
@@ -22,6 +23,18 @@ export type ActionModalKind = Exclude<
 >
 
 export const openModalAtom = atom<ModalKind>(null)
+
+/**
+ * Pending payment-request hand-off from a `/pay-via-link` landing to the Send flow. When set, the
+ * app opens the `payment` modal and `SendModal` seeds the recipient (+ amount) from it, then clears
+ * it. Carries no funds/keys — just a prefill intent.
+ */
+export interface PaymentIntent {
+  recipient: string
+  amount?: string
+}
+
+export const paymentIntentAtom = atom<PaymentIntent | null>(null)
 
 /**
  * Whether balances are hidden across the app. Shared so the dashboard eye toggle and the wallet

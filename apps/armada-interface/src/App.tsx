@@ -9,9 +9,11 @@ import { OnboardingFlowV2, UnlockFlow } from '@/components/onboarding'
 import { ShieldModal } from '@/components/shield'
 import { SendModal } from '@/components/payments'
 import { ReceiveDialog } from '@/components/receive'
+import { RequestModal } from '@/components/request'
 import { EarnModal } from '@/components/yield'
 import { SettingsModal } from '@/components/settings'
 import { useAutoLock } from '@/hooks/useAutoLock'
+import { usePayViaLinkIntent } from '@/hooks/usePayViaLinkIntent'
 import { useHistoryRecovery } from '@/hooks/useHistoryRecovery'
 import { useIncomingTransferDetector } from '@/hooks/useIncomingTransferDetector'
 import { useNowTicker } from '@/hooks/useNowTicker'
@@ -21,6 +23,7 @@ import { useShieldedSyncPoll } from '@/hooks/useShieldedSyncPoll'
 import { useNullifierCrossCheck } from '@/hooks/useNullifierCrossCheck'
 import { useTabVisible } from '@/hooks/useTabVisible'
 import { useTxHistory } from '@/hooks/useTxHistory'
+import { useRequestLinks } from '@/hooks/useRequestLinks'
 import { useTxResume } from '@/hooks/useTxResume'
 import { useUsdcBalances } from '@/hooks/useUsdcBalances'
 import { useWallet } from '@/hooks/useWallet'
@@ -54,10 +57,12 @@ export function App() {
   useTabVisible()
   useNowTicker() // refresh "3m ago" labels on a 60s cadence
   useTxHistory() // hydrate tx history from IDB on cold load
+  useRequestLinks() // hydrate created payment-request links (encrypted, per-wallet) for Recent Activity
   useTxResume() // on unlock (leader only), resume watchers for broadcast txs / fail pre-broadcast interruptions (P0-2)
   useHistoryRecovery() // chain-recover synthetic rows on unlock + re-scan epoch (Phase 9.3)
   useIncomingTransferDetector() // re-scan on balance events so received transfers surface live (Phase 9.4)
   useAutoLock()  // idle-timer-driven lock for the shielded wallet
+  usePayViaLinkIntent() // pick up a pending pay-via-link hand-off + open the prefilled Send on unlock
   // Mirror wagmi's connection state into evmAddressAtom for atom-consumers (OnboardingFlow's
   // SignEnrollment step, SendModal's withdraw-variant recipient pre-fill, useShieldedWallet.enroll). Mounted
   // before the onboarding/unlock guard so the atom is correct even before the user reaches /app.
@@ -225,6 +230,7 @@ export function App() {
       <SendModal />
       <EarnModal />
       <ReceiveDialog />
+      <RequestModal />
       <SettingsModal />
     </>
   )

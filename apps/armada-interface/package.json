@@ -28,6 +28,7 @@
     "jotai": "^2.15.1",
     "level-js": "^6.1.0",
     "lucide-react": "^0.552.0",
+    "qrcode.react": "^4.2.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.6.1",
@@ -39,13 +40,13 @@
     "wagmi": "^2.19.5"
   },
   "devDependencies": {
+    "@sentry/vite-plugin": "^5.3.0",
     "@tailwindcss/vite": "^4.1.0",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.16",
     "@types/react-dom": "^19.1.9",
-    "@sentry/vite-plugin": "^5.3.0",
     "@vitejs/plugin-react": "^5.0.4",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.0.1",

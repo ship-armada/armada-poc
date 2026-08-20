@@ -10,7 +10,7 @@ import { DASHBOARD_TOOLTIP_ENTER_DELAY_MS } from '@/components/dashboard/Balance
 import { DashboardScrollTopFade } from '@/components/dashboard/DashboardScrollTopFade'
 import { RecentActivityList, ActivityAllPanel } from '@/components/dashboard/RecentActivityList'
 import { ActivityReceipt } from '@/components/dashboard/ActivityReceipt'
-import { txListToActivityItems } from '@/components/dashboard/txActivityAdapter'
+import { buildActivityItems, type DashboardActivityItem } from '@/components/dashboard/txActivityAdapter'
 import { formatUsdcAmount } from '@/components/dashboard/dashboardFormat'
 import type { BalanceRollMode } from '@/components/dashboard/RollingBalanceValue'
 import { SyncGate, isInitialSyncGated } from '@/components/sync'
@@ -21,6 +21,7 @@ import { sharesToUsdc } from '@/lib/yield'
 import { openModalAtom, balanceHiddenAtom } from '@/state/ui'
 import { shieldedUsdcAtom, syncStateAtom, yieldSharesAtom, shieldedWalletAtom, evmAddressAtom } from '@/state/wallet'
 import { activeTxListAtom } from '@/state/tx'
+import { requestLinksAtom, requestShareIntentAtom } from '@/state/requestLinks'
 import styles from './Dashboard.module.css'
 
 /** USDC is a 6-decimal bigint; the card renders plain numbers. */
@@ -37,16 +38,32 @@ export function Dashboard() {
   const { rate: yieldRate } = useYieldRate()
   const shieldedWallet = useAtomValue(shieldedWalletAtom)
   const txList = useAtomValue(activeTxListAtom)
+  const requestLinks = useAtomValue(requestLinksAtom)
   const evmAddress = useAtomValue(evmAddressAtom)
 
   // Actions
   const openActionModal = useOpenActionModal()
-  const setOpenModal = useSetAtom(openModalAtom)
   const openModal = useAtomValue(openModalAtom)
+  const setOpenModal = useSetAtom(openModalAtom)
+  const setShareIntent = useSetAtom(requestShareIntentAtom)
 
   // "All activity" side-panel + the per-tx receipt overlay (replaces the retired /history page).
   const [activityPanelOpen, setActivityPanelOpen] = useState(false)
   const [receiptId, setReceiptId] = useState<string | null>(null)
+
+  // Click routing: a created-link row re-opens the Request flow at its Share step; every other row
+  // opens the per-tx receipt.
+  function handleActivityItemClick(item: DashboardActivityItem) {
+    if (item.kind === 'requestLink') {
+      const link = requestLinks.find((l) => l.requestId === item.requestId)
+      if (link) {
+        setShareIntent(link)
+        setOpenModal('request')
+      }
+      return
+    }
+    setReceiptId(item.id)
+  }
 
   // Balance visibility is app-wide (shared with the wallet panel's hide toggle) via balanceHiddenAtom.
   const [balanceHidden, setBalanceHidden] = useAtom(balanceHiddenAtom)
@@ -81,8 +98,8 @@ export function Dashboard() {
   const vaultNumber = usdcToNumber(earningUsdc)
   const vaultApy = yieldRate !== null ? Number(yieldRate.apyBps) / 100 : undefined
   const activityItems = useMemo(
-    () => txListToActivityItems(txList, evmAddress),
-    [txList, evmAddress],
+    () => buildActivityItems(txList, requestLinks, evmAddress),
+    [txList, requestLinks, evmAddress],
   )
   const hasCompletedDeposit = txList.some(
     (r) => (r.kind === 'shield' || r.kind === 'shield-xchain') && r.executionState === 'completed',
@@ -121,7 +138,7 @@ export function Dashboard() {
           onBalanceHiddenChange={setBalanceHidden}
           onSend={() => openActionModal('payment')}
           onDeposit={() => openActionModal('shield')}
-          onRequest={() => setOpenModal('receive')}
+          onRequest={() => openActionModal('request')}
           onEarn={() => openActionModal('yield-deposit')}
           onVaultOpen={() => openActionModal('yield-deposit')}
         />
@@ -153,7 +170,7 @@ export function Dashboard() {
             items={activityItems}
             balanceRevealed={!balanceHidden}
             onViewAll={() => setActivityPanelOpen(true)}
-            onItemClick={(item) => setReceiptId(item.id)}
+            onItemClick={handleActivityItemClick}
           />
         ) : null}
       </div>
@@ -164,7 +181,7 @@ export function Dashboard() {
         onClose={() => setActivityPanelOpen(false)}
         items={activityItems}
         balanceRevealed={!balanceHidden}
-        onItemClick={(item) => setReceiptId(item.id)}
+        onItemClick={handleActivityItemClick}
       />
       <ActivityReceipt
         record={txList.find((record) => record.id === receiptId) ?? null}

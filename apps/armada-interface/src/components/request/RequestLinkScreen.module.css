@@ -1,0 +1,362 @@
+/* ABOUTME: RequestLinkScreen styles — ported from the armada-app mockup src/pages/RequestLinkScreen.module.css. */
+.column {
+  width: 100%;
+  max-width: calc(
+    var(--primitives-spacing-20) * 5 + var(--primitives-spacing-8) + var(--primitives-spacing-1) *
+      0.5
+  );
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--primitives-spacing-10);
+  padding: var(--primitives-spacing-10);
+  box-sizing: border-box;
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent) 0%,
+    color-mix(in srgb, var(--primitives-color-neutral-50) 20%, transparent) 100%
+  );
+  backdrop-filter: blur(calc(var(--primitives-spacing-24) * 3 + var(--primitives-spacing-3)));
+  -webkit-backdrop-filter: blur(calc(var(--primitives-spacing-24) * 3 + var(--primitives-spacing-3)));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .column {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@keyframes shareCascadeEnter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--primitives-spacing-10));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shareCtaEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(0);
+  }
+
+  48% {
+    opacity: 1;
+    transform: translateY(calc(var(--primitives-spacing-3) * -1));
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.enter {
+  opacity: 0;
+  animation: shareCascadeEnter 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.enterTitle {
+  animation-delay: var(--modal-step-enter-delay, 360ms);
+}
+
+.enterAmount {
+  animation-delay: calc(var(--modal-step-enter-delay, 360ms) + 70ms);
+}
+
+.enterShareRow {
+  animation-delay: calc(var(--modal-step-enter-delay, 360ms) + 140ms);
+}
+
+.enterLinkBox {
+  animation-delay: calc(var(--modal-step-enter-delay, 360ms) + 210ms);
+}
+
+.enterCopy {
+  animation-name: shareCtaEnter;
+  animation-duration: 520ms;
+  animation-timing-function: cubic-bezier(0.34, 1.15, 0.64, 1);
+  animation-delay: calc(var(--modal-step-enter-delay, 360ms) + 280ms);
+}
+
+.enterRevoke {
+  animation-delay: calc(var(--modal-step-enter-delay, 360ms) + 350ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .enter {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+}
+
+.title {
+  margin: 0;
+  width: 100%;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-semibold);
+  line-height: var(--primitives-spacing-5);
+  letter-spacing: var(--primitives-letterSpacing-normal);
+  color: var(--semantic-color-text-primary);
+  text-align: left;
+}
+
+.amountValue {
+  --amount-size: calc(var(--primitives-fontSize-4xl) + var(--primitives-spacing-3) / 1px);
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  font-family: var(--primitives-fontFamily-mono), ui-monospace, monospace;
+  font-weight: var(--primitives-fontWeight-regular);
+  font-size: calc(var(--amount-size) * 1px);
+  line-height: 1;
+  color: var(--semantic-color-brand-ink);
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.linkSection {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--primitives-spacing-5);
+  width: 100%;
+}
+
+.linkHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+}
+
+.linkHeadingLabel {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-semibold);
+  line-height: var(--primitives-lineHeight-normal);
+  color: var(--semantic-color-text-primary);
+}
+
+.expiryPill {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0 var(--primitives-spacing-3);
+  border-radius: calc(var(--primitives-borderRadius-full) * 1px);
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: var(--semantic-component-button-primary-sm-font-size);
+  font-weight: var(--primitives-fontWeight-medium);
+  line-height: var(--primitives-lineHeight-normal);
+  letter-spacing: var(--primitives-letterSpacing-wide);
+  color: var(--semantic-color-text-primary);
+}
+
+.linkBox {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  height: calc(var(--primitives-spacing-12) + var(--primitives-spacing-2));
+  padding: 0 var(--primitives-spacing-3);
+  box-sizing: border-box;
+  border-radius: calc(
+    (var(--primitives-borderRadius-lg) + var(--primitives-borderRadius-xl)) / 2 * 1px
+  );
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 60%, transparent);
+}
+
+.linkValue {
+  position: relative;
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-start;
+  width: 100%;
+  min-width: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  line-height: var(--primitives-lineHeight-normal);
+  color: var(--semantic-color-brand-ink);
+  text-align: left;
+}
+
+.linkRuler {
+  position: absolute;
+  visibility: hidden;
+  height: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.linkStart,
+.linkEnd {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.linkEllipsis {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.copyButton {
+  width: 100%;
+}
+
+.copyStatus {
+  position: absolute;
+  width: var(--primitives-spacing-1);
+  height: var(--primitives-spacing-1);
+  padding: 0;
+  margin: calc(var(--primitives-spacing-1) * -1);
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.revokeLink {
+  margin: 0;
+  padding: var(--primitives-spacing-2) var(--primitives-spacing-3);
+  min-height: var(--primitives-spacing-11);
+  border: none;
+  background: transparent;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: var(--semantic-component-button-primary-sm-font-size);
+  font-weight: var(--primitives-fontWeight-medium);
+  line-height: var(--primitives-lineHeight-normal);
+  letter-spacing: var(--primitives-letterSpacing-wide);
+  color: var(--semantic-color-text-primary);
+  text-decoration: underline;
+  text-underline-offset: var(--primitives-spacing-1);
+  cursor: pointer;
+}
+
+.revokeLink:focus-visible {
+  outline: calc(var(--primitives-borderWidth-default) * 2px) solid var(--semantic-color-border-focus);
+  outline-offset: var(--primitives-spacing-1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .revokeLink:hover {
+    color: var(--semantic-color-brand-ink);
+  }
+}
+
+.lede {
+  margin: 0;
+  width: 100%;
+  font-family: var(--semantic-typography-ui-body-sm-font-family);
+  font-size: var(--semantic-typography-ui-body-sm-font-size);
+  font-weight: var(--semantic-typography-ui-body-sm-font-weight);
+  line-height: var(--semantic-typography-ui-body-sm-line-height);
+  letter-spacing: var(--semantic-typography-ui-body-sm-letter-spacing);
+  color: var(--semantic-color-text-muted);
+  text-align: left;
+}
+
+.linkCardActionButton {
+  width: 100%;
+}
+
+.revokeButtonDestructive {
+  border: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-status-error);
+  color: var(--semantic-color-status-error);
+  background: color-mix(in srgb, var(--semantic-color-status-error) 8%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .revokeButtonDestructive:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--semantic-color-status-error) 14%, transparent);
+  }
+
+  .doneButton:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--primitives-color-neutral-50) 55%, transparent);
+  }
+}
+
+.revokeConfirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  padding: var(--primitives-spacing-4);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 20%, transparent);
+  box-sizing: border-box;
+}
+
+.revokeCopy {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  line-height: var(--primitives-lineHeight-normal);
+  color: var(--semantic-color-text-muted);
+  text-align: left;
+}
+
+.revokeActions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+  width: 100%;
+}
+
+.buttonRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+}
+
+.doneButton {
+  width: 100%;
+  height: var(--primitives-spacing-12);
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
+  border: calc(var(--primitives-borderWidth-default) * 1px) solid
+    color-mix(in srgb, var(--primitives-color-neutral-50) 14%, transparent);
+  color: var(--semantic-color-text-primary);
+}
+/* Revoke row — disabled trigger + honest "coming soon" marker (real revoke needs backend state). */
+.revokeRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--primitives-spacing-2);
+}
+.revokeSoon {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: var(--semantic-typography-ui-body-sm-font-size);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-muted);
+}
+.revokeLink:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -21,7 +21,8 @@ Architectural decisions and rationale: `../../.claude/PLAN_ARMADA_INTERFACE.md`.
 | Server state | `@tanstack/react-query` | All HTTP, all RPC reads, all polling that fits the request/response shape |
 | Styling | Vendored design system in `src/design` (CSS Modules + tokens, imported as `@/design`) + Tailwind v4 (layout glue) | Severed from the shared `@armada/ui` so the app is self-contained. No typography Tailwind classes in app code — body baseline (15px Geist 1.5) drives everything |
 | Persistence | IndexedDB (`lib/cache.ts`) | Stores tx history, fee quotes, ENS, shielded balance snapshots |
-| Routing | `react-router-dom` 7 | Three pages today (Dashboard, History, Settings) plus a parked AddressBook |
+| Routing | `react-router-dom` 7 | Routed pages: Dashboard (`/`), Debug (`/debug`), parked AddressBook, and the standalone `PayViaLinkLanding` (`/pay-via-link`, outside the App shell). Settings is a modal, not a page; `/history` was retired |
+| QR | `qrcode.react` | Renders the pay-via-link QR (`components/payViaLink/PaymentLinkQrCode`) |
 
 ## Folder map
 
@@ -38,7 +39,7 @@ src/
 ├── state/                   Jotai atoms (tx, wallet, fees, visibility, ui)
 ├── hooks/                   per-concern hooks (useWallet, useShieldedWallet, useBalances, useYieldRate, useFees, useTx, useTxHistory, useTabVisible)
 ├── components/              AppLayout, WalletConnector, plus subfolders for each feature (dashboard/, shield/, yield/, payments/, tx/, settings/) — payments/ is the shared Send/Withdraw flow
-└── pages/                   Dashboard, History, Settings, AddressBook
+└── pages/                   Dashboard, Debug, AddressBook, PayViaLinkLanding (Settings is a modal)
 ```
 
 ## Conventions (enforced)

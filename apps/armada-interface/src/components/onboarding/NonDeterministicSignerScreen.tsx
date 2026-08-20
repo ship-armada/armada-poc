@@ -1,5 +1,5 @@
 // ABOUTME: Dedicated error screen rendered when signIn() detects a non-deterministic wallet — Path C routes users to backup/paste recovery rather than dead-ending.
-// ABOUTME: Two CTAs: primary "Use a backup file or recovery secret" (routes to UnlockFlow); secondary "Try a different wallet" (disconnects + back to welcome).
+// ABOUTME: Two CTAs: primary "Use a backup file or recovery secret" (opens SignInFlow's restore view); secondary "Try a different wallet" (disconnects + back to the sign-in view).
 
 import { Button, Text } from '@/design'
 import type { NonDeterministicSignerErrorReason } from '@/lib/crypto/determinism'
@@ -16,7 +16,7 @@ export interface NonDeterministicSignerScreenProps {
    *    wallet account switch the user didn't notice.
    */
   readonly reason: NonDeterministicSignerErrorReason
-  /** Route to UnlockFlow with the paste/backup tabs available. */
+  /** Open SignInFlow's restore view (backup file / paste secret). */
   readonly onUseRecovery: () => void
   /**
    * Disconnect the EVM wallet and return to the entry screen. Caller is

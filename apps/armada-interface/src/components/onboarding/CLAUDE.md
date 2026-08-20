@@ -1,38 +1,28 @@
 # components/onboarding/
 
-First-run setup + returning-user unlock. Mounted by the top-level guard in `App.tsx`, never reachable as a route.
+The account entry — a single state-agnostic **Sign In** for first visit and returning users alike (`SignInFlow`). Mounted by the top-level guard in `App.tsx`, never reachable as a route.
 
-V2 redesign (Path C) landed: deterministic re-sign is the primary path; backup-file + paste-secret are retained as secondary recovery. See `specs/TX_SIGNING.md` + `specs/TX_SIGNING_V2_AMENDMENT.md`.
+V2 redesign (Path C): deterministic sign-in is the primary path (same `signIn()` for new + returning); backup-file + paste-secret are secondary recovery, tucked behind a "Restore wallet from backup" link. See `specs/TX_SIGNING.md` + `specs/TX_SIGNING_V2_AMENDMENT.md`.
 
 ## Contents
 
 | Component | Purpose |
 |---|---|
 | `OnboardingShell` | Non-dismissible `Modal` + `FlowHeader` wrapper. Owns the body padding; step content + footer flow inside. |
-| `OnboardingFlowV2` | **Primary flow.** 4-step state machine: Welcome → Sign → Checksum → Complete (+ a `signer-error` mode for `NonDeterministicSignerError`). Drives `useShieldedWallet().signIn()`. Backup file export is opt-in via Settings → Export recovery, not gated on first-run. |
-| `OnboardingFlow` | Legacy 6-step flow (Welcome → Sign → Checksum → Backup → ConfirmBackup → Complete). Not used by the app; still compiles via the `enroll` alias in `useShieldedWallet`. Tests are `describe.skip`'d; kept as reference until the next deletion pass. |
-| `UnlockFlow` | **Three-tab unlock.** Tab 1 (default): "Sign in" — re-deriver via `signIn()`. Tab 2: "Backup file" — passphrase + file upload via `unlockByBackup()`. Tab 3: "Paste secret" — 64-char hex via `unlockByPaste()`. A `NonDeterministicSignerError` from Tab 1 auto-switches to Tab 2 with a banner. |
-| `NonDeterministicSignerScreen` | Full-page error rendered by `OnboardingFlowV2` when the determinism check fails on first sign. Headline + body + supported/unsupported wallet compatibility lists + two CTAs (use backup/paste recovery / try a different wallet). |
-| `steps/WelcomeStep` | Intro + Create CTA. Copy updated: no "you'll create a backup" framing — backup is opt-in. |
-| `steps/SignEnrollmentStep` | EIP-712 sign prompt + in-flight/error state. Optional `onSignerIncompatible(reason)` callback for routing the typed error to the parent's dedicated screen. |
-| `steps/AntiPhishChecksumStep` | Displays the live anti-phish checksum so the user recognizes their own wallet on later unlocks. |
-| `steps/BackupPassphraseStep` | Passphrase entry + browser download of the encrypted `armada-backup-v2` blob. **Retained** post Path C; surfaced via Settings → Export recovery. |
-| `steps/ConfirmBackupStep` | Re-upload + decrypt verification — confirms checksum matches the live wallet before activating. **Retained** for Settings-side export confirmation. |
-| `steps/CompleteStep` | Success panel. Calls `onDone` to hand control back to App-level mode. Copy mentions Settings → Export recovery for cross-device backup. |
-
+| `SignInFlow` | **Primary flow — one state-agnostic screen for first visit AND returning users.** `signIn()` first-derives (new) or re-derives (returning) the same identity, so there is no create/unlock split. Views: `sign-in` (connect + sign, with a state-agnostic two-signature note), `restore` (backup file [default] ⇄ paste secret, toggled by a text link), `signer-error` (renders `NonDeterministicSignerScreen`). Restore is reached via a quiet "Restore wallet from backup" link. |
+| `OnboardingFlow` | Legacy 6-step flow (Welcome → Sign → Checksum → Backup → ConfirmBackup → Complete). **Dead** — not rendered by the app; still compiles + owns the `steps/*` components. Tests are `describe.skip`'d; kept until a deletion pass. |
+| `NonDeterministicSignerScreen` | Full-page error rendered by `SignInFlow` when the determinism check fails on sign-in. Headline + body + supported/unsupported wallet compatibility lists + two CTAs (use backup/paste recovery → restore view; try a different wallet → disconnect + back to sign-in). |
 ## How the guard works
 
-`App.tsx` tracks a local `mode` state (`pre-migration` / `pre-init` / `onboarding` / `unlock` / `app`). It runs the V2 schema migration on `pre-migration`, then derives the initial unlock mode from `localStorage` + `shieldedWalletAtom.status` on mount, then transitions explicitly:
+`App.tsx` tracks a local `mode` state (`pre-migration` / `pre-init` / `signin` / `app`). It runs the V2 schema migration on `pre-migration`, then derives the initial mode from `localStorage` + `shieldedWalletAtom.status` on mount, then transitions explicitly:
 
-- `onboarding` → `app` when the user clicks Done in `CompleteStep`.
-- `onboarding` → `unlock` when the user clicks the **Restore** secondary CTA on `WelcomeStep` (or the **Use a backup file or recovery secret** CTA on `NonDeterministicSignerScreen`).
-- `unlock` → `onboarding` when the user clicks the **Create new account** link, *only when there was no persisted walletId at boot*. App.tsx tracks this via the sticky `hadPersistedWalletAtBoot` flag so a returning user can't orphan their existing wallet by misclicking.
-- `app` → `unlock` when the atom flips to `locked` (auto-lock timer, account-switch detection, tab-unload, hidden-tab grace expiry).
-- `unlock` → `app` when an unlock path resolves and `UnlockFlow` calls `onUnlocked`.
+- On cold boot: `unlocked` (HMR re-mount) → `app`; otherwise seed the persisted walletId (if any) as a `locked` entry and go to `signin`. First-run (no persisted id) also lands on `signin` — signing in first-derives the wallet.
+- `signin` → `app` when a sign-in or restore resolves and `SignInFlow` calls `onUnlocked`.
+- `app` → `signin` when the atom flips to `locked` **or** `missing` (auto-lock timer, account-switch detection, tab-unload, hidden-tab grace expiry, Settings → Reset). See `lib/app-mode.ts::appModeForWalletStatus`.
 
-The Restore CTA is offered unconditionally in onboarding — the flow can't know whether a given visitor is genuinely new or arriving on a new device. The link is inert for genuinely-new users and load-bearing for the second case.
+There is no create/unlock fork and no "clear this browser's saved login" affordance — since sign-in is the only entry, a returning user can't accidentally orphan their wallet, so the old `hadPersistedWalletAtBoot` machinery is gone.
 
-Why a local mode state instead of reading the atom directly? Because `useShieldedWallet().signIn()` writes to atoms BEFORE the user reaches Complete (the wallet is unlocked from the moment of Sign). If the guard read the atom directly, the post-sign screens would never render — the atom flip would unmount `OnboardingFlowV2` immediately. The local mode shields the flow until the user explicitly clicks through Complete.
+Why a local mode state instead of reading the atom directly? `useShieldedWallet().signIn()` flips the wallet atom to `unlocked` the moment the signature lands. If the guard read the atom directly, a sign-in in progress could unmount `SignInFlow` mid-transition. The local mode keeps the transition to `app` explicit (driven by `onUnlocked`).
 
 ## Key handling
 
@@ -43,4 +33,4 @@ Why a local mode state instead of reading the atom directly? Because `useShielde
 
 ## Account-switch handling
 
-When wagmi reports a new EVM address while the shielded wallet is unlocked (Phase 4), `useWallet` detects the mismatch via `keyManager.getEvmAddress()`, immediately calls `lockWallet()`, resets the active wallet atoms, and surfaces a `sonner` toast. The App-level guard flips to `unlock`, `UnlockFlow` lands on Tab 1 (Sign in), and the user signs in for the new EVM account.
+When wagmi reports a new EVM address while the shielded wallet is unlocked (Phase 4), `useWallet` detects the mismatch via `keyManager.getEvmAddress()`, immediately calls `lockWallet()`, resets the active wallet atoms, and surfaces a `sonner` toast. The App-level guard flips to `signin`; `SignInFlow` shows the sign-in view, and the user signs in for the new EVM account.

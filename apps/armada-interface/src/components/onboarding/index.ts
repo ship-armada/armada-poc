@@ -1,5 +1,5 @@
-// ABOUTME: Barrel export for onboarding/unlock primitives — OnboardingShell, OnboardingFlow, UnlockFlow, plus the per-step components.
-// ABOUTME: App.tsx imports OnboardingFlow + UnlockFlow; step components are mostly internal to OnboardingFlow.
+// ABOUTME: Barrel export for the account-entry primitives — SignInFlow (the live single sign-in), plus OnboardingShell + the dead V1 OnboardingFlow and its per-step components.
+// ABOUTME: App.tsx imports SignInFlow; the step components are consumed only by the dead V1 OnboardingFlow.
 
 export { OnboardingShell } from './OnboardingShell'
 export type { OnboardingShellProps } from './OnboardingShell'
@@ -7,14 +7,11 @@ export type { OnboardingShellProps } from './OnboardingShell'
 export { OnboardingFlow } from './OnboardingFlow'
 export type { OnboardingFlowProps } from './OnboardingFlow'
 
-export { OnboardingFlowV2 } from './OnboardingFlowV2'
-export type { OnboardingFlowV2Props } from './OnboardingFlowV2'
-
 export { OnboardingLayout } from '../OnboardingLayout/OnboardingLayout'
 export type { OnboardingLayoutProps } from '../OnboardingLayout/OnboardingLayout'
 
-export { UnlockFlow } from './UnlockFlow'
-export type { UnlockFlowProps } from './UnlockFlow'
+export { SignInFlow } from './SignInFlow'
+export type { SignInFlowProps } from './SignInFlow'
 
 export { WelcomeStep } from './steps/WelcomeStep'
 export type { WelcomeStepProps } from './steps/WelcomeStep'

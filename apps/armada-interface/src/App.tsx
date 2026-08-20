@@ -1,11 +1,11 @@
-// ABOUTME: Top-level route shell + wallet-status guard — runs the v2 schema migration before anything else, installs the visibility listener, hydrates tx history, starts the executor, and renders OnboardingFlow / UnlockFlow / Outlet based on local mode.
-// ABOUTME: Guard uses a local mode state (not direct atom read) so the onboarding success screen gets to render even after createWallet flips the atom.
+// ABOUTME: Top-level route shell + wallet-status guard — runs the v2 schema migration before anything else, installs the visibility listener, hydrates tx history, starts the executor, and renders SignInFlow / Outlet based on local mode.
+// ABOUTME: Guard uses a local mode state (not direct atom read) so a sign-in in progress doesn't get unmounted the moment signIn() flips the wallet atom to unlocked.
 
 import { useEffect, useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { useAtomValue, useSetAtom } from 'jotai'
 import { AppLayout } from '@/components/AppLayout'
-import { OnboardingFlowV2, UnlockFlow } from '@/components/onboarding'
+import { SignInFlow } from '@/components/onboarding'
 import { ShieldModal } from '@/components/shield'
 import { SendModal } from '@/components/payments'
 import { ReceiveDialog } from '@/components/receive'
@@ -41,7 +41,7 @@ import { trackError } from '@/lib/telemetry'
 import { appModeForWalletStatus, type GuardMode } from '@/lib/app-mode'
 import { preloadArtifactsFromOrigin } from '@/lib/shielded/artifacts'
 import { runSchemaMigrationIfNeeded } from '@/lib/shielded/schema-migration'
-import { clearStoredWalletIdentity, readStoredWalletId } from '@/lib/shielded/wallet'
+import { readStoredWalletId } from '@/lib/shielded/wallet'
 import { isLocalMode } from '@/config/network'
 import {
   DEFAULT_DEV_MOCK_BALANCE,
@@ -131,22 +131,17 @@ export function App() {
       trackError('shielded.artifacts.preload', err),
     )
   }, [mode])
-  // Sticky flag: true when this device boot started with NO persisted walletId. Drives whether
-  // we offer the bidirectional Onboarding ↔ Unlock fork. A returning user (had a wallet at boot)
-  // never sees the "Create new" link in UnlockFlow — preventing accidental orphaning of their
-  // existing wallet. A new-device user (no persisted wallet at boot) sees both fork links.
-  const [hadPersistedWalletAtBoot, setHadPersistedWalletAtBoot] = useState(false)
-
   // Cold-boot hydration + initial mode derivation, in one pass to avoid a race between
   // separate effects (the mode effect would otherwise read a stale `wallet.status` before the
   // hydration setState landed). Source of truth on cold boot is localStorage — the SDK
-  // persists wallet IDB and we persist the walletId on enroll, but Jotai atoms reset to
+  // persists wallet IDB and we persist the walletId on sign-in, but Jotai atoms reset to
   // defaults on every page load.
   //
-  // Three cases:
+  // Two cases, both landing on the unified sign-in screen:
   //   - `wallet.status === 'unlocked'`: HMR re-mount, atoms already populated → straight to app.
-  //   - persisted walletId in localStorage: returning user → seed `locked` entry → UnlockFlow.
-  //   - neither: first run → OnboardingFlow (with Restore escape hatch — see below).
+  //   - otherwise: seed the persisted walletId (if any) as a `locked` entry so sign-in has an
+  //     active wallet to unlock, then → SignInFlow. First-run (no persisted id) also lands here;
+  //     signing in first-derives the wallet.
   useEffect(() => {
     if (mode !== 'pre-init') return
     if (wallet.status === 'unlocked') {
@@ -155,15 +150,12 @@ export function App() {
     }
     const persistedId = readStoredWalletId()
     if (persistedId) {
-      setHadPersistedWalletAtBoot(true)
       setShieldedWallets(prev =>
         prev[persistedId] ? prev : { ...prev, [persistedId]: { id: persistedId, status: 'locked' } },
       )
       setActiveWalletId(prev => prev ?? persistedId)
-      setMode('unlock')
-      return
     }
-    setMode('onboarding')
+    setMode('signin')
   }, [mode, wallet.status, setShieldedWallets, setActiveWalletId])
 
   // After initial derivation, react to subsequent wallet-status changes while in app mode:
@@ -185,39 +177,11 @@ export function App() {
     return null
   }
 
-  if (mode === 'onboarding') {
-    // Always offer the Restore escape hatch — the onboarding flow has no way to know whether
-    // the user is genuinely new vs. arriving on a new device with an existing backup. The link
-    // is harmless for genuinely new users (they ignore it) and load-bearing for the second case.
-    return <OnboardingFlowV2 onDone={() => setMode('app')} onRestore={() => setMode('unlock')} />
-  }
-
-  if (mode === 'unlock') {
-    const handleStartOver = () => {
-      if (
-        hadPersistedWalletAtBoot &&
-        !window.confirm(
-          "Clear the saved login on this device? If you sign in again with the same EVM wallet, your account is restored — your shielded funds are not affected. " +
-            'Only continue if you want to switch wallets. If you originally restored from a backup file or recovery secret, make sure you still have it before continuing.',
-        )
-      ) {
-        return
-      }
-      clearStoredWalletIdentity()
-      setShieldedWallets({})
-      setActiveWalletId(null)
-      setHadPersistedWalletAtBoot(false)
-      setMode('onboarding')
-    }
-    return (
-      <UnlockFlow
-        onUnlocked={() => setMode('app')}
-        onCreateNew={handleStartOver}
-        createNewLabel={
-          hadPersistedWalletAtBoot ? "Clear this browser's saved login" : undefined
-        }
-      />
-    )
+  if (mode === 'signin') {
+    // One state-agnostic sign-in screen for first visit and returning users alike — signIn()
+    // first-derives or re-derives the same shielded identity from the EVM signature. Restore
+    // (backup file / recovery secret) is available behind a link for new-device / smart-account users.
+    return <SignInFlow onUnlocked={() => setMode('app')} />
   }
 
   return (

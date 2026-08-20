@@ -1,10 +1,10 @@
-/* ABOUTME: UnlockFlow layout — left-aligned lock icon, body copy, fields, edge-to-edge footer. */
-/* ABOUTME: Visually similar to WelcomeStep but more compact since there's only one field per mode. */
+/* ABOUTME: SignInFlow layout — single sign-in screen (intro + connect/sign) with a quiet restore link; restore view reuses the field/secret styling. */
+/* ABOUTME: Evolved from UnlockFlow.module.css; adds the title/intro + the quiet text-link treatment for restore + back. */
 
 .flow {
   display: flex;
   flex-direction: column;
-  gap: var(--primitives-spacing-11);
+  gap: var(--primitives-spacing-6);
   width: 100%;
   flex: 1;
   min-height: 0;
@@ -15,11 +15,24 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--primitives-spacing-8);
+  gap: var(--primitives-spacing-6);
   text-align: left;
   width: 100%;
   max-width: 400px;
   margin-inline: auto;
+}
+
+.title {
+  margin: 0;
+  color: var(--semantic-color-text-primary);
+}
+
+.intro {
+  margin: 0;
+  color: var(--semantic-color-text-muted);
+  text-align: left;
+  max-width: 46ch;
+  line-height: var(--primitives-lineHeight-normal);
 }
 
 .modeForm {
@@ -103,12 +116,9 @@
 
 .input:focus {
   border-color: var(--semantic-color-border-focus);
-  box-shadow: 0 0 0 2px rgba(196, 145, 229, 0.18);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--semantic-color-brand-lavender) 18%, transparent);
 }
 
-/* Styled file-input container — replaces the browser's default "Choose file" chrome. The
-   native <input type="file"> sits transparently over the box so the entire area is the click
-   target; the .fileInputDisplay span shows only the selected filename (empty by default). */
 .fileInputArea {
   position: relative;
   display: flex;
@@ -125,7 +135,7 @@
 
 .fileInputArea:focus-within {
   border-color: var(--semantic-color-border-focus);
-  box-shadow: 0 0 0 2px rgba(196, 145, 229, 0.18);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--semantic-color-brand-lavender) 18%, transparent);
 }
 
 .fileInput {
@@ -159,7 +169,7 @@
 
 .secretField:focus-within {
   border-color: var(--semantic-color-border-focus);
-  box-shadow: 0 0 0 2px rgba(196, 145, 229, 0.18);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--semantic-color-brand-lavender) 18%, transparent);
 }
 
 .secretInput {
@@ -199,10 +209,10 @@
 
 .banner {
   padding: var(--primitives-spacing-3);
-  border-radius: var(--primitives-radius-md, 8px);
-  background: var(--semantic-color-surface-elevated, rgba(0, 0, 0, 0.04));
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: var(--semantic-color-surface-raised);
   color: var(--semantic-color-text-secondary);
-  border-left: 3px solid var(--semantic-color-status-warning, var(--semantic-color-text-secondary));
+  border-left: 3px solid var(--semantic-color-status-warning);
 }
 
 .bodyMuted {
@@ -210,31 +220,118 @@
   color: var(--semantic-color-text-muted);
 }
 
+/* First-time note as a callout banner — mirrors the dashboard DepositTooltip (surface card + tinted
+   icon tile + text). */
+.firstTimeBanner {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--primitives-spacing-4);
+  width: 100%;
+  padding: var(--primitives-spacing-3);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  background: var(--semantic-color-surface-default);
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.firstTimeIconTile {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--semantic-color-brand-lavender);
+}
+
+.firstTimeIcon {
+  width: var(--primitives-spacing-8);
+  height: var(--primitives-spacing-8);
+}
+
+/* Text block — headline + body, mirroring the dashboard DepositTooltip's .textBlock. */
+.firstTimeText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--primitives-spacing-1);
+}
+
+/* "First time on this device?" — subhead, matching the dashboard banner headline. */
+.firstTimeHeadline {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-weight: var(--primitives-fontWeight-semibold);
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+  line-height: var(--primitives-lineHeight-snug);
+  letter-spacing: var(--primitives-letterSpacing-normal);
+  color: var(--semantic-color-text-primary);
+}
+
+/* Body copy — matches the dashboard banner body (size from armada-text-ui-body-sm). */
+.firstTimeBody {
+  margin: 0;
+  color: color-mix(in srgb, var(--semantic-color-text-primary) 60%, transparent);
+}
+
+/* The "Connected as 0x…" line, moved below the Sign in button. Semibold for emphasis; the address
+   renders in the sans UI font (not the default <code> monospace). */
+.connectedAs {
+  align-self: center;
+  margin-top: var(--primitives-spacing-3);
+  font-weight: var(--primitives-fontWeight-semibold);
+}
+
+.connectedAs code {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+}
+
 .footer {
   align-self: stretch;
   margin-top: var(--primitives-spacing-6);
 }
 
-.createNew {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--primitives-spacing-1);
-  text-align: center;
-  color: var(--semantic-color-text-muted);
+/* Sign-in view is wider than the restore forms so the lead button reads as the primary action. */
+.shellSignIn {
+  max-width: 480px;
 }
 
-.createNewLink {
+/* The lead sign-in button — full width of the sign-in column, taller than the lg default, with
+   slightly larger label text. */
+.signInButton {
+  width: 100%;
+  max-width: 360px;
+  align-self: center;
+  height: var(--primitives-spacing-16);
+  font-size: calc(var(--primitives-fontSize-lg) * 1px);
+}
+
+/* Explanatory copy block below the sign-in button. Extra top margin widens the gap from the
+   "Connected as…" line above (on top of the shell's inter-child gap). */
+.copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--primitives-spacing-10);
+  width: 100%;
+  text-align: left;
+  margin-top: 0;
+}
+
+/* Quiet text link — the "Restore wallet from backup" affordance under sign-in, the restore-mode
+   toggle, and the "Back to sign in" link. Left-aligned, understated. */
+.textLink {
+  align-self: center;
   background: none;
   border: 0;
   padding: 0;
-  color: var(--semantic-color-brand-lavender);
+  color: var(--semantic-component-button-primary-bg);
   cursor: pointer;
-  text-decoration: underline;
   font: inherit;
 }
 
-.createNewLink:hover,
-.createNewLink:focus-visible {
-  color: var(--semantic-color-text-primary);
+.textLink:hover,
+.textLink:focus-visible {
+  color: var(--semantic-component-button-primary-bg-active);
 }

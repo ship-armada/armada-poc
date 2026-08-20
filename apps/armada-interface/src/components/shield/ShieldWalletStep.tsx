@@ -1,7 +1,7 @@
-// ABOUTME: Shield wallet-approve step — the mockup's dedicated "step 3" wallet page. Shows the live approve/sign checklist.
-// ABOUTME: Title transitions "Preparing your deposit…" (proof building, no prompt yet) → "Confirm in your wallet" (a prompt is live).
+// ABOUTME: Shield wallet-approve step — the mockup's dedicated "step 3" wallet page (centered title + approve/sign checklist + footer).
+// ABOUTME: Footer transitions "Preparing your deposit…" (proof building, no prompt yet) → "Waiting for wallet confirmation" (a prompt is live).
 
-import { modalStepBodyEnter } from '@/design'
+import { modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { WalletConfirmList } from '@/components/flow/WalletConfirmList/WalletConfirmList'
 import type { WalletStep } from '@/lib/tx/shieldWalletSteps'
 import styles from './ShieldWalletStep.module.css'
@@ -15,19 +15,18 @@ export function ShieldWalletStep({ steps }: ShieldWalletStepProps) {
   // every row is `pending` — surface the honest "preparing" copy so the user isn't told to confirm
   // a prompt that hasn't popped yet.
   const prompting = steps.some((s) => s.status === 'loading')
-  const title = prompting ? 'Confirm in your wallet' : 'Preparing your deposit…'
-  const subtitle = prompting
-    ? 'Approve the request(s) in your wallet to continue.'
-    : 'Building your zero-knowledge proof…'
+  const footer = prompting ? 'Waiting for wallet confirmation' : 'Preparing your deposit…'
 
   return (
-    <div className={styles.root}>
+    <div className={styles.column}>
       <div className={`${styles.body} ${modalStepBodyEnter}`}>
-        <div className={styles.header}>
-          <h1 className={styles.title}>{title}</h1>
-          <p className={styles.subtitle}>{subtitle}</p>
-        </div>
-        <WalletConfirmList steps={steps} />
+        <h1 className={styles.title}>Confirm transactions on your wallet</h1>
+        <WalletConfirmList className={styles.confirmList} steps={steps} />
+      </div>
+      <div className={modalActionRowEnter}>
+        <p className={styles.footerText} aria-live="polite" aria-atomic="true">
+          {footer}
+        </p>
       </div>
     </div>
   )

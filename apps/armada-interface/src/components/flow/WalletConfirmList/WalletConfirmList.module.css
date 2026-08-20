@@ -2,30 +2,29 @@
 
 .card {
   width: 100%;
-  background: var(--semantic-color-surface-raised);
-  border: 1px solid var(--semantic-color-border-default);
-  border-radius: var(--semantic-borderRadius-item);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
   overflow: hidden;
+  padding: var(--primitives-spacing-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-4);
+  background: var(--semantic-color-surface-main);
+  box-sizing: border-box;
 }
 
 .row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--primitives-spacing-4) var(--primitives-spacing-5);
-}
-
-.divider {
-  width: 100%;
-  height: 1px;
-  background: var(--semantic-color-border-default);
+  min-height: var(--primitives-spacing-4);
+  gap: var(--primitives-spacing-3);
 }
 
 .label {
   font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-size: calc(var(--primitives-fontSize-base) * 1px);
   font-weight: var(--primitives-fontWeight-regular);
-  color: var(--semantic-color-text-primary);
+  color: var(--semantic-color-text-muted);
 }
 
 .status {

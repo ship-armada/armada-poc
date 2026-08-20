@@ -7,23 +7,27 @@ import { ShieldWalletStep } from './ShieldWalletStep'
 import type { WalletStep } from '@/lib/tx/shieldWalletSteps'
 
 describe('ShieldWalletStep', () => {
-  it('shows the "Preparing…" copy while every row is pending (proof building)', () => {
+  it('renders the checklist under the mockup title, with the "Preparing…" footer while pending', () => {
     const steps: WalletStep[] = [
       { label: 'Approve 5.00 USDC', status: 'pending' },
-      { label: 'Submit 5.00 USDC deposit', status: 'pending' },
+      { label: 'Sign deposit transaction', status: 'pending' },
     ]
     render(<ShieldWalletStep steps={steps} />)
-    expect(screen.getByRole('heading', { name: 'Preparing your deposit…' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: 'Confirm transactions on your wallet' }),
+    ).toBeInTheDocument()
     expect(screen.getByRole('list', { name: 'Wallet confirmations' })).toBeInTheDocument()
-    expect(screen.getByText('Submit 5.00 USDC deposit')).toBeInTheDocument()
+    expect(screen.getByText('Sign deposit transaction')).toBeInTheDocument()
+    // Proof still building → honest "preparing" footer (no prompt live yet).
+    expect(screen.getByText('Preparing your deposit…')).toBeInTheDocument()
   })
 
-  it('switches to "Confirm in your wallet" once a prompt is live (a row is loading)', () => {
+  it('switches the footer to "Waiting for wallet confirmation" once a prompt is live', () => {
     const steps: WalletStep[] = [
       { label: 'Approve 5.00 USDC', status: 'loading' },
-      { label: 'Submit 5.00 USDC deposit', status: 'pending' },
+      { label: 'Sign deposit transaction', status: 'pending' },
     ]
     render(<ShieldWalletStep steps={steps} />)
-    expect(screen.getByRole('heading', { name: 'Confirm in your wallet' })).toBeInTheDocument()
+    expect(screen.getByText('Waiting for wallet confirmation')).toBeInTheDocument()
   })
 })

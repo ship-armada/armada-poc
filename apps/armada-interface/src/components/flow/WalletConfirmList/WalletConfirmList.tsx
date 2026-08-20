@@ -11,43 +11,41 @@ const STATUS_LABEL: Record<WalletStepStatus, string> = {
 
 export interface WalletConfirmListProps {
   steps: WalletStep[]
+  className?: string
 }
 
-export function WalletConfirmList({ steps }: WalletConfirmListProps) {
+export function WalletConfirmList({ steps, className }: WalletConfirmListProps) {
   return (
     <div
-      className={styles.card}
+      className={[styles.card, className].filter(Boolean).join(' ')}
       role="list"
       aria-live="polite"
       aria-label="Wallet confirmations"
     >
-      {steps.map((step, i) => (
-        <div key={step.label} role="listitem">
-          {i > 0 ? <div className={styles.divider} aria-hidden="true" /> : null}
-          <div className={styles.row}>
-            <span className={styles.label}>{step.label}</span>
-            <div className={styles.status} aria-label={STATUS_LABEL[step.status]}>
-              {step.status === 'loading' ? (
-                <div className={styles.spinner} role="status" aria-label="Loading" />
-              ) : null}
-              {step.status === 'pending' ? (
-                <div className={styles.circle} aria-hidden="true" />
-              ) : null}
-              {step.status === 'done' ? (
-                <div className={styles.check} aria-hidden="true">
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                    <path
-                      d="M2 6L5 9L10 3"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </div>
-              ) : null}
-              <span className={styles.visuallyHidden}>{STATUS_LABEL[step.status]}</span>
-            </div>
+      {steps.map((step) => (
+        <div key={step.label} className={styles.row} role="listitem">
+          <span className={styles.label}>{step.label}</span>
+          <div className={styles.status} aria-label={STATUS_LABEL[step.status]}>
+            {step.status === 'loading' ? (
+              <div className={styles.spinner} role="status" aria-label="Loading" />
+            ) : null}
+            {step.status === 'pending' ? (
+              <div className={styles.circle} aria-hidden="true" />
+            ) : null}
+            {step.status === 'done' ? (
+              <div className={styles.check} aria-hidden="true">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <path
+                    d="M2 6L5 9L10 3"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </div>
+            ) : null}
+            <span className={styles.visuallyHidden}>{STATUS_LABEL[step.status]}</span>
           </div>
         </div>
       ))}

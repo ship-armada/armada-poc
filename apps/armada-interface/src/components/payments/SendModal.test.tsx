@@ -134,17 +134,29 @@ describe('<SendModal>', () => {
     expect(screen.getByLabelText('Recipient address')).toBeInTheDocument()
   })
 
-  it('seeds the recipient from a pay-via-link intent and consumes it', () => {
+  it('opens directly on Review from a pay-via-link intent and consumes it', () => {
     const store = renderModal({
       open: 'payment',
       shielded: 10_000_000n,
       intent: { recipient: VALID_0ZK, amount: '25' },
     })
-    // Prefilled recipient is recognised as a valid 0zk (privacy badge) and held on the input title.
-    expect(screen.getByLabelText('Recipient address')).toHaveAttribute('title', VALID_0ZK)
-    expect(screen.getByText('Private address')).toBeInTheDocument()
+    // Recipient + amount are both known, so the flow jumps past the recipient/amount steps.
+    expect(screen.getByRole('heading', { name: 'Review your USDC transfer' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Confirm send' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Recipient address')).toBeNull()
     // The intent is consumed on open so it can't re-fire.
     expect(store.get(paymentIntentAtom)).toBeNull()
+  })
+
+  it('lands on the amount step for an amount-less pay-via-link intent', () => {
+    renderModal({
+      open: 'payment',
+      shielded: 10_000_000n,
+      intent: { recipient: VALID_0ZK },
+    })
+    // No amount to review yet — the amount step is shown (recipient already seeded).
+    expect(screen.queryByLabelText('Recipient address')).toBeNull()
+    expect(screen.getByLabelText('Send amount')).toBeInTheDocument()
   })
 
   it('Continue enables only once the recipient is a valid address', () => {

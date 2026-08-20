@@ -8,6 +8,12 @@
   align-items: stretch;
   gap: var(--primitives-spacing-10);
   width: 100%;
+  /* `backdrop-filter` makes this card a permanent stacking context, trapping the chain dropdown's
+     z-index inside it. The modal footer buttons (held `transform: translateY(0)` from the enter
+     animation) are later-in-DOM stacking contexts that would otherwise paint over the card and clip
+     the open dropdown. An explicit z-index lifts the whole card above the footer. */
+  position: relative;
+  z-index: 1;
   padding: var(--primitives-spacing-8);
   background: linear-gradient(
     180deg,

@@ -11,6 +11,12 @@
 .card {
   width: 100%;
   box-sizing: border-box;
+  /* The modal enter animation holds `transform: translateY(0)` (a non-none transform) on both this
+     card and the footer buttons, so each is a permanent stacking context. Without an explicit
+     z-index the later-in-DOM buttons paint over the card — which clips the ChainSelect dropdown
+     behind them. Lifting the card into the parent's positive-z layer keeps the dropdown on top. */
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   align-items: stretch;

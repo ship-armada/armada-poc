@@ -43,7 +43,7 @@ describe('shieldWalletSteps', () => {
     expect(steps[0].status).toBe('loading')
   })
 
-  it('gasless: collapses to a single "Authorize deposit" row, done once build-proof completes (S-M4)', () => {
+  it('gasless: authorize + sign rows, both done once build-proof captures the signatures (S-M4)', () => {
     const building: TxRecord<'shield'> = {
       ...base,
       meta: { ...base.meta, useGasless: true },
@@ -51,15 +51,15 @@ describe('shieldWalletSteps', () => {
       stagesCompleted: [],
     }
     const buildingSteps = shieldWalletSteps(building, 5_000_000n)
-    expect(buildingSteps.map(s => s.label)).toEqual(['Authorize 5.00 USDC deposit'])
-    expect(buildingSteps[0].status).toBe('loading')
+    expect(buildingSteps.map(s => s.label)).toEqual(['Authorize 5.00 USDC', 'Sign deposit transaction'])
+    expect(buildingSteps.map(s => s.status)).toEqual(['loading', 'pending'])
 
-    const authorized: TxRecord<'shield'> = {
+    const signed: TxRecord<'shield'> = {
       ...building,
       stage: 'submit-relayer',
       stagesCompleted: ['build-proof'],
     }
-    expect(shieldWalletSteps(authorized, 5_000_000n)[0].status).toBe('done')
+    expect(shieldWalletSteps(signed, 5_000_000n).map(s => s.status)).toEqual(['done', 'done'])
   })
 
   it('wallet interactions incomplete until authorize, approve, and deposit submit', () => {
@@ -79,5 +79,24 @@ describe('shieldWalletSteps', () => {
       },
     }
     expect(shieldWalletInteractionsComplete(done)).toBe(true)
+  })
+
+  it('gasless: complete once build-proof captures the permit (no wallet prompt at submit)', () => {
+    const beforeSign: TxRecord<'shield'> = {
+      ...base,
+      meta: { ...base.meta, useGasless: true },
+      stage: 'build-proof',
+      stagesCompleted: [],
+    }
+    expect(shieldWalletInteractionsComplete(beforeSign)).toBe(false)
+
+    // Permit signed → build-proof done. The relayer broadcasts the submit (no further prompt), so
+    // wallet interactions are complete even without a sourceTxHash yet.
+    const signed: TxRecord<'shield'> = {
+      ...beforeSign,
+      stage: 'submit-relayer',
+      stagesCompleted: ['build-proof'],
+    }
+    expect(shieldWalletInteractionsComplete(signed)).toBe(true)
   })
 })

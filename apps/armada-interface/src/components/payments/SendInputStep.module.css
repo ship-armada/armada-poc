@@ -25,14 +25,6 @@
   width: 100%;
 }
 
-.xchainNotice {
-  background: rgba(243, 208, 160, 0.08);
-  border: 1px solid var(--semantic-color-border-amber);
-  border-radius: calc(var(--semantic-borderRadius-input) * 1px);
-  padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
-  color: var(--semantic-color-text-amber);
-}
-
 .destError {
   background: rgba(248, 113, 113, 0.08);
   border: 1px solid rgba(248, 113, 113, 0.24);

@@ -45,16 +45,18 @@ export function shieldWalletSteps(
 ): WalletStep[] {
   const amountLabel = formatUsdcAmount(amount)
 
-  // Gasless path: the only wallet prompt (the EIP-2612 permit) happens during build-proof; the
-  // relayer broadcasts the submit, so there's no separate approve/submit prompt. Collapse to a
-  // single "Authorize deposit" row, done once build-proof has captured the signature.
+  // Gasless path: two back-to-back signatures during build-proof — the EIP-2612 USDC permit
+  // ("Authorize") + the EIP-712 ShieldIntent ("Sign"). The relayer broadcasts the submit, so there's
+  // no on-chain tx prompt. We can't observe permit-done vs intent-done separately (both captured at
+  // build-proof completion), so the approve row leads (loading) with sign pending, and both flip to
+  // done once build-proof completes — mirroring the mockup's Approve → Sign layout.
   const useGasless = record ? (record.meta as { useGasless?: boolean }).useGasless === true : false
   if (useGasless) {
     const authorized = Boolean(record?.stagesCompleted.includes('build-proof'))
-    return [{
-      label: `Authorize ${amountLabel} USDC deposit`,
-      status: authorized ? 'done' : 'loading',
-    }]
+    return [
+      { label: `Authorize ${amountLabel} USDC`, status: authorized ? 'done' : 'loading' },
+      { label: 'Sign deposit transaction', status: authorized ? 'done' : 'pending' },
+    ]
   }
 
   const artifacts = record ? shieldArtifacts(record) : {}
@@ -101,6 +103,12 @@ export function shieldWalletInteractionsComplete(
   record: ShieldRecord,
 ): boolean {
   const authorizeDone = record.stagesCompleted.includes('build-proof')
+  // Gasless: the ONLY wallet prompt is the EIP-2612 permit (+ intent), captured during build-proof.
+  // The relayer broadcasts the submit, so there's nothing more for the user to sign — done once
+  // build-proof has the signature (waiting on `sourceTxHash` here would keep the wallet step up
+  // during the relayer's own submit, where no prompt is pending).
+  const useGasless = (record.meta as { useGasless?: boolean }).useGasless === true
+  if (useGasless) return authorizeDone
   const artifacts = shieldArtifacts(record)
   const approveDone =
     artifacts.approveSkipped === true || Boolean(artifacts.approveTxHash)

@@ -1,4 +1,4 @@
-// ABOUTME: Tests for SendModal orchestrator — variant (send/withdraw), address-driven kind selection, the recipient→amount→review→progress flow, and withdraw prefill.
+// ABOUTME: Tests for SendModal orchestrator — send flow: address-driven kind selection + the recipient→amount→review→progress flow.
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
@@ -68,7 +68,6 @@ vi.mock('@/lib/tx/storage', () => ({
 }))
 
 const VALID_EVM = '0x1234567890abcdef1234567890abcdef12345678'
-const OTHER_EVM = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd'
 const VALID_0ZK = '0zk' + 'a'.repeat(40)
 
 const FAKE_QUOTE = {
@@ -81,7 +80,7 @@ const FAKE_QUOTE = {
 }
 
 function renderModal(opts?: {
-  open?: 'payment' | 'withdraw' | false
+  open?: 'payment' | false
   shielded?: bigint
   evm?: string
   intent?: { recipient: string; amount?: string }
@@ -262,35 +261,6 @@ describe('<SendModal>', () => {
     expect(screen.getByLabelText('Recipient address')).toHaveAttribute('title', VALID_0ZK)
   })
 
-  describe('withdraw variant', () => {
-    it('opens with the "Withdraw" title and prefills the connected wallet', () => {
-      renderModal({ open: 'withdraw', shielded: 10_000_000n, evm: VALID_EVM })
-      expect(screen.getByRole('dialog', { name: 'Withdraw' })).toBeInTheDocument()
-      expect(screen.getByLabelText('Recipient address')).toHaveAttribute('title', VALID_EVM)
-    })
-
-    it('the prefilled recipient is editable — can withdraw to any other 0x address', async () => {
-      renderModal({ open: 'withdraw', shielded: 10_000_000n, evm: VALID_EVM })
-      fireEvent.change(screen.getByLabelText('Recipient address'), { target: { value: OTHER_EVM } })
-      fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
-      fireEvent.change(screen.getByLabelText('Withdrawal amount'), { target: { value: '4' } })
-      fireEvent.click(screen.getByRole('button', { name: /Review/ }))
-      expect(screen.getByText('Review your USDC unshield')).toBeInTheDocument()
-      await act(async () => {
-        fireEvent.click(screen.getByRole('button', { name: 'Confirm' }))
-      })
-      await waitFor(() => {
-        expect(screen.getByText('Preparing transaction')).toBeInTheDocument()
-      })
-    })
-
-    it('uses withdraw copy — "Review your USDC unshield" and "Confirm"', () => {
-      renderModal({ open: 'withdraw', shielded: 10_000_000n, evm: VALID_EVM })
-      fireEvent.click(screen.getByRole('button', { name: /Continue/ }))
-      fireEvent.change(screen.getByLabelText('Withdrawal amount'), { target: { value: '5' } })
-      fireEvent.click(screen.getByRole('button', { name: /Review/ }))
-      expect(screen.getByText('Review your USDC unshield')).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Confirm' })).toBeInTheDocument()
-    })
-  })
+  // The former `withdraw` variant (unshield to your own wallet) moved to the Shield/Unshield tabbed
+  // modal — see ShieldModal.test.tsx's Unshield-tab coverage. SendModal is send-only now.
 })

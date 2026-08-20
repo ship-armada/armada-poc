@@ -59,8 +59,11 @@ function computeKind(recipient: string, destChainId: number, hubChainId: number)
 export function SendModal() {
   const [openModal, setOpenModal] = useAtom(openModalAtom)
   const [paymentIntent, setPaymentIntent] = useAtom(paymentIntentAtom)
-  const isOpen = openModal === 'payment' || openModal === 'withdraw'
-  const variant: SendFlowVariant = openModal === 'withdraw' ? 'withdraw' : 'send'
+  const isOpen = openModal === 'payment'
+  // Send-only: "unshield to my own wallet" now lives in the Shield/Unshield tabbed modal
+  // (ShieldModal). The `withdraw` variant copy survives on the step components (ActivityReceipt
+  // renders unshield receipts with it), but this modal no longer opens in that variant.
+  const variant: SendFlowVariant = 'send'
   // A6 — frozen into the record's meta at submit-time so a mid-flight toggle doesn't strand the handler.
   const prefs = useAtomValue(preferencesAtom)
 
@@ -220,13 +223,6 @@ export function SendModal() {
     }
   }, [isOpen])
 
-  // Withdraw variant prefills the recipient with the connected EVM wallet on open (still editable);
-  // Send starts empty. Fires once per open — a mid-flow wallet change must not clobber user edits.
-  useEffect(() => {
-    if (!isOpen) return
-    if (variant === 'withdraw') setRecipient(connectedEvm ?? '')
-  }, [isOpen])
-
   // Consume the pay-via-link intent once the modal has opened + seeded (the render-time block
   // above applies recipient/amount/step). Clearing the atom + pending carrier here (post-commit)
   // keeps the cross-component write out of render.
@@ -372,7 +368,7 @@ export function SendModal() {
     step === 'complete' ? 'confirmed'
     : step === 'error' ? 'error'
     : 'default'
-  const flowLabel = variant === 'withdraw' ? 'Withdraw' : 'Send'
+  const flowLabel = 'Send'
   // Destination chain name for the summary's Network row — public (0x) recipients only; a private
   // (0zk) transfer has no destination-chain concept.
   const networkName = isPrivate ? undefined : getChainById(destChainId)?.name
@@ -413,7 +409,6 @@ export function SendModal() {
           <SendInputStepContent
             variant={variant}
             destChainId={destChainId}
-            isXchain={isXchain}
             amountStr={amountStr}
             onAmountChange={setAmountStr}
             max={max}

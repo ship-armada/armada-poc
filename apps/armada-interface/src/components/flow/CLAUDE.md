@@ -32,6 +32,6 @@
 
 `FlowShell` takes `steps` (labels) + a 1-based `currentStep` and renders the `ModalShell` Steps bar. The error step is **not** part of the indicator — it's an overlay that appears in place of whichever step failed, with a Try Again CTA that returns the user to that step. Don't include `error` in the visible step count.
 
-## Wallet-signing sub-state (shield only)
+## Wallet-signing step (shield)
 
-Per the UI plan: `shield` is the only kind that surfaces a wallet signature. We do **not** model that as a separate flow step. Instead the executor's `executionState === 'waiting'` drives the active stage's copy inside `ProgressStep` (e.g. "Confirm in your wallet"). The shell stays at `step === 'progress'` throughout.
+`shield` is the only kind that surfaces a wallet signature, and it now has a **dedicated `wallet` step** (the mockup's step 3) between `review` and `progress` — `components/shield/ShieldWalletStep`, rendering `WalletConfirmList` from `lib/tx/shieldWalletSteps` (live approve/sign statuses). `useShieldFlow` advances `wallet → progress` once `shieldWalletInteractionsComplete(record)`, so by the time `progress` shows, the wallet prompts are done (no duplicate "Confirm in your wallet" in the progress timeline). Other kinds (unshield/transfer/yield) have no wallet-sign step — they're relayer-submitted; their brief `executionState === 'waiting'` still shows in `ProgressStep`'s stage copy.

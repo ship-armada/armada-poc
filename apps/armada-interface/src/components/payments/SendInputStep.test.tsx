@@ -1,4 +1,4 @@
-// ABOUTME: Tests for SendInputStep (amount step) — no chain row, percent pills, amount gating, xchain notice, variant copy, Back/Review actions.
+// ABOUTME: Tests for SendInputStep (amount step) — no chain row, percent pills, amount gating, variant copy, Back/Review actions.
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
@@ -28,7 +28,6 @@ function setup(extras?: Partial<SendInputStepProps>) {
   const props: SendInputStepProps = {
     variant: extras?.variant ?? 'send',
     destChainId: extras?.destChainId ?? 31337,
-    isXchain: extras?.isXchain ?? false,
     amountStr: extras?.amountStr ?? '',
     onAmountChange: extras?.onAmountChange ?? vi.fn(),
     max,
@@ -87,16 +86,6 @@ describe('<SendInputStep>', () => {
     expect(review).not.toBeDisabled()
     fireEvent.click(review)
     expect(props.onContinue).toHaveBeenCalledTimes(1)
-  })
-
-  it('no xchain notice when isXchain is false', () => {
-    setup({ isXchain: false, amountStr: '1' })
-    expect(screen.queryByText(/CCTP confirmation/)).toBeNull()
-  })
-
-  it('shows the xchain notice when isXchain is true', () => {
-    setup({ isXchain: true, amountStr: '1' })
-    expect(screen.getByText(/CCTP confirmation/)).toBeInTheDocument()
   })
 
   it('fires onBack from the Back button', () => {

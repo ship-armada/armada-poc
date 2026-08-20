@@ -1,14 +1,12 @@
 # components/payments/
 
-The shared Send/Withdraw flow — pay someone in USDC, either privately (0zk → 0zk) or to an
-external EVM wallet (0x). One variant-driven modal serves both entry points:
+The **Send** flow — pay someone in USDC, either privately (0zk → 0zk) or to an external EVM
+wallet (0x). Opened via `setOpenModal('payment')`; recipient starts empty.
 
-- `setOpenModal('payment')` → `variant = 'send'` (recipient starts empty).
-- `setOpenModal('withdraw')` → `variant = 'withdraw'` (recipient prefills the connected EVM
-  wallet, still editable — so "withdraw to my wallet" is zero-typing but any 0x works).
-
-There is no separate Unshield modal; the withdraw variant IS the former Unshield flow (subset of
-the external path).
+**Send-only.** The former `withdraw` variant (unshield to your OWN wallet) moved to the
+Shield/Unshield tabbed modal (`components/shield/`, Unshield tab). SendModal no longer opens in a
+withdraw variant — but `SendReviewStep` / `SendCompleteStep` keep their `variant="withdraw"` copy,
+which the Unshield tab and `ActivityReceipt` reuse to render unshield reviews/receipts.
 
 ## Contents
 

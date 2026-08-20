@@ -21,6 +21,8 @@ One concern per hook. Hooks own the React lifecycle (effects, subscriptions, tim
 | `useTxHistory()` | Hydrates `txListAtom` from IDB on `activeShieldedWalletIdAtom` change (V2 Phase 6); clears the atom on lock. Only hydrates records belonging to the active walletId. | Working |
 | `useTxResume()` | On unlock (leader tab only), calls `executor.resumeForWallet(walletId)` — re-attaches watchers to already-broadcast txs (has `sourceTxHash`) and fails pre-broadcast interruptions as `INTERRUPTED`. Idempotent per (walletId, session). Mount once at App root. | Working |
 | `useRequestLinks()` / `useAddRequestLink()` | Hydrator (mount at App root) loads the active wallet's created payment-request links from the encrypted `requestLinks` store into `requestLinksAtom` on unlock; `useAddRequestLink` persists a new link + prepends it. Drives the "Payment link created" activity rows. | Working |
+| `useShieldFlow(isOpen)` | Shield (deposit) flow controller — owns form/fee/kind/submit/step orchestration for the Shield tab (`shield` / `shield-xchain`, gasless-wrapper vs direct). Consumed by the dumb `ShieldModal`. | Working |
+| `useUnshieldFlow(isOpen)` | Unshield-to-own-wallet flow controller — recipient pinned to the connected wallet; a to-chain picker drives `unshield-local` / `unshield-xchain`. The Shield modal's Unshield tab consumes it. | Working |
 
 ## Conventions
 

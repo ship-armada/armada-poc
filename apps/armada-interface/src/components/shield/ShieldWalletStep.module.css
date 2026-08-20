@@ -1,0 +1,45 @@
+/* ABOUTME: ShieldWalletStep layout — centered display-lg title + the wallet checklist card + a footer line. */
+/* ABOUTME: Matches the mockup's DepositWalletApproveScreen (no frost wrapper; the WalletConfirmList is the only card). */
+
+.column {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--primitives-spacing-8);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--primitives-spacing-8);
+}
+
+.title {
+  margin: 0;
+  width: 100%;
+  font-family: var(--semantic-typography-display-lg-font-family), serif;
+  font-weight: var(--semantic-typography-display-lg-font-weight);
+  font-size: var(--semantic-typography-display-lg-font-size);
+  line-height: var(--semantic-typography-display-lg-line-height);
+  letter-spacing: var(--semantic-typography-display-lg-letter-spacing);
+  color: var(--semantic-color-text-primary);
+  text-align: center;
+}
+
+.confirmList {
+  width: calc(var(--primitives-spacing-24) * 3 + var(--primitives-spacing-12)); /* ~300px */
+  max-width: 100%;
+  align-self: center;
+}
+
+.footerText {
+  margin: 0;
+  width: 100%;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-secondary);
+  text-align: center;
+}

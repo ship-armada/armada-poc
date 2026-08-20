@@ -5,11 +5,14 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   REQUEST_LINK_EXPIRY_OPTIONS,
   buildPayViaLinkUrl,
+  clearPendingPayViaLink,
   createPaymentRequestId,
   formatPaymentLinkExpiry,
   isPaymentLinkRevoked,
   parsePayViaLinkSearch,
+  readPendingPayViaLink,
   requestLinkExpiryMs,
+  writePendingPayViaLink,
 } from './payViaLink'
 
 // A shape-valid 0zk address (isShieldedAddress: /^0zk[a-zA-Z0-9]{32,}$/).
@@ -144,6 +147,23 @@ describe('createPaymentRequestId', () => {
     const b = createPaymentRequestId()
     expect(a).toMatch(/^req_/)
     expect(a).not.toBe(b)
+  })
+})
+
+describe('pending pay-via-link hand-off', () => {
+  const params = { recipient: VALID_0ZK, requestId: 'req_a', expiresAt: NOW, amount: '10', note: 'x' }
+
+  it('roundtrips through session storage and clears', () => {
+    expect(readPendingPayViaLink()).toBeNull()
+    writePendingPayViaLink(params)
+    expect(readPendingPayViaLink()).toEqual(params)
+    clearPendingPayViaLink()
+    expect(readPendingPayViaLink()).toBeNull()
+  })
+
+  it('returns null for a structurally incomplete stored payload', () => {
+    window.sessionStorage.setItem('armada-pending-pay-via-link', JSON.stringify({ recipient: VALID_0ZK }))
+    expect(readPendingPayViaLink()).toBeNull()
   })
 })
 

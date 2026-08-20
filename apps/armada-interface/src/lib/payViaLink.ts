@@ -120,6 +120,39 @@ export function isPaymentLinkRevoked(requestId: string): boolean {
   return readRevokedPaymentLinkIds().has(requestId)
 }
 
+// ---------------------------------------------------------------------------
+// Pending hand-off — carries a parsed link from the payer landing page to the
+// dashboard's Send flow across the client navigation (survives a full reload).
+// ---------------------------------------------------------------------------
+const PENDING_PAY_VIA_LINK_KEY = 'armada-pending-pay-via-link'
+
+export function writePendingPayViaLink(payload: PayViaLinkParams): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.setItem(PENDING_PAY_VIA_LINK_KEY, JSON.stringify(payload))
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+export function readPendingPayViaLink(): PayViaLinkParams | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_PAY_VIA_LINK_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as PayViaLinkParams
+    if (!parsed.recipient || !parsed.requestId || !parsed.expiresAt) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+export function clearPendingPayViaLink(): void {
+  if (typeof window === 'undefined') return
+  window.sessionStorage.removeItem(PENDING_PAY_VIA_LINK_KEY)
+}
+
 /**
  * Validates a `/pay-via-link` query string. Order matters: structural validity → revoked →
  * expired → amount sanity. `now` is injectable for tests.

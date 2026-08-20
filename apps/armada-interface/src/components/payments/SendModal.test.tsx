@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { Provider, createStore } from 'jotai'
 import { SendModal } from './SendModal'
-import { openModalAtom } from '@/state/ui'
+import { openModalAtom, paymentIntentAtom } from '@/state/ui'
 import {
   activeShieldedWalletIdAtom,
   evmAddressAtom,
@@ -84,9 +84,11 @@ function renderModal(opts?: {
   open?: 'payment' | 'withdraw' | false
   shielded?: bigint
   evm?: string
+  intent?: { recipient: string; amount?: string }
 }) {
   const store = createStore()
   if (opts?.open) store.set(openModalAtom, opts.open)
+  if (opts?.intent) store.set(paymentIntentAtom, opts.intent)
   if (opts?.shielded !== undefined) {
     store.set(shieldedUsdcAtom, opts.shielded)
     store.set(shieldedUsdcSpendableAtom, opts.shielded) // no pending in tests → spendable == total
@@ -130,6 +132,19 @@ describe('<SendModal>', () => {
     renderModal({ open: 'payment', shielded: 10_000_000n })
     expect(screen.getByRole('dialog', { name: 'Send' })).toBeInTheDocument()
     expect(screen.getByLabelText('Recipient address')).toBeInTheDocument()
+  })
+
+  it('seeds the recipient from a pay-via-link intent and consumes it', () => {
+    const store = renderModal({
+      open: 'payment',
+      shielded: 10_000_000n,
+      intent: { recipient: VALID_0ZK, amount: '25' },
+    })
+    // Prefilled recipient is recognised as a valid 0zk (privacy badge) and held on the input title.
+    expect(screen.getByLabelText('Recipient address')).toHaveAttribute('title', VALID_0ZK)
+    expect(screen.getByText('Private address')).toBeInTheDocument()
+    // The intent is consumed on open so it can't re-fire.
+    expect(store.get(paymentIntentAtom)).toBeNull()
   })
 
   it('Continue enables only once the recipient is a valid address', () => {

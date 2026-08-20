@@ -12,6 +12,7 @@ import { ReceiveDialog } from '@/components/receive'
 import { EarnModal } from '@/components/yield'
 import { SettingsModal } from '@/components/settings'
 import { useAutoLock } from '@/hooks/useAutoLock'
+import { usePayViaLinkIntent } from '@/hooks/usePayViaLinkIntent'
 import { useHistoryRecovery } from '@/hooks/useHistoryRecovery'
 import { useIncomingTransferDetector } from '@/hooks/useIncomingTransferDetector'
 import { useNowTicker } from '@/hooks/useNowTicker'
@@ -58,6 +59,7 @@ export function App() {
   useHistoryRecovery() // chain-recover synthetic rows on unlock + re-scan epoch (Phase 9.3)
   useIncomingTransferDetector() // re-scan on balance events so received transfers surface live (Phase 9.4)
   useAutoLock()  // idle-timer-driven lock for the shielded wallet
+  usePayViaLinkIntent() // pick up a pending pay-via-link hand-off + open the prefilled Send on unlock
   // Mirror wagmi's connection state into evmAddressAtom for atom-consumers (OnboardingFlow's
   // SignEnrollment step, SendModal's withdraw-variant recipient pre-fill, useShieldedWallet.enroll). Mounted
   // before the onboarding/unlock guard so the atom is correct even before the user reaches /app.

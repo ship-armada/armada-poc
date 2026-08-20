@@ -4,7 +4,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAccount } from 'wagmi'
 import { useAtom, useAtomValue } from 'jotai'
-import { openModalAtom } from '@/state/ui'
+import { openModalAtom, paymentIntentAtom } from '@/state/ui'
+import { clearPendingPayViaLink } from '@/lib/payViaLink'
 import { preferencesAtom } from '@/state/preferences'
 import {
   evmAddressAtom,
@@ -57,6 +58,7 @@ function computeKind(recipient: string, destChainId: number, hubChainId: number)
 
 export function SendModal() {
   const [openModal, setOpenModal] = useAtom(openModalAtom)
+  const [paymentIntent, setPaymentIntent] = useAtom(paymentIntentAtom)
   const isOpen = openModal === 'payment' || openModal === 'withdraw'
   const variant: SendFlowVariant = openModal === 'withdraw' ? 'withdraw' : 'send'
   // A6 — frozen into the record's meta at submit-time so a mid-flight toggle doesn't strand the handler.
@@ -204,6 +206,18 @@ export function SendModal() {
   useEffect(() => {
     if (!isOpen) return
     if (variant === 'withdraw') setRecipient(connectedEvm ?? '')
+  }, [isOpen])
+
+  // Pay-via-link hand-off: when opened from a payment-request link, seed the recipient (+ amount)
+  // from the intent, then consume it (clear the atom + the pending sessionStorage carrier). Fires
+  // once per open, same as the withdraw prefill above.
+  useEffect(() => {
+    if (!isOpen || !paymentIntent) return
+    setRecipient(paymentIntent.recipient)
+    if (paymentIntent.amount) setAmountStr(paymentIntent.amount)
+    setPaymentIntent(null)
+    clearPendingPayViaLink()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
 
   // Watch the submitted record for terminal transitions. Dep is `record?.executionState` rather

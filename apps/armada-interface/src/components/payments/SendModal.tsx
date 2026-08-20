@@ -409,7 +409,6 @@ export function SendModal() {
           <SendInputStepContent
             variant={variant}
             destChainId={destChainId}
-            isXchain={isXchain}
             amountStr={amountStr}
             onAmountChange={setAmountStr}
             max={max}

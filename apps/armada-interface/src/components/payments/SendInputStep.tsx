@@ -19,8 +19,6 @@ export interface SendInputStepProps {
   variant: SendFlowVariant
   /** Destination chain — chosen on the recipient step; rendered statically here. */
   destChainId: number
-  /** True when the resolved kind is a cross-chain unshield (public recipient off-hub). */
-  isXchain: boolean
   amountStr: string
   onAmountChange: (next: string) => void
   max: bigint
@@ -46,7 +44,6 @@ export interface SendInputStepProps {
 export function SendInputStepContent({
   variant,
   destChainId,
-  isXchain,
   amountStr,
   onAmountChange,
   max,
@@ -61,7 +58,6 @@ export function SendInputStepContent({
   SendInputStepProps,
   | 'variant'
   | 'destChainId'
-  | 'isXchain'
   | 'amountStr'
   | 'onAmountChange'
   | 'max'
@@ -116,11 +112,6 @@ export function SendInputStepContent({
           />
         ) : null}
       </div>
-      {isXchain ? (
-        <div className={styles.xchainNotice}>
-          Cross-chain payment takes a few minutes for the CCTP confirmation.
-        </div>
-      ) : null}
     </div>
   )
 }

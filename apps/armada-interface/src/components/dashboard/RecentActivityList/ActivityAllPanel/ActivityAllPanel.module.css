@@ -8,3 +8,13 @@
 .toolbar {
   padding-inline: var(--primitives-spacing-3);
 }
+
+.truncationNote {
+  margin: 0;
+  padding: var(--primitives-spacing-4) var(--primitives-spacing-3);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  line-height: var(--primitives-lineHeight-normal);
+  color: var(--semantic-color-text-muted);
+  text-align: center;
+}

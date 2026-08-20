@@ -47,4 +47,11 @@ describe('ActivityAllPanel', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Withdraw' }))
     expect(screen.getByText('No transactions match your filters.')).toBeInTheDocument()
   })
+
+  it('shows the "showing latest N" note only when truncatedCount is set', () => {
+    const { rerender } = render(<ActivityAllPanel open onClose={() => {}} items={items} />)
+    expect(screen.queryByText(/most recent transactions/)).toBeNull()
+    rerender(<ActivityAllPanel open onClose={() => {}} items={items} truncatedCount={500} />)
+    expect(screen.getByText('Showing your 500 most recent transactions.')).toBeInTheDocument()
+  })
 })

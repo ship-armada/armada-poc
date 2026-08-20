@@ -155,4 +155,11 @@ describe('buildActivityItems', () => {
     )
     expect(buildActivityItems([], links, null, 3)).toHaveLength(3)
   })
+
+  it('returns every row when max is uncapped (Infinity) — the "all activity" panel path', () => {
+    const links = Array.from({ length: 12 }, (_, i) =>
+      makeLink({ requestId: `req_${i}`, createdAt: 1_000 + i }),
+    )
+    expect(buildActivityItems([], links, null, Infinity)).toHaveLength(12)
+  })
 })

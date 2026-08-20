@@ -29,6 +29,11 @@ function usdcToNumber(amount: bigint): number {
   return Number(amount) / 1e6
 }
 
+/** Rows shown in the dashboard's inline activity preview (the "View all" panel shows the rest). */
+const ACTIVITY_PREVIEW_MAX = 8
+/** Ceiling on the "all activity" panel — rendered without virtualization, so we bound the row count. */
+const ACTIVITY_PANEL_MAX = 500
+
 export function Dashboard() {
   // Data (all hooks run unconditionally, before the sync gate's early return).
   const shielded = useAtomValue(shieldedUsdcAtom)
@@ -97,17 +102,29 @@ export function Dashboard() {
     yieldShares !== null && yieldRate !== null ? sharesToUsdc(yieldShares, yieldRate.rate) : 0n
   const vaultNumber = usdcToNumber(earningUsdc)
   const vaultApy = yieldRate !== null ? Number(yieldRate.apyBps) / 100 : undefined
-  const activityItems = useMemo(
-    () => buildActivityItems(txList, requestLinks, evmAddress),
+  // Full activity list (uncapped) so the panel can show everything up to its ceiling and we can tell
+  // whether that ceiling was hit. The dashboard preview + the panel then slice their own views.
+  const allActivityItems = useMemo(
+    () => buildActivityItems(txList, requestLinks, evmAddress, Infinity),
     [txList, requestLinks, evmAddress],
   )
+  const previewActivityItems = useMemo(
+    () => allActivityItems.slice(0, ACTIVITY_PREVIEW_MAX),
+    [allActivityItems],
+  )
+  const panelActivityItems = useMemo(
+    () => allActivityItems.slice(0, ACTIVITY_PANEL_MAX),
+    [allActivityItems],
+  )
+  // Only surface the "showing latest 500" note when activity actually exceeds the ceiling.
+  const activityTruncated = allActivityItems.length > ACTIVITY_PANEL_MAX
   const hasCompletedDeposit = txList.some(
     (r) => (r.kind === 'shield' || r.kind === 'shield-xchain') && r.executionState === 'completed',
   )
   const showDepositTooltip = balanceNumber <= 0 && !hasCompletedDeposit
   // Activity shows automatically whenever there are items (the manual hide toggle was dropped in the
   // polish redesign — the more-menu that held it is gone).
-  const showActivity = activityItems.length > 0
+  const showActivity = allActivityItems.length > 0
   // Earn promo banner — nudge users with idle private USDC and no vault position yet to start earning.
   const showEarnBanner =
     !showDepositTooltip && balanceNumber > 0 && vaultNumber <= 0 && vaultApy !== undefined && vaultApy > 0
@@ -167,7 +184,7 @@ export function Dashboard() {
 
         {showActivity ? (
           <RecentActivityList
-            items={activityItems}
+            items={previewActivityItems}
             balanceRevealed={!balanceHidden}
             onViewAll={() => setActivityPanelOpen(true)}
             onItemClick={handleActivityItemClick}
@@ -179,7 +196,8 @@ export function Dashboard() {
       <ActivityAllPanel
         open={activityPanelOpen}
         onClose={() => setActivityPanelOpen(false)}
-        items={activityItems}
+        items={panelActivityItems}
+        truncatedCount={activityTruncated ? ACTIVITY_PANEL_MAX : undefined}
         balanceRevealed={!balanceHidden}
         onItemClick={handleActivityItemClick}
       />

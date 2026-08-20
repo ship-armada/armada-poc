@@ -13,7 +13,7 @@ Dashboard presentation, ported from the armada-app design mockup. Composed by `p
 | `SendButton`, `ShieldedUsdcBadge`, `TokenBadge` | Small presentational pieces of the card. |
 | `DepositTooltip` | First-run "Make your first deposit" callout under the card (empty state). |
 | `RecentActivityList` | Activity list — icon-badge rows with scrambled amounts + per-item peek. `variant="preview"` (dashboard, with "View all" → the `ActivityAllPanel`) or `variant="full"` (inside the panel). |
-| `ActivityAllPanel` | "All activity" SidePanel/BottomSheet — kind filters + tx-hash search over the full list; a row click opens the `ActivityReceipt`. Replaces the retired `/history` page. |
+| `ActivityAllPanel` | "All activity" SidePanel/BottomSheet — kind filters + tx-hash search over the full list; a row click opens the `ActivityReceipt`. Replaces the retired `/history` page. `Dashboard` feeds it the full activity list capped at `ACTIVITY_PANEL_MAX` (500, no virtualization); `truncatedCount` surfaces a "showing latest 500" note only when history exceeds the cap. The inline dashboard preview is a separate `ACTIVITY_PREVIEW_MAX` (8) slice. |
 | `ActivityKindFilters` / `ActivityTxHashSearch` | Toolbar controls for the panel (kind chips + hash search); predicates in `activityFilters.ts`. *(These + `ActivityAllPanel` live nested under `RecentActivityList/`, not as top-level dashboard siblings.)* |
 | `BalanceActionButton` | Labeled round action tile in the BalanceCard action row (Shield / Send / Request / Earn). |
 | `DashboardScrollTopFade` | Top-edge scroll fade over the card stack when activity scrolls. |

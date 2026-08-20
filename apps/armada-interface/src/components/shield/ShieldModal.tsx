@@ -15,6 +15,7 @@ import {
   ErrorStep,
   overlayIndicatorStep,
   overlayIndicatorStatus,
+  type FlowStep,
 } from '@/components/flow'
 import { FlowShell } from '@/components/flow/FlowShell'
 import { useFlowExit } from '@/components/flow/useFlowExit'
@@ -25,11 +26,14 @@ import {
   type ShieldTab,
 } from './ShieldAmountStep'
 import { ShieldReviewStep } from './ShieldReviewStep'
+import { ShieldWalletStep } from './ShieldWalletStep'
 import { ShieldCompleteStep } from './ShieldCompleteStep'
 import { SendReviewStep } from '@/components/payments/SendReviewStep'
 import { SendCompleteStep } from '@/components/payments/SendCompleteStep'
 
-const SHIELD_STEPS = ['Amount', 'Review', 'Confirm']
+// Shield has a dedicated Wallet step (approve/sign); Unshield is relayer-submitted (no wallet sign).
+const SHIELD_TAB_STEPS = ['Amount', 'Review', 'Wallet', 'Confirm']
+const UNSHIELD_TAB_STEPS = ['Amount', 'Review', 'Confirm']
 
 export function ShieldModal() {
   const [openModal, setOpenModal] = useAtom(openModalAtom)
@@ -68,6 +72,26 @@ export function ShieldModal() {
   const record = active.record
   const explorerUrl = txExplorerUrl(record?.walletContext.sourceChainId, displayTxHash(record))
 
+  // Per-tab step indicator: shield has the extra Wallet segment (4), unshield doesn't (3). The
+  // unshield step is always a FlowStep (never 'wallet'), so the shared helpers apply there.
+  const steps = isShield ? SHIELD_TAB_STEPS : UNSHIELD_TAB_STEPS
+  const currentStep = isShield
+    ? step === 'input'
+      ? 1
+      : step === 'review'
+        ? 2
+        : step === 'wallet'
+          ? 3
+          : 4
+    : overlayIndicatorStep(step as FlowStep)
+  const status = isShield
+    ? step === 'complete'
+      ? 'confirmed'
+      : step === 'error'
+        ? 'error'
+        : 'default'
+    : overlayIndicatorStatus(step as FlowStep)
+
   return (
     <FlowShell
       open={isOpen}
@@ -75,9 +99,9 @@ export function ShieldModal() {
       exiting={exiting}
       stepKey={step}
       flowLabel={isShield ? 'Shield' : 'Withdraw'}
-      steps={SHIELD_STEPS}
-      currentStep={overlayIndicatorStep(step)}
-      status={overlayIndicatorStatus(step)}
+      steps={steps}
+      currentStep={currentStep}
+      status={status}
     >
       {step === 'input' && (
         <>
@@ -143,6 +167,9 @@ export function ShieldModal() {
             onConfirm={unshieldFlow.submit}
           />
         ))}
+
+      {/* Dedicated wallet step — Shield only (Unshield is relayer-submitted, no wallet sign). */}
+      {step === 'wallet' && <ShieldWalletStep steps={shieldFlow.walletSteps} />}
 
       {step === 'progress' && (
         <ProgressStep record={record} sendVariant={isShield ? undefined : 'withdraw'} />

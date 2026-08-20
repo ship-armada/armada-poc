@@ -165,19 +165,20 @@ describe('<ShieldModal>', () => {
     expect(store.get(openModalAtom)).toBeNull()
   })
 
-  it('Confirm submits the tx and advances to the progress step', async () => {
+  it('Confirm submits the tx and advances to the dedicated wallet step', async () => {
     renderModal({ open: true, max: 10_000_000n })
     fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^Confirm$/ }))
     })
-    // ProgressStep renders the TxLifecycleStepper which surfaces the StatusChip; the initial
-    // executionState is 'pending' which maps to the "Pending" chip. submit() awaits IDB
-    // persistence so waitFor() handles the brief gap before the record reaches the atom.
+    // Confirm now lands on the wallet step (approve/sign checklist). The record is at build-proof
+    // (no prompt live yet), so the title reads "Preparing your deposit…". submit() awaits IDB
+    // persistence, so waitFor() covers the brief gap before the record reaches the atom.
     await waitFor(() => {
-      expect(screen.getByText('Preparing transaction')).toBeInTheDocument()
+      expect(screen.getByRole('list', { name: 'Wallet confirmations' })).toBeInTheDocument()
     })
+    expect(screen.getByText('Preparing your deposit…')).toBeInTheDocument()
   })
 
   it('does not create a second record when Confirm is double-clicked (P0-7)', async () => {
@@ -192,7 +193,7 @@ describe('<ShieldModal>', () => {
       fireEvent.click(confirm)
     })
     await waitFor(() => {
-      expect(screen.getByText('Preparing transaction')).toBeInTheDocument()
+      expect(screen.getByRole('list', { name: 'Wallet confirmations' })).toBeInTheDocument()
     })
     expect(store.get(txListAtom).length).toBe(1)
   })
@@ -213,16 +214,18 @@ describe('<ShieldModal>', () => {
     expect(screen.queryByText(/may still be processing/i)).toBeNull()
   })
 
-  it('progress is dismissible — closing backgrounds the tx without cancelling it (S-M2)', async () => {
+  it('in-flight tx is dismissible — closing backgrounds the tx without cancelling it (S-M2)', async () => {
     const store = renderModal({ open: true, max: 10_000_000n })
     fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^Confirm$/ }))
     })
-    await waitFor(() => expect(screen.getByText('Preparing transaction')).toBeInTheDocument())
+    await waitFor(() =>
+      expect(screen.getByRole('list', { name: 'Wallet confirmations' })).toBeInTheDocument(),
+    )
 
-    // The Close affordance is present during progress now (was hidden pre-S-M2).
+    // The Close affordance is present during the wallet/progress steps (was hidden pre-S-M2).
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     })

@@ -101,6 +101,12 @@ export function shieldWalletInteractionsComplete(
   record: ShieldRecord,
 ): boolean {
   const authorizeDone = record.stagesCompleted.includes('build-proof')
+  // Gasless: the ONLY wallet prompt is the EIP-2612 permit (+ intent), captured during build-proof.
+  // The relayer broadcasts the submit, so there's nothing more for the user to sign — done once
+  // build-proof has the signature (waiting on `sourceTxHash` here would keep the wallet step up
+  // during the relayer's own submit, where no prompt is pending).
+  const useGasless = (record.meta as { useGasless?: boolean }).useGasless === true
+  if (useGasless) return authorizeDone
   const artifacts = shieldArtifacts(record)
   const approveDone =
     artifacts.approveSkipped === true || Boolean(artifacts.approveTxHash)

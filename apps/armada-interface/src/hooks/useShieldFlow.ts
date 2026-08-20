@@ -19,12 +19,21 @@ import { loadDeployments } from '@/config/deployments'
 import { formatUsdc, parseUsdcInput } from '@/lib/format'
 import { canRetryTx } from '@/lib/tx/executor'
 import { hasUnresolvedShield } from '@/lib/tx/duplicateGuard'
+import {
+  shieldWalletSteps,
+  shieldWalletInteractionsComplete,
+  type WalletStep,
+} from '@/lib/tx/shieldWalletSteps'
 import type { FlowStep, FlowVisibleStep } from '@/components/flow'
 import type { DisplayFees } from '@/lib/fees/displayFees'
 import type { FlowFeeBreakdown } from '@/components/ui/FeeBreakdownTooltip'
 import type { TxRecord } from '@/lib/tx/types'
 
 type SubmittedKind = 'shield' | 'shield-xchain'
+type ShieldRecord = TxRecord<'shield'> | TxRecord<'shield-xchain'>
+
+/** Shield adds a dedicated `wallet` step (approve/sign checklist) between review and progress. */
+export type ShieldStep = FlowStep | 'wallet'
 
 /**
  * Permit deadline window. The relayer's fee TTL is 5 min and proof building isn't required for
@@ -62,10 +71,12 @@ export interface ShieldFlow {
   walletProvider?: string
   shieldedAddress?: string
   // Flow state
-  step: FlowStep
+  step: ShieldStep
   isSubmitting: boolean
   record: TxRecord | null
   submitError: string | null
+  /** Approve/sign checklist rows for the dedicated `wallet` step (live status from the record). */
+  walletSteps: WalletStep[]
   // Actions
   onContinueToReview: () => void
   onBackToInput: () => void
@@ -88,7 +99,7 @@ export function useShieldFlow(isOpen: boolean): ShieldFlow {
   const [amountStr, setAmountStr] = useState<string>('')
 
   // Flow state.
-  const [step, setStep] = useState<FlowStep>('input')
+  const [step, setStep] = useState<ShieldStep>('input')
   const [errorAtStep, setErrorAtStep] = useState<FlowVisibleStep | undefined>(undefined)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submittedKind, setSubmittedKind] = useState<SubmittedKind | null>(null)
@@ -238,6 +249,16 @@ export function useShieldFlow(isOpen: boolean): ShieldFlow {
     }
   }, [record?.executionState])
 
+  // Live approve/sign checklist + the "all prompts done" flag for the dedicated wallet step.
+  const walletSteps = shieldWalletSteps(record as ShieldRecord | null, amount)
+  const walletComplete = record ? shieldWalletInteractionsComplete(record as ShieldRecord) : false
+
+  // Advance wallet → progress once every wallet prompt is finished. Keyed on the derived boolean so
+  // the effect fires exactly on the flip (not on every artifact patch).
+  useEffect(() => {
+    if (step === 'wallet' && walletComplete) setStep('progress')
+  }, [step, walletComplete])
+
   async function submit() {
     if (submittingRef.current) return
     submittingRef.current = true
@@ -329,7 +350,9 @@ export function useShieldFlow(isOpen: boolean): ShieldFlow {
         }
       }
       if (submittedId === null) return
-      setStep('progress')
+      // Dedicated wallet step first — the approve/sign checklist while the wallet prompts fire.
+      // Advances to `progress` once shieldWalletInteractionsComplete (see the effect below).
+      setStep('wallet')
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : 'Submit failed.')
       setStep('error')
@@ -391,6 +414,7 @@ export function useShieldFlow(isOpen: boolean): ShieldFlow {
     isSubmitting,
     record,
     submitError,
+    walletSteps,
     onContinueToReview: () => setStep('review'),
     onBackToInput: () => setStep('input'),
     submit,

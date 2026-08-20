@@ -11,6 +11,7 @@ EVM wallet), as two tabs on the amount step. Owned by `ShieldModal`, opened via 
 | `ShieldModal` | **Dumb renderer** — open/close chrome + per-tab step rendering. Composes two controller hooks: `hooks/useShieldFlow.ts` (Shield) + `hooks/useUnshieldFlow.ts` (Unshield). The typed amount carries across the tab toggle. |
 | `ShieldAmountStep` | Shared amount step (`ShieldAmountStepContent` + `Footer`) — `DepositAmountCard` with the Shield/Unshield `SegmentedControl` in its header + a chain picker (source for shield / destination for unshield) + `GasBalanceNotice` (wallet-submit). Direction-driven title/aria; footer gates Review on amount (+ shield's fee floor). Replaced the retired `ShieldInputStep`. |
 | `ShieldReviewStep` / `ShieldCompleteStep` | **Shield direction** — frost card + `DepositReviewSummary`. |
+| `ShieldWalletStep` | Dedicated **Wallet** step (the mockup's step 3) — the live approve/sign checklist (`WalletConfirmList` + `lib/tx/shieldWalletSteps`). Title transitions "Preparing your deposit…" (proof building) → "Confirm in your wallet" (a prompt is live). Shield tab only; Unshield is relayer-submitted. |
 | (unshield direction review/complete) | Reuses `payments/SendReviewStep` + `SendCompleteStep` with `variant="withdraw"` (the "Review your USDC unshield" / "USDC unshield confirmed" copy). |
 
 ## State machinery
@@ -18,7 +19,8 @@ EVM wallet), as two tabs on the amount step. Owned by `ShieldModal`, opened via 
 - `openModalAtom === 'shield' \|\| 'unshield'` controls visibility; the value picks the initial tab.
 - **Shield tab** → `useShieldFlow`: `shield` / `shield-xchain` by from-chain; wallet-signs (or gasless permit).
 - **Unshield tab** → `useUnshieldFlow`: `unshield-local` / `unshield-xchain` by **to-chain picker**; recipient is pinned to the connected wallet; relayer-submitted.
-- Both tabs share the step machine `'input' → 'review' → 'progress' → 'complete'` (or `'error'`).
+- **Shield** step machine: `'input' → 'review' → 'wallet' → 'progress' → 'complete'` (or `'error'`). The `wallet` step shows the approve/sign checklist; `useShieldFlow` advances it → `progress` once `shieldWalletInteractionsComplete(record)`. Step indicator has 4 segments (Amount/Review/Wallet/Confirm).
+- **Unshield** step machine: `'input' → 'review' → 'progress' → 'complete'` (no wallet step; relayer-submitted). 3-segment indicator.
 - Each controller owns its chain + step + submit; the shared `amountStr` lives at the modal and is synced across the toggle.
 
 **Relationship to Send:** unshielding to your OWN wallet lives here (Unshield tab). Sending to an

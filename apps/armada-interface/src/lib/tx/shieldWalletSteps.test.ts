@@ -80,4 +80,23 @@ describe('shieldWalletSteps', () => {
     }
     expect(shieldWalletInteractionsComplete(done)).toBe(true)
   })
+
+  it('gasless: complete once build-proof captures the permit (no wallet prompt at submit)', () => {
+    const beforeSign: TxRecord<'shield'> = {
+      ...base,
+      meta: { ...base.meta, useGasless: true },
+      stage: 'build-proof',
+      stagesCompleted: [],
+    }
+    expect(shieldWalletInteractionsComplete(beforeSign)).toBe(false)
+
+    // Permit signed → build-proof done. The relayer broadcasts the submit (no further prompt), so
+    // wallet interactions are complete even without a sourceTxHash yet.
+    const signed: TxRecord<'shield'> = {
+      ...beforeSign,
+      stage: 'submit-relayer',
+      stagesCompleted: ['build-proof'],
+    }
+    expect(shieldWalletInteractionsComplete(signed)).toBe(true)
+  })
 })

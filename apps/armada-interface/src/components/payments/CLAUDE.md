@@ -23,8 +23,8 @@ the external path).
 ## Step machine
 
 `recipient → input (amount) → review → progress → complete` (or `error`, overlaid on the failed
-step). The recipient step maps to overlay indicator step 1 for now — the restyle PR adds a
-dedicated Recipient segment.
+step). The `FlowShell` Steps bar is a dedicated 4-segment indicator — `['Recipient', 'Amount',
+'Review', 'Confirm']` — with `currentStep` mapping `recipient→1, input→2, review→3, else→4`.
 
 ## Kind selection (address-driven, no tabs)
 

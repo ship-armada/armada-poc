@@ -7,7 +7,7 @@ The Earn flow — deposit private USDC into the vault to earn yield, or withdraw
 | Component | Purpose |
 |---|---|
 | `EarnModal` | Orchestrator. Two `useTx` hooks (`yield-deposit` / `yield-withdraw`); tab switching changes both the max and the dispatched kind. |
-| `EarnInputStep` | Tabs (`Add funds` / `Withdraw`) + amount + APY hint panel + fee summary. |
+| `EarnInputStep` | Add/Withdraw `SegmentedControl` inside a chain-less `DepositAmountCard`, with a `DepositTooltip` APY intro banner above; fees route through the card's `flowBreakdown` tooltip. Split into `EarnInputStepContent` + `EarnInputStepFooter`. |
 | `EarnReviewStep` | Echo of amount, mode, APY value used for the quote. |
 | `EarnCompleteStep` | "You're now earning yield…" or "Returned X USDC to your private balance." |
 

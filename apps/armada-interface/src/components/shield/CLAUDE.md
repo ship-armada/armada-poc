@@ -6,7 +6,7 @@ The deposit (public → private) flow. Owned by `ShieldModal`, opened via `setOp
 
 | Component | Purpose |
 |---|---|
-| `ShieldModal` | Orchestrator. Owns `step` + form state, wires `useTx({kind:'shield'})`, renders `FlowShell` (FlowModalOverlay + ModalShell) with the redesigned step screens. |
+| `ShieldModal` | **Dumb renderer** — owns only open/close chrome + step rendering. All form/fee/submit/step orchestration lives in `hooks/useShieldFlow.ts` (the flow controller); the modal just wires its return values into the step screens. |
 | `ShieldInputStep` | `DepositAmountCard` (chain selector inside the card) + `GasBalanceNotice` (wallet-submit path); fees surface via the card's `flowBreakdown` tooltip. Split into `ShieldInputStepContent` + `ShieldInputStepFooter`. Validates amount > 0 and ≤ max. |
 | `ShieldReviewStep` | Frost card — big-numeral amount + the shared `DepositReviewSummary` table (network / wallet / Armada addresses / fees / net) + Confirm CTA. |
 | `ShieldCompleteStep` | Frost-card confirmation ("USDC deposit confirmed") + View-on-explorer / Done CTAs. |

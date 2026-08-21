@@ -141,7 +141,11 @@ function ActivityListItems({
                 className={[styles.amount, usdcAmount.font, amountTone].filter(Boolean).join(' ')}
                 aria-label={itemRevealed ? amountLabel : 'Amount hidden'}
               >
-                <BalanceScrambleValue value={amountLabel} revealed={itemRevealed} />
+                <BalanceScrambleValue
+                  value={amountLabel}
+                  revealed={itemRevealed}
+                  struck={item.status === 'failed' || item.status === 'cancelled'}
+                />
               </span>
             </button>
           </li>

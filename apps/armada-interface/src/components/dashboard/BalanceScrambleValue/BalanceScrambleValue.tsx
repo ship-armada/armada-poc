@@ -216,12 +216,16 @@ export interface BalanceScrambleValueProps {
   value: string
   revealed: boolean
   className?: string
+  /** Strike through the glyphs (failed/cancelled activity amounts). The glyphs are inline-block, so
+   *  a parent's `text-decoration` can't reach them — this strikes them directly. */
+  struck?: boolean
 }
 
 export function BalanceScrambleValue({
   value,
   revealed,
   className,
+  struck = false,
 }: BalanceScrambleValueProps) {
   const maskedValue = useMemo(() => maskBalanceValue(value), [value])
   const targetValue = revealed ? value : maskedValue
@@ -286,7 +290,7 @@ export function BalanceScrambleValue({
     return () => window.clearTimeout(timer)
   }, [revealed, value, maskedValue])
 
-  const rootClassName = [styles.root, className].filter(Boolean).join(' ')
+  const rootClassName = [styles.root, struck && styles.struck, className].filter(Boolean).join(' ')
   const fromValue = transition?.from ?? staticValue
   const toValue = transition?.to ?? staticValue
   const fromTokens = useMemo(() => tokenizeBalance(fromValue), [fromValue])

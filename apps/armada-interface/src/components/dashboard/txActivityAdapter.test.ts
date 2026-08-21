@@ -183,7 +183,7 @@ describe('activity status derivation', () => {
     }
   })
 
-  it('user aborts → cancelled (app Cancel button + declined wallet prompt)', () => {
+  it('user aborts → cancelled (app Cancel button + declined wallet prompt), code is authoritative', () => {
     // App Cancel button before broadcast.
     expect(
       txRecordToActivityItem(makeRecord('shield', { executionState: 'cancelled', errorCode: 'CANCELLED' })).status,
@@ -191,6 +191,10 @@ describe('activity status derivation', () => {
     // Declined wallet signature — lands on a `failed` state but is a user cancellation, not a failure.
     expect(
       txRecordToActivityItem(makeRecord('shield', { executionState: 'failed', errorCode: 'USER_REJECTED' })).status,
+    ).toBe('cancelled')
+    // A CANCELLED code that lands on a `failed` state (e.g. thrown → markFailed) is still cancelled.
+    expect(
+      txRecordToActivityItem(makeRecord('shield', { executionState: 'failed', errorCode: 'CANCELLED' })).status,
     ).toBe('cancelled')
   })
 

@@ -20,6 +20,7 @@ import { advance, markFailed } from '@/lib/tx/reducer'
 import { recordBroadcastHash } from '@/lib/tx/broadcast'
 import { poll, pollBudgetMs, pollRelayStatusOnce } from '@/lib/tx/poller'
 import { classifyHandlerError } from '@/lib/tx/errors'
+import { throwIfForcedError } from '@/lib/tx/devForce'
 import { createProofProgressWriter } from '@/lib/tx/progress'
 import { track } from '@/lib/telemetry'
 import type { StageHandler } from '@/lib/tx/executor'
@@ -45,6 +46,8 @@ export const unshieldLocalHandler: StageHandler<'unshield-local'> = {
 
   async run(record, ctx) {
     try {
+      // DEV: throw the debug-selected outcome (no-op unless meta.devForceError is set).
+      throwIfForcedError(record)
       if (record.stage === 'build-proof') {
         await runBuildProof(record, ctx)
         return

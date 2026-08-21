@@ -1,0 +1,32 @@
+/* ABOUTME: DEBUG force-outcome control styling — an obviously-dev dashed box with a small badge + select. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-1);
+  width: 100%;
+  padding: var(--primitives-spacing-2) var(--primitives-spacing-3);
+  border: 1px dashed var(--semantic-color-brand-lavender);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: var(--semantic-color-surface-raised);
+  box-sizing: border-box;
+}
+
+.badge {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-lavender);
+  letter-spacing: 0.04em;
+}
+
+.select {
+  width: 100%;
+  padding: var(--primitives-spacing-2) var(--primitives-spacing-3);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-input) * 1px);
+  background: var(--semantic-color-surface-default);
+  color: var(--semantic-color-text-primary);
+  font: inherit;
+  cursor: pointer;
+}

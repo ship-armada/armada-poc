@@ -54,6 +54,14 @@ describe('shieldWalletSteps', () => {
     expect(buildingSteps.map(s => s.label)).toEqual(['Authorize 5.00 USDC', 'Sign deposit transaction'])
     expect(buildingSteps.map(s => s.status)).toEqual(['loading', 'pending'])
 
+    // Intermediate: permit signed (permitSigned artifact) but ShieldIntent still pending —
+    // Authorize flips to done, Sign becomes the live prompt (S-M4b).
+    const permitSigned: TxRecord<'shield'> = {
+      ...building,
+      artifacts: { ...building.artifacts, permitSigned: true },
+    }
+    expect(shieldWalletSteps(permitSigned, 5_000_000n).map(s => s.status)).toEqual(['done', 'loading'])
+
     const signed: TxRecord<'shield'> = {
       ...building,
       stage: 'submit-relayer',

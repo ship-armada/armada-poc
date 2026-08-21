@@ -11,7 +11,12 @@ import { EarnReviewSummary } from '@/components/yield/EarnReviewSummary'
 import { formatUsdcPlain } from '@/lib/format'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import { getChainById, getNetworkConfig } from '@/config/network'
-import { isWithdrawToSelf } from '@/components/dashboard/txActivityAdapter'
+import {
+  deriveActivityStatus,
+  isWithdrawToSelf,
+  type DashboardActivityStatus,
+} from '@/components/dashboard/txActivityAdapter'
+import { resolveTxErrorCopy, type TxErrorCopy } from '@/lib/tx/errorCopy'
 import type { TxRecord } from '@/lib/tx/types'
 import styles from './ActivityReceipt.module.css'
 
@@ -41,10 +46,21 @@ interface ReceiptView {
   summary: ReactNode
   /** Source-chain explorer URL; absent disables "View on explorer". */
   explorerUrl?: string
+  /** Outcome bucket — drives the FlowShell status + failure banner. */
+  status: DashboardActivityStatus
+  /** Category-aware failure copy; null for settled/pending records. */
+  errorCopy: TxErrorCopy | null
 }
 
 function buildReceiptView(record: TxRecord, ownWalletAddress?: string): ReceiptView {
-  const confirmedAt = record.updatedAt
+  const status = deriveActivityStatus(record)
+  // Only a settled record has a real confirmation time — omit the "Date and time" summary row for
+  // failed/cancelled/unknown so the receipt doesn't imply it confirmed.
+  const confirmedAt = status === 'settled' ? record.updatedAt : undefined
+  const errorCopy =
+    status === 'settled' || status === 'pending'
+      ? null
+      : resolveTxErrorCopy(record.artifacts.error)
   const explorerUrl = txExplorerUrl(record.walletContext.sourceChainId, displayTxHash(record))
 
   switch (record.kind) {
@@ -59,6 +75,8 @@ function buildReceiptView(record: TxRecord, ownWalletAddress?: string): ReceiptV
         title: 'USDC deposit',
         amount: meta.amount,
         explorerUrl,
+        status,
+        errorCopy,
         summary: (
           <DepositReviewSummary
             fromChainId={meta.fromChainId}
@@ -91,6 +109,8 @@ function buildReceiptView(record: TxRecord, ownWalletAddress?: string): ReceiptV
         title: asWithdraw ? 'USDC withdrawal' : 'USDC sent',
         amount: meta.amount,
         explorerUrl,
+        status,
+        errorCopy,
         summary: (
           <TransferReviewSummary
             recipient={meta.recipient}
@@ -116,6 +136,8 @@ function buildReceiptView(record: TxRecord, ownWalletAddress?: string): ReceiptV
         title: tab === 'add' ? 'Vault deposit' : 'Vault withdrawal',
         amount: meta.amount,
         explorerUrl,
+        status,
+        errorCopy,
         summary: (
           // APY row hidden — a historical tx's rate isn't stored, so it can't be shown accurately.
           <EarnReviewSummary
@@ -139,6 +161,8 @@ function buildReceiptView(record: TxRecord, ownWalletAddress?: string): ReceiptV
         title: 'USDC received',
         amount: meta.amount,
         explorerUrl,
+        status,
+        errorCopy,
         summary: (
           <TransferReviewSummary
             recipient=""
@@ -159,6 +183,15 @@ export function ActivityReceipt({ record, ownWalletAddress, open, onClose }: Act
   // Play the slide-down exit before the parent unmounts us (mockup parity with the flow modals).
   const { exiting, requestClose } = useFlowExit(onClose)
 
+  // Settled → confirmed chrome; a definitive failure/cancel → error chrome; an indeterminate
+  // (unknown) or pending outcome stays neutral.
+  const shellStatus: 'default' | 'confirmed' | 'error' =
+    view?.status === 'settled'
+      ? 'confirmed'
+      : view?.status === 'failed' || view?.status === 'cancelled'
+        ? 'error'
+        : 'default'
+
   return (
     <FlowShell
       open={open && view !== null}
@@ -167,16 +200,41 @@ export function ActivityReceipt({ record, ownWalletAddress, open, onClose }: Act
       flowLabel={view?.flowLabel ?? 'Activity'}
       steps={view?.steps ?? DEPOSIT_STEPS}
       currentStep={view?.steps.length ?? DEPOSIT_STEPS.length}
-      status="confirmed"
+      status={shellStatus}
     >
       {view ? (
         <div className={`${modalStepBodyEnter} ${styles.root}`}>
           <div className={styles.titleBlock}>
             <h1 className={styles.title}>{view.title}</h1>
             <div className={styles.amountRow}>
-              <span className={styles.amountValue}>{formatUsdcPlain(view.amount)}</span>
+              <span
+                className={[
+                  styles.amountValue,
+                  view.status === 'failed' && styles.amountValueFailed,
+                  view.status === 'cancelled' && styles.amountValueCancelled,
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+              >
+                {formatUsdcPlain(view.amount)}
+              </span>
             </div>
           </div>
+
+          {view.errorCopy ? (
+            <div
+              className={[
+                styles.statusBanner,
+                view.status === 'unknown' ? styles.statusBannerUnknown : styles.statusBannerError,
+              ].join(' ')}
+              role="status"
+            >
+              <span className={styles.statusBannerTitle}>{view.errorCopy.title}</span>
+              {view.errorCopy.body ? (
+                <span className={styles.statusBannerBody}>{view.errorCopy.body}</span>
+              ) : null}
+            </div>
+          ) : null}
 
           {view.summary}
 

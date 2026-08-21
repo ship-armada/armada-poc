@@ -6,8 +6,8 @@ import { RecentActivityList } from './RecentActivityList'
 import type { DashboardActivityItem } from '@/components/dashboard/txActivityAdapter'
 
 const items: DashboardActivityItem[] = [
-  { id: 'a', kind: 'deposit', label: 'Deposit', amount: 5, occurredAt: Date.now(), pending: false },
-  { id: 'b', kind: 'send', label: 'Private transfer', amount: -2, occurredAt: Date.now(), pending: true },
+  { id: 'a', kind: 'deposit', label: 'Deposit', amount: 5, occurredAt: Date.now(), status: 'settled', pending: false },
+  { id: 'b', kind: 'send', label: 'Private transfer', amount: -2, occurredAt: Date.now(), status: 'pending', pending: true },
 ]
 
 describe('RecentActivityList', () => {
@@ -25,6 +25,24 @@ describe('RecentActivityList', () => {
   it('marks pending items with a "Pending" subtitle', () => {
     render(<RecentActivityList items={items} />)
     expect(screen.getByText(/^Pending •/)).toBeInTheDocument()
+  })
+
+  it('labels failed + cancelled items and strikes their amount', () => {
+    const failedCancelled: DashboardActivityItem[] = [
+      { id: 'f', kind: 'send', label: 'Private transfer', amount: -2, occurredAt: Date.now(), status: 'failed', pending: false },
+      { id: 'c', kind: 'deposit', label: 'Deposit', amount: 5, occurredAt: Date.now(), status: 'cancelled', pending: false },
+    ]
+    render(<RecentActivityList items={failedCancelled} />)
+    expect(screen.getByText(/^Failed •/)).toBeInTheDocument()
+    expect(screen.getByText(/^Cancelled •/)).toBeInTheDocument()
+  })
+
+  it('does not label or strike an indeterminate (unknown) item', () => {
+    const unknown: DashboardActivityItem[] = [
+      { id: 'u', kind: 'send', label: 'Private transfer', amount: -2, occurredAt: Date.now(), status: 'unknown', pending: false },
+    ]
+    render(<RecentActivityList items={unknown} />)
+    expect(screen.getByText(/^Unknown •/)).toBeInTheDocument()
   })
 
   it('fires onViewAll when "View all" is clicked', () => {

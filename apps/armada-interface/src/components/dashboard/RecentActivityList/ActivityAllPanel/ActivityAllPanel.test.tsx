@@ -13,6 +13,7 @@ const items: DashboardActivityItem[] = [
     amount: 5,
     occurredAt: Date.now(),
     txHash: '0xaaa111',
+    status: 'settled',
     pending: false,
   },
   {
@@ -22,6 +23,7 @@ const items: DashboardActivityItem[] = [
     amount: -2,
     occurredAt: Date.now(),
     txHash: '0xbbb222',
+    status: 'settled',
     pending: false,
   },
 ]

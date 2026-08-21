@@ -157,6 +157,12 @@ export interface MetaCommon {
   amount: bigint
   /** Fee quote attached to this submission. */
   feeCacheId: string
+  /**
+   * DEV/DEBUG ONLY — when set (via the debug-gated Send control), the handler throws this typed
+   * error at the start of its run so the tx fails with that exact outcome. Never set on a real
+   * submission (debug mode off leaves it undefined). See `lib/tx/devForce.ts`.
+   */
+  devForceError?: TxErrorCode
 }
 
 export interface MetaShield extends MetaCommon {
@@ -454,6 +460,13 @@ export interface ArtifactsShield extends ArtifactsCommon {
    */
   approveTxHash?: `0x${string}`
   approveSkipped?: boolean
+  /**
+   * Gasless-path intermediate flag (S-M4b). Set by an in-`build-proof` upsert right after the
+   * EIP-2612 USDC permit is signed but BEFORE the EIP-712 ShieldIntent — lets the wallet checklist
+   * flip the "Authorize" row to done while the second prompt is still pending, instead of both rows
+   * flipping together only once build-proof completes.
+   */
+  permitSigned?: boolean
 }
 
 /**

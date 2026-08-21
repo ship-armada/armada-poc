@@ -189,13 +189,17 @@ async function runBuildProof(
   // then sign an EIP-2612 USDC permit AND an EIP-712 ShieldIntent binding the full [userNote, feeNote]
   // array. All wallet prompts (permit + intent) surface here, back-to-back, so the submit stage is
   // network-only. Permit value = the entered `amount` = userNote.value + feeNote.value.
-  const gaslessArtifacts = record.meta.useGasless
+  const gasless = record.meta.useGasless
     ? await buildGaslessArtifacts(record, ctx, request, usdcAddress)
     : undefined
+  const gaslessArtifacts = gasless?.artifacts
+  // buildGaslessArtifacts wrote an intermediate `permitSigned` record (bumping updatedSeq) between
+  // the two signatures — advance from THAT record, not the original, or OCC drops this transition.
+  const baseRecord = gasless?.record ?? record
 
   // Stash the request fields + permit/intent signatures + addresses in artifacts so the next stage
   // can submit without re-running the (already-signed) build step on a resume.
-  const next = advance(record, 'submit-relayer', {
+  const next = advance(baseRecord, 'submit-relayer', {
     shieldRequest: {
       npk: request.npk,
       value: request.value.toString(), // bigint → string for IDB serializability
@@ -220,13 +224,18 @@ async function buildGaslessArtifacts(
   userNote: ShieldRequestData,
   usdcAddress: string,
 ): Promise<{
-  permitV: number
-  permitR: `0x${string}`
-  permitS: `0x${string}`
-  feeNote: { npk: `0x${string}`; value: string; encryptedBundle: readonly [`0x${string}`, `0x${string}`, `0x${string}`]; shieldKey: `0x${string}` }
-  feeShieldRandom: string
-  intentSig: `0x${string}`
-  intentNonce: string
+  /** The record after the intermediate `permitSigned` upsert — advance from THIS (bumped seq). */
+  record: TxRecord<'shield'>
+  artifacts: {
+    permitV: number
+    permitR: `0x${string}`
+    permitS: `0x${string}`
+    feeNote: { npk: `0x${string}`; value: string; encryptedBundle: readonly [`0x${string}`, `0x${string}`, `0x${string}`]; shieldKey: `0x${string}` }
+    feeShieldRandom: string
+    intentSig: `0x${string}`
+    intentNonce: string
+    permitSigned: true
+  }
 }> {
   if (
     record.meta.feeAmount === undefined ||
@@ -271,6 +280,19 @@ async function buildGaslessArtifacts(
   })
   if (ctx.signal.aborted) throw new Error('cancelled')
 
+  // Intermediate write BETWEEN the two prompts: mark the permit signed so the wallet checklist can
+  // flip the "Authorize" row to done while the ShieldIntent prompt is still pending (otherwise both
+  // rows flip together only at build-proof completion). Bump updatedSeq so OCC accepts it; the
+  // caller must advance from THIS record.
+  const afterPermit: TxRecord<'shield'> = {
+    ...record,
+    artifacts: { ...record.artifacts, permitSigned: true },
+    updatedSeq: record.updatedSeq + 1,
+    updatedAt: Date.now(),
+  }
+  await ctx.upsert(afterPermit)
+  if (ctx.signal.aborted) throw new Error('cancelled')
+
   // 2. EIP-712 ShieldIntent binding the note array + integrator + deadline + nonce.
   const intentSig = await signShieldIntent({
     wrapperAddress: wrapper,
@@ -284,18 +306,22 @@ async function buildGaslessArtifacts(
   if (ctx.signal.aborted) throw new Error('cancelled')
 
   return {
-    permitV: permitSig.v,
-    permitR: permitSig.r,
-    permitS: permitSig.s,
-    feeNote: {
-      npk: feeNote.npk,
-      value: feeNote.value.toString(),
-      encryptedBundle: feeNote.encryptedBundle,
-      shieldKey: feeNote.shieldKey,
+    record: afterPermit,
+    artifacts: {
+      permitV: permitSig.v,
+      permitR: permitSig.r,
+      permitS: permitSig.s,
+      feeNote: {
+        npk: feeNote.npk,
+        value: feeNote.value.toString(),
+        encryptedBundle: feeNote.encryptedBundle,
+        shieldKey: feeNote.shieldKey,
+      },
+      feeShieldRandom: feeNote.random,
+      intentSig,
+      intentNonce: intentNonce.toString(),
+      permitSigned: true,
     },
-    feeShieldRandom: feeNote.random,
-    intentSig,
-    intentNonce: intentNonce.toString(),
   }
 }
 

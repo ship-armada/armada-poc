@@ -91,6 +91,47 @@
   }
 }
 
+/* Struck receipt amount for a definitive failure/cancel — no balance changed. */
+.amountValueFailed {
+  text-decoration: line-through;
+  color: var(--semantic-color-status-error);
+}
+
+.amountValueCancelled {
+  text-decoration: line-through;
+  color: var(--semantic-color-text-muted);
+}
+
+/* Failure / indeterminate banner above the attempted-tx summary. */
+.statusBanner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-1);
+  width: 100%;
+  padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  box-sizing: border-box;
+}
+
+.statusBannerError {
+  background: color-mix(in srgb, var(--semantic-color-status-error) 12%, transparent);
+  border-left: 3px solid var(--semantic-color-status-error);
+}
+
+.statusBannerUnknown {
+  background: var(--semantic-color-surface-raised);
+  border-left: 3px solid var(--semantic-color-text-muted);
+}
+
+.statusBannerTitle {
+  font-weight: var(--primitives-fontWeight-semibold);
+  color: var(--semantic-color-text-primary);
+}
+
+.statusBannerBody {
+  color: var(--semantic-color-text-muted);
+}
+
 @media (max-width: 767px) {
   .root {
     padding: var(--primitives-spacing-5);

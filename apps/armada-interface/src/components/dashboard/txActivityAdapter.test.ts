@@ -1,7 +1,7 @@
 // ABOUTME: Unit tests for the TxRecord → dashboard activity-item adapter (direction, sign, label, pending, ordering).
 
 import { describe, it, expect } from 'vitest'
-import type { TxRecord, TxKind, TxExecutionState } from '@/lib/tx/types'
+import type { TxRecord, TxKind, TxExecutionState, TxErrorCode } from '@/lib/tx/types'
 import type { RequestLinkRecord } from '@/lib/shielded/requestLinks'
 import {
   buildActivityItems,
@@ -32,6 +32,7 @@ function makeRecord(
     updatedAt?: number
     sourceTxHash?: `0x${string}`
     recipient?: string
+    errorCode?: TxErrorCode
   } = {},
 ): TxRecord {
   return {
@@ -41,7 +42,10 @@ function makeRecord(
     createdAt: opts.createdAt ?? 1000,
     updatedAt: opts.updatedAt ?? 1000,
     meta: { amount: opts.amount ?? 1_000_000n, ...(opts.recipient ? { recipient: opts.recipient } : {}) },
-    artifacts: opts.sourceTxHash ? { sourceTxHash: opts.sourceTxHash } : {},
+    artifacts: {
+      ...(opts.sourceTxHash ? { sourceTxHash: opts.sourceTxHash } : {}),
+      ...(opts.errorCode ? { error: { code: opts.errorCode, message: opts.errorCode } } : {}),
+    },
   } as unknown as TxRecord
 }
 
@@ -161,5 +165,50 @@ describe('buildActivityItems', () => {
       makeLink({ requestId: `req_${i}`, createdAt: 1_000 + i }),
     )
     expect(buildActivityItems([], links, null, Infinity)).toHaveLength(12)
+  })
+})
+
+describe('activity status derivation', () => {
+  it('completed → settled; non-terminal → pending', () => {
+    expect(txRecordToActivityItem(makeRecord('shield', { executionState: 'completed' })).status).toBe('settled')
+    expect(txRecordToActivityItem(makeRecord('shield', { executionState: 'active' })).status).toBe('pending')
+    expect(txRecordToActivityItem(makeRecord('shield', { executionState: 'waiting' })).status).toBe('pending')
+  })
+
+  it('definitive failures → failed', () => {
+    const codes = ['TX_REVERTED', 'PRE_FLIGHT_REVERT', 'INTERRUPTED', 'FEE_EXPIRED', 'RPC_ERROR'] as const
+    for (const code of codes) {
+      const item = txRecordToActivityItem(makeRecord('unshield-local', { executionState: 'failed', errorCode: code }))
+      expect(item.status).toBe('failed')
+    }
+  })
+
+  it('user aborts → cancelled (app Cancel button + declined wallet prompt), code is authoritative', () => {
+    // App Cancel button before broadcast.
+    expect(
+      txRecordToActivityItem(makeRecord('shield', { executionState: 'cancelled', errorCode: 'CANCELLED' })).status,
+    ).toBe('cancelled')
+    // Declined wallet signature — lands on a `failed` state but is a user cancellation, not a failure.
+    expect(
+      txRecordToActivityItem(makeRecord('shield', { executionState: 'failed', errorCode: 'USER_REJECTED' })).status,
+    ).toBe('cancelled')
+    // A CANCELLED code that lands on a `failed` state (e.g. thrown → markFailed) is still cancelled.
+    expect(
+      txRecordToActivityItem(makeRecord('shield', { executionState: 'failed', errorCode: 'CANCELLED' })).status,
+    ).toBe('cancelled')
+  })
+
+  it('indeterminate outcomes → unknown (may still have settled on chain)', () => {
+    // expired = past the time budget; we never watched it to completion.
+    expect(txRecordToActivityItem(makeRecord('shield', { executionState: 'expired' })).status).toBe('unknown')
+    // DISMISSED sits on a `cancelled` executionState but is indeterminate — must NOT read as cancelled.
+    expect(
+      txRecordToActivityItem(makeRecord('shield', { executionState: 'cancelled', errorCode: 'DISMISSED' })).status,
+    ).toBe('unknown')
+    for (const code of ['POLL_TIMEOUT', 'DUPLICATE_TX'] as const) {
+      expect(
+        txRecordToActivityItem(makeRecord('shield', { executionState: 'failed', errorCode: code })).status,
+      ).toBe('unknown')
+    }
   })
 })

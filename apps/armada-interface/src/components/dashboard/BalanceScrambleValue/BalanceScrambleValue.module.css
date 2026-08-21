@@ -126,3 +126,13 @@
     transition: none;
   }
 }
+
+/* Struck amounts (failed/cancelled activity rows). The glyphs are inline-block, so a parent's
+   text-decoration can't reach them — strike the leaf glyph elements directly. Uses currentColor,
+   so the row's failed-red / cancelled-muted tint carries the strike. */
+.struck .glyph,
+.struck .settleGlyph,
+.struck .digitCell,
+.struck .spinCell {
+  text-decoration: line-through;
+}

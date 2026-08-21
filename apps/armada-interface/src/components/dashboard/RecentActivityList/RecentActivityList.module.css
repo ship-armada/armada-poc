@@ -200,6 +200,11 @@
   color: var(--semantic-color-text-muted);
 }
 
+/* Failed/cancelled rows strike the description too — plain text, so line-through applies directly. */
+.labelStruck {
+  text-decoration: line-through;
+}
+
 .amount {
   composes: monoSmMedium from '../../../design/styles/typographyComposites.module.css';
   flex-shrink: 0;
@@ -214,6 +219,17 @@
 
 .amountNegative {
   color: var(--semantic-color-text-primary);
+}
+
+/* Failed → struck red; cancelled → struck muted (user-initiated, not an error). */
+.amountFailed {
+  color: var(--semantic-color-status-error);
+  text-decoration: line-through;
+}
+
+.amountCancelled {
+  color: var(--semantic-color-text-muted);
+  text-decoration: line-through;
 }
 
 @media (max-width: 767px) {

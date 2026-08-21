@@ -118,7 +118,7 @@ export function txRecordToActivityItem(
     return {
       ...base,
       kind: withdraw ? 'withdraw' : 'send',
-      label: withdraw ? 'Withdrawn to your wallet' : recordTitle(record),
+      label: withdraw ? 'Unshielded to your wallet' : recordTitle(record),
       amount: -usdcToNumber(record.meta.amount),
     }
   }

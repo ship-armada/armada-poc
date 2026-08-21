@@ -71,7 +71,7 @@ export function ShieldAmountStepContent({
 
   const isShield = tab === 'shield'
   const title = isShield ? 'Shield your USDC' : 'Unshield your USDC'
-  const amountAriaLabel = isShield ? 'Deposit amount' : 'Unshield amount'
+  const amountAriaLabel = isShield ? 'Shield amount' : 'Unshield amount'
 
   const { value: amount, error: parseError } = parseUsdcInput(amountStr)
   const tooMuch = amount > maxInput
@@ -80,7 +80,7 @@ export function ShieldAmountStepContent({
     usdcInputErrorMessage(parseError) ??
     (tooMuch
       ? isShield
-        ? "That's more than you can deposit"
+        ? "That's more than you can shield"
         : "That's more than you can unshield"
       : undefined) ??
     (tooSmall

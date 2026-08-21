@@ -9,7 +9,7 @@ const items: DashboardActivityItem[] = [
   {
     id: 'a',
     kind: 'deposit',
-    label: 'Deposit from Base',
+    label: 'Shield from Base',
     amount: 5,
     occurredAt: Date.now(),
     txHash: '0xaaa111',
@@ -31,7 +31,7 @@ const items: DashboardActivityItem[] = [
 describe('ActivityAllPanel', () => {
   it('renders the filtered activity list when open', () => {
     render(<ActivityAllPanel open onClose={() => {}} items={items} />)
-    expect(screen.getByText('Deposit from Base')).toBeInTheDocument()
+    expect(screen.getByText('Shield from Base')).toBeInTheDocument()
     expect(screen.getByText('Private transfer')).toBeInTheDocument()
   })
 
@@ -41,12 +41,12 @@ describe('ActivityAllPanel', () => {
       target: { value: '0xnope' },
     })
     expect(screen.getByText('No transactions match your filters.')).toBeInTheDocument()
-    expect(screen.queryByText('Deposit from Base')).not.toBeInTheDocument()
+    expect(screen.queryByText('Shield from Base')).not.toBeInTheDocument()
   })
 
   it('filters by kind chip', () => {
     render(<ActivityAllPanel open onClose={() => {}} items={items} />)
-    fireEvent.click(screen.getByRole('tab', { name: 'Withdraw' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Unshield' }))
     expect(screen.getByText('No transactions match your filters.')).toBeInTheDocument()
   })
 

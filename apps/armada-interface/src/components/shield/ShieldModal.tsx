@@ -101,7 +101,7 @@ export function ShieldModal() {
       onClose={close}
       exiting={exiting}
       stepKey={step}
-      flowLabel={isShield ? 'Shield' : 'Withdraw'}
+      flowLabel={isShield ? 'Shield' : 'Unshield'}
       steps={steps}
       currentStep={currentStep}
       status={status}

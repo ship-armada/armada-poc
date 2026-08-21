@@ -138,14 +138,14 @@ describe('<ShieldModal>', () => {
   it('renders the input step when open', () => {
     renderModal({ open: true, max: 10_000_000n })
     expect(screen.getByRole('dialog', { name: 'Shield' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Deposit amount')).toBeInTheDocument()
+    expect(screen.getByLabelText('Shield amount')).toBeInTheDocument()
   })
 
   it('advances to the review step after entering a valid amount', () => {
     renderModal({ open: true, max: 10_000_000n })
-    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
+    fireEvent.change(screen.getByLabelText('Shield amount'), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
-    expect(screen.getByRole('heading', { name: 'Review your USDC deposit' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Review your USDC shield' })).toBeInTheDocument()
     // Amount renders full-precision ("5") in the big amount block and 2dp in the summary total
     // ("5.00 USDC"); match the summary total.
     expect(screen.getAllByText(/5\.00/).length).toBeGreaterThanOrEqual(1)
@@ -153,10 +153,10 @@ describe('<ShieldModal>', () => {
 
   it('Back from review returns to the input step', () => {
     renderModal({ open: true, max: 10_000_000n })
-    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
+    fireEvent.change(screen.getByLabelText('Shield amount'), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     fireEvent.click(screen.getByRole('button', { name: /^Back/ }))
-    expect(screen.getByLabelText('Deposit amount')).toBeInTheDocument()
+    expect(screen.getByLabelText('Shield amount')).toBeInTheDocument()
   })
 
   it('Cancel closes the modal', () => {
@@ -167,7 +167,7 @@ describe('<ShieldModal>', () => {
 
   it('Confirm submits the tx and advances to the dedicated wallet step', async () => {
     renderModal({ open: true, max: 10_000_000n })
-    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
+    fireEvent.change(screen.getByLabelText('Shield amount'), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^Confirm$/ }))
@@ -178,12 +178,12 @@ describe('<ShieldModal>', () => {
     await waitFor(() => {
       expect(screen.getByRole('list', { name: 'Wallet confirmations' })).toBeInTheDocument()
     })
-    expect(screen.getByText('Preparing your deposit…')).toBeInTheDocument()
+    expect(screen.getByText('Preparing your shield…')).toBeInTheDocument()
   })
 
   it('does not create a second record when Confirm is double-clicked (P0-7)', async () => {
     const store = renderModal({ open: true, max: 10_000_000n })
-    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
+    fireEvent.change(screen.getByLabelText('Shield amount'), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     const confirm = screen.getByRole('button', { name: /^Confirm$/ })
     // Fire twice before React can flush the disabled state — the synchronous submittingRef guard
@@ -201,7 +201,7 @@ describe('<ShieldModal>', () => {
   it('warns at review when an unresolved same-amount deposit may still be on-chain (S-L7)', () => {
     const store = renderModal({ open: true, max: 10_000_000n })
     store.set(txListAtom, [unresolvedShield(5_000_000n)])
-    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
+    fireEvent.change(screen.getByLabelText('Shield amount'), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     expect(screen.getByText(/may still be processing on chain/i)).toBeInTheDocument()
   })
@@ -209,14 +209,14 @@ describe('<ShieldModal>', () => {
   it('does not warn when the unresolved deposit is a different amount (S-L7)', () => {
     const store = renderModal({ open: true, max: 10_000_000n })
     store.set(txListAtom, [unresolvedShield(5_000_000n)])
-    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '7' } })
+    fireEvent.change(screen.getByLabelText('Shield amount'), { target: { value: '7' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     expect(screen.queryByText(/may still be processing/i)).toBeNull()
   })
 
   it('in-flight tx is dismissible — closing backgrounds the tx without cancelling it (S-M2)', async () => {
     const store = renderModal({ open: true, max: 10_000_000n })
-    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '5' } })
+    fireEvent.change(screen.getByLabelText('Shield amount'), { target: { value: '5' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /^Confirm$/ }))
@@ -244,7 +244,7 @@ describe('<ShieldModal> — Shield/Unshield tabs', () => {
 
   it('opens on the Unshield tab from openModal=unshield', () => {
     renderModal({ open: true, kind: 'unshield', spendable: 10_000_000n, evm: EVM })
-    expect(screen.getByRole('dialog', { name: 'Withdraw' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Unshield' })).toBeInTheDocument()
     expect(screen.getByText('Unshield your USDC')).toBeInTheDocument()
     expect(screen.getByLabelText('Unshield amount')).toBeInTheDocument()
   })
@@ -258,7 +258,7 @@ describe('<ShieldModal> — Shield/Unshield tabs', () => {
 
   it('carries the typed amount across the Shield → Unshield toggle', () => {
     renderModal({ open: true, kind: 'shield', max: 10_000_000n, spendable: 10_000_000n, evm: EVM })
-    fireEvent.change(screen.getByLabelText('Deposit amount'), { target: { value: '7' } })
+    fireEvent.change(screen.getByLabelText('Shield amount'), { target: { value: '7' } })
     fireEvent.click(screen.getByRole('tab', { name: 'Unshield' }))
     expect(screen.getByLabelText('Unshield amount')).toHaveValue('7')
   })

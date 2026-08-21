@@ -34,11 +34,11 @@ const DEPOSIT_STEPS = ['Amount', 'Review', 'Confirm']
 const SEND_STEPS = ['Recipient', 'Amount', 'Review', 'Confirm']
 
 interface ReceiptView {
-  /** Header label (matches the originating flow: Deposit / Send / Withdraw / Earn). */
+  /** Header label (matches the originating flow: Shield / Send / Unshield / Earn). */
   flowLabel: string
   /** The originating flow's step-bar labels, rendered confirmed (all filled). */
   steps: string[]
-  /** In-card title (e.g. "USDC deposit"). */
+  /** In-card title (e.g. "USDC shield"). */
   title: string
   /** Gross USDC amount (raw 6-decimal) shown in the big-numeral block. */
   amount: bigint
@@ -70,9 +70,9 @@ function buildReceiptView(record: TxRecord, ownWalletAddress?: string): ReceiptV
       const fee = meta.feeAmount ?? null
       const netAmount = fee ? meta.amount - fee : meta.amount
       return {
-        flowLabel: 'Deposit',
+        flowLabel: 'Shield',
         steps: DEPOSIT_STEPS,
-        title: 'USDC deposit',
+        title: 'USDC shield',
         amount: meta.amount,
         explorerUrl,
         status,
@@ -104,9 +104,9 @@ function buildReceiptView(record: TxRecord, ownWalletAddress?: string): ReceiptV
             ? getNetworkConfig().hub.name
             : undefined
       return {
-        flowLabel: asWithdraw ? 'Withdraw' : 'Send',
+        flowLabel: asWithdraw ? 'Unshield' : 'Send',
         steps: SEND_STEPS,
-        title: asWithdraw ? 'USDC withdrawal' : 'USDC sent',
+        title: asWithdraw ? 'USDC unshield' : 'USDC sent',
         amount: meta.amount,
         explorerUrl,
         status,

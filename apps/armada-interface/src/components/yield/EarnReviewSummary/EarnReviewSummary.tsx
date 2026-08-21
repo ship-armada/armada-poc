@@ -50,7 +50,7 @@ export function EarnReviewSummary({
   confirmedAt,
   showApy = true,
 }: EarnReviewSummaryProps) {
-  const modeLabel = tab === 'add' ? 'Add to vault' : 'Withdraw from vault'
+  const modeLabel = tab === 'add' ? 'Add to vault' : 'Withdraw from shielded vault'
   const amountLabel = tab === 'add' ? 'Your deposit' : 'Your withdrawal'
   return (
     <div className={styles.summary}>

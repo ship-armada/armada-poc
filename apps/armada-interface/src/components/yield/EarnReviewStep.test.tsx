@@ -43,7 +43,7 @@ describe('<EarnReviewStep>', () => {
       />,
     )
     expect(screen.getByRole('heading', { name: 'Review your USDC withdrawal' })).toBeInTheDocument()
-    expect(screen.getByText('Withdraw from vault')).toBeInTheDocument()
+    expect(screen.getByText('Withdraw from shielded vault')).toBeInTheDocument()
   })
 
   it('APY shows syncing copy when rate is null', () => {

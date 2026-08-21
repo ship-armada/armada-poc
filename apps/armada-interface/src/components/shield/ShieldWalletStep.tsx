@@ -1,5 +1,5 @@
 // ABOUTME: Shield wallet-approve step — the mockup's dedicated "step 3" wallet page (centered title + approve/sign checklist + footer).
-// ABOUTME: Footer transitions "Preparing your deposit…" (proof building, no prompt yet) → "Waiting for wallet confirmation" (a prompt is live).
+// ABOUTME: Footer transitions "Preparing your shield…" (proof building, no prompt yet) → "Waiting for wallet confirmation" (a prompt is live).
 
 import { modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { WalletConfirmList } from '@/components/flow/WalletConfirmList/WalletConfirmList'
@@ -15,7 +15,7 @@ export function ShieldWalletStep({ steps }: ShieldWalletStepProps) {
   // every row is `pending` — surface the honest "preparing" copy so the user isn't told to confirm
   // a prompt that hasn't popped yet.
   const prompting = steps.some((s) => s.status === 'loading')
-  const footer = prompting ? 'Waiting for wallet confirmation' : 'Preparing your deposit…'
+  const footer = prompting ? 'Waiting for wallet confirmation' : 'Preparing your shield…'
 
   return (
     <div className={styles.column}>

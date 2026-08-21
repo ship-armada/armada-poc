@@ -27,7 +27,7 @@ describe('shieldWalletSteps', () => {
     const steps = shieldWalletSteps(null, 5_000_000n)
     expect(steps.map(s => s.label)).toEqual([
       'Approve 5.00 USDC',
-      'Submit 5.00 USDC deposit',
+      'Submit 5.00 USDC shield',
     ])
   })
 
@@ -39,7 +39,7 @@ describe('shieldWalletSteps', () => {
       artifacts: { approveSkipped: true },
     }
     const steps = shieldWalletSteps(record, 5_000_000n)
-    expect(steps.map(s => s.label)).toEqual(['Submit 5.00 USDC deposit'])
+    expect(steps.map(s => s.label)).toEqual(['Submit 5.00 USDC shield'])
     expect(steps[0].status).toBe('loading')
   })
 
@@ -51,7 +51,7 @@ describe('shieldWalletSteps', () => {
       stagesCompleted: [],
     }
     const buildingSteps = shieldWalletSteps(building, 5_000_000n)
-    expect(buildingSteps.map(s => s.label)).toEqual(['Authorize 5.00 USDC', 'Sign deposit transaction'])
+    expect(buildingSteps.map(s => s.label)).toEqual(['Authorize 5.00 USDC', 'Sign shield transaction'])
     expect(buildingSteps.map(s => s.status)).toEqual(['loading', 'pending'])
 
     // Intermediate: permit signed (permitSigned artifact) but ShieldIntent still pending —

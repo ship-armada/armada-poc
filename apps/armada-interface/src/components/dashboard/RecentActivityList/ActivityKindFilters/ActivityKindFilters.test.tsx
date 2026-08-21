@@ -7,14 +7,14 @@ import { ActivityKindFilters } from './ActivityKindFilters'
 describe('ActivityKindFilters', () => {
   it('renders every kind chip', () => {
     render(<ActivityKindFilters value="all" onChange={() => {}} />)
-    for (const label of ['All', 'Deposit', 'Withdraw', 'Sent', 'Received']) {
+    for (const label of ['All', 'Shield', 'Unshield', 'Sent', 'Received']) {
       expect(screen.getByRole('tab', { name: label })).toBeInTheDocument()
     }
   })
 
   it('marks the active chip as selected', () => {
     render(<ActivityKindFilters value="deposit" onChange={() => {}} />)
-    expect(screen.getByRole('tab', { name: 'Deposit' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Shield' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('tab', { name: 'All' })).toHaveAttribute('aria-selected', 'false')
   })
 

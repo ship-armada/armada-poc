@@ -37,15 +37,15 @@ describe('buildProcessingView', () => {
     const withdraw = buildProcessingView(rec('unshield-local', 'build-proof', 'active'), {
       sendVariant: 'withdraw',
     })
-    expect(withdraw.cardCopy.title).toBe('Your withdraw is in progress')
-    expect(withdraw.cardCopy.titleLines).toEqual(['Your withdraw', 'is in progress'])
+    expect(withdraw.cardCopy.title).toBe('Your unshield is in progress')
+    expect(withdraw.cardCopy.titleLines).toEqual(['Your unshield', 'is in progress'])
   })
 
   it('snaps to the final stage and exposes the completedLabel when completed', () => {
     const view = buildProcessingView(rec('shield', 'hub-confirmed', 'completed'))
     expect(view.completed).toBe(true)
     expect(view.activeStageIndex).toBe(view.stages.length - 1)
-    expect(view.stages.find((s) => s.id === 'hub-confirmed')?.completedLabel).toBe('Deposited')
+    expect(view.stages.find((s) => s.id === 'hub-confirmed')?.completedLabel).toBe('Shielded')
   })
 
   it('renders the real (granular) xchain stages, not a fixed 3', () => {

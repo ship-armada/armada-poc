@@ -65,7 +65,7 @@ describe('ShieldAmountStepContent (direction)', () => {
   it('shows shield copy + both tabs on the shield tab', () => {
     renderContent('shield')
     expect(screen.getByText('Shield your USDC')).toBeInTheDocument()
-    expect(screen.getByLabelText('Deposit amount')).toBeInTheDocument()
+    expect(screen.getByLabelText('Shield amount')).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Shield' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'Unshield' })).toBeInTheDocument()
   })

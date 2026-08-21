@@ -17,7 +17,7 @@ const COPY: Record<TxKind, Partial<Record<string, CopyEntry>>> = {
   shield: {
     'build-proof': 'Preparing transaction',
     'submit-relayer': { waiting: 'Confirm in your wallet', active: 'Submitting transaction' },
-    'hub-confirmed': 'Deposited',
+    'hub-confirmed': 'Shielded',
   },
   'shield-xchain': {
     'build-proof': 'Preparing transaction',
@@ -26,12 +26,12 @@ const COPY: Record<TxKind, Partial<Record<string, CopyEntry>>> = {
     'iris-attestation-pending': 'Waiting for cross-chain confirmation',
     'iris-attestation-ready': 'Cross-chain confirmation ready',
     'hub-mint-pending': 'Delivering to private balance',
-    'hub-mint-confirmed': 'Deposited',
+    'hub-mint-confirmed': 'Shielded',
   },
   'unshield-local': {
     'build-proof': 'Preparing transaction',
     'submit-relayer': 'Submitting privately',
-    'hub-confirmed': 'Withdrawn',
+    'hub-confirmed': 'Unshielded',
   },
   'unshield-xchain': {
     'build-proof': 'Preparing transaction',
@@ -79,15 +79,15 @@ export function stageCopy(
 
 /** Short title used in lists (Recent Activity, In Progress) and in modal headers. */
 const KIND_TITLES: Record<TxKind, string> = {
-  shield: 'Deposit',
+  shield: 'Shield',
   // Cross-chain shield surfaces under the same modal/CTA as same-chain shield; the kind
-  // distinction is purely for the lifecycle. From the user's perspective both are deposits.
-  'shield-xchain': 'Deposit',
-  // Withdraw and Send-External both produce `unshield-*` records — there's no separate kind
+  // distinction is purely for the lifecycle. From the user's perspective both are shields.
+  'shield-xchain': 'Shield',
+  // Unshield and Send-External both produce `unshield-*` records — there's no separate kind
   // for "Payment" because the contract paths are identical. The UI distinguishes the user's
   // intent (self vs other) via the modal they started from + the recipient field default.
-  'unshield-local': 'Withdraw',
-  'unshield-xchain': 'Withdraw',
+  'unshield-local': 'Unshield',
+  'unshield-xchain': 'Unshield',
   'transfer-shielded': 'Private transfer',
   // Incoming private transfer reconstructed from chain — someone sent USDC to our 0zk address.
   'transfer-shielded-received': 'Received',
@@ -114,7 +114,7 @@ export function recordTitle(record: TxRecord): string {
       // Shields carry the source chain they deposited/bridged from.
       const meta = record.meta as { fromChainId?: number }
       const chain = meta.fromChainId !== undefined ? getChainById(meta.fromChainId) : undefined
-      return chain ? `Deposit from ${chain.name}` : 'Deposit'
+      return chain ? `Shield from ${chain.name}` : 'Shield'
     }
     case 'unshield-local':
     case 'unshield-xchain': {

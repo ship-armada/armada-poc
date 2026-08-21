@@ -47,7 +47,7 @@ export function ShieldReviewStep({
     <div className={styles.root}>
       <div className={`${styles.body} ${modalStepBodyEnter}`}>
         <div className={styles.titleBlock}>
-          <h1 className={styles.title}>Review your USDC deposit</h1>
+          <h1 className={styles.title}>Review your USDC shield</h1>
           <div className={styles.amountRow}>
             <span className={styles.amountValue}>{formatUsdcPlain(amount)}</span>
           </div>
@@ -69,8 +69,8 @@ export function ShieldReviewStep({
           <div className={styles.caution} role="alert">
             <AlertTriangle size={16} className={styles.cautionIcon} aria-hidden="true" />
             <span>
-              A deposit of this amount may still be processing on chain. Submitting again could
-              deposit twice — check Recent Activity first.
+              A shield of this amount may still be processing on chain. Submitting again could
+              shield twice — check Recent Activity first.
             </span>
           </div>
         ) : null}

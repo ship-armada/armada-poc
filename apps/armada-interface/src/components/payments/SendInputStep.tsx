@@ -1,11 +1,12 @@
 // ABOUTME: Send/Withdraw amount step — DepositAmountCard (no chain row; chosen on the recipient step) + percent pills + gas notice.
 // ABOUTME: Recipient + chain live on the preceding recipient step, so this step gates only on the amount.
 
-import { useMemo } from 'react'
+import { useMemo, useRef, type Ref } from 'react'
 import { Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { DepositAmountCard } from '@/components/deposit/DepositAmountCard/DepositAmountCard'
 import { depositOverlayShellStyles } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
 import { GasBalanceNotice } from '@/components/ui'
+import { useNudgeShake } from '@/hooks/useNudgeShake'
 import type { DisplayFees } from '@/lib/fees/displayFees'
 import type { FlowFeeBreakdown } from '@/components/ui/FeeBreakdownTooltip'
 import { useGasBalanceWarning } from '@/hooks/useGasBalanceWarning'
@@ -39,6 +40,10 @@ export interface SendInputStepProps {
   gaslessMode?: boolean
   onBack: () => void
   onContinue: () => void
+  /** Ref onto the amount input so the footer's incomplete-CTA nudge can focus the field. */
+  inputRef?: Ref<HTMLInputElement>
+  /** Called when the disabled "Input amount" CTA is tapped — focuses the amount field alongside the shake. */
+  onIncompleteContinue?: () => void
 }
 
 export function SendInputStepContent({
@@ -54,6 +59,7 @@ export function SendInputStepContent({
   feeLoading = false,
   gasChainId,
   gaslessMode = true,
+  inputRef,
 }: Pick<
   SendInputStepProps,
   | 'variant'
@@ -68,6 +74,7 @@ export function SendInputStepContent({
   | 'feeLoading'
   | 'gasChainId'
   | 'gaslessMode'
+  | 'inputRef'
 >) {
   const allChains = useMemo(
     () => getAllChainIdentities().map((c) => ({ chainId: c.chainId, label: c.name })),
@@ -104,6 +111,7 @@ export function SendInputStepContent({
           onMax={() => onAmountChange(formatUsdcPlain(maxInput))}
           error={amountError}
           amountAriaLabel={variant === 'withdraw' ? 'Withdrawal amount' : 'Send amount'}
+          inputRef={inputRef}
         />
         {showGasNotice ? (
           <GasBalanceNotice
@@ -121,10 +129,15 @@ export function SendInputStepFooter({
   maxInput,
   onBack,
   onContinue,
-}: Pick<SendInputStepProps, 'amountStr' | 'maxInput' | 'onBack' | 'onContinue'>) {
+  onIncompleteContinue,
+}: Pick<
+  SendInputStepProps,
+  'amountStr' | 'maxInput' | 'onBack' | 'onContinue' | 'onIncompleteContinue'
+>) {
   const { value: amount, error: parseError } = parseUsdcInput(amountStr)
   const tooMuch = amount > maxInput
   const canReview = hasActiveAmount(amountStr) && !tooMuch && !parseError
+  const { shaking, nudge, onShakeAnimationEnd } = useNudgeShake()
 
   return (
     <div className={`${depositOverlayShellStyles.buttonRow} ${modalActionRowEnter}`}>
@@ -142,16 +155,27 @@ export function SendInputStepFooter({
         showIcon={false}
         disabled={!canReview}
         onClick={onContinue}
+        onDisabledClick={() => {
+          nudge()
+          onIncompleteContinue?.()
+        }}
+        shaking={shaking}
+        onShakeAnimationEnd={onShakeAnimationEnd}
       />
     </div>
   )
 }
 
 export function SendInputStep(props: SendInputStepProps) {
+  // The step is the common parent of the amount card + footer, so it owns the ref shared between them.
+  const amountInputRef = useRef<HTMLInputElement>(null)
   return (
     <>
-      <SendInputStepContent {...props} />
-      <SendInputStepFooter {...props} />
+      <SendInputStepContent {...props} inputRef={amountInputRef} />
+      <SendInputStepFooter
+        {...props}
+        onIncompleteContinue={() => amountInputRef.current?.focus()}
+      />
     </>
   )
 }

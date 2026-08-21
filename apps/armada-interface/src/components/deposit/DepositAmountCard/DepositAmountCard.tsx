@@ -78,6 +78,8 @@ export interface DepositAmountCardProps {
   error?: string
   /** Accessible name for the amount field (e.g. "Deposit amount", "Withdrawal amount"). */
   amountAriaLabel?: string
+  /** Ref onto the amount `<input>` — lets a sibling footer focus the field (e.g. the incomplete-CTA nudge). */
+  inputRef?: React.Ref<HTMLInputElement>
 }
 
 function ChainIcon({ chainId, label }: { chainId: number; label: string }) {
@@ -115,6 +117,7 @@ export function DepositAmountCard({
   maxInput,
   error,
   amountAriaLabel = 'Amount',
+  inputRef,
 }: DepositAmountCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const chainRootRef = useRef<HTMLDivElement>(null)
@@ -317,6 +320,7 @@ export function DepositAmountCard({
               {showActiveAmount ? displayAmount : '0'}
             </span>
             <input
+              ref={inputRef}
               id={amountInputId}
               type="text"
               inputMode="decimal"

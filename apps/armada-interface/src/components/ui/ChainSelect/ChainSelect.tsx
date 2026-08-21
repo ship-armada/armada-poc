@@ -5,6 +5,8 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ChevronDownIcon } from '@heroicons/react/24/solid'
 import { getAllChainIdentities, type ChainIdentity } from '@/config/network'
 import { chainIconForChainId } from '@/components/ui/chainIcons'
+import { useMobileLayout } from '@/hooks/useMobileLayout'
+import { BottomSheet } from '@/design'
 import styles from './ChainSelect.module.css'
 
 const ICON_SIZE = 32
@@ -43,6 +45,8 @@ export function ChainSelect({ value, onChange, chains, label, disabled, classNam
   const listboxId = useId()
   const rootRef = useRef<HTMLDivElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  // On phones the option list opens as a BottomSheet instead of the inline popover (mockup 748ba20).
+  const isMobile = useMobileLayout()
 
   // useMemo so the default chain list is stable across renders without re-running getAllChainIdentities.
   const options = useMemo(() => chains ?? getAllChainIdentities(), [chains])
@@ -50,7 +54,9 @@ export function ChainSelect({ value, onChange, chains, label, disabled, classNam
   const selectable = !disabled && options.length > 1
 
   useEffect(() => {
-    if (!menuOpen) return
+    // The mobile BottomSheet owns its own dismissal (scrim + Escape), so the outside-click handler
+    // is desktop-only.
+    if (!menuOpen || isMobile) return
     function handlePointerDown(event: MouseEvent) {
       if (!rootRef.current?.contains(event.target as Node)) {
         setMenuOpen(false)
@@ -58,7 +64,7 @@ export function ChainSelect({ value, onChange, chains, label, disabled, classNam
     }
     document.addEventListener('mousedown', handlePointerDown)
     return () => document.removeEventListener('mousedown', handlePointerDown)
-  }, [menuOpen])
+  }, [menuOpen, isMobile])
 
   function selectChain(nextId: number) {
     onChange(nextId)
@@ -67,15 +73,30 @@ export function ChainSelect({ value, onChange, chains, label, disabled, classNam
 
   const cls = [styles.root, className].filter(Boolean).join(' ')
 
+  const optionItems = options.map(option => (
+    <li key={option.chainId} role="presentation">
+      <button
+        type="button"
+        role="option"
+        aria-selected={option.chainId === value}
+        className={styles.option}
+        onClick={() => selectChain(option.chainId)}
+      >
+        <ChainIcon chainId={option.chainId} name={option.name} />
+        <span className={styles.optionLabel}>{option.name}</span>
+      </button>
+    </li>
+  ))
+
   return (
     <div className={cls} ref={rootRef}>
       {selectable ? (
         <button
           type="button"
           className={styles.trigger}
-          aria-haspopup="listbox"
+          aria-haspopup={isMobile ? 'dialog' : 'listbox'}
           aria-expanded={menuOpen}
-          aria-controls={listboxId}
+          aria-controls={isMobile ? undefined : listboxId}
           aria-label={label}
           onClick={() => setMenuOpen(open => !open)}
         >
@@ -96,23 +117,23 @@ export function ChainSelect({ value, onChange, chains, label, disabled, classNam
         </div>
       )}
 
-      {menuOpen && selectable ? (
+      {menuOpen && selectable && !isMobile ? (
         <ul id={listboxId} className={styles.menu} role="listbox" aria-label="Network">
-          {options.map(option => (
-            <li key={option.chainId} role="presentation">
-              <button
-                type="button"
-                role="option"
-                aria-selected={option.chainId === value}
-                className={styles.option}
-                onClick={() => selectChain(option.chainId)}
-              >
-                <ChainIcon chainId={option.chainId} name={option.name} />
-                <span className={styles.optionLabel}>{option.name}</span>
-              </button>
-            </li>
-          ))}
+          {optionItems}
         </ul>
+      ) : null}
+
+      {selectable && isMobile ? (
+        <BottomSheet
+          open={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          title="Network"
+          ariaLabel="Network"
+        >
+          <ul className={styles.sheetList} role="listbox" aria-label="Network">
+            {optionItems}
+          </ul>
+        </BottomSheet>
       ) : null}
     </div>
   )

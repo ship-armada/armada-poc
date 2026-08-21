@@ -216,6 +216,17 @@
   color: var(--semantic-color-text-primary);
 }
 
+/* Failed → struck red; cancelled → struck muted (user-initiated, not an error). */
+.amountFailed {
+  color: var(--semantic-color-status-error);
+  text-decoration: line-through;
+}
+
+.amountCancelled {
+  color: var(--semantic-color-text-muted);
+  text-decoration: line-through;
+}
+
 @media (max-width: 767px) {
   .copy {
     min-width: 0;

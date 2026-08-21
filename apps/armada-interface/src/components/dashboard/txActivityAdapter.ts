@@ -1,13 +1,31 @@
 // ABOUTME: Maps TxRecords to the dashboard RecentActivityList's presentational item shape.
 // ABOUTME: Direction (icon kind + amount sign) per TxKind; label reuses the app's recordTitle; folds in pending txs.
 
-import type { TxRecord, TxKind } from '@/lib/tx/types'
+import type { TxRecord, TxKind, TxErrorCode } from '@/lib/tx/types'
 import { historySortTime, isTerminalState } from '@/lib/tx/types'
 import { recordTitle } from '@/components/tx/stageCopy'
 import type { RequestLinkRecord } from '@/lib/shielded/requestLinks'
 
 /** Icon/semantic kind for an activity row — a coarser grouping than TxKind. */
 export type DashboardActivityKind = 'send' | 'deposit' | 'earn' | 'withdraw' | 'receive' | 'requestLink'
+
+/**
+ * Outcome bucket for an activity row.
+ *   settled   — completed on chain.
+ *   pending   — still in flight.
+ *   failed    — definitively failed; nothing settled (revert / reject / pre-flight / interrupted / fee-expired / rpc).
+ *   cancelled — user cancelled before anything was sent.
+ *   unknown   — we stopped watching (timeout / dismissed / duplicate / expired); it MAY still have
+ *               settled on chain, so we never present these as "failed".
+ */
+export type DashboardActivityStatus = 'settled' | 'pending' | 'failed' | 'cancelled' | 'unknown'
+
+/** Error codes whose outcome is indeterminate — the tx may still have landed. */
+const INDETERMINATE_CODES: ReadonlySet<TxErrorCode> = new Set([
+  'POLL_TIMEOUT',
+  'DISMISSED',
+  'DUPLICATE_TX',
+])
 
 export interface DashboardActivityItem {
   id: string
@@ -18,11 +36,31 @@ export interface DashboardActivityItem {
   amount: number
   occurredAt: number
   txHash?: string
-  /** True while the underlying tx is non-terminal (still in flight). */
+  /** Outcome bucket — drives the row's status label + amount treatment. */
+  status: DashboardActivityStatus
+  /** True while the underlying tx is non-terminal (still in flight). Kept as a convenience alias
+   *  for `status === 'pending'`. */
   pending: boolean
   /** `requestLink` only — the request id (re-opens the Share step) + expiry (row subtitle). */
   requestId?: string
   expiresAt?: number
+}
+
+/**
+ * Reduce a record's executionState + error code to an outcome bucket. Keyed off `error.code` for
+ * the terminal cases so a DISMISSED (had broadcast → may complete) isn't confused with a CANCELLED
+ * (nothing sent), and so timeouts/expiry never read as a hard failure.
+ */
+export function deriveActivityStatus(record: TxRecord): DashboardActivityStatus {
+  const state = record.executionState
+  if (state === 'completed') return 'settled'
+  if (!isTerminalState(state)) return 'pending'
+  const code = record.artifacts.error?.code
+  // Indeterminate — we stopped watching; the tx may still have settled on chain. Never "failed".
+  if (state === 'expired' || (code !== undefined && INDETERMINATE_CODES.has(code))) return 'unknown'
+  // `cancelled` state with a CANCELLED code = user cancel before broadcast (DISMISSED already caught above).
+  if (state === 'cancelled') return 'cancelled'
+  return 'failed'
 }
 
 /** Per-TxKind direction: the activity icon-kind and the sign of the amount (inflow vs outflow). */
@@ -59,11 +97,13 @@ export function txRecordToActivityItem(
   record: TxRecord,
   ownWallet?: string | null,
 ): DashboardActivityItem {
+  const status = deriveActivityStatus(record)
   const base = {
     id: record.id,
     occurredAt: historySortTime(record),
     txHash: record.artifacts.sourceTxHash,
-    pending: !isTerminalState(record.executionState),
+    status,
+    pending: status === 'pending',
   }
 
   // Public unshields split into send-vs-withdraw by the recipient heuristic (both share this kind).
@@ -111,6 +151,7 @@ export function requestLinkToActivityItem(link: RequestLinkRecord): DashboardAct
     label: 'Payment link created',
     amount: Number.isFinite(amount) ? amount : 0,
     occurredAt: link.createdAt,
+    status: 'settled',
     pending: false,
     requestId: link.requestId,
     expiresAt: link.expiresAt,

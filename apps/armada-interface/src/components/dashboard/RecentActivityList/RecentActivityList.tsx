@@ -23,7 +23,11 @@ import {
 import { BalanceScrambleValue } from '@/components/dashboard/BalanceScrambleValue'
 import { formatUsdcAmount, formatTimeAgo } from '@/components/dashboard/dashboardFormat'
 import { formatPaymentLinkExpiry } from '@/lib/payViaLink'
-import type { DashboardActivityItem, DashboardActivityKind } from '@/components/dashboard/txActivityAdapter'
+import type {
+  DashboardActivityItem,
+  DashboardActivityKind,
+  DashboardActivityStatus,
+} from '@/components/dashboard/txActivityAdapter'
 import usdcAmount from '@/design/styles/usdcAmount.module.css'
 import { hidePeekEventHandlers } from '@/hooks/useHidePeek'
 import { useMobileLayout } from '@/hooks/useMobileLayout'
@@ -50,17 +54,33 @@ function formatActivityAmount(item: DashboardActivityItem): string {
   return absolute
 }
 
+/** Subtitle status prefix per outcome (settled shows just the time). */
+const STATUS_PREFIX: Record<DashboardActivityStatus, string | null> = {
+  settled: null,
+  pending: 'Pending',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+  unknown: 'Unknown',
+}
+
 function formatActivitySubtitle(item: DashboardActivityItem): string {
   const timeAgo = formatTimeAgo(item.occurredAt)
   if (item.kind === 'requestLink' && item.expiresAt !== undefined) {
     return `${timeAgo} • ${formatPaymentLinkExpiry(item.expiresAt)}`
   }
-  return item.pending ? `Pending • ${timeAgo}` : timeAgo
+  const prefix = STATUS_PREFIX[item.status]
+  return prefix ? `${prefix} • ${timeAgo}` : timeAgo
 }
 
 function activityAmountTone(item: DashboardActivityItem, balanceRevealed: boolean): string {
-  // Pending rows, request-link rows, and hidden balances read neutral — no green/red tint.
-  if (!balanceRevealed || item.pending || item.kind === 'requestLink') return ''
+  // Failed → struck red; cancelled → struck muted; both regardless of reveal (the strike, not the
+  // digits, carries the meaning).
+  if (item.status === 'failed') return styles.amountFailed ?? ''
+  if (item.status === 'cancelled') return styles.amountCancelled ?? ''
+  // Pending, unknown (may still settle), request-link rows, and hidden balances read neutral.
+  if (!balanceRevealed || item.pending || item.status === 'unknown' || item.kind === 'requestLink') {
+    return ''
+  }
   if (item.amount > 0) return styles.amountPositive ?? ''
   if (item.amount < 0) return styles.amountNegative ?? ''
   return ''

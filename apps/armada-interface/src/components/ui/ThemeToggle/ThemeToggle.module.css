@@ -1,0 +1,7 @@
+/* ABOUTME: Styles for the header ThemeToggle — sizes the moon/sun glyph inside the frosted IconButton. */
+/* ABOUTME: Button chrome comes from the shared IconButton; this only pins the icon size. */
+
+.button .glyph {
+  width: var(--primitives-spacing-4);
+  height: var(--primitives-spacing-4);
+}

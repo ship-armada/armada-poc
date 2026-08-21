@@ -7,3 +7,23 @@ body { background: #0e0d0f; color: #ffffff; font-family: "Geist", sans-serif; fo
 button { cursor: pointer; border: none; background: none; font-family: "Geist", sans-serif; }
 a { color: inherit; text-decoration: none; }
 img, svg { display: block; }
+
+/* Theme crossfade: while `data-theme-transition` is present on <html> (set transiently by
+   setTheme() when flipping themes), animate color-bearing properties so light↔dark is a smooth
+   fade rather than a snap. Gated on no-preference so reduced-motion users get an instant switch. */
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme-transition],
+  html[data-theme-transition] *,
+  html[data-theme-transition] *::before,
+  html[data-theme-transition] *::after {
+    transition:
+      background-color var(--semantic-motion-theme) cubic-bezier(0.4, 0, 0.2, 1),
+      color var(--semantic-motion-theme) cubic-bezier(0.4, 0, 0.2, 1),
+      border-color var(--semantic-motion-theme) cubic-bezier(0.4, 0, 0.2, 1),
+      fill var(--semantic-motion-theme) cubic-bezier(0.4, 0, 0.2, 1),
+      stroke var(--semantic-motion-theme) cubic-bezier(0.4, 0, 0.2, 1),
+      box-shadow var(--semantic-motion-theme) cubic-bezier(0.4, 0, 0.2, 1),
+      outline-color var(--semantic-motion-theme) cubic-bezier(0.4, 0, 0.2, 1),
+      opacity var(--semantic-motion-theme) cubic-bezier(0.4, 0, 0.2, 1) !important;
+  }
+}

@@ -8,7 +8,7 @@
   grid-template-columns: repeat(var(--segment-count), minmax(0, 1fr));
   padding: var(--segmented-inset);
   border-radius: calc(var(--primitives-borderRadius-full) * 1px);
-  background: color-mix(in srgb, var(--semantic-color-brand-deep) 5%, transparent);
+  background: var(--semantic-color-frost-control);
   box-sizing: border-box;
 }
 
@@ -28,7 +28,7 @@
   width: calc((100% - var(--segmented-inset) * 2) / var(--segment-count));
   height: calc(100% - var(--segmented-inset) * 2);
   border-radius: calc(var(--primitives-borderRadius-full) * 1px);
-  background: var(--primitives-color-neutral-50);
+  background: var(--semantic-color-surface-segment);
   transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
   pointer-events: none;
 }
@@ -53,6 +53,10 @@
   color: var(--semantic-color-text-primary);
   cursor: pointer;
   box-sizing: border-box;
+}
+
+.tab[aria-selected='true'] {
+  color: var(--semantic-color-text-on-segment);
 }
 
 .tabSm {

@@ -16,6 +16,8 @@ export interface SidePanelProps {
   title?: string
   ariaLabel?: string
   panelClassName?: string
+  headerClassName?: string
+  bodyClassName?: string
   scrimClassName?: string
   children: ReactNode
 }
@@ -26,6 +28,8 @@ export function SidePanel({
   title,
   ariaLabel,
   panelClassName,
+  headerClassName,
+  bodyClassName,
   scrimClassName,
   children,
 }: SidePanelProps) {
@@ -84,7 +88,7 @@ export function SidePanel({
         onClick={(event) => event.stopPropagation()}
       >
         {title ? (
-          <div className={styles.header}>
+          <div className={[styles.header, headerClassName].filter(Boolean).join(' ')}>
             <h2 id={titleId} className={styles.title}>
               {title}
             </h2>
@@ -94,7 +98,7 @@ export function SidePanel({
           </div>
         ) : null}
 
-        <div className={styles.body}>{children}</div>
+        <div className={[styles.body, bodyClassName].filter(Boolean).join(' ')}>{children}</div>
       </div>
     </div>,
     document.body,

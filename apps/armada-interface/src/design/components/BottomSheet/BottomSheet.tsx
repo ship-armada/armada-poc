@@ -27,6 +27,8 @@ export interface BottomSheetProps {
   /** When `title` is set, show the header close control. Default true. */
   showClose?: boolean
   sheetClassName?: string
+  headerClassName?: string
+  bodyClassName?: string
   scrimClassName?: string
   children: ReactNode
 }
@@ -39,6 +41,8 @@ export function BottomSheet({
   ariaLabel,
   showClose = true,
   sheetClassName,
+  headerClassName,
+  bodyClassName,
   scrimClassName,
   children,
 }: BottomSheetProps) {
@@ -95,7 +99,7 @@ export function BottomSheet({
         </div>
 
         {title ? (
-          <div className={styles.header}>
+          <div className={[styles.header, headerClassName].filter(Boolean).join(' ')}>
             <h2 id={titleId} className={styles.title}>
               {title}
             </h2>
@@ -107,7 +111,7 @@ export function BottomSheet({
           </div>
         ) : null}
 
-        <div className={styles.body}>{children}</div>
+        <div className={[styles.body, bodyClassName].filter(Boolean).join(' ')}>{children}</div>
       </div>
     </div>,
     document.body,

@@ -24,9 +24,8 @@
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: var(--semantic-color-surface-default);
-  opacity: 0.6;
-  transition: opacity 0.15s ease;
+  background: var(--semantic-color-frost-control);
+  transition: background 0.15s ease;
   z-index: -1;
 }
 
@@ -36,18 +35,24 @@ button.root {
 
 @media (hover: hover) and (pointer: fine) {
   button.root:hover::before {
-    opacity: 1;
+    background: var(--semantic-color-frost-hover);
   }
 
   :global([data-theme='light'][data-dashboard-bg='solid']) button.root:hover::before {
     background: var(--primitives-color-neutral-200);
-    opacity: 1;
   }
+}
+
+button.root:active::before {
+  background: var(--semantic-color-frost-pressed);
 }
 
 :global([data-theme='light'][data-dashboard-bg='solid']) .root::before {
   background: var(--primitives-color-neutral-100);
-  opacity: 1;
+}
+
+:global([data-theme='light'][data-dashboard-bg='solid']) button.root:active::before {
+  background: var(--primitives-color-neutral-200);
 }
 
 .root:focus-visible {
@@ -70,7 +75,7 @@ button.root {
   align-items: center;
   justify-content: center;
   border-radius: calc(var(--semantic-borderRadius-item) * 1px);
-  background: var(--primitives-color-purple-100);
+  background: var(--semantic-color-surface-thumb);
   color: var(--semantic-color-text-primary);
 }
 

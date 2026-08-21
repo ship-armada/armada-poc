@@ -4,18 +4,35 @@
 /* Shared fill for round icon buttons and % pills. */
 .frostedFill,
 .frosted {
-  background: color-mix(in srgb, var(--primitives-color-neutral-50) 60%, transparent);
+  background: var(--semantic-color-frost-control);
+  border: none;
+}
+
+.tintedFill,
+.tinted {
+  background: var(--semantic-color-control-tint);
   border: none;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .frostedFill:hover:not(:disabled),
   .frosted:hover:not(:disabled) {
-    background: var(--primitives-color-neutral-50);
+    background: var(--semantic-color-frost-pressed);
+  }
+
+  .tintedFill:hover:not(:disabled),
+  .tinted:hover:not(:disabled) {
+    background: var(--semantic-color-control-tint-hover);
   }
 }
 
-.frosted {
+.tintedFill:active:not(:disabled),
+.tinted:active:not(:disabled) {
+  background: var(--semantic-color-control-tint-pressed);
+}
+
+.frosted,
+.tinted {
   border-radius: calc(var(--primitives-borderRadius-full) * 1px);
   color: var(--semantic-color-text-primary);
 }

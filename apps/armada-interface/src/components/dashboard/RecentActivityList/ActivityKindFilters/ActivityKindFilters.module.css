@@ -41,8 +41,7 @@
 }
 
 .filterBtnActive {
-  background: color-mix(in srgb, var(--primitives-color-purple-500) 15%, transparent);
-  border-color: color-mix(in srgb, var(--primitives-color-purple-500) 35%, var(--semantic-color-border-default));
+  background: var(--semantic-color-control-tint);
   color: var(--semantic-color-text-primary);
 }
 

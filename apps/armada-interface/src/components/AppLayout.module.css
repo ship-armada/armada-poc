@@ -33,7 +33,7 @@
 }
 
 .gearButton:hover {
-  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 14%, var(--semantic-color-surface-main));
+  background: var(--semantic-color-surface-raised-hover);
 }
 
 .gearIcon {

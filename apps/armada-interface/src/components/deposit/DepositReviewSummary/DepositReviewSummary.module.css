@@ -102,7 +102,7 @@
 
 @media (max-width: 767px) {
   .privacyNotice {
-    background: var(--primitives-color-purple-50);
+    background: var(--semantic-color-control-tint);
   }
 }
 

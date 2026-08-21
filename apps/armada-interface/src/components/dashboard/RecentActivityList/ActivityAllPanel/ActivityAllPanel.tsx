@@ -59,10 +59,8 @@ export function ActivityAllPanel({
 
   const list = (
     <>
-      <div className={panelStyles.toolbar}>
-        <ActivityTxHashSearch value={hashQuery} onChange={setHashQuery} />
-        <ActivityKindFilters value={kindFilter} onChange={setKindFilter} />
-      </div>
+      <ActivityTxHashSearch value={hashQuery} onChange={setHashQuery} />
+      <ActivityKindFilters value={kindFilter} onChange={setKindFilter} />
       {showFilterEmpty ? (
         <p className={searchStyles.searchEmpty}>No transactions match your filters.</p>
       ) : (
@@ -83,14 +81,25 @@ export function ActivityAllPanel({
 
   if (isMobile) {
     return (
-      <BottomSheet open={open} onClose={onClose} title="Recent activity">
+      <BottomSheet
+        open={open}
+        onClose={onClose}
+        title="Recent activity"
+        headerClassName={panelStyles.sheetHeader}
+      >
         {list}
       </BottomSheet>
     )
   }
 
   return (
-    <SidePanel open={open} onClose={onClose} title="Recent activity" panelClassName={panelStyles.panel}>
+    <SidePanel
+      open={open}
+      onClose={onClose}
+      title="Recent activity"
+      panelClassName={panelStyles.panel}
+      headerClassName={panelStyles.panelHeader}
+    >
       {list}
     </SidePanel>
   )

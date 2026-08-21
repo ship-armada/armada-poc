@@ -34,6 +34,10 @@
   padding-bottom: calc(var(--primitives-spacing-5) + var(--mobile-safe-area-bottom, 0px));
 }
 
+:global([data-theme='dark']) .shellImmersive {
+  background: var(--semantic-color-surface-bg);
+}
+
 .headerImmersive {
   position: relative;
   z-index: 2;

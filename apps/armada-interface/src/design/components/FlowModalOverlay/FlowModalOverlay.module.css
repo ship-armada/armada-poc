@@ -14,7 +14,7 @@
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background: color-mix(in srgb, var(--primitives-color-amber-300) 30%, transparent);
+  background: var(--semantic-color-overlay-flow);
   backdrop-filter: blur(100px);
   -webkit-backdrop-filter: blur(100px);
   opacity: 1;

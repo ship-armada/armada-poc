@@ -188,6 +188,7 @@ export function WalletMenu({
             <div className={styles.actionRow}>
               <BalanceActionButton
                 variant="subtle"
+                surface="tint"
                 className={styles.labeledAction}
                 label={balanceHidden ? 'Show' : 'Hide'}
                 icon={
@@ -201,6 +202,7 @@ export function WalletMenu({
               />
               <BalanceActionButton
                 variant="subtle"
+                surface="tint"
                 className={styles.labeledAction}
                 label={copied ? 'Copied' : 'Copy'}
                 icon={
@@ -214,6 +216,7 @@ export function WalletMenu({
               />
               <BalanceActionButton
                 variant="subtle"
+                surface="tint"
                 className={styles.labeledAction}
                 label="Explorer"
                 icon={<ArrowTopRightOnSquareIcon strokeWidth={1.5} aria-hidden />}
@@ -224,6 +227,7 @@ export function WalletMenu({
               />
               <BalanceActionButton
                 variant="subtle"
+                surface="tint"
                 className={styles.labeledAction}
                 label="Disconnect"
                 icon={<PowerIcon strokeWidth={1.5} aria-hidden />}

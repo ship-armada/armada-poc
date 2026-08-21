@@ -23,13 +23,22 @@
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: var(--primitives-color-purple-100);
+  background: var(--semantic-color-control-tint);
   cursor: pointer;
   transition: background-color 150ms ease;
 }
 
 .toggleButton:hover {
-  background: var(--primitives-color-purple-200);
+  background: var(--semantic-color-control-tint-hover);
+}
+
+.toggleButton:active {
+  background: var(--semantic-color-control-tint-pressed);
+}
+
+.toggleButton:focus-visible {
+  outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
+  outline-offset: calc(var(--primitives-spacing-1) * 1px);
 }
 
 .chevron {

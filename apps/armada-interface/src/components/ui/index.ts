@@ -11,9 +11,11 @@ export { ChainSelect } from './ChainSelect'
 export type { ChainSelectProps } from './ChainSelect'
 export {
   SegmentedControl,
+  type SegmentedControlLayout,
   type SegmentedControlOption,
   type SegmentedControlProps,
   type SegmentedControlSize,
+  type SegmentedControlSurface,
 } from './SegmentedControl'
 
 export { EmptyState } from './EmptyState'

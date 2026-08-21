@@ -18,7 +18,9 @@ import {
   ChartBarIcon,
   ClockIcon,
   LinkIcon,
+  NoSymbolIcon,
   PlusIcon,
+  QuestionMarkCircleIcon,
 } from '@heroicons/react/24/outline'
 import { BalanceScrambleValue } from '@/components/dashboard/BalanceScrambleValue'
 import { formatUsdcAmount, formatTimeAgo } from '@/components/dashboard/dashboardFormat'
@@ -111,12 +113,18 @@ function ActivityListItems({
   return (
     <ul className={styles.list}>
       {items.map((item) => {
-        const Icon = ACTIVITY_ICONS[item.kind]
         const amountLabel = formatActivityAmount(item)
         const itemRevealed = balanceRevealed || peekedId === item.id
         const amountTone = activityAmountTone(item, itemRevealed)
         // Failed / cancelled rows strike both the amount and the description — nothing settled.
         const struck = item.status === 'failed' || item.status === 'cancelled'
+        // Status overrides the kind icon: failed/cancelled → "no" symbol, unknown → question mark.
+        const Icon =
+          item.status === 'unknown'
+            ? QuestionMarkCircleIcon
+            : struck
+              ? NoSymbolIcon
+              : ACTIVITY_ICONS[item.kind]
         const peekHandlers = hidePeekEventHandlers(
           !balanceRevealed,
           () => setPeekedId(item.id),

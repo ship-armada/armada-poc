@@ -206,6 +206,10 @@
   letter-spacing: 0;
 }
 
+.balanceTextError {
+  color: var(--semantic-color-status-error);
+}
+
 .feeText,
 .chainOptionLabel {
   font-family: var(--primitives-fontFamily-ui), sans-serif;
@@ -318,6 +322,11 @@
   color: var(--semantic-color-text-primary);
 }
 
+/* Error state — reddens the amount numeral (overrides the active colour; must follow it). */
+.amountDisplayError {
+  color: var(--semantic-color-status-error);
+}
+
 .amountInput {
   position: absolute;
   inset: 0;
@@ -382,6 +391,10 @@
   color: color-mix(in srgb, var(--semantic-color-text-primary) 38%, transparent);
 }
 
+.walletIconError {
+  color: var(--semantic-color-status-error);
+}
+
 .maxBtn {
   display: inline-flex;
   align-items: center;
@@ -405,12 +418,4 @@
 .maxBtn:focus-visible {
   outline: 2px solid var(--semantic-color-border-focus);
   outline-offset: 2px;
-}
-
-.amountError {
-  margin: 0;
-  text-align: center;
-  font-family: var(--primitives-fontFamily-ui), sans-serif;
-  font-size: calc(var(--primitives-fontSize-sm) * 1px);
-  color: var(--semantic-color-status-error);
 }

@@ -16,14 +16,3 @@
   color: var(--semantic-color-text-primary);
   text-align: center;
 }
-
-/* Pre-flight gate (e.g. Withdraw fee shortfall). */
-.blockedReason {
-  font-family: var(--primitives-fontFamily-ui), sans-serif;
-  font-size: calc(var(--primitives-fontSize-sm) * 1px);
-  color: var(--semantic-color-status-warning);
-  background: rgba(251, 191, 36, 0.08);
-  border: 1px solid rgba(251, 191, 36, 0.3);
-  border-radius: calc(var(--semantic-borderRadius-input) * 1px);
-  padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
-}

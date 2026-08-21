@@ -13,15 +13,24 @@ export function formatUsdcPlain(amount: bigint): string {
 }
 
 /**
- * Format a USDC raw amount as a locale-grouped number string with a fixed number of decimals.
- * Suitable for the BalanceHero display ("12,481.22") and similar large-number presentations.
+ * Format a USDC raw amount as a locale-grouped number string.
+ *
+ * Default (no `decimals`): 2–6 fraction digits — normal amounts read "12,481.22", but sub-cent
+ * precision (down to USDC's 1e-6 unit) is revealed when present, so committed figures (fees, net,
+ * totals, wallet-signature labels) never round a real sub-cent value away to "0.00". Pass a fixed
+ * `decimals` where a rigid width is wanted (e.g. a strict 2dp caption).
  */
 export function formatUsdcAmount(amount: bigint, options?: { decimals?: number }): string {
-  const decimals = options?.decimals ?? 2
   const dollars = Number(amount) / 1e6
+  if (options?.decimals !== undefined) {
+    return dollars.toLocaleString('en-US', {
+      minimumFractionDigits: options.decimals,
+      maximumFractionDigits: options.decimals,
+    })
+  }
   return dollars.toLocaleString('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6,
   })
 }
 
@@ -98,7 +107,7 @@ export function parseUsdcInput(input: string): UsdcInputResult {
 export function usdcInputErrorMessage(error: UsdcInputError | undefined): string | undefined {
   switch (error) {
     case 'too-many-decimals': return 'USDC has at most 6 decimal places.'
-    case 'negative': return 'Amount cannot be negative.'
+    case 'negative': return "Amounts can't be negative."
     case 'invalid': return 'Enter a valid number.'
     case undefined: return undefined
   }

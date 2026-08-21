@@ -56,6 +56,42 @@ describe('DepositAmountCard — pendingBalance', () => {
   })
 })
 
+describe('DepositAmountCard — amount typing', () => {
+  it('passes a leading 0 / . through instead of discarding it (sub-one amounts are typeable)', () => {
+    // Regression: the card used to rewrite `0`/`.` to '' via hasActiveAmount, so a user could not
+    // start typing "0.5" — the leading 0 or . vanished. Each keystroke must now commit forward.
+    const onAmountChange = vi.fn()
+    renderCard({ amount: '', onAmountChange, amountAriaLabel: 'Deposit amount' })
+    const input = screen.getByLabelText('Deposit amount')
+    fireEvent.change(input, { target: { value: '0' } })
+    expect(onAmountChange).toHaveBeenLastCalledWith('0')
+    fireEvent.change(input, { target: { value: '.' } })
+    expect(onAmountChange).toHaveBeenLastCalledWith('.')
+  })
+
+  it('caps typed input at 6 decimals and collapses leading zeros', () => {
+    const onAmountChange = vi.fn()
+    renderCard({ amount: '', onAmountChange, amountAriaLabel: 'Deposit amount' })
+    const input = screen.getByLabelText('Deposit amount')
+    fireEvent.change(input, { target: { value: '1.1234567' } })
+    expect(onAmountChange).toHaveBeenLastCalledWith('1.123456')
+    fireEvent.change(input, { target: { value: '05' } })
+    expect(onAmountChange).toHaveBeenLastCalledWith('5')
+  })
+
+  it('renders the amount with thousand grouping while storing it ungrouped', () => {
+    // The input shows "1,000,000" but the sanitizer strips the commas on the next keystroke.
+    const onAmountChange = vi.fn()
+    renderCard({ amount: '1000000', onAmountChange, amountAriaLabel: 'Deposit amount' })
+    expect(screen.getByLabelText('Deposit amount')).toHaveValue('1,000,000')
+  })
+
+  it('surfaces the amount error as an above-field alert (tooltip), not inline below', () => {
+    renderCard({ amount: '5', error: "That's more than you can deposit" })
+    expect(screen.getByRole('alert')).toHaveTextContent("That's more than you can deposit")
+  })
+})
+
 describe('DepositAmountCard — presets + amount roll', () => {
   it('commits a fraction of maxInput when a percentage pill is clicked', () => {
     const onAmountChange = vi.fn()

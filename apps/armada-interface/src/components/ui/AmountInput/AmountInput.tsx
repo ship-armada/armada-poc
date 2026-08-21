@@ -119,6 +119,11 @@ export function AmountInput({
             className={styles.displayInput}
             type="text"
             inputMode="decimal"
+            autoComplete="off"
+            autoCorrect="off"
+            spellCheck={false}
+            data-1p-ignore
+            data-lpignore="true"
             value={value}
             onChange={e => handleChange(e.target.value)}
             onBlur={onBlur}
@@ -170,6 +175,11 @@ export function AmountInput({
           className={styles.compactInput}
           type="text"
           inputMode="decimal"
+          autoComplete="off"
+          autoCorrect="off"
+          spellCheck={false}
+          data-1p-ignore
+          data-lpignore="true"
           value={value}
           onChange={e => handleChange(e.target.value)}
           onBlur={onBlur}

@@ -106,13 +106,13 @@ describe('<EarnInputStep>', () => {
 
   it('disables Review when amount exceeds maxInput', () => {
     setup({ max: 1_000_000n, amountStr: '5' })
-    expect(screen.getByRole('button', { name: /Review/ })).toBeDisabled()
-    expect(screen.getByRole('alert')).toHaveTextContent(/exceeds your private balance/i)
+    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toBeDisabled()
+    expect(screen.getByRole('alert')).toHaveTextContent(/more than you can add/i)
   })
 
   it('shows the withdraw-specific over-max error when tab=withdraw', () => {
     setup({ tab: 'withdraw', max: 1_000_000n, amountStr: '5' })
-    expect(screen.getByRole('alert')).toHaveTextContent(/exceeds your earning balance/i)
+    expect(screen.getByRole('alert')).toHaveTextContent(/more than you can withdraw/i)
   })
 
   it('enables Review when amount is positive and within maxInput', () => {
@@ -126,7 +126,7 @@ describe('<EarnInputStep>', () => {
     expect(props.onTabChange).toHaveBeenCalledWith('withdraw')
   })
 
-  it('disables Review and surfaces the inline reason when continueBlockedReason is set', () => {
+  it('disables Review and surfaces the reason in the amount-field tooltip when continueBlockedReason is set', () => {
     // WHY: the withdraw broadcaster fee comes from the user's pre-existing private USDC (not
     // from the redeem proceeds), so the modal must gate submit when private USDC < fee.
     render(
@@ -141,12 +141,12 @@ describe('<EarnInputStep>', () => {
         feeLoading={false}
         gasChainId={31337}
         rate={null}
-        continueBlockedReason="You need at least 0.50 USDC in your private balance to cover the withdrawal fee."
+        continueBlockedReason="Not enough private USDC to cover the 0.50 fee — add some first"
         onCancel={vi.fn()}
         onContinue={vi.fn()}
       />,
     )
-    expect(screen.getByRole('button', { name: /Review/ })).toBeDisabled()
-    expect(screen.getByRole('alert')).toHaveTextContent(/0\.50 USDC in your private balance/)
+    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toBeDisabled()
+    expect(screen.getByRole('alert')).toHaveTextContent(/cover the 0\.50 fee/)
   })
 })

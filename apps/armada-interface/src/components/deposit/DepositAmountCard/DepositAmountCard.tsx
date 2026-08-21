@@ -3,8 +3,9 @@
 
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { ChevronDownIcon, WalletIcon } from '@heroicons/react/24/solid'
-import { hasActiveAmount, sanitizeAmountInput } from '@/utils/amountInput'
+import { formatAmountInputDisplay, hasActiveAmount, sanitizeAmountInput } from '@/utils/amountInput'
 import { chainIconForChainId } from '@/components/ui/chainIcons'
+import { AmountFieldWarning } from '@/components/ui/AmountFieldWarning'
 import { FeeBreakdownTooltip, type FlowFeeBreakdown } from '@/components/ui/FeeBreakdownTooltip'
 import { RollingBalanceValue } from '@/components/dashboard/RollingBalanceValue'
 import {
@@ -119,6 +120,7 @@ export function DepositAmountCard({
   const chainRootRef = useRef<HTMLDivElement>(null)
   const listboxId = useId()
   const amountInputId = useId()
+  const amountErrorId = useId()
 
   const selected = chains.find((c) => c.chainId === chainId) ?? chains[0]
   const chainSelectable = Boolean(onChainIdChange) && chains.length > 1
@@ -190,8 +192,12 @@ export function DepositAmountCard({
   function handleAmountInput(raw: string) {
     clearAmountRoll()
     pendingRollFromRef.current = null
-    const next = sanitizeAmountInput(raw)
-    onAmountChange(hasActiveAmount(next) ? next : '')
+    // Pass the sanitized value straight through — including forward-typing states like `0`, `.`,
+    // and `0.` that `hasActiveAmount` reports false. Rewriting those to `''` (the previous
+    // behaviour) discarded a leading `0`/`.` keystroke, making sub-one amounts impossible to type.
+    // `hasActiveAmount` still gates display styling (`showActiveAmount`) and the `amount > 0n`
+    // submit checks, so a bare `0`/`.` never advances the flow.
+    onAmountChange(sanitizeAmountInput(raw))
   }
 
   /** Mark the current display as the roll origin, then apply the preset amount (the effect rolls it). */
@@ -220,6 +226,12 @@ export function DepositAmountCard({
 
   const showActiveAmount = hasActiveAmount(amount)
   const isAmountRolling = amountRoll !== null
+  // Thousand-grouped for display only ("1,000,000"); the stored `amount` stays ungrouped and the
+  // sanitizer strips the commas back out on the next keystroke (mockup parity).
+  const displayAmount = formatAmountInputDisplay(amount)
+  // Any validation error (over-balance, below-minimum, parse, withdraw fee-shortfall) reddens the
+  // amount numeral + balance row (mockup parity) alongside the above-field warning tooltip.
+  const hasError = Boolean(error)
 
   // Total displayed fee (protocol + broadcaster + CCTP). Rendered as the under-amount caption
   // ("+ $X.XX FEE") once an amount is entered and the fee is non-zero — matching the mockup, which
@@ -285,6 +297,7 @@ export function DepositAmountCard({
       <div className={styles.amountStack}>
         <label className={styles.amountWrapper} htmlFor={amountInputId}>
           <span className={styles.visuallyHidden}>{amountAriaLabel}</span>
+          <AmountFieldWarning id={amountErrorId} visible={Boolean(error)} message={error ?? ''}>
           <span
             className={[styles.amountField, showActiveAmount && styles.amountFieldHasValue]
               .filter(Boolean)
@@ -294,33 +307,40 @@ export function DepositAmountCard({
               className={[
                 styles.amountDisplay,
                 showActiveAmount && styles.amountDisplayActive,
+                hasError && styles.amountDisplayError,
                 isAmountRolling && styles.amountValueHidden,
               ]
                 .filter(Boolean)
                 .join(' ')}
               aria-hidden="true"
             >
-              {showActiveAmount ? amount : '0'}
+              {showActiveAmount ? displayAmount : '0'}
             </span>
             <input
               id={amountInputId}
               type="text"
               inputMode="decimal"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              data-1p-ignore
+              data-lpignore="true"
               className={[styles.amountInput, isAmountRolling && styles.amountValueHidden]
                 .filter(Boolean)
                 .join(' ')}
-              value={amount}
+              value={displayAmount}
               onChange={(e) => handleAmountInput(e.target.value)}
               aria-label={amountAriaLabel}
               aria-invalid={Boolean(error)}
+              aria-describedby={error ? amountErrorId : undefined}
               readOnly={isAmountRolling}
             />
             {isAmountRolling && amountRoll ? (
               <span className={styles.amountRollLayer} aria-hidden>
                 <RollingBalanceValue
                   key={amountRoll.trigger}
-                  value={amountRoll.toValue}
-                  fromValue={amountRoll.fromValue}
+                  value={formatAmountInputDisplay(amountRoll.toValue)}
+                  fromValue={formatAmountInputDisplay(amountRoll.fromValue)}
                   mode="fromValue"
                   rollTrigger={amountRoll.trigger}
                   rollStartMs={0}
@@ -328,6 +348,7 @@ export function DepositAmountCard({
               </span>
             ) : null}
           </span>
+          </AmountFieldWarning>
         </label>
 
         {/* Fee caption (mockup): "+ $X.XX FEE" directly under the amount. The line is always
@@ -336,7 +357,7 @@ export function DepositAmountCard({
         <div className={`armada-text-ui-label-md ${styles.feeCaption}`} role="status">
           {showFee && displayFees ? (
             <>
-              <span>+ ${formatUsdcAmount(totalFeeRaw, { decimals: 2 })} FEE</span>
+              <span>+ ${formatUsdcAmount(totalFeeRaw)} FEE</span>
               <FeeBreakdownTooltip
                 fees={displayFees}
                 isLoading={feeLoading}
@@ -349,18 +370,22 @@ export function DepositAmountCard({
         </div>
       </div>
 
-      {error ? (
-        <p className={styles.amountError} role="alert">
-          {error}
-        </p>
-      ) : null}
       </div>
 
       <div className={styles.bottomRow}>
         <div className={styles.balanceControls}>
           <div className={styles.balanceGroup}>
-            <WalletIcon className={styles.walletIcon} aria-hidden />
-            <span className={styles.balanceText}>
+            <WalletIcon
+              className={[styles.walletIcon, hasError && styles.walletIconError]
+                .filter(Boolean)
+                .join(' ')}
+              aria-hidden
+            />
+            <span
+              className={[styles.balanceText, hasError && styles.balanceTextError]
+                .filter(Boolean)
+                .join(' ')}
+            >
               {balance}
               {pendingBalance ? ` · ${pendingBalance} pending` : ''}
             </span>

@@ -155,7 +155,7 @@ export function EarnModal() {
   // we don't know the number yet.
   const withdrawFeeShortfall = tab === 'withdraw' && fee > 0n && spendableUsdc < fee
   const withdrawFeeBlockedReason: string | null = withdrawFeeShortfall
-    ? `You need at least ${formatUsdcAmount(fee)} USDC in your private balance to cover the withdrawal fee. Add USDC from another source before withdrawing.`
+    ? `Not enough private USDC to cover the ${formatUsdcAmount(fee)} fee — add some first`
     : null
   // Composed gate for the review step — sync gate OR private-USDC shortfall.
   const submitBlockedReason: string | null = syncGate.reason || withdrawFeeBlockedReason

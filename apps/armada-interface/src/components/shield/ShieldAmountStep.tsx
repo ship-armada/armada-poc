@@ -73,9 +73,13 @@ export function ShieldAmountStepContent({
   const tooSmall = minAmount > 0n && amount > 0n && amount <= minAmount
   const errorMessage =
     usdcInputErrorMessage(parseError) ??
-    (tooMuch ? 'Amount exceeds your available balance.' : undefined) ??
+    (tooMuch
+      ? isShield
+        ? "That's more than you can deposit"
+        : "That's more than you can unshield"
+      : undefined) ??
     (tooSmall
-      ? `Amount must be greater than the relayer fee (${formatUsdcPlain(minAmount)} USDC).`
+      ? `That's below the relayer fee (${formatUsdcPlain(minAmount)} USDC)`
       : undefined)
 
   return (
@@ -144,7 +148,7 @@ export function ShieldAmountStepFooter({
       <Button
         variant="primary"
         size="lg"
-        label="Review"
+        label={canReview ? 'Review' : 'Input amount'}
         showIcon={false}
         disabled={!canReview}
         onClick={onContinue}

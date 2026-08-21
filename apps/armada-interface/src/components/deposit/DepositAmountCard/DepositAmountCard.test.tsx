@@ -78,6 +78,18 @@ describe('DepositAmountCard — amount typing', () => {
     fireEvent.change(input, { target: { value: '05' } })
     expect(onAmountChange).toHaveBeenLastCalledWith('5')
   })
+
+  it('renders the amount with thousand grouping while storing it ungrouped', () => {
+    // The input shows "1,000,000" but the sanitizer strips the commas on the next keystroke.
+    const onAmountChange = vi.fn()
+    renderCard({ amount: '1000000', onAmountChange, amountAriaLabel: 'Deposit amount' })
+    expect(screen.getByLabelText('Deposit amount')).toHaveValue('1,000,000')
+  })
+
+  it('surfaces the amount error as an above-field alert (tooltip), not inline below', () => {
+    renderCard({ amount: '5', error: "That's more than you can deposit" })
+    expect(screen.getByRole('alert')).toHaveTextContent("That's more than you can deposit")
+  })
 })
 
 describe('DepositAmountCard — presets + amount roll', () => {

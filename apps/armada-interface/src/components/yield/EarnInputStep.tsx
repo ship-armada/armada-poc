@@ -125,9 +125,13 @@ export function EarnInputStepContent({
     usdcInputErrorMessage(parseError)
     ?? (tooMuch
       ? tab === 'add'
-        ? 'Amount exceeds your private balance after fees.'
-        : 'Amount exceeds your earning balance after fees.'
+        ? "That's more than you can add"
+        : "That's more than you can withdraw"
       : undefined)
+  // Surface the withdraw fee-shortfall pre-flight block through the same amount-field tooltip as the
+  // amount errors. An active amount error takes precedence (immediate feedback on what's being typed);
+  // once the amount is otherwise valid the standing shortfall shows.
+  const fieldError = amountError ?? continueBlockedReason ?? undefined
 
   const question =
     tab === 'add' ? 'Deposit USDC to the vault' : 'Withdraw USDC from the vault'
@@ -172,7 +176,7 @@ export function EarnInputStepContent({
         // maxInput drives the 25% / 50% / 75% / Max percent pills; onMax keeps the exact fee-aware cap.
         maxInput={maxInput}
         onMax={() => onAmountChange(formatUsdcPlain(maxInput))}
-        error={amountError}
+        error={fieldError}
         amountAriaLabel={tab === 'add' ? 'Vault deposit amount' : 'Vault withdrawal amount'}
       />
 
@@ -181,12 +185,6 @@ export function EarnInputStepContent({
           nativeSymbol={gasWarning.nativeSymbol}
           formattedBalance={gasWarning.formattedBalance}
         />
-      ) : null}
-
-      {continueBlockedReason ? (
-        <div className={styles.blockedReason} role="alert">
-          {continueBlockedReason}
-        </div>
       ) : null}
     </div>
   )
@@ -219,7 +217,7 @@ export function EarnInputStepFooter({
       <Button
         variant="primary"
         size="lg"
-        label="Review"
+        label={canReview ? 'Review' : 'Input amount'}
         showIcon={false}
         disabled={!canReview}
         onClick={onContinue}

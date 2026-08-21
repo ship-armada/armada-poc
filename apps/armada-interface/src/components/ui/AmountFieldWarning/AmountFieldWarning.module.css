@@ -1,0 +1,13 @@
+/* ABOUTME: Positioning wrapper for the amount-field warning tooltip (relative anchor + above-the-field offset). */
+/* ABOUTME: Visual styling comes from the composed @/design Tooltip .tooltip/.action classes; this only positions. */
+
+.wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.tooltip {
+  bottom: calc(100% + var(--primitives-spacing-4));
+}

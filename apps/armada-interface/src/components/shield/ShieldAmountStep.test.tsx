@@ -87,17 +87,24 @@ describe('ShieldAmountStepContent (direction)', () => {
 describe('ShieldAmountStepFooter (Review gating)', () => {
   it('disables Review when the amount is empty', () => {
     renderFooter('')
-    expect(screen.getByRole('button', { name: /Review/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toBeDisabled()
+  })
+
+  it("labels the CTA 'Input amount' when there is no valid amount", () => {
+    // Mockup parity: the disabled primary CTA is instructional ("Input amount"), not a dead "Review".
+    // The enabled-state "Review" label is covered by 'enables Review for a positive amount'.
+    renderFooter('')
+    expect(screen.getByRole('button', { name: 'Input amount' })).toBeInTheDocument()
   })
 
   it('disables Review when the amount is 0', () => {
     renderFooter('0')
-    expect(screen.getByRole('button', { name: /Review/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toBeDisabled()
   })
 
   it('disables Review when the amount exceeds maxInput', () => {
     renderFooter('200') // maxInput = 100 USDC
-    expect(screen.getByRole('button', { name: /Review/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toBeDisabled()
   })
 
   it('enables Review for a positive amount within maxInput', () => {
@@ -107,7 +114,7 @@ describe('ShieldAmountStepFooter (Review gating)', () => {
 
   it('rejects an amount at or below the relayer-fee floor (shield)', () => {
     renderFooter('1', 1_000_000n) // minAmount = 1 USDC; amount = 1 → not > fee
-    expect(screen.getByRole('button', { name: /Review/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toBeDisabled()
   })
 
   it('fires onContinue / onCancel from the CTAs', () => {

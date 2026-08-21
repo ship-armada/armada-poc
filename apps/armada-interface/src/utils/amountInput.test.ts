@@ -2,7 +2,7 @@
 // ABOUTME: Covers digit/dot filtering, the 6-decimal cap, leading-zero collapse, and forward-typing states (0, ., 0.).
 
 import { describe, it, expect } from 'vitest'
-import { sanitizeAmountInput, hasActiveAmount } from './amountInput'
+import { sanitizeAmountInput, hasActiveAmount, formatAmountInputDisplay } from './amountInput'
 
 describe('sanitizeAmountInput', () => {
   it('keeps digits and a single decimal point', () => {
@@ -33,6 +33,25 @@ describe('sanitizeAmountInput', () => {
     expect(sanitizeAmountInput('1.1234567')).toBe('1.123456') // 7th digit dropped
     expect(sanitizeAmountInput('1.123456')).toBe('1.123456') // exactly 6 kept
     expect(sanitizeAmountInput('0.0000001')).toBe('0.000000') // sub-1e-6 clamped, not errored
+  })
+})
+
+describe('formatAmountInputDisplay', () => {
+  it('groups the integer part with thousand separators', () => {
+    expect(formatAmountInputDisplay('1000')).toBe('1,000')
+    expect(formatAmountInputDisplay('1000000')).toBe('1,000,000')
+    expect(formatAmountInputDisplay('1234567.89')).toBe('1,234,567.89')
+  })
+  it('preserves the decimal suffix verbatim (mid-entry dots survive)', () => {
+    expect(formatAmountInputDisplay('1000.')).toBe('1,000.')
+    expect(formatAmountInputDisplay('12.5')).toBe('12.5')
+  })
+  it('adds a leading zero to a bare fraction for display only', () => {
+    expect(formatAmountInputDisplay('.5')).toBe('0.5')
+    expect(formatAmountInputDisplay('.')).toBe('0.')
+  })
+  it('returns empty for empty input', () => {
+    expect(formatAmountInputDisplay('')).toBe('')
   })
 })
 

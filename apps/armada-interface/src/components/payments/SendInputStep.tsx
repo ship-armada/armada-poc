@@ -81,7 +81,7 @@ export function SendInputStepContent({
   const showGasNotice = !gaslessMode && gasWarning.show
   const tooMuch = amount > maxInput
   const amountError = usdcInputErrorMessage(parseError)
-    ?? (tooMuch ? 'Amount exceeds your private balance after fees.' : undefined)
+    ?? (tooMuch ? "That's more than you can send" : undefined)
 
   return (
     <div className={`${styles.sendContent} ${modalStepBodyEnter}`}>
@@ -138,7 +138,7 @@ export function SendInputStepFooter({
       <Button
         variant="primary"
         size="lg"
-        label="Review"
+        label={canReview ? 'Review' : 'Input amount'}
         showIcon={false}
         disabled={!canReview}
         onClick={onContinue}

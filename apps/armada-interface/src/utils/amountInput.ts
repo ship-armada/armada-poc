@@ -25,6 +25,24 @@ export function sanitizeAmountInput(raw: string): string {
   return out.replace(/^0+(?=\d)/, '')
 }
 
+/**
+ * Format a sanitized amount for display with en-US thousand grouping (1,000 / 1,000,000). The
+ * decimal suffix is preserved verbatim (so mid-entry "1,000." keeps its trailing dot), and a bare
+ * fraction gains a leading zero for display (".5" → "0.5"). The stored value stays ungrouped —
+ * `sanitizeAmountInput` strips the commas back out on the next keystroke.
+ */
+export function formatAmountInputDisplay(sanitized: string): string {
+  if (!sanitized) return ''
+  const decimalIndex = sanitized.indexOf('.')
+  const intPart = decimalIndex === -1 ? sanitized : sanitized.slice(0, decimalIndex)
+  const decSuffix = decimalIndex === -1 ? '' : sanitized.slice(decimalIndex)
+  if (!intPart) {
+    return decSuffix ? `0${decSuffix}` : ''
+  }
+  const formattedInt = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  return `${formattedInt}${decSuffix}`
+}
+
 /** True when the user has a non-zero amount or is mid-decimal entry (e.g. "0."). */
 export function hasActiveAmount(value: string): boolean {
   const trimmed = value.trim()

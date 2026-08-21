@@ -107,7 +107,7 @@ export function parseUsdcInput(input: string): UsdcInputResult {
 export function usdcInputErrorMessage(error: UsdcInputError | undefined): string | undefined {
   switch (error) {
     case 'too-many-decimals': return 'USDC has at most 6 decimal places.'
-    case 'negative': return 'Amount cannot be negative.'
+    case 'negative': return "Amounts can't be negative."
     case 'invalid': return 'Enter a valid number.'
     case undefined: return undefined
   }

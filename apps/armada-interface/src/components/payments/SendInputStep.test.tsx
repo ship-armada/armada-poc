@@ -76,8 +76,8 @@ describe('<SendInputStep>', () => {
 
   it('gates Review on the amount — too much shows an error and disables Review', () => {
     setup({ amountStr: '10', maxInput: 5_000_000n, max: 5_000_000n })
-    expect(screen.getByText(/exceeds your private balance/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Review/ })).toBeDisabled()
+    expect(screen.getByText(/more than you can send/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toBeDisabled()
   })
 
   it('enables Review + fires onContinue for a valid amount', () => {

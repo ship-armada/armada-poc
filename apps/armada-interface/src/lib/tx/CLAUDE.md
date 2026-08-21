@@ -13,6 +13,8 @@ Transaction lifecycle model. The most important architectural surface in this ap
 | `executor.ts` | **Module-scope** execution engine. Runs stage handlers outside React, owns AbortControllers, leader-elected via `navigator.locks`. |
 | `poller.ts` | Generic abortable / jittered / backoff-aware poll loop. Stage-specific adapters (Iris, RPC, relayer) plug in here. |
 | `recentRecipients.ts` | Pure `deriveRecentRecipients(records, {hubChainId, limit})` — the Send flow's recent-recipients list from settled history (dedupe by normalized address, newest-first, completed-only, per-kind destination chain). Consumed via `hooks/useRecentRecipients`. |
+| `submitQuote.ts` | `resolveFreshQuote({refresh, reviewedFee, feeOf})` — every submit path (shield/unshield/transfer/yield) refetches a fresh `cacheId` right before proof gen (a stale cacheId is the relayer `FEE_EXPIRED` cause) and flags `feeChanged` when the fresh fee differs from the reviewed one, so the modal re-reviews (FeeUpdatedBanner) instead of silently swapping the fee. |
+| `errorCopy.ts` | `TX_ERROR_COPY` + `resolveTxErrorCopy(error, fallback)` — category-aware failed/cancelled copy shared by the live `ErrorStep` modal + the `ActivityReceipt`. |
 
 ## Invariants
 

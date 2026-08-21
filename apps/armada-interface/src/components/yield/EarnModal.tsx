@@ -17,6 +17,7 @@ import { computeFeeBreakdown, userFeeForKind } from '@/lib/relayer'
 import { isShieldedAddress } from '@/lib/address'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import { canRetryTx } from '@/lib/tx/executor'
+import { resolveFreshQuote } from '@/lib/tx/submitQuote'
 import { sharesToUsdc } from '@/lib/yield'
 import { assertSpendableForFeeOnTop } from '@/lib/tx/spendable'
 import {
@@ -72,7 +73,10 @@ export function EarnModal() {
   const pendingUsdc = tab === 'add' ? (shieldedUsdc ?? 0n) - spendableUsdc : 0n
 
   const { value: amount } = parseUsdcInput(amountStr)
-  const { quote, isStale, refresh } = useFees()
+  // Set when a submit-time fee refetch changed the fee — keeps the flow on Review with the banner.
+  const [feeChanged, setFeeChanged] = useState(false)
+  useEffect(() => { setFeeChanged(false) }, [amountStr])
+  const { quote, refresh } = useFees()
   // Yield ops spend the user's shielded USDC (deposit) or shielded yield shares (withdraw).
   // Either way, we need a successful first sync before letting the user submit.
   const syncGate = useSpendableSyncGate()
@@ -213,9 +217,20 @@ export function EarnModal() {
     try {
       // null ⇒ submit refused on a follower tab (useTx.submit toasts + persists nothing); stay on review.
       let submittedId: string | null = null
-      const activeQuote = quote && !isStale ? quote : await refresh()
+      // Always refetch a fresh cacheId before proof gen (a stale cacheId is the FEE_EXPIRED cause);
+      // if the fee moved since Review, bounce back with the banner rather than silently swapping it.
+      const { quote: activeQuote, feeChanged: changed } = await resolveFreshQuote({
+        refresh,
+        reviewedFee: fee,
+        feeOf: (s) => userFeeForKind(yieldKind, amount, s),
+      })
       if (!activeQuote) {
         throw new Error('Could not fetch a current fee quote — please try again.')
+      }
+      if (changed) {
+        setFeeChanged(true)
+        setStep('review')
+        return
       }
       const feeCacheId = activeQuote.cacheId
       // Same broadcaster address guard as Send / Unshield — fail fast if the relayer published
@@ -347,6 +362,7 @@ export function EarnModal() {
           netAmount={displayNetAmount}
           netLabel={displayNetLabel}
           submitBlockedReason={submitBlockedReason}
+          feeUpdated={feeChanged}
           onBack={() => setStep('input')}
           isSubmitting={isSubmitting}
           onConfirm={handleSubmit}

@@ -148,6 +148,7 @@ export function ShieldModal() {
             shieldedAddress={shieldFlow.shieldedAddress}
             isSubmitting={shieldFlow.isSubmitting}
             duplicateWarning={shieldFlow.duplicateWarning}
+            feeUpdated={shieldFlow.feeChanged}
             onBack={shieldFlow.onBackToInput}
             onConfirm={shieldFlow.submit}
           />
@@ -162,6 +163,7 @@ export function ShieldModal() {
             networkName={unshieldFlow.networkName}
             recipientWalletProvider={unshieldFlow.recipientWalletProvider}
             submitBlockedReason={unshieldFlow.submitBlockedReason}
+            feeUpdated={unshieldFlow.feeChanged}
             onBack={unshieldFlow.onBackToInput}
             isSubmitting={unshieldFlow.isSubmitting}
             onConfirm={unshieldFlow.submit}

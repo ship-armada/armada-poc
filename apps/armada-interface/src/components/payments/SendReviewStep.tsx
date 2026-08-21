@@ -3,6 +3,7 @@
 
 import { Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { TransferReviewSummary } from './TransferReviewSummary'
+import { FeeUpdatedBanner } from '@/components/flow/FeeUpdatedBanner/FeeUpdatedBanner'
 import { formatUsdcPlain } from '@/lib/format'
 import type { SendFlowVariant } from './SendRecipientStep'
 import styles from './SendReviewStep.module.css'
@@ -24,6 +25,8 @@ export interface SendReviewStepProps {
   submitBlockedReason?: string | null
   /** True while a submit is in flight — disables Confirm so a double-click can't create two txs. */
   isSubmitting?: boolean
+  /** True when a submit-time fee refetch changed the fee — surfaces the FeeUpdatedBanner. */
+  feeUpdated?: boolean
   onBack: () => void
   onConfirm: () => void
 }
@@ -39,6 +42,7 @@ export function SendReviewStep({
   recipientWalletProvider,
   submitBlockedReason,
   isSubmitting,
+  feeUpdated,
   onBack,
   onConfirm,
 }: SendReviewStepProps) {
@@ -54,6 +58,8 @@ export function SendReviewStep({
             <span className={styles.amountValue}>{formatUsdcPlain(amount)}</span>
           </div>
         </div>
+
+        {feeUpdated ? <FeeUpdatedBanner /> : null}
 
         <TransferReviewSummary
           recipient={recipient}

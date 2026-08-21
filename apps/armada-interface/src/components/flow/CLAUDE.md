@@ -9,7 +9,8 @@
 | `FlowShell` | **The live modal chrome.** Wraps the vendored `FlowModalOverlay + ModalShell + ModalStepSwitch` from `@/design` — logo + Steps progress + close + backdrop/focus-trap. Every feature modal renders this. Props: `open`, `onClose`, `flowLabel`, `steps`, `currentStep`, `status`, `hideSteps`, `exiting`, `stepKey`. |
 | `useFlowExit` | Close hook — plays `FlowShell`'s slide-down before running the real `onClose` (holds `exiting` for `MODAL_EXIT_TOTAL_MS`; closes synchronously under reduced motion). Each modal wires `const { exiting, requestClose: close } = useFlowExit(() => setOpenModal(null))` and passes `exiting` to `FlowShell`; the atom stays set until the animation ends so the step content stays frozen. |
 | `ProgressStep` | In-flight progress UI for any TxKind — calls `buildProcessingView(record)` and renders `components/tx/processing/TxProcessingLayout` off the live record. |
-| `ErrorStep` | Icon + headline + message + Try Again (disabled when `onRetry` omitted) + optional View Details. |
+| `ErrorStep` | Icon + headline + message + Try Again (disabled when `onRetry` omitted) + optional View Details. Copy comes from `lib/tx/errorCopy.ts` (shared with the ActivityReceipt). |
+| `FeeUpdatedBanner` | Warning-toned Review-step callout shown when a submit-time fee refetch changed the fee (`lib/tx/submitQuote.ts`). Each review step (`ShieldReviewStep` / `SendReviewStep` / `EarnReviewStep`) renders it when its flow reports `feeChanged`, so the user re-confirms the new amount instead of it silently swapping. |
 | `FlowAmountHero` | Big-numeral amount hero used inside step bodies. |
 | `WalletConfirmList` | Per-step "confirm in your wallet" checklist (shield signing sub-state). |
 | `overlayFlow.ts` | `overlayIndicatorStep` / `overlayIndicatorStatus` — map a step string → the ModalShell Steps indicator position + status (default/confirmed/error). Used by the feature modals. |

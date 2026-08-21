@@ -16,6 +16,7 @@ import { findDeploymentForChain, loadDeployments, type ResolvedDeployments } fro
 import { parseUsdcInput } from '@/lib/format'
 import { isShieldedAddress } from '@/lib/address'
 import { canRetryTx } from '@/lib/tx/executor'
+import { resolveFreshQuote } from '@/lib/tx/submitQuote'
 import { trackError } from '@/lib/telemetry'
 import { assertSpendableForFeeOnTop } from '@/lib/tx/spendable'
 import type { FlowStep, FlowVisibleStep } from '@/components/flow'
@@ -45,6 +46,8 @@ export interface UnshieldFlow {
   flowBreakdown: FlowFeeBreakdown
   /** Inclusive fee (broadcaster + on-chain protocol + CCTP) shown on the review/complete cards. */
   feeInclusive: bigint
+  /** True when a submit-time fee refetch changed the fee — the review step shows the FeeUpdatedBanner. */
+  feeChanged: boolean
   totalDeducted: bigint
   inputMax: bigint
   isXchain: boolean
@@ -87,6 +90,8 @@ export function useUnshieldFlow(isOpen: boolean): UnshieldFlow {
   const [errorAtStep, setErrorAtStep] = useState<FlowVisibleStep | undefined>(undefined)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submittedKind, setSubmittedKind] = useState<SubmittedKind | null>(null)
+  // Set when a submit-time fee refetch changed the fee — keeps the flow on Review with the banner.
+  const [feeChanged, setFeeChanged] = useState(false)
   const submittingRef = useRef(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -97,7 +102,9 @@ export function useUnshieldFlow(isOpen: boolean): UnshieldFlow {
   const max = shieldedUsdcSpendable ?? 0n
   const pendingUsdc = (shieldedUsdc ?? 0n) - max
   const { value: amount } = parseUsdcInput(amountStr)
-  const { quote, isStale, refresh } = useFees()
+  // The reviewed fee is recomputed on every amount change, so clear any prior fee-changed flag.
+  useEffect(() => { setFeeChanged(false) }, [amountStr])
+  const { quote, refresh } = useFees()
   // Gate Confirm while the initial shielded-balance sync is incomplete — every unshield spends
   // the user's shielded USDC.
   const syncGate = useSpendableSyncGate()
@@ -202,10 +209,20 @@ export function useUnshieldFlow(isOpen: boolean): UnshieldFlow {
     setSubmitError(null)
     try {
       let submittedId: string | null = null
-      // Re-quote if the cached fee is stale — see ShieldModal for the rationale.
-      const activeQuote = quote && !isStale ? quote : await refresh()
+      // Always refetch a fresh cacheId before proof gen (a stale cacheId is the FEE_EXPIRED cause);
+      // if the fee moved since Review, bounce back with the banner rather than silently swapping it.
+      const { quote: activeQuote, feeChanged: changed } = await resolveFreshQuote({
+        refresh,
+        reviewedFee: fee,
+        feeOf: (s) => userFeeForKind(computedKind, amount, s),
+      })
       if (!activeQuote) {
         throw new Error('Could not fetch a current fee quote — please try again.')
+      }
+      if (changed) {
+        setFeeChanged(true)
+        setStep('review')
+        return
       }
       const feeCacheId = activeQuote.cacheId
       // S-M5: re-validate amount + the FRESH relayer fee against the balance before proof gen. Both
@@ -291,6 +308,7 @@ export function useUnshieldFlow(isOpen: boolean): UnshieldFlow {
     feeLoading,
     flowBreakdown,
     feeInclusive,
+    feeChanged,
     totalDeducted,
     inputMax,
     isXchain,

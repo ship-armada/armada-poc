@@ -4,6 +4,7 @@
 import { AlertTriangle } from 'lucide-react'
 import { Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { DepositReviewSummary } from '@/components/deposit/DepositReviewSummary'
+import { FeeUpdatedBanner } from '@/components/flow/FeeUpdatedBanner/FeeUpdatedBanner'
 import { formatUsdcPlain } from '@/lib/format'
 import styles from './ShieldReviewStep.module.css'
 
@@ -22,6 +23,8 @@ export interface ShieldReviewStepProps {
   isSubmitting?: boolean
   /** S-L7: an unresolved same-amount deposit may still be on-chain — surface a non-blocking caution. */
   duplicateWarning?: boolean
+  /** True when a submit-time fee refetch changed the fee — surfaces the FeeUpdatedBanner. */
+  feeUpdated?: boolean
   onBack: () => void
   onConfirm: () => void
 }
@@ -36,6 +39,7 @@ export function ShieldReviewStep({
   shieldedAddress,
   isSubmitting,
   duplicateWarning,
+  feeUpdated,
   onBack,
   onConfirm,
 }: ShieldReviewStepProps) {
@@ -48,6 +52,8 @@ export function ShieldReviewStep({
             <span className={styles.amountValue}>{formatUsdcPlain(amount)}</span>
           </div>
         </div>
+
+        {feeUpdated ? <FeeUpdatedBanner /> : null}
 
         <DepositReviewSummary
           fromChainId={fromChainId}

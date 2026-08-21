@@ -176,16 +176,22 @@ describe('activity status derivation', () => {
   })
 
   it('definitive failures → failed', () => {
-    const codes = ['TX_REVERTED', 'USER_REJECTED', 'PRE_FLIGHT_REVERT', 'INTERRUPTED', 'FEE_EXPIRED', 'RPC_ERROR'] as const
+    const codes = ['TX_REVERTED', 'PRE_FLIGHT_REVERT', 'INTERRUPTED', 'FEE_EXPIRED', 'RPC_ERROR'] as const
     for (const code of codes) {
       const item = txRecordToActivityItem(makeRecord('unshield-local', { executionState: 'failed', errorCode: code }))
       expect(item.status).toBe('failed')
     }
   })
 
-  it('user cancel before broadcast → cancelled', () => {
-    const item = txRecordToActivityItem(makeRecord('shield', { executionState: 'cancelled', errorCode: 'CANCELLED' }))
-    expect(item.status).toBe('cancelled')
+  it('user aborts → cancelled (app Cancel button + declined wallet prompt)', () => {
+    // App Cancel button before broadcast.
+    expect(
+      txRecordToActivityItem(makeRecord('shield', { executionState: 'cancelled', errorCode: 'CANCELLED' })).status,
+    ).toBe('cancelled')
+    // Declined wallet signature — lands on a `failed` state but is a user cancellation, not a failure.
+    expect(
+      txRecordToActivityItem(makeRecord('shield', { executionState: 'failed', errorCode: 'USER_REJECTED' })).status,
+    ).toBe('cancelled')
   })
 
   it('indeterminate outcomes → unknown (may still have settled on chain)', () => {

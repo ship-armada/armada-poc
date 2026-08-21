@@ -58,8 +58,10 @@ export function deriveActivityStatus(record: TxRecord): DashboardActivityStatus 
   const code = record.artifacts.error?.code
   // Indeterminate — we stopped watching; the tx may still have settled on chain. Never "failed".
   if (state === 'expired' || (code !== undefined && INDETERMINATE_CODES.has(code))) return 'unknown'
-  // `cancelled` state with a CANCELLED code = user cancel before broadcast (DISMISSED already caught above).
-  if (state === 'cancelled') return 'cancelled'
+  // User-initiated aborts, nothing sent: the app Cancel button (`cancelled` state) AND a declined
+  // wallet prompt (`USER_REJECTED`, which lands on a `failed` state). Group both as "Cancelled" so
+  // the row matches the modal's "Action declined — nothing submitted" framing.
+  if (state === 'cancelled' || code === 'USER_REJECTED') return 'cancelled'
   return 'failed'
 }
 

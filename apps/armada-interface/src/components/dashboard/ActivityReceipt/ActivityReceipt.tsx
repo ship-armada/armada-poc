@@ -207,7 +207,17 @@ export function ActivityReceipt({ record, ownWalletAddress, open, onClose }: Act
           <div className={styles.titleBlock}>
             <h1 className={styles.title}>{view.title}</h1>
             <div className={styles.amountRow}>
-              <span className={styles.amountValue}>{formatUsdcPlain(view.amount)}</span>
+              <span
+                className={[
+                  styles.amountValue,
+                  view.status === 'failed' && styles.amountValueFailed,
+                  view.status === 'cancelled' && styles.amountValueCancelled,
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+              >
+                {formatUsdcPlain(view.amount)}
+              </span>
             </div>
           </div>
 

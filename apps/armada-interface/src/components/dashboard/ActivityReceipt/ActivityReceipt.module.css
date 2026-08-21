@@ -91,6 +91,17 @@
   }
 }
 
+/* Struck receipt amount for a definitive failure/cancel — no balance changed. */
+.amountValueFailed {
+  text-decoration: line-through;
+  color: var(--semantic-color-status-error);
+}
+
+.amountValueCancelled {
+  text-decoration: line-through;
+  color: var(--semantic-color-text-muted);
+}
+
 /* Failure / indeterminate banner above the attempted-tx summary. */
 .statusBanner {
   display: flex;

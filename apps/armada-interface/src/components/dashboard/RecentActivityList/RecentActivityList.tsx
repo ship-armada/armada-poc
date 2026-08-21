@@ -115,6 +115,8 @@ function ActivityListItems({
         const amountLabel = formatActivityAmount(item)
         const itemRevealed = balanceRevealed || peekedId === item.id
         const amountTone = activityAmountTone(item, itemRevealed)
+        // Failed / cancelled rows strike both the amount and the description — nothing settled.
+        const struck = item.status === 'failed' || item.status === 'cancelled'
         const peekHandlers = hidePeekEventHandlers(
           !balanceRevealed,
           () => setPeekedId(item.id),
@@ -134,18 +136,16 @@ function ActivityListItems({
                 <Icon className={styles.icon} strokeWidth={1.5} />
               </span>
               <div className={styles.copy}>
-                <span className={styles.label}>{item.label}</span>
+                <span className={[styles.label, struck && styles.labelStruck].filter(Boolean).join(' ')}>
+                  {item.label}
+                </span>
                 <span className={styles.time}>{formatActivitySubtitle(item)}</span>
               </div>
               <span
                 className={[styles.amount, usdcAmount.font, amountTone].filter(Boolean).join(' ')}
                 aria-label={itemRevealed ? amountLabel : 'Amount hidden'}
               >
-                <BalanceScrambleValue
-                  value={amountLabel}
-                  revealed={itemRevealed}
-                  struck={item.status === 'failed' || item.status === 'cancelled'}
-                />
+                <BalanceScrambleValue value={amountLabel} revealed={itemRevealed} struck={struck} />
               </span>
             </button>
           </li>

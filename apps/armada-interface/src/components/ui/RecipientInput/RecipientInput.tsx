@@ -67,6 +67,8 @@ export function RecipientInput({
           autoCorrect="off"
           autoCapitalize="none"
           spellCheck={false}
+          data-1p-ignore
+          data-lpignore="true"
           className={styles.input}
           value={value}
           placeholder={placeholder}

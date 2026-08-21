@@ -35,6 +35,13 @@ describe('formatUsdcAmount', () => {
     expect(formatUsdcAmount(1_234_567_890n, { decimals: 4 })).toBe('1,234.5679')
     expect(formatUsdcAmount(1_500_000n, { decimals: 0 })).toBe('2')
   })
+  it('reveals sub-cent precision (2–6 fraction digits) by default', () => {
+    // Committed figures (fees, net, totals) must not round a real sub-cent value away to "0.00".
+    expect(formatUsdcAmount(500_000n)).toBe('0.50') // whole cents keep the 2-decimal minimum
+    expect(formatUsdcAmount(1_004_000n)).toBe('1.004') // sub-cent tenths shown
+    expect(formatUsdcAmount(496_905_432n)).toBe('496.905432') // full 6-decimal precision when present
+    expect(formatUsdcAmount(1n)).toBe('0.000001') // the smallest USDC unit is visible, not "0.00"
+  })
 })
 
 describe('parseUsdcInput', () => {

@@ -56,6 +56,30 @@ describe('DepositAmountCard — pendingBalance', () => {
   })
 })
 
+describe('DepositAmountCard — amount typing', () => {
+  it('passes a leading 0 / . through instead of discarding it (sub-one amounts are typeable)', () => {
+    // Regression: the card used to rewrite `0`/`.` to '' via hasActiveAmount, so a user could not
+    // start typing "0.5" — the leading 0 or . vanished. Each keystroke must now commit forward.
+    const onAmountChange = vi.fn()
+    renderCard({ amount: '', onAmountChange, amountAriaLabel: 'Deposit amount' })
+    const input = screen.getByLabelText('Deposit amount')
+    fireEvent.change(input, { target: { value: '0' } })
+    expect(onAmountChange).toHaveBeenLastCalledWith('0')
+    fireEvent.change(input, { target: { value: '.' } })
+    expect(onAmountChange).toHaveBeenLastCalledWith('.')
+  })
+
+  it('caps typed input at 6 decimals and collapses leading zeros', () => {
+    const onAmountChange = vi.fn()
+    renderCard({ amount: '', onAmountChange, amountAriaLabel: 'Deposit amount' })
+    const input = screen.getByLabelText('Deposit amount')
+    fireEvent.change(input, { target: { value: '1.1234567' } })
+    expect(onAmountChange).toHaveBeenLastCalledWith('1.123456')
+    fireEvent.change(input, { target: { value: '05' } })
+    expect(onAmountChange).toHaveBeenLastCalledWith('5')
+  })
+})
+
 describe('DepositAmountCard — presets + amount roll', () => {
   it('commits a fraction of maxInput when a percentage pill is clicked', () => {
     const onAmountChange = vi.fn()

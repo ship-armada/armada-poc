@@ -190,8 +190,12 @@ export function DepositAmountCard({
   function handleAmountInput(raw: string) {
     clearAmountRoll()
     pendingRollFromRef.current = null
-    const next = sanitizeAmountInput(raw)
-    onAmountChange(hasActiveAmount(next) ? next : '')
+    // Pass the sanitized value straight through — including forward-typing states like `0`, `.`,
+    // and `0.` that `hasActiveAmount` reports false. Rewriting those to `''` (the previous
+    // behaviour) discarded a leading `0`/`.` keystroke, making sub-one amounts impossible to type.
+    // `hasActiveAmount` still gates display styling (`showActiveAmount`) and the `amount > 0n`
+    // submit checks, so a bare `0`/`.` never advances the flow.
+    onAmountChange(sanitizeAmountInput(raw))
   }
 
   /** Mark the current display as the roll origin, then apply the preset amount (the effect rolls it). */
@@ -306,6 +310,11 @@ export function DepositAmountCard({
               id={amountInputId}
               type="text"
               inputMode="decimal"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              data-1p-ignore
+              data-lpignore="true"
               className={[styles.amountInput, isAmountRolling && styles.amountValueHidden]
                 .filter(Boolean)
                 .join(' ')}
@@ -336,7 +345,7 @@ export function DepositAmountCard({
         <div className={`armada-text-ui-label-md ${styles.feeCaption}`} role="status">
           {showFee && displayFees ? (
             <>
-              <span>+ ${formatUsdcAmount(totalFeeRaw, { decimals: 2 })} FEE</span>
+              <span>+ ${formatUsdcAmount(totalFeeRaw)} FEE</span>
               <FeeBreakdownTooltip
                 fees={displayFees}
                 isLoading={feeLoading}

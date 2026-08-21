@@ -3,6 +3,7 @@
 
 import { Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { EarnReviewSummary } from './EarnReviewSummary'
+import { FeeUpdatedBanner } from '@/components/flow/FeeUpdatedBanner/FeeUpdatedBanner'
 import { formatUsdcPlain } from '@/lib/format'
 import type { YieldRate } from '@/hooks/useYieldRate'
 import type { EarnTab } from './EarnInputStep'
@@ -25,6 +26,8 @@ export interface EarnReviewStepProps {
   submitBlockedReason?: string | null
   /** True while a submit is in flight — disables Confirm so a double-click can't create two txs. */
   isSubmitting?: boolean
+  /** True when a submit-time fee refetch changed the fee — surfaces the FeeUpdatedBanner. */
+  feeUpdated?: boolean
   onBack: () => void
   onConfirm: () => void
 }
@@ -38,6 +41,7 @@ export function EarnReviewStep({
   netLabel,
   submitBlockedReason,
   isSubmitting,
+  feeUpdated,
   onBack,
   onConfirm,
 }: EarnReviewStepProps) {
@@ -53,6 +57,8 @@ export function EarnReviewStep({
             <span className={styles.amountValue}>{formatUsdcPlain(amount)}</span>
           </div>
         </div>
+
+        {feeUpdated ? <FeeUpdatedBanner /> : null}
 
         <EarnReviewSummary
           tab={tab}

@@ -46,6 +46,27 @@ vi.mock('@/lib/tx/storage', () => ({
   loadAllTx: vi.fn(async () => []),
 }))
 
+// Submit always refetches a fresh quote (fee-refresh fix). Mock useFees so refresh() resolves the
+// fake quote deterministically (the real refresh() hits fetchFees → network, unreachable in jsdom).
+const hoistedFees = vi.hoisted(() => ({
+  quote: {
+    cacheId: 'test-cache',
+    expiresAt: 0,
+    chainId: 31337,
+    broadcasterShieldedAddress: '0zk' + 'a'.repeat(64),
+    fees: { transfer: '0', unshield: '0', crossContract: '0', crossChainShield: '0', crossChainUnshield: '0', shield: '0', shieldXchain: '0' },
+  },
+}))
+vi.mock('@/hooks/useFees', () => ({
+  useFees: () => ({
+    quote: hoistedFees.quote,
+    isStale: false,
+    isUnavailable: false,
+    refresh: vi.fn(async () => hoistedFees.quote),
+  }),
+  FEES_QUERY_KEY: ['fees'],
+}))
+
 const FAKE_QUOTE = {
   cacheId: 'test-cache',
   expiresAt: Date.now() + 5 * 60_000,

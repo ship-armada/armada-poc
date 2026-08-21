@@ -18,6 +18,7 @@ import { getNetworkConfig } from '@/config/network'
 import { loadDeployments } from '@/config/deployments'
 import { formatUsdc, parseUsdcInput } from '@/lib/format'
 import { canRetryTx } from '@/lib/tx/executor'
+import { resolveFreshQuote } from '@/lib/tx/submitQuote'
 import { hasUnresolvedShield } from '@/lib/tx/duplicateGuard'
 import {
   shieldWalletSteps,
@@ -66,6 +67,8 @@ export interface ShieldFlow {
   minAmount: bigint
   useGasless: boolean
   duplicateWarning: boolean
+  /** True when a submit-time fee refetch changed the fee — the review step shows the FeeUpdatedBanner. */
+  feeChanged: boolean
   // Review addresses
   evmAddress?: string
   walletProvider?: string
@@ -103,6 +106,8 @@ export function useShieldFlow(isOpen: boolean): ShieldFlow {
   const [errorAtStep, setErrorAtStep] = useState<FlowVisibleStep | undefined>(undefined)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submittedKind, setSubmittedKind] = useState<SubmittedKind | null>(null)
+  // Set when a submit-time fee refetch changed the fee — keeps the flow on Review with the banner.
+  const [feeChanged, setFeeChanged] = useState(false)
   // Double-submit guard (P0-7). The ref is the synchronous gate (state updates are async, so a
   // rapid second click would otherwise pass an `isSubmitting` state check); the state drives the
   // Confirm button's disabled prop so the button visibly locks during the pre-submit refresh().
@@ -112,6 +117,8 @@ export function useShieldFlow(isOpen: boolean): ShieldFlow {
   const balances = useBalances()
   const max = balances.unshielded[fromChainId] ?? 0n
   const { value: amount } = parseUsdcInput(amountStr)
+  // The reviewed fee is recomputed on every amount change, so clear any prior fee-changed flag.
+  useEffect(() => { setFeeChanged(false) }, [amountStr])
 
   // S-L7: warn (non-blocking) at review when an unresolved same-amount deposit may still be on
   // chain — between a POLL_TIMEOUT'd shield and history recovery confirming it, re-depositing the
@@ -160,7 +167,7 @@ export function useShieldFlow(isOpen: boolean): ShieldFlow {
   // gas costs do (Base Sepolia ≠ Ethereum Sepolia). Pass `fromChainId` so useFees fetches the
   // matching schedule from `/fees?chainId=...`.
   const feeChainId = computedKind === 'shield-xchain' && useGasless ? fromChainId : undefined
-  const { quote, isStale, refresh } = useFees({ chainId: feeChainId })
+  const { quote, refresh } = useFees({ chainId: feeChainId })
   // Display fee — for the gasless `shield` path this reads `quote.fees.shield`; for gasless
   // `shield-xchain` it reads `quote.fees.shieldXchain` from the source chain's quote. Direct
   // paths preserve their existing semantics (0 for hub shield, CCTP fast-fee estimate for
@@ -268,11 +275,20 @@ export function useShieldFlow(isOpen: boolean): ShieldFlow {
       // null ⇒ submit was refused on a follower tab (useTx.submit toasts + persists nothing); we
       // keep the user on the review step rather than advancing to a never-driven progress spinner.
       let submittedId: string | null = null
-      // Submit with a fresh cacheId — if the cached quote is within the staleness window the
-      // modal sat through, re-quote first so the relayer doesn't reject with FEE_EXPIRED.
-      const activeQuote = quote && !isStale ? quote : await refresh()
+      // Always refetch a fresh cacheId before proof gen (a stale cacheId is the FEE_EXPIRED cause);
+      // if the fee moved since Review, bounce back with the banner rather than silently swapping it.
+      const { quote: activeQuote, feeChanged: changed } = await resolveFreshQuote({
+        refresh,
+        reviewedFee: fee,
+        feeOf: (s) => userFeeForKind(computedKind, amount, s, { gasless: useGasless }),
+      })
       if (!activeQuote) {
         throw new Error('Could not fetch a current fee quote — please try again.')
+      }
+      if (changed) {
+        setFeeChanged(true)
+        setStep('review')
+        return
       }
       if (computedKind === 'shield') {
         setSubmittedKind('shield')
@@ -407,6 +423,7 @@ export function useShieldFlow(isOpen: boolean): ShieldFlow {
     minAmount,
     useGasless,
     duplicateWarning,
+    feeChanged,
     evmAddress,
     walletProvider: connector?.name,
     shieldedAddress: shieldedWallet.shieldedAddress,

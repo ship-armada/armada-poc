@@ -29,6 +29,7 @@ import { cctpFastFeeForAmount, computeFeeBreakdown, userFeeForKind } from '@/lib
 import { isShieldedAddress, validateShieldedAddressStrict } from '@/lib/address'
 import { displayTxHash, txExplorerUrl } from '@/lib/explorer'
 import { canRetryTx } from '@/lib/tx/executor'
+import { resolveFreshQuote } from '@/lib/tx/submitQuote'
 import { trackError } from '@/lib/telemetry'
 import { assertSpendableForFeeOnTop } from '@/lib/tx/spendable'
 import {
@@ -90,6 +91,10 @@ export function SendModal() {
   const [errorAtStep, setErrorAtStep] = useState<FlowVisibleStep | undefined>(undefined)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [submittedKind, setSubmittedKind] = useState<SubmittedKind | null>(null)
+  // Set when a submit-time fee refetch returned a different fee than the one on Review — the flow
+  // stays on Review with the FeeUpdatedBanner so the user re-confirms the new amount. Reset on any
+  // amount change (the reviewed fee is recomputed then anyway).
+  const [feeChanged, setFeeChanged] = useState(false)
 
   // Seed the flow synchronously when it opens from a pay-via-link intent, so the modal starts on
   // Review (recipient + amount are both known) rather than flashing the Recipient step. This runs
@@ -122,7 +127,9 @@ export function SendModal() {
   const max = shieldedUsdcSpendable ?? 0n
   const pendingUsdc = (shieldedUsdc ?? 0n) - max
   const { value: amount } = parseUsdcInput(amountStr)
-  const { quote, isStale, refresh } = useFees()
+  const { quote, refresh } = useFees()
+  // The reviewed fee is recomputed on every amount change, so clear any prior fee-changed flag.
+  useEffect(() => { setFeeChanged(false) }, [amountStr])
   // Gate Confirm while the initial shielded-balance sync is incomplete. Every kind spends the
   // user's shielded USDC, so the same gate applies.
   const syncGate = useSpendableSyncGate()
@@ -271,10 +278,21 @@ export function SendModal() {
     try {
       // null ⇒ submit refused on a follower tab (useTx.submit toasts + persists nothing); stay on review.
       let submittedId: string | null = null
-      // Re-quote if the cached fee is stale — see ShieldModal for the rationale.
-      const activeQuote = quote && !isStale ? quote : await refresh()
+      // Always refetch a fresh cacheId before proof gen (a stale cacheId is the FEE_EXPIRED cause).
+      // If the fee moved since Review, don't submit — bounce back with the FeeUpdatedBanner so the
+      // user re-confirms the new amount ("what you saw is what you pay").
+      const { quote: activeQuote, feeChanged: changed } = await resolveFreshQuote({
+        refresh,
+        reviewedFee: fee,
+        feeOf: (s) => userFeeForKind(computedKind, amount, s),
+      })
       if (!activeQuote) {
         throw new Error('Could not fetch a current fee quote — please try again.')
+      }
+      if (changed) {
+        setFeeChanged(true)
+        setStep('review')
+        return
       }
       const feeCacheId = activeQuote.cacheId
       // S-M5: re-validate amount + the FRESH relayer fee against the balance before proof gen. All
@@ -464,6 +482,7 @@ export function SendModal() {
           networkName={networkName}
           recipientWalletProvider={recipientWalletProvider}
           submitBlockedReason={syncGate.reason}
+          feeUpdated={feeChanged}
           onBack={() => setStep('input')}
           isSubmitting={isSubmitting}
           onConfirm={handleSubmit}

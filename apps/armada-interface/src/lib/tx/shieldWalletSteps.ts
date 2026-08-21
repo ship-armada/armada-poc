@@ -26,6 +26,7 @@ function shieldArtifacts(record: ShieldRecord) {
     approveSkipped?: boolean
     approveTxHash?: `0x${string}`
     sourceTxHash?: `0x${string}`
+    permitSigned?: boolean
   }
 }
 
@@ -47,15 +48,19 @@ export function shieldWalletSteps(
 
   // Gasless path: two back-to-back signatures during build-proof — the EIP-2612 USDC permit
   // ("Authorize") + the EIP-712 ShieldIntent ("Sign"). The relayer broadcasts the submit, so there's
-  // no on-chain tx prompt. We can't observe permit-done vs intent-done separately (both captured at
-  // build-proof completion), so the approve row leads (loading) with sign pending, and both flip to
-  // done once build-proof completes — mirroring the mockup's Approve → Sign layout.
+  // no on-chain tx prompt. The handler writes an intermediate `permitSigned` between the two prompts,
+  // so the Authorize row flips to done while the Sign prompt is still live; both are done once
+  // build-proof completes. Mirrors the mockup's Approve → Sign layout.
   const useGasless = record ? (record.meta as { useGasless?: boolean }).useGasless === true : false
   if (useGasless) {
     const authorized = Boolean(record?.stagesCompleted.includes('build-proof'))
+    const permitDone = authorized || Boolean(record && shieldArtifacts(record).permitSigned)
     return [
-      { label: `Authorize ${amountLabel} USDC`, status: authorized ? 'done' : 'loading' },
-      { label: 'Sign deposit transaction', status: authorized ? 'done' : 'pending' },
+      { label: `Authorize ${amountLabel} USDC`, status: permitDone ? 'done' : 'loading' },
+      {
+        label: 'Sign deposit transaction',
+        status: authorized ? 'done' : permitDone ? 'loading' : 'pending',
+      },
     ]
   }
 

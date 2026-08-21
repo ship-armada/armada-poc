@@ -460,6 +460,13 @@ export interface ArtifactsShield extends ArtifactsCommon {
    */
   approveTxHash?: `0x${string}`
   approveSkipped?: boolean
+  /**
+   * Gasless-path intermediate flag (S-M4b). Set by an in-`build-proof` upsert right after the
+   * EIP-2612 USDC permit is signed but BEFORE the EIP-712 ShieldIntent — lets the wallet checklist
+   * flip the "Authorize" row to done while the second prompt is still pending, instead of both rows
+   * flipping together only once build-proof completes.
+   */
+  permitSigned?: boolean
 }
 
 /**

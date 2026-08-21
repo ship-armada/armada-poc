@@ -7,6 +7,7 @@ import { getPublicClient, sendTransaction } from 'wagmi/actions'
 import { asTxError, waitForReceiptOrFail } from '@/lib/tx/receipt'
 import { simulateOrThrow } from '@/lib/tx/simulate'
 import { classifyHandlerError } from '@/lib/tx/errors'
+import { throwIfForcedError } from '@/lib/tx/devForce'
 import { track } from '@/lib/telemetry'
 import { wagmiConfig } from '@/config/wagmi'
 import { loadDeployments } from '@/config/deployments'
@@ -85,6 +86,8 @@ export const unshieldXchainHandler: StageHandler<'unshield-xchain'> = {
 
   async run(record, ctx) {
     try {
+      // DEV: throw the debug-selected outcome (no-op unless meta.devForceError is set).
+      throwIfForcedError(record)
       switch (record.stage) {
         case 'build-proof':
           await runBuildProof(record, ctx)

@@ -157,6 +157,12 @@ export interface MetaCommon {
   amount: bigint
   /** Fee quote attached to this submission. */
   feeCacheId: string
+  /**
+   * DEV/DEBUG ONLY — when set (via the debug-gated Send control), the handler throws this typed
+   * error at the start of its run so the tx fails with that exact outcome. Never set on a real
+   * submission (debug mode off leaves it undefined). See `lib/tx/devForce.ts`.
+   */
+  devForceError?: TxErrorCode
 }
 
 export interface MetaShield extends MetaCommon {

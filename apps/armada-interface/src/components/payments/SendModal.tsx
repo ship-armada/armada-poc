@@ -41,6 +41,8 @@ import { FlowShell } from '@/components/flow/FlowShell'
 import { useFlowExit } from '@/components/flow/useFlowExit'
 import { SendRecipientStep, type SendFlowVariant } from './SendRecipientStep'
 import { SendInputStepContent, SendInputStepFooter } from './SendInputStep'
+import { ForceOutcomeSelect } from '@/components/debug/ForceOutcomeSelect'
+import { devForceOutcomeAtom } from '@/state/debug'
 import { useDisplayFees } from '@/hooks/useDisplayFees'
 import { SendReviewStep } from './SendReviewStep'
 import { SendCompleteStep } from './SendCompleteStep'
@@ -115,6 +117,8 @@ export function SendModal() {
   // ("pending") note can't be selected; `pendingUsdc` is display-only (0 on local Anvil).
   const shieldedUsdc = useAtomValue(shieldedUsdcAtom)
   const shieldedUsdcSpendable = useAtomValue(shieldedUsdcSpendableAtom)
+  // DEV: debug-only forced outcome (null in production / debug off) — threaded into submit meta.
+  const forcedOutcome = useAtomValue(devForceOutcomeAtom)
   const max = shieldedUsdcSpendable ?? 0n
   const pendingUsdc = (shieldedUsdc ?? 0n) - max
   const { value: amount } = parseUsdcInput(amountStr)
@@ -309,6 +313,7 @@ export function SendModal() {
           broadcasterFeeAmount: BigInt(activeQuote.fees.transfer),
           broadcasterShieldedAddress: activeQuote.broadcasterShieldedAddress,
           useWalletOverride: prefs.submitFromWallet,
+          devForceError: forcedOutcome ?? undefined,
         })
       } else if (computedKind === 'unshield-local') {
         // Fail fast if the relayer published a malformed broadcaster address — avoid a 20-30s
@@ -329,6 +334,7 @@ export function SendModal() {
           broadcasterFeeAmount: BigInt(activeQuote.fees.unshield),
           broadcasterShieldedAddress: activeQuote.broadcasterShieldedAddress,
           useWalletOverride: prefs.submitFromWallet,
+          devForceError: forcedOutcome ?? undefined,
         })
       } else {
         // A5 — relayer-mediated hub burn for cross-chain unshield. Same broadcaster-context shape
@@ -350,6 +356,7 @@ export function SendModal() {
           broadcasterFeeAmount: BigInt(activeQuote.fees.crossChainUnshield),
           broadcasterShieldedAddress: activeQuote.broadcasterShieldedAddress,
           useWalletOverride: prefs.submitFromWallet,
+          devForceError: forcedOutcome ?? undefined,
         })
       }
       if (submittedId === null) return
@@ -437,6 +444,7 @@ export function SendModal() {
             // they've toggled Preferences → "Submit transactions from my wallet".
             gaslessMode={!prefs.submitFromWallet}
           />
+          <ForceOutcomeSelect />
           <SendInputStepFooter
             amountStr={amountStr}
             maxInput={inputMax}

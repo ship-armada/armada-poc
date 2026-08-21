@@ -22,6 +22,7 @@ import { useShieldedBalanceSync } from '@/hooks/useShieldedBalanceSync'
 import { useShieldedSyncPoll } from '@/hooks/useShieldedSyncPoll'
 import { useNullifierCrossCheck } from '@/hooks/useNullifierCrossCheck'
 import { useTabVisible } from '@/hooks/useTabVisible'
+import { useDebugSync } from '@/hooks/useDebugSync'
 import { useTxHistory } from '@/hooks/useTxHistory'
 import { useRequestLinks } from '@/hooks/useRequestLinks'
 import { useTxResume } from '@/hooks/useTxResume'
@@ -55,6 +56,7 @@ import {
 
 export function App() {
   useTabVisible()
+  useDebugSync() // ?debug URL param → persisted debug-mode flag (gates dev-only affordances)
   useNowTicker() // refresh "3m ago" labels on a 60s cadence
   useTxHistory() // hydrate tx history from IDB on cold load
   useRequestLinks() // hydrate created payment-request links (encrypted, per-wallet) for Recent Activity

@@ -56,6 +56,9 @@ export function EarnModal() {
   // Double-submit guard (P0-7): ref = synchronous gate (state is async), state = button disable.
   const submittingRef = useRef(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // Shared across the amount step's card + footer (siblings) so tapping the disabled "Input amount"
+  // CTA can focus the amount field alongside the shake.
+  const amountInputRef = useRef<HTMLInputElement>(null)
 
   // Source data. The USDC leg (deposit amount + the withdraw-fee reserve + the fee-on-top guard) draws
   // from SPENDABLE only, so a not-yet-final ("pending") note can't be used; `pendingUsdc` is
@@ -342,6 +345,7 @@ export function EarnModal() {
             gaslessMode={!effectiveUseWalletOverride}
             rate={yieldRate}
             continueBlockedReason={withdrawFeeBlockedReason}
+            inputRef={amountInputRef}
           />
           <EarnInputStepFooter
             amountStr={amountStr}
@@ -349,6 +353,7 @@ export function EarnModal() {
             continueBlockedReason={withdrawFeeBlockedReason}
             onCancel={close}
             onContinue={() => setStep('review')}
+            onIncompleteContinue={() => amountInputRef.current?.focus()}
           />
         </>
       )}

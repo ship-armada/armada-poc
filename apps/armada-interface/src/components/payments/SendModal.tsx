@@ -117,6 +117,9 @@ export function SendModal() {
   // Double-submit guard (P0-7): ref = synchronous gate (state is async), state = button disable.
   const submittingRef = useRef(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // Shared across the amount step's card + footer (siblings) so tapping the disabled "Input amount"
+  // CTA can focus the amount field alongside the shake.
+  const amountInputRef = useRef<HTMLInputElement>(null)
 
   // Source data. `max` (and the fee-on-top guard) draws from SPENDABLE only, so a not-yet-final
   // ("pending") note can't be selected; `pendingUsdc` is display-only (0 on local Anvil).
@@ -461,6 +464,7 @@ export function SendModal() {
             // SendModal's three kinds default to the relayer path; user pays gas only when
             // they've toggled Preferences → "Submit transactions from my wallet".
             gaslessMode={!prefs.submitFromWallet}
+            inputRef={amountInputRef}
           />
           <ForceOutcomeSelect />
           <SendInputStepFooter
@@ -468,6 +472,7 @@ export function SendModal() {
             maxInput={inputMax}
             onBack={() => setStep('recipient')}
             onContinue={() => setStep('review')}
+            onIncompleteContinue={() => amountInputRef.current?.focus()}
           />
         </>
       )}

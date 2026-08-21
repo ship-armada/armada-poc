@@ -1,13 +1,14 @@
 // ABOUTME: Earn amount step — APY intro banner (DepositTooltip) above a chain-less DepositAmountCard whose in-card header holds the Add/Withdraw SegmentedControl.
 // ABOUTME: The vault has no chain selection; the banner headline is driven by the live vault rate and shows on both tabs (matches the mockup).
 
-import { useMemo } from 'react'
+import { useMemo, useRef, type Ref } from 'react'
 import { ChartBarIcon } from '@heroicons/react/24/solid'
 import { Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { DepositAmountCard } from '@/components/deposit/DepositAmountCard/DepositAmountCard'
 import { depositOverlayShellStyles } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
 import { DepositTooltip } from '@/components/dashboard/DepositTooltip'
 import { GasBalanceNotice, SegmentedControl } from '@/components/ui'
+import { useNudgeShake } from '@/hooks/useNudgeShake'
 import type { DisplayFees } from '@/lib/fees/displayFees'
 import type { FlowFeeBreakdown } from '@/components/ui/FeeBreakdownTooltip'
 import { useGasBalanceWarning } from '@/hooks/useGasBalanceWarning'
@@ -59,6 +60,10 @@ export interface EarnInputStepProps {
   continueBlockedReason?: string | null
   onCancel: () => void
   onContinue: () => void
+  /** Ref onto the amount input so the footer's incomplete-CTA nudge can focus the field. */
+  inputRef?: Ref<HTMLInputElement>
+  /** Called when the disabled "Input amount" CTA is tapped — focuses the amount field alongside the shake. */
+  onIncompleteContinue?: () => void
 }
 
 function formatApy(rate: YieldRate | null): string {
@@ -91,6 +96,7 @@ export function EarnInputStepContent({
   gaslessMode = true,
   rate,
   continueBlockedReason,
+  inputRef,
 }: Pick<
   EarnInputStepProps,
   | 'tab'
@@ -107,6 +113,7 @@ export function EarnInputStepContent({
   | 'gaslessMode'
   | 'rate'
   | 'continueBlockedReason'
+  | 'inputRef'
 >) {
   const hub = getNetworkConfig().hub
   const chains = useMemo(
@@ -178,6 +185,7 @@ export function EarnInputStepContent({
         onMax={() => onAmountChange(formatUsdcPlain(maxInput))}
         error={fieldError}
         amountAriaLabel={tab === 'add' ? 'Vault deposit amount' : 'Vault withdrawal amount'}
+        inputRef={inputRef}
       />
 
       {showGasNotice ? (
@@ -196,14 +204,21 @@ export function EarnInputStepFooter({
   continueBlockedReason,
   onCancel,
   onContinue,
+  onIncompleteContinue,
 }: Pick<
   EarnInputStepProps,
-  'amountStr' | 'maxInput' | 'continueBlockedReason' | 'onCancel' | 'onContinue'
+  | 'amountStr'
+  | 'maxInput'
+  | 'continueBlockedReason'
+  | 'onCancel'
+  | 'onContinue'
+  | 'onIncompleteContinue'
 >) {
   const { value: amount, error: parseError } = parseUsdcInput(amountStr)
   const tooMuch = amount > maxInput
   const canReview =
     hasActiveAmount(amountStr) && !tooMuch && !parseError && !continueBlockedReason
+  const { shaking, nudge, onShakeAnimationEnd } = useNudgeShake()
 
   return (
     <div className={`${depositOverlayShellStyles.buttonRow} ${modalActionRowEnter}`}>
@@ -221,16 +236,27 @@ export function EarnInputStepFooter({
         showIcon={false}
         disabled={!canReview}
         onClick={onContinue}
+        onDisabledClick={() => {
+          nudge()
+          onIncompleteContinue?.()
+        }}
+        shaking={shaking}
+        onShakeAnimationEnd={onShakeAnimationEnd}
       />
     </div>
   )
 }
 
 export function EarnInputStep(props: EarnInputStepProps) {
+  // The step is the common parent of the amount card + footer, so it owns the ref shared between them.
+  const amountInputRef = useRef<HTMLInputElement>(null)
   return (
     <>
-      <EarnInputStepContent {...props} />
-      <EarnInputStepFooter {...props} />
+      <EarnInputStepContent {...props} inputRef={amountInputRef} />
+      <EarnInputStepFooter
+        {...props}
+        onIncompleteContinue={() => amountInputRef.current?.focus()}
+      />
     </>
   )
 }

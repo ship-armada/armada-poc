@@ -108,6 +108,17 @@
     color-mix(in srgb, var(--semantic-color-surface-bg) 55%, transparent);
 }
 
+/* Option list inside the mobile BottomSheet — the sheet supplies the chrome (surface, radius,
+   scrim), so this is a plain full-width stack with no popover positioning/border/shadow. */
+.sheetList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-1);
+}
+
 .option {
   display: flex;
   align-items: center;

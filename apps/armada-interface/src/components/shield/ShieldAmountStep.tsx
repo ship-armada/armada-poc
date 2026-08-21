@@ -1,8 +1,10 @@
 // ABOUTME: Shared amount step for the Shield/Unshield tabbed modal — DepositAmountCard with the direction tabs in its header + a chain picker.
 // ABOUTME: Direction-agnostic: the caller (ShieldModal) feeds it the active flow's values; footer gates Review on amount (+ shield's fee floor).
 
+import type { Ref } from 'react'
 import { Button } from '@/design'
 import { ChainSelect, GasBalanceNotice, SegmentedControl } from '@/components/ui'
+import { useNudgeShake } from '@/hooks/useNudgeShake'
 import { DepositAmountCard } from '@/components/deposit/DepositAmountCard/DepositAmountCard'
 import { depositOverlayShellStyles } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
 import type { FlowFeeBreakdown } from '@/components/ui/FeeBreakdownTooltip'
@@ -42,6 +44,8 @@ interface ShieldAmountStepContentProps {
   gaslessMode?: boolean
   /** Chain whose native balance is checked for the wallet-submit gas notice. */
   gasChainId: number
+  /** Ref onto the amount input so the footer's incomplete-CTA nudge can focus the field. */
+  inputRef?: Ref<HTMLInputElement>
 }
 
 export function ShieldAmountStepContent({
@@ -60,6 +64,7 @@ export function ShieldAmountStepContent({
   feeLoading = false,
   gaslessMode = true,
   gasChainId,
+  inputRef,
 }: ShieldAmountStepContentProps) {
   const gasWarning = useGasBalanceWarning(gasChainId)
   const showGasNotice = !gaslessMode && gasWarning.show
@@ -110,6 +115,7 @@ export function ShieldAmountStepContent({
         maxInput={maxInput}
         error={errorMessage}
         amountAriaLabel={amountAriaLabel}
+        inputRef={inputRef}
       />
       {showGasNotice ? (
         <GasBalanceNotice
@@ -128,6 +134,8 @@ interface ShieldAmountStepFooterProps {
   minAmount: bigint
   onCancel: () => void
   onContinue: () => void
+  /** Called when the disabled "Input amount" CTA is tapped — focuses the amount field alongside the shake. */
+  onIncompleteContinue?: () => void
 }
 
 export function ShieldAmountStepFooter({
@@ -136,11 +144,13 @@ export function ShieldAmountStepFooter({
   minAmount,
   onCancel,
   onContinue,
+  onIncompleteContinue,
 }: ShieldAmountStepFooterProps) {
   const { value: amount, error: parseError } = parseUsdcInput(amountStr)
   const tooMuch = amount > maxInput
   const tooSmall = minAmount > 0n && amount > 0n && amount <= minAmount
   const canReview = hasActiveAmount(amountStr) && !tooMuch && !tooSmall && !parseError
+  const { shaking, nudge, onShakeAnimationEnd } = useNudgeShake()
 
   return (
     <div className={depositOverlayShellStyles.buttonRow}>
@@ -152,6 +162,12 @@ export function ShieldAmountStepFooter({
         showIcon={false}
         disabled={!canReview}
         onClick={onContinue}
+        onDisabledClick={() => {
+          nudge()
+          onIncompleteContinue?.()
+        }}
+        shaking={shaking}
+        onShakeAnimationEnd={onShakeAnimationEnd}
       />
     </div>
   )

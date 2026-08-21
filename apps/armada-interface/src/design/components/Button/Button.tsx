@@ -21,6 +21,16 @@ export interface ButtonProps {
   /** Keeps the default variant colors and shows a spinner (does not apply muted disabled styles). */
   loading?: boolean
   onClick?: () => void
+  /**
+   * Fired when the control is disabled/incomplete; keeps the button clickable so a nudge (shake +
+   * focus the missing field) can run instead of the button being an inert dead-zone. When set and
+   * `disabled`, the click routes here instead of `onClick`.
+   */
+  onDisabledClick?: () => void
+  /** When true, plays a one-shot horizontal shake (reduced-motion no-op). Pair with `onShakeAnimationEnd`. */
+  shaking?: boolean
+  /** Clears the shake once the animation finishes; wire to `useNudgeShake().onShakeAnimationEnd`. */
+  onShakeAnimationEnd?: (event: React.AnimationEvent<HTMLButtonElement>) => void
   style?: React.CSSProperties
   className?: string
   type?: 'button' | 'submit' | 'reset'
@@ -52,6 +62,9 @@ export function Button({
   disabled = false,
   loading = false,
   onClick,
+  onDisabledClick,
+  shaking = false,
+  onShakeAnimationEnd,
   className,
   type = 'button',
   style,
@@ -62,6 +75,10 @@ export function Button({
   // Loading occupies the trailing slot even when showIcon is false, so the spinner has room.
   const showTrailing = showIcon || loading
 
+  // When disabled with an `onDisabledClick` handler (and not loading), keep the button clickable so a
+  // nudge can run; the native `disabled` attribute would swallow the click and make the CTA inert.
+  const interceptDisabledClick = Boolean(disabled && onDisabledClick && !loading)
+
   const cls = [
     styles.btn,
     styles[variant],
@@ -69,6 +86,7 @@ export function Button({
     !showTrailing && styles.noIcon,
     loading && styles.loading,
     leadingIcon && styles.leading,
+    shaking && styles.shake,
     className ?? '',
   ]
     .filter(Boolean)
@@ -78,9 +96,21 @@ export function Button({
     <button
       type={type}
       className={cls}
-      disabled={disabled && !loading}
+      disabled={disabled && !loading && !interceptDisabledClick}
+      aria-disabled={disabled || undefined}
       aria-busy={loading || undefined}
-      onClick={loading ? undefined : onClick}
+      onClick={
+        loading
+          ? undefined
+          : () => {
+              if (disabled) {
+                onDisabledClick?.()
+                return
+              }
+              onClick?.()
+            }
+      }
+      onAnimationEnd={onShakeAnimationEnd}
       style={style}
     >
       {leadingIcon ? (

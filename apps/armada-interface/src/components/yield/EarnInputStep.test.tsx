@@ -106,7 +106,11 @@ describe('<EarnInputStep>', () => {
 
   it('disables Review when amount exceeds maxInput', () => {
     setup({ max: 1_000_000n, amountStr: '5' })
-    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toBeDisabled()
+    // The incomplete CTA keeps its DOM click (for the nudge) but is aria-disabled.
+    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
     expect(screen.getByRole('alert')).toHaveTextContent(/more than you can add/i)
   })
 
@@ -146,7 +150,18 @@ describe('<EarnInputStep>', () => {
         onContinue={vi.fn()}
       />,
     )
-    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
     expect(screen.getByRole('alert')).toHaveTextContent(/cover the 0\.50 fee/)
+  })
+
+  it('tapping the disabled "Input amount" CTA nudges the field (focus) instead of continuing', () => {
+    const props = setup({ tab: 'add', amountStr: '' })
+    const cta = screen.getByRole('button', { name: 'Input amount' })
+    fireEvent.click(cta)
+    expect(props.onContinue).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Vault deposit amount')).toHaveFocus()
   })
 })

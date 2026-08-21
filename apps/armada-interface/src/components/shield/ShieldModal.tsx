@@ -1,7 +1,7 @@
 // ABOUTME: ShieldModal — Shield/Unshield tabbed flow. Dumb renderer composing useShieldFlow + useUnshieldFlow.
 // ABOUTME: Shield = public → private; Unshield = private → your own EVM wallet (to-chain picker). The typed amount carries across the tab toggle.
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useAtom, useAtomValue } from 'jotai'
 import { openModalAtom } from '@/state/ui'
 import { preferencesAtom } from '@/state/preferences'
@@ -53,6 +53,9 @@ export function ShieldModal() {
   const shieldFlow = useShieldFlow(isOpen)
   const unshieldFlow = useUnshieldFlow(isOpen)
   const { exiting, requestClose: close } = useFlowExit(() => setOpenModal(null))
+  // Shared across the amount step's card + footer (siblings) so tapping the disabled "Input amount"
+  // CTA can focus the amount field alongside the shake.
+  const amountInputRef = useRef<HTMLInputElement>(null)
 
   function handleTabChange(next: ShieldTab) {
     if (next === tab) return
@@ -125,6 +128,7 @@ export function ShieldModal() {
             feeLoading={active.feeLoading}
             gaslessMode={isShield ? shieldFlow.useGasless : !prefs.submitFromWallet}
             gasChainId={isShield ? shieldFlow.fromChainId : hubChainId}
+            inputRef={amountInputRef}
           />
           <ShieldAmountStepFooter
             amountStr={active.amountStr}
@@ -132,6 +136,7 @@ export function ShieldModal() {
             minAmount={isShield ? shieldFlow.minAmount : 0n}
             onCancel={close}
             onContinue={active.onContinueToReview}
+            onIncompleteContinue={() => amountInputRef.current?.focus()}
           />
         </>
       )}

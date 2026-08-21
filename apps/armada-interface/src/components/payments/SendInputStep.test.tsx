@@ -74,10 +74,14 @@ describe('<SendInputStep>', () => {
     expect(props.onAmountChange).toHaveBeenCalledWith('2.5')
   })
 
-  it('gates Review on the amount — too much shows an error and disables Review', () => {
+  it('gates Review on the amount — too much shows an error and marks Review aria-disabled', () => {
     setup({ amountStr: '10', maxInput: 5_000_000n, max: 5_000_000n })
     expect(screen.getByText(/more than you can send/i)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toBeDisabled()
+    // The incomplete CTA keeps its DOM click (for the nudge) but is aria-disabled.
+    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
   })
 
   it('enables Review + fires onContinue for a valid amount', () => {
@@ -86,6 +90,15 @@ describe('<SendInputStep>', () => {
     expect(review).not.toBeDisabled()
     fireEvent.click(review)
     expect(props.onContinue).toHaveBeenCalledTimes(1)
+  })
+
+  it('tapping the disabled "Input amount" CTA nudges the field (focus) instead of continuing', () => {
+    const props = setup({ amountStr: '' })
+    const cta = screen.getByRole('button', { name: 'Input amount' })
+    fireEvent.click(cta)
+    // Routed to onDisabledClick → focuses the amount input, does NOT advance the flow.
+    expect(props.onContinue).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Send amount')).toHaveFocus()
   })
 
   it('fires onBack from the Back button', () => {

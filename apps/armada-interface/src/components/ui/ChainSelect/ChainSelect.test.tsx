@@ -4,6 +4,10 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { ChainSelect } from './ChainSelect'
+import { useMobileLayout } from '@/hooks/useMobileLayout'
+
+// Default desktop (inline popover); the mobile test overrides to exercise the BottomSheet path.
+vi.mock('@/hooks/useMobileLayout', () => ({ useMobileLayout: vi.fn(() => false) }))
 
 const MAINNET = { chainId: 1, domain: 0, name: 'Mainnet', rpcUrls: ['x'] as const }
 const OPTIMISM = { chainId: 10, domain: 2, name: 'Optimism', rpcUrls: ['y'] as const }
@@ -45,5 +49,17 @@ describe('<ChainSelect>', () => {
     render(<ChainSelect value={31337} onChange={() => {}} label="From chain" disabled />)
     expect(screen.queryByRole('button')).toBeNull()
     expect(screen.getByLabelText('From chain')).toBeInTheDocument()
+  })
+
+  it('on mobile, the trigger targets a dialog and options open in the bottom sheet', () => {
+    vi.mocked(useMobileLayout).mockReturnValue(true)
+    const onChange = vi.fn()
+    render(<ChainSelect value={31337} onChange={onChange} label="From chain" />)
+    const trigger = screen.getByLabelText('From chain')
+    expect(trigger).toHaveAttribute('aria-haspopup', 'dialog')
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('option', { name: /Anvil Client A/ }))
+    expect(onChange).toHaveBeenCalledWith(31338)
+    vi.mocked(useMobileLayout).mockReturnValue(false)
   })
 })

@@ -21,8 +21,11 @@
   box-sizing: border-box;
 }
 .btn:focus-visible { box-shadow: 0 0 0 2px var(--semantic-color-border-focus); }
-.btn:active:not(:disabled) { transform: translateY(1px); }
-.btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+.btn:active:not(:disabled):not([aria-disabled='true']) { transform: translateY(1px); }
+/* Muted styling keys off [aria-disabled] too: a CTA kept DOM-clickable for the incomplete-nudge
+   (shake) is `aria-disabled` rather than natively `disabled`, but must still LOOK disabled. */
+.btn:disabled,
+.btn[aria-disabled='true'] { opacity: 0.4; cursor: not-allowed; transform: none; }
 
 .loading {
   cursor: wait;
@@ -68,6 +71,36 @@
 @keyframes buttonSpin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* One-shot nudge shake for an incomplete/disabled CTA (see useNudgeShake). Reduced-motion no-op. */
+.shake {
+  animation: incompleteCtaShake 400ms ease-in-out;
+}
+
+@keyframes incompleteCtaShake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(calc(var(--primitives-spacing-1) * -1));
+  }
+  40% {
+    transform: translateX(var(--primitives-spacing-1));
+  }
+  60% {
+    transform: translateX(calc(var(--primitives-spacing-1) * -0.5));
+  }
+  80% {
+    transform: translateX(calc(var(--primitives-spacing-1) * 0.5));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shake {
+    animation: none;
   }
 }
 

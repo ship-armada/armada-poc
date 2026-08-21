@@ -87,7 +87,7 @@ describe('ShieldAmountStepContent (direction)', () => {
 describe('ShieldAmountStepFooter (Review gating)', () => {
   it('disables Review when the amount is empty', () => {
     renderFooter('')
-    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toHaveAttribute('aria-disabled', 'true')
   })
 
   it("labels the CTA 'Input amount' when there is no valid amount", () => {
@@ -99,12 +99,12 @@ describe('ShieldAmountStepFooter (Review gating)', () => {
 
   it('disables Review when the amount is 0', () => {
     renderFooter('0')
-    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('disables Review when the amount exceeds maxInput', () => {
     renderFooter('200') // maxInput = 100 USDC
-    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('enables Review for a positive amount within maxInput', () => {
@@ -114,7 +114,7 @@ describe('ShieldAmountStepFooter (Review gating)', () => {
 
   it('rejects an amount at or below the relayer-fee floor (shield)', () => {
     renderFooter('1', 1_000_000n) // minAmount = 1 USDC; amount = 1 → not > fee
-    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Review|Input amount/ })).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('fires onContinue / onCancel from the CTAs', () => {
@@ -123,5 +123,26 @@ describe('ShieldAmountStepFooter (Review gating)', () => {
     expect(onContinue).toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: /Cancel/ }))
     expect(onCancel).toHaveBeenCalled()
+  })
+
+  it('taps to nudge: the disabled "Input amount" CTA fires onIncompleteContinue, not onContinue', () => {
+    const onContinue = vi.fn()
+    const onIncompleteContinue = vi.fn()
+    render(
+      <ShieldAmountStepFooter
+        amountStr=""
+        maxInput={100_000_000n}
+        minAmount={0n}
+        onContinue={onContinue}
+        onCancel={vi.fn()}
+        onIncompleteContinue={onIncompleteContinue}
+      />,
+    )
+    const cta = screen.getByRole('button', { name: 'Input amount' })
+    // With an onDisabledClick handler wired, the incomplete CTA stays DOM-clickable but aria-disabled.
+    expect(cta).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(cta)
+    expect(onContinue).not.toHaveBeenCalled()
+    expect(onIncompleteContinue).toHaveBeenCalledTimes(1)
   })
 })

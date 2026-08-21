@@ -25,7 +25,7 @@ function setup(overrides?: { explorerUrl?: string }) {
 describe('<ShieldCompleteStep>', () => {
   it('renders the headline, the amount in the coin+amount block, and the chain name', () => {
     setup()
-    expect(screen.getByRole('heading', { name: 'USDC deposit confirmed' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'USDC shield confirmed' })).toBeInTheDocument()
     // Gross amount renders full-precision in the coin block; net amount ("250.50 USDC") is the
     // summary Total row, a distinct node — so the exact-text query still resolves the block.
     expect(screen.getByText('250.5')).toBeInTheDocument()

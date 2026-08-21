@@ -64,7 +64,7 @@ export function VaultPositionBar({
     earnedAmount !== undefined ? formatEarnedSoFarAmount(earnedAmount) : '???'
   const formattedApy = `${apy.toFixed(1)}%`
   const earningLabel = formatVaultEarningLabel(apy)
-  const amountLabel = balanceRevealed ? `${formattedBalance} USDC` : 'Vault balance hidden'
+  const amountLabel = balanceRevealed ? `${formattedBalance} USDC` : 'Shielded vault balance hidden'
   const earnedLabel = balanceRevealed ? `${formattedEarned} earned` : 'Earned amount hidden'
   const apyLabel = balanceRevealed ? earningLabel : 'APY hidden'
   const peekHandlers = hidePeekEventHandlers(
@@ -122,7 +122,7 @@ export function VaultPositionBar({
       <button
         type="button"
         className={styles.root}
-        aria-label="Manage vault"
+        aria-label="Manage shielded vault"
         onClick={onOpen}
         {...peekHandlers}
       >

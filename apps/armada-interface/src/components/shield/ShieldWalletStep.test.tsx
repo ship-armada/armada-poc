@@ -10,22 +10,22 @@ describe('ShieldWalletStep', () => {
   it('renders the checklist under the mockup title, with the "Preparing…" footer while pending', () => {
     const steps: WalletStep[] = [
       { label: 'Approve 5.00 USDC', status: 'pending' },
-      { label: 'Sign deposit transaction', status: 'pending' },
+      { label: 'Sign shield transaction', status: 'pending' },
     ]
     render(<ShieldWalletStep steps={steps} />)
     expect(
       screen.getByRole('heading', { name: 'Confirm transactions on your wallet' }),
     ).toBeInTheDocument()
     expect(screen.getByRole('list', { name: 'Wallet confirmations' })).toBeInTheDocument()
-    expect(screen.getByText('Sign deposit transaction')).toBeInTheDocument()
+    expect(screen.getByText('Sign shield transaction')).toBeInTheDocument()
     // Proof still building → honest "preparing" footer (no prompt live yet).
-    expect(screen.getByText('Preparing your deposit…')).toBeInTheDocument()
+    expect(screen.getByText('Preparing your shield…')).toBeInTheDocument()
   })
 
   it('switches the footer to "Waiting for wallet confirmation" once a prompt is live', () => {
     const steps: WalletStep[] = [
       { label: 'Approve 5.00 USDC', status: 'loading' },
-      { label: 'Sign deposit transaction', status: 'pending' },
+      { label: 'Sign shield transaction', status: 'pending' },
     ]
     render(<ShieldWalletStep steps={steps} />)
     expect(screen.getByText('Waiting for wallet confirmation')).toBeInTheDocument()

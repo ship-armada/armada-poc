@@ -48,7 +48,7 @@ describe('<EarnCompleteStep>', () => {
     expect(
       screen.getByRole('heading', { name: 'USDC withdrawal complete' }),
     ).toBeInTheDocument()
-    expect(screen.getByText('Withdraw from vault')).toBeInTheDocument()
+    expect(screen.getByText('Withdraw from shielded vault')).toBeInTheDocument()
     expect(screen.getByText('Your withdrawal')).toBeInTheDocument()
     // Past-tense on the confirmed screen (review says "You'll receive…"), net of the fee.
     expect(screen.getByText('Received into private balance')).toBeInTheDocument()

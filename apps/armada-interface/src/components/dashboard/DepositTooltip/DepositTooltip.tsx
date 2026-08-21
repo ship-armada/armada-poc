@@ -11,7 +11,7 @@ const TOOLTIP_ICON_PX = 34
 
 const DEFAULT_HEADLINE = 'Shield your USDC'
 const DEFAULT_BODY =
-  "Depositing into Armada's shielded pool is the first step to move funds privately."
+  "Shielding into Armada's shielded pool is the first step to move funds privately."
 
 export interface DepositTooltipProps {
   variant?: 'default' | 'v2'

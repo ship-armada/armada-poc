@@ -237,7 +237,7 @@ export function RecentActivityList({
           </span>
           <p className={styles.emptyTitle}>No activity yet</p>
           <p className={styles.emptyBody}>
-            Deposits, sends, and earn moves will show up here.
+            Shields, sends, and earn moves will show up here.
           </p>
         </div>
       ) : isPreview ? (

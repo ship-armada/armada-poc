@@ -13,15 +13,15 @@ interface StageCopyEntry {
 }
 
 /**
- * Per-(kind, stage) processing copy. Labels are active-tense ("Depositing") with a `completedLabel`
- * for the final row ("Deposited"); subtitles echo the mockup's supporting line. Stage ids MUST match
+ * Per-(kind, stage) processing copy. Labels are active-tense ("Shielding") with a `completedLabel`
+ * for the final row ("Shielded"); subtitles echo the mockup's supporting line. Stage ids MUST match
  * `lifecycleFor(kind).stages` — every id a kind can reach needs an entry here.
  */
 const STAGE_COPY: Record<TxKind, Record<string, StageCopyEntry>> = {
   shield: {
     'build-proof': { label: 'Preparing transaction', subtitle: 'Building zero-knowledge proof' },
     'submit-relayer': { label: 'Submitting transaction', subtitle: 'Confirm in your wallet' },
-    'hub-confirmed': { label: 'Depositing', subtitle: 'Confirming on chain', completedLabel: 'Deposited' },
+    'hub-confirmed': { label: 'Shielding', subtitle: 'Confirming on chain', completedLabel: 'Shielded' },
   },
   'shield-xchain': {
     'build-proof': { label: 'Preparing transaction', subtitle: 'Building zero-knowledge proof' },
@@ -29,13 +29,13 @@ const STAGE_COPY: Record<TxKind, Record<string, StageCopyEntry>> = {
     'client-burn-confirmed': { label: 'Bridging', subtitle: 'Confirmed on source chain' },
     'iris-attestation-pending': { label: 'Bridging', subtitle: 'Waiting for cross-chain confirmation' },
     'iris-attestation-ready': { label: 'Bridging', subtitle: 'Cross-chain confirmation ready' },
-    'hub-mint-pending': { label: 'Depositing', subtitle: 'Delivering to your private balance' },
-    'hub-mint-confirmed': { label: 'Depositing', subtitle: 'Confirming on chain', completedLabel: 'Deposited' },
+    'hub-mint-pending': { label: 'Shielding', subtitle: 'Delivering to your private balance' },
+    'hub-mint-confirmed': { label: 'Shielding', subtitle: 'Confirming on chain', completedLabel: 'Shielded' },
   },
   'unshield-local': {
     'build-proof': { label: 'Preparing transaction', subtitle: 'Building zero-knowledge proof' },
     'submit-relayer': { label: 'Submitting privately', subtitle: 'Relaying to the hub' },
-    'hub-confirmed': { label: 'Withdrawing', subtitle: 'Sending USDC to your wallet', completedLabel: 'Withdrawn' },
+    'hub-confirmed': { label: 'Unshielding', subtitle: 'Sending USDC to your wallet', completedLabel: 'Unshielded' },
   },
   'unshield-xchain': {
     'build-proof': { label: 'Preparing transaction', subtitle: 'Building zero-knowledge proof' },
@@ -96,7 +96,7 @@ function resolveCardBase(record: TxRecord, sendVariant?: SendVariant): CardBase 
     case 'shield':
     case 'shield-xchain':
       return {
-        tag: 'Deposit in progress',
+        tag: 'Shield in progress',
         title: 'Your USDC is being shielded',
         titleLines: ['Your USDC is', 'being shielded'],
       }
@@ -112,9 +112,9 @@ function resolveCardBase(record: TxRecord, sendVariant?: SendVariant): CardBase 
     case 'unshield-xchain':
       return sendVariant === 'withdraw'
         ? {
-            tag: 'Withdrawal in progress',
-            title: 'Your withdraw is in progress',
-            titleLines: ['Your withdraw', 'is in progress'],
+            tag: 'Unshield in progress',
+            title: 'Your unshield is in progress',
+            titleLines: ['Your unshield', 'is in progress'],
           }
         : { tag: 'Send in progress', title: 'Unshielding your USDC' }
     case 'yield-deposit':

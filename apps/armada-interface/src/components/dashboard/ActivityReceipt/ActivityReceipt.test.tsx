@@ -24,12 +24,12 @@ function shieldRecord(): TxRecord {
 describe('<ActivityReceipt>', () => {
   it('renders nothing when record is null', () => {
     render(<ActivityReceipt record={null} open onClose={vi.fn()} />)
-    expect(screen.queryByText('USDC deposit')).toBeNull()
+    expect(screen.queryByText('USDC shield')).toBeNull()
   })
 
   it('shows the deposit title + amount + a summary row', () => {
     render(<ActivityReceipt record={shieldRecord()} open onClose={vi.fn()} />)
-    expect(screen.getByText('USDC deposit')).toBeInTheDocument()
+    expect(screen.getByText('USDC shield')).toBeInTheDocument()
     expect(screen.getByText('100.5')).toBeInTheDocument()
     // The reused DepositReviewSummary surfaces the confirmed "Date and time" row.
     expect(screen.getByText('Date and time')).toBeInTheDocument()

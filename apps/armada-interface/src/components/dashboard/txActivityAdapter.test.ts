@@ -54,7 +54,7 @@ describe('txRecordToActivityItem', () => {
     const item = txRecordToActivityItem(makeRecord('shield', { amount: 1_500_000n }))
     expect(item.kind).toBe('deposit')
     expect(item.amount).toBe(1.5)
-    expect(item.label).toBe('Deposit')
+    expect(item.label).toBe('Shield')
     expect(item.pending).toBe(false)
   })
 

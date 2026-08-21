@@ -58,7 +58,7 @@ export function shieldWalletSteps(
     return [
       { label: `Authorize ${amountLabel} USDC`, status: permitDone ? 'done' : 'loading' },
       {
-        label: 'Sign deposit transaction',
+        label: 'Sign shield transaction',
         status: authorized ? 'done' : permitDone ? 'loading' : 'pending',
       },
     ]
@@ -89,8 +89,8 @@ export function shieldWalletSteps(
 
   const depositLabel =
     record?.kind === 'shield-xchain'
-      ? `Submit ${amountLabel} USDC cross-chain deposit`
-      : `Submit ${amountLabel} USDC deposit`
+      ? `Submit ${amountLabel} USDC cross-chain shield`
+      : `Submit ${amountLabel} USDC shield`
 
   steps.push({
     label: depositLabel,

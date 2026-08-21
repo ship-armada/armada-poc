@@ -30,9 +30,9 @@ describe('stageCopy', () => {
 
 describe('kindTitle', () => {
   it('returns the short title per kind', () => {
-    expect(kindTitle('shield')).toBe('Deposit')
-    expect(kindTitle('unshield-local')).toBe('Withdraw')
-    expect(kindTitle('unshield-xchain')).toBe('Withdraw')
+    expect(kindTitle('shield')).toBe('Shield')
+    expect(kindTitle('unshield-local')).toBe('Unshield')
+    expect(kindTitle('unshield-xchain')).toBe('Unshield')
     expect(kindTitle('transfer-shielded')).toBe('Private transfer')
     expect(kindTitle('transfer-shielded-received')).toBe('Received')
     expect(kindTitle('yield-deposit')).toBe('Vault deposit')
@@ -49,7 +49,7 @@ describe('recordTitle', () => {
       artifacts: {},
       walletContext: { evmAddress: undefined, shieldedWalletId: '', sourceChainId: 31337 },
     }
-    expect(recordTitle(record)).toMatch(/^Deposit from /)
+    expect(recordTitle(record)).toMatch(/^Shield from /)
   })
 
   it('names the 0x recipient for a public unshield (external send / withdraw)', () => {

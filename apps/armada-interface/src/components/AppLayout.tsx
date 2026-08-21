@@ -7,6 +7,7 @@ import { useSetAtom } from 'jotai'
 import { Cog6ToothIcon } from '@heroicons/react/24/outline'
 import { ArmadaLogo } from '@/design'
 import { WalletConnector } from './WalletConnector'
+import { ThemeToggle } from './ui/ThemeToggle'
 import { SyncBanner } from './sync'
 import { HistoryRecoveryBanner } from './history'
 import { openModalAtom } from '@/state/ui'
@@ -35,6 +36,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
           <span className={styles.networkBadge} role="status">
             {NETWORK_BADGE_LABEL}
           </span>
+          {/* Light/dark switch — grouped with the settings gear + wallet pill on the header's right
+              edge, mirroring the mockup's DashboardHeader (toggle sits left of the wallet control). */}
+          <ThemeToggle />
           {/* Settings moved off the nav into a gear here (left of the wallet pill), opening the
               Settings overlay over the dashboard — the standalone /settings route is gone. */}
           <button

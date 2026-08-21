@@ -1,5 +1,5 @@
-/* ABOUTME: App-specific theme overrides — surface-main (card bg), brand gradient stops, mobile marketing type. */
-/* ABOUTME: Ported from the armada-app mockup. Load after tokens.css and typography.css so overrides win the cascade. */
+/* ABOUTME: App theme overrides — per-theme frost scale (light + dark), brand gem stops, mobile marketing type. */
+/* ABOUTME: Loads after tokens.css + typography.css so overrides win the cascade; consumed via [data-theme] on <html>. */
 
 /*
   EXCEPTION — marketing gem gradient (logo + footer Figma stops).
@@ -12,25 +12,90 @@
   --semantic-color-brand-amber: #f8d197;
   --semantic-color-brand-gradient-rose: #f39db0;
 
-  /*
-    Frost scale — white (neutral-50) mixed over the dashboard gradient.
-    Use these instead of one-off color-mix percentages.
-    quiet 20% → raised 40% → hover 55% → pressed 70%.
-    Solid --semantic-color-surface-hover stays for opaque chrome (panels, menus).
-  */
-  --semantic-color-frost: color-mix(in srgb, var(--primitives-color-neutral-50) 20%, transparent);
-  --semantic-color-frost-raised: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
-  --semantic-color-frost-hover: color-mix(in srgb, var(--primitives-color-neutral-50) 55%, transparent);
-  --semantic-color-frost-pressed: color-mix(in srgb, var(--primitives-color-neutral-50) 70%, transparent);
+  --semantic-color-frost-pigment: var(--primitives-color-neutral-50);
+  --semantic-motion-theme: 320ms;
+  --semantic-size-sheet-max: 88dvh;
 }
 
+/*
+  Frost roles are shared; mix % is per theme (Figma DARK: 3 / 4–8 / 10).
+  Light sits on the gem wash; dark sits on solid surface-bg.
+  surface-banner is opaque in light (compete with the wash) and frost-control
+  in dark (same 10% as chips — a solid white brick would be too loud).
+*/
 [data-theme='light'] {
+  --semantic-color-frost-pigment: var(--primitives-color-neutral-50);
+  --semantic-color-frost: color-mix(in srgb, var(--semantic-color-frost-pigment) 20%, transparent);
+  --semantic-color-frost-raised: color-mix(in srgb, var(--semantic-color-frost-pigment) 40%, transparent);
+  --semantic-color-frost-control: var(--semantic-color-frost-raised);
+  --semantic-color-frost-hover: color-mix(in srgb, var(--semantic-color-frost-pigment) 60%, transparent);
+  --semantic-color-frost-pressed: color-mix(in srgb, var(--semantic-color-frost-pigment) 80%, transparent);
+  --semantic-color-frost-hero-from: var(--semantic-color-frost-raised);
+  --semantic-color-frost-hero-to: var(--semantic-color-frost);
+  --semantic-color-surface-banner: var(--semantic-color-surface-default);
+  --semantic-color-surface-tooltip: var(--semantic-color-surface-default);
+  --semantic-color-overlay: rgb(0 0 0 / 0.36);
+  --semantic-color-overlay-flow: color-mix(in srgb, var(--primitives-color-amber-300) 30%, transparent);
+  --semantic-color-surface-segment: var(--primitives-color-neutral-50);
+  --semantic-color-text-on-segment: var(--semantic-color-text-primary);
   --semantic-color-surface-main: var(--semantic-color-frost-raised);
   --semantic-component-button-secondary-bg: var(--semantic-color-surface-main);
+  /* Opaque panels: pale lavender chips. Dashboard gem wash uses frost. */
+  --semantic-color-control-tint: var(--primitives-color-purple-50);
+  --semantic-color-control-tint-hover: var(--primitives-color-purple-100);
+  --semantic-color-control-tint-pressed: var(--primitives-color-purple-200);
+  --semantic-color-surface-thumb: color-mix(
+    in srgb,
+    var(--semantic-color-frost-pigment) 70%,
+    transparent
+  );
+  --semantic-color-surface-raised-hover: color-mix(
+    in srgb,
+    var(--primitives-color-neutral-200) 40%,
+    var(--primitives-color-neutral-100)
+  );
+  --semantic-color-surface-raised-pressed: color-mix(
+    in srgb,
+    var(--primitives-color-neutral-200) 55%,
+    var(--primitives-color-neutral-100)
+  );
 }
 
 [data-theme='dark'] {
-  --semantic-color-surface-main: var(--semantic-color-surface-default);
+  --semantic-color-frost-pigment: var(--primitives-color-white-full);
+  --semantic-color-frost: color-mix(in srgb, var(--semantic-color-frost-pigment) 3%, transparent);
+  --semantic-color-frost-raised: color-mix(in srgb, var(--semantic-color-frost-pigment) 8%, transparent);
+  --semantic-color-frost-control: color-mix(in srgb, var(--semantic-color-frost-pigment) 10%, transparent);
+  --semantic-color-frost-hover: color-mix(in srgb, var(--semantic-color-frost-pigment) 16%, transparent);
+  --semantic-color-frost-pressed: color-mix(in srgb, var(--semantic-color-frost-pigment) 24%, transparent);
+  --semantic-color-frost-hero-from: var(--semantic-color-frost-raised);
+  --semantic-color-frost-hero-to: color-mix(in srgb, var(--semantic-color-frost-pigment) 4%, transparent);
+  --semantic-color-surface-banner: var(--semantic-color-frost-control);
+  --semantic-color-surface-tooltip: color-mix(
+    in srgb,
+    var(--primitives-color-white-full) 16%,
+    var(--semantic-color-surface-bg)
+  );
+  --semantic-color-overlay: rgb(0 0 0 / 0.72);
+  --semantic-color-overlay-flow: var(--semantic-color-overlay);
+  --semantic-color-surface-segment: var(--primitives-color-white-full);
+  --semantic-color-text-on-segment: var(--semantic-color-brand-ink);
+  --semantic-color-surface-main: var(--semantic-color-frost-raised);
+  --semantic-component-button-secondary-bg: var(--semantic-color-surface-main);
+  --semantic-color-control-tint: var(--semantic-color-frost-control);
+  --semantic-color-control-tint-hover: var(--semantic-color-frost-hover);
+  --semantic-color-control-tint-pressed: var(--semantic-color-frost-pressed);
+  --semantic-color-surface-thumb: var(--semantic-color-surface-bg);
+  --semantic-color-surface-raised-hover: color-mix(
+    in srgb,
+    var(--primitives-color-neutral-200) 40%,
+    var(--primitives-color-neutral-100)
+  );
+  --semantic-color-surface-raised-pressed: color-mix(
+    in srgb,
+    var(--primitives-color-neutral-200) 55%,
+    var(--primitives-color-neutral-100)
+  );
 }
 
 /*

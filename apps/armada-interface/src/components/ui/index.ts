@@ -37,6 +37,8 @@ export type { StatusChipProps, StatusChipVariant } from './StatusChip'
 export { Tabs } from './Tabs'
 export type { TabsProps, TabItem } from './Tabs'
 
+export { ThemeToggle } from './ThemeToggle'
+
 export { TechnicalDetailsDisclosure } from './TechnicalDetailsDisclosure'
 export type { TechnicalDetailsDisclosureProps } from './TechnicalDetailsDisclosure'
 

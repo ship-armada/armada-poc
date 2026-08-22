@@ -45,7 +45,8 @@ export function EarnReviewStep({
   onBack,
   onConfirm,
 }: EarnReviewStepProps) {
-  const title = tab === 'add' ? 'Review your USDC deposit' : 'Review your USDC withdrawal'
+  const title =
+    tab === 'add' ? 'Review USDC shielded transfer to the vault' : 'Review USDC withdraw from shielded vault'
   const confirmLabel = tab === 'add' ? 'Confirm deposit' : 'Confirm withdrawal'
 
   return (
@@ -71,8 +72,8 @@ export function EarnReviewStep({
 
         {tab === 'withdraw' ? (
           <p className={styles.slippageNotice}>
-            The vault rate moves with each new block. Your final USDC may differ slightly from this
-            quote.
+            The shielded vault rate moves with each new block. Your final USDC may differ slightly
+            from this quote.
           </p>
         ) : null}
 

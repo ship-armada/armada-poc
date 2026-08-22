@@ -58,7 +58,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--primitives-spacing-3);
-  padding-inline: var(--primitives-spacing-5);
+  padding: var(--primitives-spacing-5);
   padding-bottom: var(--primitives-spacing-3);
   flex-shrink: 0;
 }

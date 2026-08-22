@@ -27,8 +27,8 @@ const TABS = [
 ] as const
 
 /** Static copy for the APY intro banner (the live rate fills the headline). */
-const EARN_APY_BANNER_BODY = 'Deposit into the vault and start earning now.'
-const EARN_APY_BANNER_TOOLTIP = 'The APY is an estimate from recent vault performance.'
+const EARN_APY_BANNER_BODY = "Add USDC to Armada's shielded vault and start earning now."
+const EARN_APY_BANNER_TOOLTIP = 'The APY is an estimate from recent shielded vault performance.'
 
 export interface EarnInputStepProps {
   tab: EarnTab

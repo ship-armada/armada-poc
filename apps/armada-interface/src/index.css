@@ -74,13 +74,26 @@ body {
   color: var(--semantic-color-text-primary);
 }
 
-[data-theme="light"] body {
-  background-image: linear-gradient(
+/* Always paint the gem wash as a fixed overlay and fade its opacity between themes — gradients
+   can't interpolate, so toggling a background-image would hard-cut on theme swap. Full-strength
+   brand colors at 0.4 opacity over surface-bg match the old 40% color-mix in light. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: linear-gradient(
     to bottom,
-    color-mix(in srgb, var(--semantic-color-brand-lavender) 40%, var(--semantic-color-surface-bg)) 0%,
-    color-mix(in srgb, var(--semantic-color-brand-gradient-rose) 40%, var(--semantic-color-surface-bg)) 50%,
-    color-mix(in srgb, var(--semantic-color-brand-amber) 40%, var(--semantic-color-surface-bg)) 100%
+    var(--semantic-color-brand-lavender) 0%,
+    var(--semantic-color-brand-gradient-rose) 50%,
+    var(--semantic-color-brand-amber) 100%
   );
+  opacity: 0;
+}
+
+[data-theme="light"] body::before {
+  opacity: 0.4;
 }
 
 * {

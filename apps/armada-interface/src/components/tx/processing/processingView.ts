@@ -56,8 +56,8 @@ const STAGE_COPY: Record<TxKind, Record<string, StageCopyEntry>> = {
   },
   'yield-deposit': {
     'build-proof': { label: 'Preparing transaction', subtitle: 'Building zero-knowledge proof' },
-    'submit-relayer': { label: 'Submitting privately', subtitle: 'Relaying to the vault' },
-    'hub-confirmed': { label: 'Adding to vault', subtitle: 'Confirming on chain', completedLabel: 'Earning' },
+    'submit-relayer': { label: 'Submitting privately', subtitle: 'Relaying to the shielded vault' },
+    'hub-confirmed': { label: 'Adding to shielded vault', subtitle: 'Confirming on chain', completedLabel: 'Earning' },
   },
   'yield-withdraw': {
     'build-proof': { label: 'Preparing transaction', subtitle: 'Building zero-knowledge proof' },
@@ -119,12 +119,12 @@ function resolveCardBase(record: TxRecord, sendVariant?: SendVariant): CardBase 
         : { tag: 'Send in progress', title: 'Unshielding your USDC' }
     case 'yield-deposit':
       return {
-        tag: 'Deposit to vault in progress',
-        title: 'Depositing USDC into the vault',
+        tag: 'Deposit to shielded vault in progress',
+        title: 'Depositing USDC into the shielded vault',
         titleBreakAfter: 'USDC',
       }
     case 'yield-withdraw':
-      return { tag: 'Withdrawal from vault in progress', title: 'Your withdrawal is in progress' }
+      return { tag: 'Withdraw from shielded vault in progress', title: 'Your withdrawal is in progress' }
   }
 }
 

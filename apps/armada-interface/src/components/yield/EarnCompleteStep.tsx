@@ -38,7 +38,7 @@ export function EarnCompleteStep({
   onViewExplorer,
   onGoToDashboard,
 }: EarnCompleteStepProps) {
-  const title = tab === 'add' ? 'USDC deposit complete' : 'USDC withdrawal complete'
+  const title = tab === 'add' ? 'USDC shielded transfer to vault complete' : 'USDC withdrawal complete'
 
   return (
     <div className={styles.root}>

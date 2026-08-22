@@ -49,38 +49,73 @@ function tokenizeBalance(value: string): BalanceToken[] {
   return tokens
 }
 
+function parseAmountParts(value: string): { intDigits: number[]; fracDigits: number[] } {
+  const cleaned = value.replace(/,/g, '')
+  const dot = cleaned.indexOf('.')
+  const intPart = (dot === -1 ? cleaned : cleaned.slice(0, dot)) || '0'
+  const fracPart = dot === -1 ? '' : cleaned.slice(dot + 1)
+  return {
+    intDigits: intPart.split('').map((char) => Number(char)),
+    fracDigits: fracPart.split('').map((char) => Number(char)),
+  }
+}
+
+function groupedIntegerSkeleton(intDigits: number[]): string {
+  return intDigits.join('').replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+}
+
+// Split into integer/fraction and pad each side independently so digits stay aligned on the
+// decimal point across a roll — otherwise a width change (e.g. 1,000.00 → 250.00) misaligns the
+// from/to digit columns and the roll passes through garbage intermediate numbers.
 function buildDisplayTokens(
   toValue: string,
   mode: BalanceRollMode,
   fromValue?: string,
 ): DisplayToken[] {
-  const toTokens = tokenizeBalance(toValue)
-  const fromDigits =
-    mode === 'fromValue' && fromValue
-      ? tokenizeBalance(fromValue)
-          .filter((token): token is Extract<BalanceToken, { type: 'digit' }> => token.type === 'digit')
-          .map((token) => token.digit)
-      : []
-
-  const toDigitCount = toTokens.filter((token) => token.type === 'digit').length
-  while (fromDigits.length < toDigitCount) {
-    fromDigits.unshift(0)
+  if (mode !== 'fromValue' || !fromValue) {
+    return tokenizeBalance(toValue).map((token, index, tokens) => {
+      if (token.type === 'separator') return { type: 'separator', char: token.char, key: token.key }
+      const digitIndex = tokens.slice(0, index).filter((item) => item.type === 'digit').length
+      return {
+        type: 'digit',
+        key: token.key,
+        digitIndex,
+        fromDigit: 0,
+        toDigit: token.digit,
+      }
+    })
   }
 
+  const from = parseAmountParts(fromValue)
+  const to = parseAmountParts(toValue)
+  const intWidth = Math.max(from.intDigits.length, to.intDigits.length, 1)
+  const fracWidth = Math.max(from.fracDigits.length, to.fracDigits.length)
+
+  while (from.intDigits.length < intWidth) from.intDigits.unshift(0)
+  while (to.intDigits.length < intWidth) to.intDigits.unshift(0)
+  while (from.fracDigits.length < fracWidth) from.fracDigits.push(0)
+  while (to.fracDigits.length < fracWidth) to.fracDigits.push(0)
+
+  const skeleton =
+    fracWidth > 0
+      ? `${groupedIntegerSkeleton(to.intDigits)}.${'0'.repeat(fracWidth)}`
+      : groupedIntegerSkeleton(to.intDigits)
+
+  const fromDigits = [...from.intDigits, ...from.fracDigits]
+  const toDigits = [...to.intDigits, ...to.fracDigits]
   let digitIndex = 0
 
-  return toTokens.map((token) => {
+  return tokenizeBalance(skeleton).map((token) => {
     if (token.type === 'separator') {
       return { type: 'separator', char: token.char, key: token.key }
     }
 
-    const fromDigit = mode === 'fromZero' ? 0 : (fromDigits[digitIndex] ?? 0)
     const displayDigit: DisplayDigit = {
       type: 'digit',
       key: token.key,
       digitIndex,
-      fromDigit,
-      toDigit: token.digit,
+      fromDigit: fromDigits[digitIndex] ?? 0,
+      toDigit: toDigits[digitIndex] ?? 0,
     }
     digitIndex += 1
     return displayDigit

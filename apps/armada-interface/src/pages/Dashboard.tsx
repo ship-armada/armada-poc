@@ -83,6 +83,17 @@ export function Dashboard() {
   // flashing NEW then rolling. Mirrors the mockup, which defers the whole advance (value + roll)
   // until the user is back on the dashboard.
   const gated = isInitialSyncGated(shielded, sync.status)
+  // Prime the promo-banner handoffs one frame after the sync gate lifts, so the balance/vault values
+  // that establish on load form the baseline rather than a transition that flashes a banner.
+  const [handoffReady, setHandoffReady] = useState(false)
+  useEffect(() => {
+    if (gated) {
+      setHandoffReady(false)
+      return
+    }
+    const id = requestAnimationFrame(() => setHandoffReady(true))
+    return () => cancelAnimationFrame(id)
+  }, [gated])
   const liveBalance = usdcToNumber(displayBalance)
   const earningUsdc =
     yieldShares !== null && yieldRate !== null ? sharesToUsdc(yieldShares, yieldRate.rate) : 0n
@@ -149,8 +160,19 @@ export function Dashboard() {
   // Promo-banner handoff: after a first shield the deposit tooltip holds through the balance roll,
   // then collapses and hands off to the earn banner (and reverses on vault deposit/withdraw), rather
   // than the two banners swapping instantly. See useEarnBannerHandoff.
-  const depositTooltipHandoff = useDepositTooltipHandoff(walletConnected, hasCompletedDeposit, displayedBalance)
-  const earnBannerHandoff = useEarnBannerHandoff(walletConnected, hasCompletedDeposit, displayedVault, displayedBalance)
+  const depositTooltipHandoff = useDepositTooltipHandoff(
+    walletConnected,
+    hasCompletedDeposit,
+    displayedBalance,
+    handoffReady,
+  )
+  const earnBannerHandoff = useEarnBannerHandoff(
+    walletConnected,
+    hasCompletedDeposit,
+    displayedVault,
+    displayedBalance,
+    handoffReady,
+  )
   const showDepositTooltip = depositTooltipHandoff.showDepositTooltip
   const depositTooltipPersistVisible = depositTooltipHandoff.depositTooltipPersistVisible
   const depositTooltipExiting = depositTooltipHandoff.depositTooltipExiting

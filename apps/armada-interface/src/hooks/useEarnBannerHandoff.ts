@@ -26,13 +26,18 @@ export function useDepositTooltipHandoff(
   walletConnected: boolean,
   hasCompletedDeposit: boolean,
   dashboardBalance: number,
+  ready: boolean,
 ): DepositTooltipHandoff {
   const previousBalanceRef = useRef(dashboardBalance)
   const phaseRef = useRef<ShieldPromoPhase>('idle')
   const [, setHandoffEpoch] = useState(0)
 
   const previous = previousBalanceRef.current
-  if (previous !== dashboardBalance) {
+  if (!ready) {
+    // Until the dashboard has settled after load, track the balance as the baseline so the initial
+    // establishment (0 → real balance) isn't mistaken for a first shield and handed off.
+    previousBalanceRef.current = dashboardBalance
+  } else if (previous !== dashboardBalance) {
     if (previous <= 0 && dashboardBalance > 0) {
       phaseRef.current = 'keep'
     }
@@ -93,6 +98,7 @@ export function useEarnBannerHandoff(
   hasCompletedDeposit: boolean,
   earningBalance: number,
   dashboardBalance: number,
+  ready: boolean,
 ): EarnBannerHandoff {
   const previousEarningRef = useRef(earningBalance)
   const handoffRef = useRef<Handoff | null>(null)
@@ -100,7 +106,11 @@ export function useEarnBannerHandoff(
   const [, setHandoffEpoch] = useState(0)
 
   const previous = previousEarningRef.current
-  if (previous !== earningBalance) {
+  if (!ready) {
+    // Track the vault balance as the baseline until the dashboard settles, so an existing vault
+    // position establishing on load (0 → real) doesn't spuriously trigger a deposit/withdraw handoff.
+    previousEarningRef.current = earningBalance
+  } else if (previous !== earningBalance) {
     if (previous <= 0 && earningBalance > 0) {
       handoffRef.current = 'keep-banner'
       handoffEnterRef.current = false

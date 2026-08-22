@@ -132,10 +132,12 @@ export function Dashboard() {
       setDisplayedVault(liveVault)
       return
     }
-    // Full precision (6 decimals) so the odometer digit counts line up with the card display.
+    // Roll-from precision must match each row's display so the odometer settles cleanly: the balance
+    // card shows full 6 decimals, the vault row shows 2 (VaultPositionBar's formatUsdcAmount default).
+    // Passing 6 for the vault made it spin 6 fraction digits then snap-truncate to 2.
     setRollMode('fromValue')
     setRollFromValue(formatUsdcAmount(displayedBalance, 6))
-    setVaultRollFromValue(vaultChanged ? formatUsdcAmount(displayedVault, 6) : undefined)
+    setVaultRollFromValue(vaultChanged ? formatUsdcAmount(displayedVault, 2) : undefined)
     setRollTrigger((t) => t + 1)
     setDisplayedBalance(liveBalance)
     setDisplayedVault(liveVault)

@@ -17,6 +17,7 @@ import {
   BALANCE_REVEAL_DURATION_MS,
   BALANCE_ROLL_DIGIT_STAGGER_MS,
   balanceRevealRollDurationMs,
+  vaultPositionExitDurationMs,
 } from './balanceRevealMotion'
 import { VaultPositionBar } from '@/components/dashboard/VaultPositionBar'
 import { useDashboardBackground } from '@/hooks/useDashboardBackground'
@@ -261,16 +262,42 @@ export function BalanceCard({
     </span>
   )
 
+  // Vault row enter/exit state machine. `sync` enter = mid-session appearance (vault deposit, in
+  // step with the balance roll); the plain enter = first page-load reveal; exit = collapse-out when
+  // the vault is fully withdrawn (kept mounted through the exit animation so it can shrink).
+  const lastPositiveVaultRef = useRef(vaultBalance > 0 ? vaultBalance : 0)
+  if (vaultBalance > 0) lastPositiveVaultRef.current = vaultBalance
+
   const showVaultPosition = vaultBalance > 0 || vaultTransferRollActive
   const vaultBarWasRevealed = useRef(vaultBalance > 0)
+  const [vaultExiting, setVaultExiting] = useState(false)
+  const vaultMounted = showVaultPosition || vaultExiting
+  const vaultEnterSync =
+    showVaultPosition && !vaultExiting && !vaultBarWasRevealed.current && vaultTransferRollActive
   const shouldAnimateVaultEnter =
-    showVaultPosition && !vaultBarWasRevealed.current && !vaultTransferRollActive
+    showVaultPosition && !vaultExiting && !vaultBarWasRevealed.current && !vaultTransferRollActive
 
   if (showVaultPosition) {
     vaultBarWasRevealed.current = true
-  } else {
-    vaultBarWasRevealed.current = false
   }
+
+  useEffect(() => {
+    if (showVaultPosition) {
+      setVaultExiting(false)
+      return
+    }
+    if (lastPositiveVaultRef.current <= 0) {
+      vaultBarWasRevealed.current = false
+      return
+    }
+    vaultBarWasRevealed.current = false
+    setVaultExiting(true)
+    const timer = window.setTimeout(() => {
+      setVaultExiting(false)
+      lastPositiveVaultRef.current = 0
+    }, vaultPositionExitDurationMs())
+    return () => window.clearTimeout(timer)
+  }, [showVaultPosition])
 
   return (
     <div className={styles.cardShell}>
@@ -384,22 +411,31 @@ export function BalanceCard({
           </div>
         </div>
 
-        {showVaultPosition ? (
+        {vaultMounted ? (
           <div
             className={[
               styles.vaultPositionWrap,
-              shouldAnimateVaultEnter ? styles.vaultPositionEnter : styles.vaultPositionVisible,
+              vaultExiting
+                ? styles.vaultPositionExit
+                : vaultEnterSync
+                  ? styles.vaultPositionEnterSync
+                  : shouldAnimateVaultEnter
+                    ? styles.vaultPositionEnter
+                    : styles.vaultPositionVisible,
             ].join(' ')}
           >
-            <VaultPositionBar
-              balance={vaultBalance}
-              apy={vaultApy}
-              vaultRollActive={vaultTransferRollActive}
-              vaultRollFromValue={vaultRollFromValue}
-              vaultRollTrigger={balanceRollTrigger}
-              balanceHidden={balanceHidden}
-              onOpen={onVaultOpen ?? onEarn}
-            />
+            <div className={styles.vaultPositionInner}>
+              <VaultPositionBar
+                balance={vaultBalance}
+                apy={vaultApy}
+                vaultRollActive={vaultTransferRollActive && !vaultExiting}
+                vaultRollFromValue={vaultRollFromValue}
+                vaultRollTrigger={balanceRollTrigger}
+                keepMounted={vaultExiting}
+                balanceHidden={balanceHidden}
+                onOpen={onVaultOpen ?? onEarn}
+              />
+            </div>
           </div>
         ) : null}
       </div>

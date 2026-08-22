@@ -83,17 +83,20 @@ export function Dashboard() {
   // flashing NEW then rolling. Mirrors the mockup, which defers the whole advance (value + roll)
   // until the user is back on the dashboard.
   const gated = isInitialSyncGated(shielded, sync.status)
-  // Prime the promo-banner handoffs one frame after the sync gate lifts, so the balance/vault values
-  // that establish on load form the baseline rather than a transition that flashes a banner.
+  // The vault position depends on yieldRate, which loads from a separate poll (useYieldRate) — later
+  // than the wallet scan the sync gate waits on. Only prime the promo-banner handoffs once BOTH the
+  // gate has lifted and the vault data has loaded, so the established balance/vault values form the
+  // baseline rather than a late 0 → real arrival that flashes a banner in and out.
+  const vaultLoaded = yieldShares !== null && yieldRate !== null
   const [handoffReady, setHandoffReady] = useState(false)
   useEffect(() => {
-    if (gated) {
+    if (gated || !vaultLoaded) {
       setHandoffReady(false)
       return
     }
     const id = requestAnimationFrame(() => setHandoffReady(true))
     return () => cancelAnimationFrame(id)
-  }, [gated])
+  }, [gated, vaultLoaded])
   const liveBalance = usdcToNumber(displayBalance)
   const earningUsdc =
     yieldShares !== null && yieldRate !== null ? sharesToUsdc(yieldShares, yieldRate.rate) : 0n

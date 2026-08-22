@@ -1,32 +1,29 @@
-/* ABOUTME: RelayerStatusBanner — warning surface that nudges users to the wallet-override path. */
-/* ABOUTME: Compact full-width banner with a status message + inline action button. */
+/* ABOUTME: RelayerStatusBanner — warning-toned callout nudging users to the wallet-submit path. */
+/* ABOUTME: Theme tokens throughout (surface-raised + status-warning accent), mirroring FeeUpdatedBanner. */
 
 .root {
   display: flex;
+  flex-direction: row;
   align-items: center;
   justify-content: space-between;
   gap: var(--primitives-spacing-3);
+  width: 100%;
   padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
-  border-radius: var(--primitives-radius-md);
-  background: rgba(245, 158, 11, 0.10);
-  border: 1px solid rgba(245, 158, 11, 0.35);
-  color: var(--semantic-color-text-primary);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: var(--semantic-color-surface-raised);
+  border-left: 3px solid var(--semantic-color-status-warning);
+  box-sizing: border-box;
+  text-align: left;
 }
 
 .message {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  line-height: var(--primitives-lineHeight-normal);
   color: var(--semantic-color-text-secondary);
 }
 
+/* The action is a design-system Button (secondary/sm); only stop it from shrinking in the row. */
 .action {
   flex-shrink: 0;
-  padding: var(--primitives-spacing-2) var(--primitives-spacing-3);
-  border-radius: var(--primitives-radius-sm);
-  background: var(--semantic-color-bg-card);
-  color: var(--semantic-color-text-accent);
-  border: 1px solid var(--semantic-color-border-default);
-  cursor: pointer;
-}
-
-.action:hover {
-  background: var(--semantic-color-bg-card-hover, var(--semantic-color-bg-card));
 }

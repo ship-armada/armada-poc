@@ -44,7 +44,7 @@ describe('<SendRecipientStep>', () => {
 
   it('shows an error and keeps the CTA disabled + labeled "Enter address" for a malformed address', () => {
     setup({ recipient: 'nonsense' })
-    expect(screen.getByRole('alert')).toHaveTextContent(/valid shielded .* or public wallet/i)
+    expect(screen.getByRole('alert')).toHaveTextContent(/valid 0zk or 0x/i)
     expect(screen.getByRole('button', { name: /Enter address/ })).toBeDisabled()
   })
 

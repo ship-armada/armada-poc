@@ -1,11 +1,12 @@
 // ABOUTME: Send/Withdraw recipient step — a frost card (title + address input with Clear + a paste row that
 // ABOUTME: previews a valid 0zk/0x on the clipboard + public-only chain selector + privacy badge once valid) over an always-visible Cancel / Continue action row + a recent-recipients list.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { XMarkIcon, GlobeAltIcon, ClipboardDocumentIcon } from '@heroicons/react/24/outline'
 import { ArmadaLogo, Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import iconButtonStyles from '@/design/components/IconButton/IconButton.module.css'
 import { ChainSelect } from '@/components/ui'
+import { AmountFieldWarning } from '@/components/ui/AmountFieldWarning'
 import { isShieldedAddress, validateEvmAddress } from '@/lib/address'
 import { truncateAddress } from '@/lib/format'
 import { useMobileLayout } from '@/hooks/useMobileLayout'
@@ -100,11 +101,14 @@ export function SendRecipientStep({
   const isPublic = !isPrivate && evmValidation.valid
   const recipientValid = isPrivate || isPublic
   const recipientInvalid = hasInput && !recipientValid
+  // Terse single-line copy so it reads cleanly in the above-field warning tooltip (matches the
+  // amount step's over-balance tooltip).
   const recipientError = recipientInvalid
     ? evmValidation.error === 'checksum'
-      ? 'Address checksum mismatch — double-check for typos.'
-      : 'Enter a valid shielded (0zk…) or public wallet (0x…) address.'
+      ? 'Address checksum mismatch'
+      : 'Enter a valid 0zk or 0x address'
     : undefined
+  const recipientErrorId = useId()
 
   // Full address while focused/editing; middle-truncated when blurred so long addresses stay legible.
   const inputDisplayValue = inputFocused || !hasInput ? recipient : truncateAddress(recipientTrimmed)
@@ -120,35 +124,42 @@ export function SendRecipientStep({
         <h1 className={`armada-text-ui-body-lg ${styles.cardTitle}`}>{title}</h1>
 
         <div className={styles.addressBlock}>
-          <div className={styles.addressField}>
-            <input
-              className={styles.addressInput}
-              type="text"
-              value={inputDisplayValue}
-              title={recipientTrimmed || undefined}
-              onChange={(e) => onRecipientChange(e.target.value)}
-              onFocus={() => setInputFocused(true)}
-              onBlur={() => setInputFocused(false)}
-              placeholder="Enter address"
-              spellCheck={false}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              aria-label="Recipient address"
-              aria-invalid={recipientInvalid || undefined}
-            />
-            {hasInput ? (
-              <button
-                type="button"
-                className={styles.clearButton}
-                aria-label="Clear address"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => onRecipientChange('')}
-              >
-                <XMarkIcon className={styles.clearIcon} strokeWidth={2} aria-hidden />
-              </button>
-            ) : null}
-          </div>
+          <AmountFieldWarning
+            id={recipientErrorId}
+            visible={Boolean(recipientError)}
+            message={recipientError ?? ''}
+          >
+            <div className={styles.addressField}>
+              <input
+                className={styles.addressInput}
+                type="text"
+                value={inputDisplayValue}
+                title={recipientTrimmed || undefined}
+                onChange={(e) => onRecipientChange(e.target.value)}
+                onFocus={() => setInputFocused(true)}
+                onBlur={() => setInputFocused(false)}
+                placeholder="Enter address"
+                spellCheck={false}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                aria-label="Recipient address"
+                aria-invalid={recipientInvalid || undefined}
+                aria-describedby={recipientError ? recipientErrorId : undefined}
+              />
+              {hasInput ? (
+                <button
+                  type="button"
+                  className={styles.clearButton}
+                  aria-label="Clear address"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => onRecipientChange('')}
+                >
+                  <XMarkIcon className={styles.clearIcon} strokeWidth={2} aria-hidden />
+                </button>
+              ) : null}
+            </div>
+          </AmountFieldWarning>
 
           {/* Empty state only: a paste row shown whenever the clipboard has content. A valid 0zk/0x is
               previewed + pastes on click; anything else shows "Not a valid address" and is disabled. */}
@@ -194,11 +205,6 @@ export function SendRecipientStep({
             </div>
           ) : null}
 
-          {recipientError ? (
-            <div className={styles.destError} role="alert">
-              {recipientError}
-            </div>
-          ) : null}
           {destDeploymentError ? (
             <div className={styles.destError} role="alert">
               {destDeploymentError}

@@ -102,7 +102,7 @@
   font-weight: var(--primitives-fontWeight-regular);
   font-size: calc(var(--primitives-fontSize-4xl) * 1px);
   line-height: 1;
-  color: var(--semantic-color-brand-ink);
+  color: var(--semantic-color-text-primary);
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
 }
@@ -120,10 +120,17 @@
 }
 
 .qrBox {
-  background: color-mix(in srgb, var(--primitives-color-neutral-50) 60%, transparent);
+  background: var(--semantic-color-frost-control);
   border-radius: calc(
     (var(--primitives-borderRadius-lg) + var(--primitives-borderRadius-xl)) / 2 * 1px
   );
+  color: var(--semantic-color-text-primary);
+}
+
+/* Dark: the QR (currentColor modules on transparent) needs a light plate to stay scannable, so
+   the box goes solid white with dark-ink modules. */
+:global([data-theme='dark']) .qrBox {
+  background: var(--primitives-color-white-full);
   color: var(--semantic-color-brand-ink);
 }
 

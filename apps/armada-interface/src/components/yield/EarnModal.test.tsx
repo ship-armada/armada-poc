@@ -121,21 +121,21 @@ describe('<EarnModal>', () => {
 
   it('switching tabs clears the amount field', () => {
     renderModal({ open: 'yield-deposit', shielded: 10_000_000n })
-    fireEvent.change(screen.getByLabelText('Vault deposit amount'), { target: { value: '3' } })
+    fireEvent.change(screen.getByLabelText('Shielded vault deposit amount'), { target: { value: '3' } })
     fireEvent.click(screen.getByRole('tab', { name: 'Withdraw' }))
-    expect(screen.getByLabelText('Vault withdrawal amount')).toHaveValue('')
+    expect(screen.getByLabelText('Shielded vault withdrawal amount')).toHaveValue('')
   })
 
   it('advances to review on Continue with a valid amount (add tab)', () => {
     renderModal({ open: 'yield-deposit', shielded: 10_000_000n })
-    fireEvent.change(screen.getByLabelText('Vault deposit amount'), { target: { value: '3' } })
+    fireEvent.change(screen.getByLabelText('Shielded vault deposit amount'), { target: { value: '3' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     expect(screen.getByRole('heading', { name: 'Review USDC shielded transfer to the vault' })).toBeInTheDocument()
   })
 
   it('Confirm submits the tx and advances to the progress step', async () => {
     renderModal({ open: 'yield-deposit', shielded: 10_000_000n })
-    fireEvent.change(screen.getByLabelText('Vault deposit amount'), { target: { value: '3' } })
+    fireEvent.change(screen.getByLabelText('Shielded vault deposit amount'), { target: { value: '3' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: /Confirm deposit/ }))

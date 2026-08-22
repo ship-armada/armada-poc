@@ -20,7 +20,7 @@ export function ShieldWalletStep({ steps }: ShieldWalletStepProps) {
   return (
     <div className={styles.column}>
       <div className={`${styles.body} ${modalStepBodyEnter}`}>
-        <h1 className={styles.title}>Confirm transactions on your wallet</h1>
+        <h1 className={styles.title}>Confirm transactions in your wallet</h1>
         <WalletConfirmList className={styles.confirmList} steps={steps} />
       </div>
       <div className={modalActionRowEnter}>

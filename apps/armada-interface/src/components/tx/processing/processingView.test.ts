@@ -32,13 +32,14 @@ describe('buildProcessingView', () => {
     const send = buildProcessingView(rec('unshield-local', 'build-proof', 'active'), {
       sendVariant: 'send',
     })
-    expect(send.cardCopy.title).toBe('Unshielding your USDC')
+    expect(send.cardCopy.title).toBe('Unshielding and sending your USDC')
+    expect(send.cardCopy.titleLines).toEqual(['Unshielding and sending', 'your USDC'])
 
     const withdraw = buildProcessingView(rec('unshield-local', 'build-proof', 'active'), {
       sendVariant: 'withdraw',
     })
-    expect(withdraw.cardCopy.title).toBe('Your unshield is in progress')
-    expect(withdraw.cardCopy.titleLines).toEqual(['Your unshield', 'is in progress'])
+    expect(withdraw.cardCopy.title).toBe('Unshielding your USDC')
+    expect(withdraw.cardCopy.titleLines).toEqual(['Unshielding your', 'USDC'])
   })
 
   it('snaps to the final stage and exposes the completedLabel when completed', () => {

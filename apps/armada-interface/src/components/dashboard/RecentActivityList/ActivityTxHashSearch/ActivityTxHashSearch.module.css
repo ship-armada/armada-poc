@@ -15,13 +15,15 @@
   padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
   border-radius: calc(var(--primitives-spacing-5) / 2);
   background: var(--semantic-color-surface-raised);
-  border: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-default);
+  border: none;
   box-sizing: border-box;
-  transition: border-color 160ms ease;
+  transition: box-shadow 160ms ease;
 }
 
 .field:focus-within {
-  border-color: var(--semantic-color-border-focus);
+  outline: none;
+  box-shadow: inset 0 0 0 calc(var(--primitives-borderWidth-default) * 1px)
+    var(--semantic-color-border-focus);
 }
 
 .icon {

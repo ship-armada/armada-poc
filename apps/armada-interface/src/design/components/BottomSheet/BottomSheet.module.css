@@ -78,7 +78,7 @@
   justify-content: center;
   width: var(--mobile-touch-target-min);
   height: var(--mobile-touch-target-min);
-  margin: calc(var(--primitives-spacing-3) * -1);
+  margin: 0;
   padding: 0;
   border: none;
   border-radius: calc(var(--primitives-borderRadius-full) * 1px);

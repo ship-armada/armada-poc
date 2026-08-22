@@ -1,5 +1,0 @@
-/* ABOUTME: Layout wrapper for the activity kind-filter SegmentedControl — spacing before the list. */
-/* ABOUTME: Chip styling now lives in the SegmentedControl primitive; only the gap remains here. */
-.root {
-  margin-bottom: var(--primitives-spacing-4);
-}

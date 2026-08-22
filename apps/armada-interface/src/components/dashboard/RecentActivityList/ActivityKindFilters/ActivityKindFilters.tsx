@@ -2,7 +2,6 @@
 // ABOUTME: Renders a scroll-layout SegmentedControl; the chip id equals the activity kind so the predicate is a direct match.
 
 import { SegmentedControl } from '@/components/ui'
-import styles from './ActivityKindFilters.module.css'
 
 export type ActivityKindFilter =
   | 'all'
@@ -30,16 +29,14 @@ export interface ActivityKindFiltersProps {
 
 export function ActivityKindFilters({ value, onChange }: ActivityKindFiltersProps) {
   return (
-    <div className={styles.root}>
-      <SegmentedControl
-        options={FILTERS}
-        value={value}
-        onChange={onChange}
-        size="sm"
-        layout="scroll"
-        surface="raised"
-        aria-label="Filter by transaction type"
-      />
-    </div>
+    <SegmentedControl
+      options={FILTERS}
+      value={value}
+      onChange={onChange}
+      size="sm"
+      layout="scroll"
+      surface="raised"
+      aria-label="Filter by transaction type"
+    />
   )
 }

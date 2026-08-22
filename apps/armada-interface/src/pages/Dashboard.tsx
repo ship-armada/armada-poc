@@ -1,7 +1,7 @@
 // ABOUTME: Dashboard page — centered Private-USDC BalanceCard + deposit tooltip + recent activity.
 // ABOUTME: Presentation from the armada-app mockup; wired to real shielded balance, yield, and tx history.
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ChartBarIcon } from '@heroicons/react/24/outline'
 import { BalanceCard } from '@/components/dashboard/BalanceCard'
@@ -12,6 +12,7 @@ import {
 } from '@/components/dashboard/BalanceCard/balanceRevealMotion'
 import { DashboardScrollTopFade } from '@/components/dashboard/DashboardScrollTopFade'
 import { RecentActivityList, ActivityAllPanel } from '@/components/dashboard/RecentActivityList'
+import { useDepositTooltipHandoff, useEarnBannerHandoff } from '@/hooks/useEarnBannerHandoff'
 import { ActivityReceipt } from '@/components/dashboard/ActivityReceipt'
 import { buildActivityItems, type DashboardActivityItem } from '@/components/dashboard/txActivityAdapter'
 import { formatUsdcAmount } from '@/components/dashboard/dashboardFormat'
@@ -127,13 +128,25 @@ export function Dashboard() {
   const hasCompletedDeposit = txList.some(
     (r) => (r.kind === 'shield' || r.kind === 'shield-xchain') && r.executionState === 'completed',
   )
-  const showDepositTooltip = balanceNumber <= 0 && !hasCompletedDeposit
+  const walletConnected = evmAddress !== null
+  // Promo-banner handoff: after a first shield the deposit tooltip holds through the balance roll,
+  // then collapses and hands off to the earn banner (and reverses on vault deposit/withdraw), rather
+  // than the two banners swapping instantly. See useEarnBannerHandoff.
+  const depositTooltipHandoff = useDepositTooltipHandoff(walletConnected, hasCompletedDeposit, balanceNumber)
+  const earnBannerHandoff = useEarnBannerHandoff(walletConnected, hasCompletedDeposit, vaultNumber, balanceNumber)
+  const showDepositTooltip = depositTooltipHandoff.showDepositTooltip
+  const depositTooltipPersistVisible = depositTooltipHandoff.depositTooltipPersistVisible
+  const depositTooltipExiting = depositTooltipHandoff.depositTooltipExiting
   // Activity shows automatically whenever there are items (the manual hide toggle was dropped in the
   // polish redesign — the more-menu that held it is gone).
   const showActivity = allActivityItems.length > 0
-  // Earn promo banner — nudge users with idle private USDC and no vault position yet to start earning.
-  const showEarnBanner =
-    !showDepositTooltip && balanceNumber > 0 && vaultNumber <= 0 && vaultApy !== undefined && vaultApy > 0
+  // Earn promo banner — the two banners are mutually exclusive; earn only shows once the deposit
+  // tooltip is gone and the vault pays a real APY.
+  const earnApyAvailable = vaultApy !== undefined && vaultApy > 0
+  const showEarnBanner = earnBannerHandoff.showEarnBanner && !showDepositTooltip && earnApyAvailable
+  const earnBannerHandoffEnter =
+    earnBannerHandoff.earnBannerHandoffEnter || (showEarnBanner && depositTooltipHandoff.revealEarnBanner)
+  const earnBannerPersistVisible = earnBannerHandoff.earnBannerPersistVisible
 
   // Tooltip/earn-banner enter delay — fades up after the balance card's action row settles.
   const tooltipEnterStyle = {
@@ -180,13 +193,29 @@ export function Dashboard() {
         />
 
         {showDepositTooltip ? (
-          <div className={styles.tooltipEnter} style={tooltipEnterStyle}>
-            <DepositTooltip stretch onDeposit={() => openActionModal('shield')} />
+          <div
+            className={[
+              styles.cardStackTooltip,
+              depositTooltipExiting
+                ? styles.tooltipHandoffExit
+                : depositTooltipPersistVisible
+                  ? styles.tooltipVisible
+                  : styles.tooltipEnter,
+            ].join(' ')}
+            style={depositTooltipPersistVisible || depositTooltipExiting ? undefined : tooltipEnterStyle}
+          >
+            <div className={styles.cardStackTooltipInner}>
+              <DepositTooltip stretch onDeposit={() => openActionModal('shield')} />
+            </div>
           </div>
         ) : null}
 
         {showEarnBanner ? (
-          <div className={styles.tooltipEnter} style={tooltipEnterStyle}>
+          <EarnBannerSlot
+            handoffEnter={earnBannerHandoffEnter}
+            persistVisible={earnBannerPersistVisible}
+            tooltipEnterStyle={tooltipEnterStyle}
+          >
             <DepositTooltip
               stretch
               BadgeIcon={ChartBarIcon}
@@ -198,7 +227,7 @@ export function Dashboard() {
               ariaLabel={`Estimated yearly yield ~${(vaultApy ?? 0).toFixed(1)}%`}
               onDeposit={() => openActionModal('yield-deposit')}
             />
-          </div>
+          </EarnBannerSlot>
         ) : null}
 
         {showActivity ? (
@@ -228,6 +257,58 @@ export function Dashboard() {
         open={receiptId !== null}
         onClose={() => setReceiptId(null)}
       />
+    </div>
+  )
+}
+
+/**
+ * Earn-banner slot. When it enters via a handoff (after a first shield / vault deposit) it grows in
+ * with the collapse animation; on a plain page load it uses the delayed fade. `handoffSettled` drops
+ * the collapse constraint once the grow-in animation finishes so the banner sits normally.
+ */
+function EarnBannerSlot({
+  handoffEnter,
+  persistVisible,
+  tooltipEnterStyle,
+  children,
+}: {
+  handoffEnter: boolean
+  persistVisible: boolean
+  tooltipEnterStyle?: CSSProperties
+  children: ReactNode
+}) {
+  const [handoffSettled, setHandoffSettled] = useState(!handoffEnter)
+
+  useEffect(() => {
+    if (!handoffEnter) {
+      setHandoffSettled(true)
+      return
+    }
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setHandoffSettled(true)
+      return
+    }
+    setHandoffSettled(false)
+  }, [handoffEnter])
+
+  const enterClass = handoffEnter
+    ? styles.tooltipHandoffEnter
+    : persistVisible
+      ? styles.tooltipVisible
+      : styles.tooltipEnter
+
+  return (
+    <div
+      className={[styles.cardStackTooltip, enterClass, handoffSettled ? styles.tooltipHandoffSettled : '']
+        .filter(Boolean)
+        .join(' ')}
+      style={handoffEnter || persistVisible ? undefined : tooltipEnterStyle}
+      onAnimationEnd={(event) => {
+        if (event.target !== event.currentTarget) return
+        setHandoffSettled(true)
+      }}
+    >
+      <div className={styles.cardStackTooltipInner}>{children}</div>
     </div>
   )
 }

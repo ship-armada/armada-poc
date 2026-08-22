@@ -33,6 +33,12 @@
   animation: dashboardTooltipFade 360ms ease-out var(--dashboard-tooltip-enter-delay, 1330ms) both;
 }
 
+/* Passthrough wrapper — carries the activity enter-delay var to RecentActivityList, which owns the
+   enter animation. Full width so it stays a proper flex item in the card stack. */
+.activityEnter {
+  width: 100%;
+}
+
 @keyframes dashboardTooltipFade {
   from {
     opacity: 0;

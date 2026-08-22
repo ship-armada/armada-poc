@@ -6,7 +6,10 @@ import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ChartBarIcon } from '@heroicons/react/24/outline'
 import { BalanceCard } from '@/components/dashboard/BalanceCard'
 import { DepositTooltip } from '@/components/dashboard/DepositTooltip'
-import { DASHBOARD_TOOLTIP_ENTER_DELAY_MS } from '@/components/dashboard/BalanceCard/balanceRevealMotion'
+import {
+  DASHBOARD_TOOLTIP_ENTER_DELAY_MS,
+  dashboardActivityEnterDelayMs,
+} from '@/components/dashboard/BalanceCard/balanceRevealMotion'
 import { DashboardScrollTopFade } from '@/components/dashboard/DashboardScrollTopFade'
 import { RecentActivityList, ActivityAllPanel } from '@/components/dashboard/RecentActivityList'
 import { ActivityReceipt } from '@/components/dashboard/ActivityReceipt'
@@ -82,6 +85,9 @@ export function Dashboard() {
   const [rollFromValue, setRollFromValue] = useState<string | undefined>(undefined)
   const [pendingRollFrom, setPendingRollFrom] = useState<string | undefined>(undefined)
   const prevBalanceRef = useRef<number | null>(null)
+  // Captures whether the activity list was on screen at the first real (post-sync-gate) dashboard
+  // paint. Only that initial paint cascades activity in last; later reveals enter immediately.
+  const activityVisibleOnPaintRef = useRef<boolean | null>(null)
   useEffect(() => {
     const prev = prevBalanceRef.current
     prevBalanceRef.current = balanceNumber
@@ -139,6 +145,19 @@ export function Dashboard() {
     return <SyncGate />
   }
 
+  // Page-load cascade: activity enters last, after the hero → actions → banner beats. Captured on the
+  // first post-gate paint so activity that appears later (e.g. after a tx) just enters immediately.
+  if (activityVisibleOnPaintRef.current === null) {
+    activityVisibleOnPaintRef.current = showActivity
+  }
+  const activityEnterDelayMs = dashboardActivityEnterDelayMs(
+    showDepositTooltip || showEarnBanner,
+    activityVisibleOnPaintRef.current,
+  )
+  const activityEnterStyle = {
+    '--dashboard-activity-enter-delay': `${activityEnterDelayMs}ms`,
+  } as CSSProperties
+
   return (
     <div className={styles.page}>
       <DashboardScrollTopFade enabled={showActivity} />
@@ -174,8 +193,8 @@ export function Dashboard() {
               badgeBackground="white"
               iconTileTone="purple"
               headline={`Earn ~${(vaultApy ?? 0).toFixed(1)}% APY`}
-              body="Deposit into the vault and start earning now."
-              infoTooltip="The APY is an estimate from recent vault performance."
+              body="Add USDC to Armada's shielded vault and start earning now."
+              infoTooltip="The APY is an estimate from recent shielded vault performance."
               ariaLabel={`Estimated yearly yield ~${(vaultApy ?? 0).toFixed(1)}%`}
               onDeposit={() => openActionModal('yield-deposit')}
             />
@@ -183,12 +202,14 @@ export function Dashboard() {
         ) : null}
 
         {showActivity ? (
-          <RecentActivityList
-            items={previewActivityItems}
-            balanceRevealed={!balanceHidden}
-            onViewAll={() => setActivityPanelOpen(true)}
-            onItemClick={handleActivityItemClick}
-          />
+          <div className={styles.activityEnter} style={activityEnterStyle}>
+            <RecentActivityList
+              items={previewActivityItems}
+              balanceRevealed={!balanceHidden}
+              onViewAll={() => setActivityPanelOpen(true)}
+              onItemClick={handleActivityItemClick}
+            />
+          </div>
         ) : null}
       </div>
 

@@ -84,36 +84,48 @@ export function Dashboard() {
   // until the user is back on the dashboard.
   const gated = isInitialSyncGated(shielded, sync.status)
   const liveBalance = usdcToNumber(displayBalance)
+  const earningUsdc =
+    yieldShares !== null && yieldRate !== null ? sharesToUsdc(yieldShares, yieldRate.rate) : 0n
+  const liveVault = usdcToNumber(earningUsdc)
+  const vaultApy = yieldRate !== null ? Number(yieldRate.apyBps) / 100 : undefined
+  // Both the private balance and the vault position are held while a tx modal is open (or the sync
+  // gate is up), then advance together with a single roll trigger on return — so the balance roll,
+  // the vault-row grow-in, and the earn-banner handoff all play on the dashboard rather than behind
+  // the modal. vaultFromValue is set only when the vault actually moved (earn deposit/withdraw).
+  // Mirrors the mockup's applyEarnVisibleBalance.
   const [displayedBalance, setDisplayedBalance] = useState(liveBalance)
+  const [displayedVault, setDisplayedVault] = useState(liveVault)
   const [rollTrigger, setRollTrigger] = useState(0)
   const [rollMode, setRollMode] = useState<BalanceRollMode>('fromZero')
   const [rollFromValue, setRollFromValue] = useState<string | undefined>(undefined)
+  const [vaultRollFromValue, setVaultRollFromValue] = useState<string | undefined>(undefined)
   const lastLiveRef = useRef<number | null>(null)
+  const lastVaultRef = useRef<number>(liveVault)
   // Captures whether the activity list was on screen at the first real (post-sync-gate) dashboard
   // paint. Only that initial paint cascades activity in last; later reveals enter immediately.
   const activityVisibleOnPaintRef = useRef<boolean | null>(null)
   useEffect(() => {
     if (gated || openModal !== null) return
-    const prevLive = lastLiveRef.current
-    if (prevLive === liveBalance) return
+    const balanceChanged = lastLiveRef.current !== liveBalance
+    const vaultChanged = lastVaultRef.current !== liveVault
+    if (!balanceChanged && !vaultChanged) return
+    const firstEstablishment = lastLiveRef.current === null
     lastLiveRef.current = liveBalance
+    lastVaultRef.current = liveVault
     // First establishment (the initial reveal) doesn't roll — the intro roll-from-zero handles it.
-    if (prevLive === null) {
+    if (firstEstablishment) {
       setDisplayedBalance(liveBalance)
+      setDisplayedVault(liveVault)
       return
     }
     // Full precision (6 decimals) so the odometer digit counts line up with the card display.
     setRollMode('fromValue')
     setRollFromValue(formatUsdcAmount(displayedBalance, 6))
+    setVaultRollFromValue(vaultChanged ? formatUsdcAmount(displayedVault, 6) : undefined)
     setRollTrigger((t) => t + 1)
     setDisplayedBalance(liveBalance)
-  }, [gated, openModal, liveBalance, displayedBalance])
-
-  // Derived vault position + activity.
-  const earningUsdc =
-    yieldShares !== null && yieldRate !== null ? sharesToUsdc(yieldShares, yieldRate.rate) : 0n
-  const vaultNumber = usdcToNumber(earningUsdc)
-  const vaultApy = yieldRate !== null ? Number(yieldRate.apyBps) / 100 : undefined
+    setDisplayedVault(liveVault)
+  }, [gated, openModal, liveBalance, liveVault, displayedBalance, displayedVault])
   // Full activity list (uncapped) so the panel can show everything up to its ceiling and we can tell
   // whether that ceiling was hit. The dashboard preview + the panel then slice their own views.
   const allActivityItems = useMemo(
@@ -138,7 +150,7 @@ export function Dashboard() {
   // then collapses and hands off to the earn banner (and reverses on vault deposit/withdraw), rather
   // than the two banners swapping instantly. See useEarnBannerHandoff.
   const depositTooltipHandoff = useDepositTooltipHandoff(walletConnected, hasCompletedDeposit, displayedBalance)
-  const earnBannerHandoff = useEarnBannerHandoff(walletConnected, hasCompletedDeposit, vaultNumber, displayedBalance)
+  const earnBannerHandoff = useEarnBannerHandoff(walletConnected, hasCompletedDeposit, displayedVault, displayedBalance)
   const showDepositTooltip = depositTooltipHandoff.showDepositTooltip
   const depositTooltipPersistVisible = depositTooltipHandoff.depositTooltipPersistVisible
   const depositTooltipExiting = depositTooltipHandoff.depositTooltipExiting
@@ -185,7 +197,8 @@ export function Dashboard() {
           balanceRollTrigger={rollTrigger}
           balanceRollMode={rollMode}
           balanceRollFromValue={rollFromValue}
-          vaultBalance={vaultNumber}
+          vaultBalance={displayedVault}
+          vaultRollFromValue={vaultRollFromValue}
           vaultApy={vaultApy}
           armadaAddress={shieldedWallet.shieldedAddress}
           balanceHidden={balanceHidden}

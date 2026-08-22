@@ -24,8 +24,8 @@
   padding: var(--primitives-spacing-8);
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent) 0%,
-    color-mix(in srgb, var(--primitives-color-neutral-50) 20%, transparent) 100%
+    var(--semantic-color-frost-hero-from) 0%,
+    var(--semantic-color-frost-hero-to) 100%
   );
   border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
 }
@@ -56,7 +56,7 @@
   min-height: calc(var(--primitives-spacing-12) + var(--primitives-spacing-2));
   padding: 0 var(--primitives-spacing-5);
   border-radius: calc(var(--primitives-borderRadius-xl) * 1px);
-  background: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
+  background: var(--semantic-color-frost-raised);
   box-sizing: border-box;
 }
 
@@ -139,7 +139,7 @@
 }
 
 .clipboardPaste:not(:disabled):hover .clipboardPasteIcon {
-  background: var(--primitives-color-neutral-50);
+  background: var(--semantic-color-frost-pressed);
 }
 
 .clipboardPaste:disabled {

@@ -95,7 +95,7 @@
   gap: var(--primitives-spacing-3);
   margin: var(--primitives-spacing-2) 0 0;
   padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
-  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
   background: var(--semantic-color-surface-banner);
   text-align: left;
 }

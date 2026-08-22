@@ -121,7 +121,10 @@ export function ModalShell({
         ) : (
           <>
             <div className={styles.logoSlot}>
-              <ArmadaLogo variant="mark" markTone="white" className={styles.logo} />
+              {/* Two marks toggled by theme: gem gradient reads on the dark surface, deep ink reads
+                  on the light gradient header. Mirrors the app header's per-theme logo swap. */}
+              <ArmadaLogo variant="mark" markTone="brand" className={`${styles.logo} ${styles.logoDark}`} />
+              <ArmadaLogo variant="mark" markTone="deep" className={`${styles.logo} ${styles.logoLight}`} />
             </div>
             {hideSteps ? null : (
               <div className={styles.stepsWrap}>

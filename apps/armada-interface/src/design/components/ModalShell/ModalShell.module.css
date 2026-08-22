@@ -255,7 +255,19 @@
   width: var(--primitives-spacing-10);
   height: var(--primitives-spacing-10);
   display: block;
-  color: var(--semantic-color-brand-deep);
+}
+
+/* Per-theme logo swap: gem mark (dark, default) vs deep-ink mark (light). */
+.logoLight {
+  display: none;
+}
+
+:global([data-theme='light']) .logoSlot .logoLight {
+  display: block;
+}
+
+:global([data-theme='light']) .logoSlot .logoDark {
+  display: none;
 }
 
 .stepsWrap {

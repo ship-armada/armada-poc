@@ -311,7 +311,13 @@
 
 @media (hover: hover) and (pointer: fine) {
   .body .depositButton:hover:not(:disabled) {
-    filter: brightness(1.04);
+    filter: none;
+    background: linear-gradient(
+      135deg,
+      var(--semantic-color-brand-amber) 0%,
+      var(--semantic-color-brand-gradient-rose) 50%,
+      var(--semantic-color-brand-lavender) 100%
+    );
   }
 }
 

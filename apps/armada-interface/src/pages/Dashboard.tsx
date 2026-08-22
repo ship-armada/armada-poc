@@ -1,7 +1,15 @@
 // ABOUTME: Dashboard page — centered Private-USDC BalanceCard + deposit tooltip + recent activity.
 // ABOUTME: Presentation from the armada-app mockup; wired to real shielded balance, yield, and tx history.
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ChartBarIcon } from '@heroicons/react/24/outline'
 import { BalanceCard } from '@/components/dashboard/BalanceCard'
@@ -96,7 +104,10 @@ export function Dashboard() {
     // Match the card's full-precision display (up to 6 decimals) so the odometer digit counts line up.
     setPendingRollFrom(formatUsdcAmount(prev, 6))
   }, [balanceNumber])
-  useEffect(() => {
+  // Layout effect (not useEffect) so the roll trigger fires before the browser paints when a modal
+  // closes: otherwise the card paints the NEW balance statically for a frame, then jumps back to the
+  // OLD value to start the roll. Running pre-paint means the first painted frame is already OLD→NEW.
+  useLayoutEffect(() => {
     if (openModal !== null || pendingRollFrom === undefined) return
     setRollMode('fromValue')
     setRollFromValue(pendingRollFrom)

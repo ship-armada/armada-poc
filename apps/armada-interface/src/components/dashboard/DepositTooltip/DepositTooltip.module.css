@@ -149,6 +149,22 @@
   transform: none;
 }
 
+/* Info button is icon-only — no ghost border/fill (match mockup). */
+.dismiss .dismissButton {
+  background: transparent;
+  border-color: transparent;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .dismiss .dismissButton:hover:not(:disabled) {
+    background: transparent;
+  }
+}
+
+.dismiss .dismissButton:active:not(:disabled) {
+  background: transparent;
+}
+
 .dismiss .dismissIcon {
   width: var(--primitives-spacing-4);
   height: var(--primitives-spacing-4);

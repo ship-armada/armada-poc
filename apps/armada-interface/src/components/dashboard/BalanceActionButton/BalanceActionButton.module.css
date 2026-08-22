@@ -74,7 +74,13 @@
 
 @media (hover: hover) and (pointer: fine) {
   .primary:hover:not(:disabled) .glyph {
-    filter: brightness(1.04);
+    filter: none;
+    background: linear-gradient(
+      135deg,
+      var(--semantic-color-brand-amber) 0%,
+      var(--semantic-color-brand-gradient-rose) 50%,
+      var(--semantic-color-brand-lavender) 100%
+    );
   }
 
   .subtle:hover:not(:disabled) .glyph {

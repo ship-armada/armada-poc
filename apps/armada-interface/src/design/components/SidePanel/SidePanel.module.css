@@ -75,10 +75,6 @@
   cursor: pointer;
 }
 
-.closeButton:hover {
-  color: var(--semantic-color-text-primary);
-}
-
 .closeButton:focus-visible {
   outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
   outline-offset: calc(var(--primitives-spacing-1) * 1px);

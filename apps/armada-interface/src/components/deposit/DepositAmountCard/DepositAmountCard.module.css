@@ -194,14 +194,14 @@
   gap: var(--primitives-spacing-1);
 }
 
-/* Available-balance text — full match to the mockup (mono, base size, regular weight, secondary
+/* Available-balance text — full match to the mockup (mono, base size, regular weight, primary
    color); without the explicit size it would inherit the larger 15px body baseline. Shared by the
    deposit + send amount cards. */
 .balanceText {
   font-family: var(--primitives-fontFamily-mono), ui-monospace, monospace;
   font-weight: var(--primitives-fontWeight-regular);
   font-size: calc(var(--primitives-fontSize-base) * 1px);
-  color: var(--semantic-color-text-secondary);
+  color: var(--semantic-color-text-primary);
   white-space: nowrap;
   letter-spacing: 0;
 }

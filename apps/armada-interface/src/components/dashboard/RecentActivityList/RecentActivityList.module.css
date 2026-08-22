@@ -75,6 +75,7 @@
 .rootFull {
   animation: none;
   max-width: none;
+  --activity-surface: var(--semantic-color-surface-raised);
   --activity-surface-hover: var(--semantic-color-surface-raised-hover);
   --activity-surface-pressed: var(--semantic-color-surface-raised-pressed);
 }

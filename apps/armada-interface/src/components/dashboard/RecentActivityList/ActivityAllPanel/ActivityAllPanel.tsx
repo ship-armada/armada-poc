@@ -59,23 +59,27 @@ export function ActivityAllPanel({
 
   const list = (
     <>
-      <ActivityTxHashSearch value={hashQuery} onChange={setHashQuery} />
-      <ActivityKindFilters value={kindFilter} onChange={setKindFilter} />
-      {showFilterEmpty ? (
-        <p className={searchStyles.searchEmpty}>No transactions match your filters.</p>
-      ) : (
-        <RecentActivityList
-          variant="full"
-          items={filteredItems}
-          balanceRevealed={balanceRevealed}
-          onItemClick={handleItemClick}
-        />
-      )}
-      {truncatedCount != null ? (
-        <p className={panelStyles.truncationNote}>
-          Showing your {truncatedCount} most recent transactions.
-        </p>
-      ) : null}
+      <div className={panelStyles.chrome}>
+        <ActivityTxHashSearch value={hashQuery} onChange={setHashQuery} />
+        <ActivityKindFilters value={kindFilter} onChange={setKindFilter} />
+      </div>
+      <div className={panelStyles.listRegion}>
+        {showFilterEmpty ? (
+          <p className={searchStyles.searchEmpty}>No transactions match your filters.</p>
+        ) : (
+          <RecentActivityList
+            variant="full"
+            items={filteredItems}
+            balanceRevealed={balanceRevealed}
+            onItemClick={handleItemClick}
+          />
+        )}
+        {truncatedCount != null ? (
+          <p className={panelStyles.truncationNote}>
+            Showing your {truncatedCount} most recent transactions.
+          </p>
+        ) : null}
+      </div>
     </>
   )
 
@@ -86,6 +90,8 @@ export function ActivityAllPanel({
         onClose={onClose}
         title="Recent activity"
         headerClassName={panelStyles.sheetHeader}
+        sheetClassName={panelStyles.activitySheet}
+        bodyClassName={panelStyles.activitySheetBody}
       >
         {list}
       </BottomSheet>
@@ -99,6 +105,7 @@ export function ActivityAllPanel({
       title="Recent activity"
       panelClassName={panelStyles.panel}
       headerClassName={panelStyles.panelHeader}
+      bodyClassName={panelStyles.panelBody}
     >
       {list}
     </SidePanel>

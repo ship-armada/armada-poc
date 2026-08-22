@@ -14,7 +14,7 @@
   min-height: var(--primitives-spacing-12);
   padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
   border-radius: calc(var(--primitives-spacing-5) / 2);
-  background: var(--semantic-color-frost-control);
+  background: var(--semantic-color-surface-raised);
   border: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-default);
   box-sizing: border-box;
   transition: border-color 160ms ease;

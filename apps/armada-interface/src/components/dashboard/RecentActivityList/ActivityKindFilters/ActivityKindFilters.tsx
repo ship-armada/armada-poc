@@ -35,6 +35,7 @@ export function ActivityKindFilters({ value, onChange }: ActivityKindFiltersProp
         options={FILTERS}
         value={value}
         onChange={onChange}
+        size="sm"
         layout="scroll"
         surface="raised"
         aria-label="Filter by transaction type"

@@ -27,6 +27,39 @@
   white-space: nowrap;
 }
 
+/* Body is a fixed-chrome + scrolling-list column: search+filters stay put, only the list scrolls. */
+.panelBody,
+.activitySheetBody {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.activitySheet {
+  height: min(
+    var(--semantic-size-sheet-max),
+    calc(100dvh - var(--mobile-safe-area-top, 0px) - var(--primitives-spacing-5))
+  );
+}
+
+.chrome {
+  flex-shrink: 0;
+  padding-bottom: var(--primitives-spacing-4);
+  border-bottom: calc(var(--primitives-borderWidth-default) * 1px) solid
+    var(--semantic-color-border-default);
+}
+
+.listRegion {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-top: var(--primitives-spacing-4);
+}
+
 .truncationNote {
   margin: 0;
   padding: var(--primitives-spacing-4) var(--primitives-spacing-3);

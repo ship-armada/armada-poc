@@ -1,15 +1,7 @@
 // ABOUTME: Dashboard page — centered Private-USDC BalanceCard + deposit tooltip + recent activity.
 // ABOUTME: Presentation from the armada-app mockup; wired to real shielded balance, yield, and tx history.
 
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-} from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ChartBarIcon } from '@heroicons/react/24/outline'
 import { BalanceCard } from '@/components/dashboard/BalanceCard'
@@ -85,35 +77,37 @@ export function Dashboard() {
   // Balance visibility is app-wide (shared with the wallet panel's hide toggle) via balanceHiddenAtom.
   const [balanceHidden, setBalanceHidden] = useAtom(balanceHiddenAtom)
 
-  // Balance odometer roll: intro roll from zero on first paint, then roll from the previous value
-  // whenever the balance changes (e.g. after a deposit settles). The roll is deferred until no tx
-  // modal is open, so it plays on the dashboard rather than behind a modal.
-  const balanceNumber = usdcToNumber(displayBalance)
+  // Balance odometer roll. The *displayed* balance lags the live atom while a tx modal is open (or
+  // while the initial sync gate is up), then advances to the live value together with the roll
+  // trigger — so the card holds the OLD number and rolls to the NEW one on return, rather than
+  // flashing NEW then rolling. Mirrors the mockup, which defers the whole advance (value + roll)
+  // until the user is back on the dashboard.
+  const gated = isInitialSyncGated(shielded, sync.status)
+  const liveBalance = usdcToNumber(displayBalance)
+  const [displayedBalance, setDisplayedBalance] = useState(liveBalance)
   const [rollTrigger, setRollTrigger] = useState(0)
   const [rollMode, setRollMode] = useState<BalanceRollMode>('fromZero')
   const [rollFromValue, setRollFromValue] = useState<string | undefined>(undefined)
-  const [pendingRollFrom, setPendingRollFrom] = useState<string | undefined>(undefined)
-  const prevBalanceRef = useRef<number | null>(null)
+  const lastLiveRef = useRef<number | null>(null)
   // Captures whether the activity list was on screen at the first real (post-sync-gate) dashboard
   // paint. Only that initial paint cascades activity in last; later reveals enter immediately.
   const activityVisibleOnPaintRef = useRef<boolean | null>(null)
   useEffect(() => {
-    const prev = prevBalanceRef.current
-    prevBalanceRef.current = balanceNumber
-    if (prev === null || prev === balanceNumber) return
-    // Match the card's full-precision display (up to 6 decimals) so the odometer digit counts line up.
-    setPendingRollFrom(formatUsdcAmount(prev, 6))
-  }, [balanceNumber])
-  // Layout effect (not useEffect) so the roll trigger fires before the browser paints when a modal
-  // closes: otherwise the card paints the NEW balance statically for a frame, then jumps back to the
-  // OLD value to start the roll. Running pre-paint means the first painted frame is already OLD→NEW.
-  useLayoutEffect(() => {
-    if (openModal !== null || pendingRollFrom === undefined) return
+    if (gated || openModal !== null) return
+    const prevLive = lastLiveRef.current
+    if (prevLive === liveBalance) return
+    lastLiveRef.current = liveBalance
+    // First establishment (the initial reveal) doesn't roll — the intro roll-from-zero handles it.
+    if (prevLive === null) {
+      setDisplayedBalance(liveBalance)
+      return
+    }
+    // Full precision (6 decimals) so the odometer digit counts line up with the card display.
     setRollMode('fromValue')
-    setRollFromValue(pendingRollFrom)
+    setRollFromValue(formatUsdcAmount(displayedBalance, 6))
     setRollTrigger((t) => t + 1)
-    setPendingRollFrom(undefined)
-  }, [openModal, pendingRollFrom])
+    setDisplayedBalance(liveBalance)
+  }, [gated, openModal, liveBalance, displayedBalance])
 
   // Derived vault position + activity.
   const earningUsdc =
@@ -143,8 +137,8 @@ export function Dashboard() {
   // Promo-banner handoff: after a first shield the deposit tooltip holds through the balance roll,
   // then collapses and hands off to the earn banner (and reverses on vault deposit/withdraw), rather
   // than the two banners swapping instantly. See useEarnBannerHandoff.
-  const depositTooltipHandoff = useDepositTooltipHandoff(walletConnected, hasCompletedDeposit, balanceNumber)
-  const earnBannerHandoff = useEarnBannerHandoff(walletConnected, hasCompletedDeposit, vaultNumber, balanceNumber)
+  const depositTooltipHandoff = useDepositTooltipHandoff(walletConnected, hasCompletedDeposit, displayedBalance)
+  const earnBannerHandoff = useEarnBannerHandoff(walletConnected, hasCompletedDeposit, vaultNumber, displayedBalance)
   const showDepositTooltip = depositTooltipHandoff.showDepositTooltip
   const depositTooltipPersistVisible = depositTooltipHandoff.depositTooltipPersistVisible
   const depositTooltipExiting = depositTooltipHandoff.depositTooltipExiting
@@ -165,7 +159,7 @@ export function Dashboard() {
   } as CSSProperties
 
   // Gate the dashboard behind the initial shielded-balance sync. The navbar (AppLayout) stays visible.
-  if (isInitialSyncGated(shielded, sync.status)) {
+  if (gated) {
     return <SyncGate />
   }
 
@@ -187,7 +181,7 @@ export function Dashboard() {
       <DashboardScrollTopFade enabled={showActivity} />
       <div className={styles.cardStack}>
         <BalanceCard
-          balance={balanceNumber}
+          balance={displayedBalance}
           balanceRollTrigger={rollTrigger}
           balanceRollMode={rollMode}
           balanceRollFromValue={rollFromValue}

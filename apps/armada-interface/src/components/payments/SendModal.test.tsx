@@ -161,7 +161,7 @@ describe('<SendModal>', () => {
       intent: { recipient: VALID_0ZK, amount: '25' },
     })
     // Recipient + amount are both known, so the flow jumps past the recipient/amount steps.
-    expect(screen.getByRole('heading', { name: 'Review your USDC transfer' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Review your USDC shielded transfer' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Confirm send' })).toBeInTheDocument()
     expect(screen.queryByLabelText('Recipient address')).toBeNull()
     // The intent is consumed on open so it can't re-fire.

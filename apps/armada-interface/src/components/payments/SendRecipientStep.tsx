@@ -114,7 +114,8 @@ export function SendRecipientStep({
   const inputDisplayValue = inputFocused || !hasInput ? recipient : truncateAddress(recipientTrimmed)
 
   // The prompt differs by variant per design: withdraw leans into "where", send is imperative.
-  const title = variant === 'withdraw' ? 'Where do you want to send your USDC?' : 'Send your USDC to:'
+  const title =
+    variant === 'withdraw' ? 'Where do you want to unshield your USDC?' : 'Send your USDC to:'
 
   const canContinue = recipientValid && !destDeploymentError
 

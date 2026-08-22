@@ -26,9 +26,9 @@ function renderComplete(extras?: Partial<SendCompleteStepProps>) {
 }
 
 describe('<SendCompleteStep>', () => {
-  it('send: renders the "USDC send confirmed" title + date row + amount (privacy notice hidden)', () => {
+  it('send: renders the "USDC shielded transfer confirmed" title + date row + amount (privacy notice hidden)', () => {
     renderComplete({ recipient: VALID_0ZK })
-    expect(screen.getByText('USDC send confirmed')).toBeInTheDocument()
+    expect(screen.getByText('USDC shielded transfer confirmed')).toBeInTheDocument()
     expect(screen.getByText('Date and time')).toBeInTheDocument()
     // The privacy notice is only shown pre-confirmation; the confirmed view omits it.
     expect(screen.queryByText('Private transfer.')).toBeNull()

@@ -315,7 +315,7 @@
   }
 }
 
-@media (max-width: 767px) {
+@media (max-width: 479px) {
   .card {
     padding: var(--primitives-spacing-5);
   }

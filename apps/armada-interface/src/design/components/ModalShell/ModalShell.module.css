@@ -295,7 +295,7 @@ button.closeGhost:active:not(:disabled) {
   margin-top: calc(var(--primitives-spacing-16) + var(--primitives-spacing-2));
 }
 
-@media (min-width: 768px) {
+@media (min-width: 480px) {
   .content:not(.contentSimple) {
     /* Match dashboard cardStack padding-top (--semantic-spacing-page-block). */
     margin-top: calc(
@@ -379,7 +379,7 @@ button.closeGhost:active:not(:disabled) {
   animation-delay: calc(var(--modal-step-enter-delay, 360ms) + 570ms);
 }
 
-@media (max-width: 767px) {
+@media (max-width: 479px) {
   .shell:not(.shellSimple) {
     padding-bottom: calc(var(--primitives-spacing-5) + var(--mobile-safe-area-bottom, 0px));
   }

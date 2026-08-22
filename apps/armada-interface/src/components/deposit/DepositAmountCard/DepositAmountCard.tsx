@@ -75,6 +75,13 @@ export interface DepositAmountCardProps {
    * when omitted the card falls back to the single `Max` button (driven by `onMax`).
    */
   maxInput?: bigint
+  /**
+   * Full (pre-fee) balance the percent pills take a share of — a % of this, capped at `maxInput`.
+   * When omitted the pills fall back to a share of `maxInput` (fine where the cap equals the balance,
+   * e.g. shield). Set on fee-on-top paths (send/withdraw/earn) so 25/50/75 land on round balance
+   * fractions rather than fractions of the fee-adjusted cap.
+   */
+  balanceRaw?: bigint
   error?: string
   /** Accessible name for the amount field (e.g. "Deposit amount", "Withdrawal amount"). */
   amountAriaLabel?: string
@@ -115,6 +122,7 @@ export function DepositAmountCard({
   flowBreakdown,
   onMax,
   maxInput,
+  balanceRaw,
   error,
   amountAriaLabel = 'Amount',
   inputRef,
@@ -209,11 +217,14 @@ export function DepositAmountCard({
     onAmountChange(nextAmount)
   }
 
-  // Percentage pills set the amount to a fraction of the raw input cap. Integer bigint math keeps
-  // full 6-decimal precision (no float rounding).
+  // Percentage pills set the amount to a share of the full balance (mockup parity), capped at the
+  // fee-aware `maxInput`. When `balanceRaw` isn't supplied (e.g. shield, where the cap equals the
+  // balance) they fall back to a share of the cap. Integer bigint math keeps full 6-decimal precision.
   function applyPercent(percent: bigint) {
     if (maxInput === undefined) return
-    applyPreset(formatUsdcPlain((maxInput * percent) / 100n))
+    const share = ((balanceRaw ?? maxInput) * percent) / 100n
+    const capped = share < maxInput ? share : maxInput
+    applyPreset(formatUsdcPlain(capped))
   }
 
   // Max reuses the caller's `onMax` when supplied so fee-on-top paths keep their exact cap, else it

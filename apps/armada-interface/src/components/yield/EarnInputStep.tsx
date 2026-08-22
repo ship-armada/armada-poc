@@ -182,6 +182,7 @@ export function EarnInputStepContent({
         feeLoading={feeLoading}
         // maxInput drives the 25% / 50% / 75% / Max percent pills; onMax keeps the exact fee-aware cap.
         maxInput={maxInput}
+        balanceRaw={max}
         onMax={() => onAmountChange(formatUsdcPlain(maxInput))}
         error={fieldError}
         amountAriaLabel={tab === 'add' ? 'Vault deposit amount' : 'Vault withdrawal amount'}

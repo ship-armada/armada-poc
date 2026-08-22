@@ -4,6 +4,7 @@
 import { Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { TransferReviewSummary } from './TransferReviewSummary'
 import { formatUsdcPlain } from '@/lib/format'
+import { isShieldedAddress } from '@/lib/address'
 import type { SendFlowVariant } from './SendRecipientStep'
 import styles from './SendCompleteStep.module.css'
 
@@ -44,7 +45,12 @@ export function SendCompleteStep({
   onViewExplorer,
   onGoToDashboard,
 }: SendCompleteStepProps) {
-  const title = variant === 'withdraw' ? 'USDC unshield confirmed' : 'USDC send confirmed'
+  const title =
+    variant === 'withdraw'
+      ? 'USDC unshield confirmed'
+      : isShieldedAddress(recipient)
+        ? 'USDC shielded transfer confirmed'
+        : 'USDC sent successfully'
 
   return (
     <div className={styles.root}>

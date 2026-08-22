@@ -163,6 +163,17 @@
   outline-offset: calc(var(--primitives-spacing-1) * 1px);
 }
 
+/* A freshly-prepended top row slides+fades in on its own (reuses the list enter keyframe). */
+.itemEnter {
+  animation: activityEnter 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .itemEnter {
+    animation: none;
+  }
+}
+
 .iconBadge {
   width: var(--primitives-spacing-10);
   height: var(--primitives-spacing-10);
@@ -232,7 +243,7 @@
   text-decoration: line-through;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 479px) {
   .copy {
     min-width: 0;
   }

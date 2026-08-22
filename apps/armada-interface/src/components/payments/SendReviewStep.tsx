@@ -5,6 +5,7 @@ import { Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { TransferReviewSummary } from './TransferReviewSummary'
 import { FeeUpdatedBanner } from '@/components/flow/FeeUpdatedBanner/FeeUpdatedBanner'
 import { formatUsdcPlain } from '@/lib/format'
+import { isShieldedAddress } from '@/lib/address'
 import type { SendFlowVariant } from './SendRecipientStep'
 import styles from './SendReviewStep.module.css'
 
@@ -46,7 +47,12 @@ export function SendReviewStep({
   onBack,
   onConfirm,
 }: SendReviewStepProps) {
-  const title = variant === 'withdraw' ? 'Review your USDC unshield' : 'Review your USDC transfer'
+  const title =
+    variant === 'withdraw'
+      ? 'Review unshielding transfer'
+      : isShieldedAddress(recipient)
+        ? 'Review your USDC shielded transfer'
+        : 'Review your USDC transfer'
   const confirmLabel = variant === 'withdraw' ? 'Confirm' : 'Confirm send'
 
   return (

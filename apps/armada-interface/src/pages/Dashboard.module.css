@@ -12,12 +12,15 @@
 }
 
 .cardStack {
+  /* Gap between stacked cards; the promo-banner handoff collapse animates a matching negative margin
+     (--dashboard-promo-gap) to close the gap as a banner exits. */
+  --dashboard-promo-gap: var(--primitives-spacing-6);
   width: min(420px, 100%);
   margin-inline: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--primitives-spacing-6);
+  gap: var(--dashboard-promo-gap);
 }
 
 /* BalanceCard and RecentActivityList self-fill to 100%; the DepositTooltip keeps its natural
@@ -26,11 +29,83 @@
 /* Tooltip/earn-banner slot: fades up shortly after the balance card's action row finishes entering,
    so the callout arrives after the numbers settle rather than all at once. Delay comes from the
    caller via --dashboard-tooltip-enter-delay (mockup DASHBOARD_TOOLTIP_ENTER_DELAY_MS). */
-.tooltipEnter {
+/* Promo-banner slot. The grid wrapper enables the collapse handoff (grid-template-rows 1fr↔0fr);
+   the animation class on the same element drives the enter/exit beat. */
+.cardStackTooltip {
   width: 100%;
-  display: flex;
-  justify-content: center;
+  display: grid;
+  grid-template-rows: 1fr;
+}
+
+.cardStackTooltipInner {
+  min-height: 0;
+  overflow: visible;
+}
+
+.tooltipEnter {
   animation: dashboardTooltipFade 360ms ease-out var(--dashboard-tooltip-enter-delay, 1330ms) both;
+}
+
+/* Already on screen (handoff keep phase) — no enter animation. */
+.tooltipVisible {
+  opacity: 1;
+}
+
+/* Grow-in / collapse handoff between the deposit tooltip and the earn banner. */
+.tooltipHandoffEnter {
+  animation: dashboardTooltipHandoffEnter 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.tooltipHandoffExit {
+  animation: dashboardTooltipHandoffExit 360ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.tooltipHandoffEnter,
+.tooltipHandoffExit {
+  overflow: hidden;
+}
+
+.tooltipHandoffExit .cardStackTooltipInner,
+.tooltipHandoffEnter:not(.tooltipHandoffSettled) .cardStackTooltipInner {
+  overflow: hidden;
+}
+
+@keyframes dashboardTooltipHandoffEnter {
+  from {
+    opacity: 0;
+    grid-template-rows: 0fr;
+    max-height: 0;
+    margin-block-start: calc(-1 * var(--dashboard-promo-gap));
+  }
+
+  to {
+    opacity: 1;
+    grid-template-rows: 1fr;
+    max-height: calc(var(--primitives-spacing-24) * 2);
+    margin-block-start: 0;
+  }
+}
+
+@keyframes dashboardTooltipHandoffExit {
+  from {
+    opacity: 1;
+    grid-template-rows: 1fr;
+    max-height: calc(var(--primitives-spacing-24) * 2);
+    margin-block-start: 0;
+  }
+
+  to {
+    opacity: 0;
+    grid-template-rows: 0fr;
+    max-height: 0;
+    margin-block-start: calc(-1 * var(--dashboard-promo-gap));
+  }
+}
+
+/* Passthrough wrapper — carries the activity enter-delay var to RecentActivityList, which owns the
+   enter animation. Full width so it stays a proper flex item in the card stack. */
+.activityEnter {
+  width: 100%;
 }
 
 @keyframes dashboardTooltipFade {
@@ -46,10 +121,24 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tooltipEnter {
+  .tooltipEnter,
+  .tooltipHandoffEnter,
+  .tooltipHandoffExit {
     animation: none;
     opacity: 1;
     transform: none;
+  }
+
+  .tooltipHandoffEnter {
+    grid-template-rows: 1fr;
+    max-height: none;
+    margin-block-start: 0;
+  }
+
+  .tooltipHandoffExit {
+    opacity: 0;
+    grid-template-rows: 0fr;
+    max-height: 0;
   }
 }
 

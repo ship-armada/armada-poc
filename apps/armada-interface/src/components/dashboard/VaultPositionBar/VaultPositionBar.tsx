@@ -30,6 +30,8 @@ export interface VaultPositionBarProps {
    */
   balanceRevealed?: boolean
   balanceHidden?: boolean
+  /** Keep rendering the last value while the row plays its collapse-out (vault fully withdrawn). */
+  keepMounted?: boolean
   onOpen?: () => void
 }
 
@@ -42,6 +44,7 @@ export function VaultPositionBar({
   vaultRollTrigger = 0,
   balanceRevealed: balanceRevealedProp,
   balanceHidden,
+  keepMounted = false,
   onOpen,
 }: VaultPositionBarProps) {
   const isMobile = useMobileLayout()
@@ -54,7 +57,7 @@ export function VaultPositionBar({
         : false
   const balanceRevealed = !effectiveHidden || peekVault
 
-  if (balance <= 0 && !vaultRollActive) return null
+  if (balance <= 0 && !vaultRollActive && !keepMounted) return null
 
   const formattedBalance = formatUsdcAmount(balance)
   // Real accrued yield isn't computed yet (it needs vault cost-basis tracking). When no explicit

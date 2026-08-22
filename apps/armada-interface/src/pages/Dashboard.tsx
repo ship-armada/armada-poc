@@ -1,14 +1,18 @@
 // ABOUTME: Dashboard page — centered Private-USDC BalanceCard + deposit tooltip + recent activity.
 // ABOUTME: Presentation from the armada-app mockup; wired to real shielded balance, yield, and tx history.
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { ChartBarIcon } from '@heroicons/react/24/outline'
 import { BalanceCard } from '@/components/dashboard/BalanceCard'
 import { DepositTooltip } from '@/components/dashboard/DepositTooltip'
-import { DASHBOARD_TOOLTIP_ENTER_DELAY_MS } from '@/components/dashboard/BalanceCard/balanceRevealMotion'
+import {
+  DASHBOARD_TOOLTIP_ENTER_DELAY_MS,
+  dashboardActivityEnterDelayMs,
+} from '@/components/dashboard/BalanceCard/balanceRevealMotion'
 import { DashboardScrollTopFade } from '@/components/dashboard/DashboardScrollTopFade'
 import { RecentActivityList, ActivityAllPanel } from '@/components/dashboard/RecentActivityList'
+import { useDepositTooltipHandoff, useEarnBannerHandoff } from '@/hooks/useEarnBannerHandoff'
 import { ActivityReceipt } from '@/components/dashboard/ActivityReceipt'
 import { buildActivityItems, type DashboardActivityItem } from '@/components/dashboard/txActivityAdapter'
 import { formatUsdcAmount } from '@/components/dashboard/dashboardFormat'
@@ -73,35 +77,55 @@ export function Dashboard() {
   // Balance visibility is app-wide (shared with the wallet panel's hide toggle) via balanceHiddenAtom.
   const [balanceHidden, setBalanceHidden] = useAtom(balanceHiddenAtom)
 
-  // Balance odometer roll: intro roll from zero on first paint, then roll from the previous value
-  // whenever the balance changes (e.g. after a deposit settles). The roll is deferred until no tx
-  // modal is open, so it plays on the dashboard rather than behind a modal.
-  const balanceNumber = usdcToNumber(displayBalance)
+  // Balance odometer roll. The *displayed* balance lags the live atom while a tx modal is open (or
+  // while the initial sync gate is up), then advances to the live value together with the roll
+  // trigger — so the card holds the OLD number and rolls to the NEW one on return, rather than
+  // flashing NEW then rolling. Mirrors the mockup, which defers the whole advance (value + roll)
+  // until the user is back on the dashboard.
+  const gated = isInitialSyncGated(shielded, sync.status)
+  const liveBalance = usdcToNumber(displayBalance)
+  const earningUsdc =
+    yieldShares !== null && yieldRate !== null ? sharesToUsdc(yieldShares, yieldRate.rate) : 0n
+  const liveVault = usdcToNumber(earningUsdc)
+  const vaultApy = yieldRate !== null ? Number(yieldRate.apyBps) / 100 : undefined
+  // Both the private balance and the vault position are held while a tx modal is open (or the sync
+  // gate is up), then advance together with a single roll trigger on return — so the balance roll,
+  // the vault-row grow-in, and the earn-banner handoff all play on the dashboard rather than behind
+  // the modal. vaultFromValue is set only when the vault actually moved (earn deposit/withdraw).
+  // Mirrors the mockup's applyEarnVisibleBalance.
+  const [displayedBalance, setDisplayedBalance] = useState(liveBalance)
+  const [displayedVault, setDisplayedVault] = useState(liveVault)
   const [rollTrigger, setRollTrigger] = useState(0)
   const [rollMode, setRollMode] = useState<BalanceRollMode>('fromZero')
   const [rollFromValue, setRollFromValue] = useState<string | undefined>(undefined)
-  const [pendingRollFrom, setPendingRollFrom] = useState<string | undefined>(undefined)
-  const prevBalanceRef = useRef<number | null>(null)
+  const [vaultRollFromValue, setVaultRollFromValue] = useState<string | undefined>(undefined)
+  const lastLiveRef = useRef<number | null>(null)
+  const lastVaultRef = useRef<number>(liveVault)
+  // Captures whether the activity list was on screen at the first real (post-sync-gate) dashboard
+  // paint. Only that initial paint cascades activity in last; later reveals enter immediately.
+  const activityVisibleOnPaintRef = useRef<boolean | null>(null)
   useEffect(() => {
-    const prev = prevBalanceRef.current
-    prevBalanceRef.current = balanceNumber
-    if (prev === null || prev === balanceNumber) return
-    // Match the card's full-precision display (up to 6 decimals) so the odometer digit counts line up.
-    setPendingRollFrom(formatUsdcAmount(prev, 6))
-  }, [balanceNumber])
-  useEffect(() => {
-    if (openModal !== null || pendingRollFrom === undefined) return
+    if (gated || openModal !== null) return
+    const balanceChanged = lastLiveRef.current !== liveBalance
+    const vaultChanged = lastVaultRef.current !== liveVault
+    if (!balanceChanged && !vaultChanged) return
+    const firstEstablishment = lastLiveRef.current === null
+    lastLiveRef.current = liveBalance
+    lastVaultRef.current = liveVault
+    // First establishment (the initial reveal) doesn't roll — the intro roll-from-zero handles it.
+    if (firstEstablishment) {
+      setDisplayedBalance(liveBalance)
+      setDisplayedVault(liveVault)
+      return
+    }
+    // Full precision (6 decimals) so the odometer digit counts line up with the card display.
     setRollMode('fromValue')
-    setRollFromValue(pendingRollFrom)
+    setRollFromValue(formatUsdcAmount(displayedBalance, 6))
+    setVaultRollFromValue(vaultChanged ? formatUsdcAmount(displayedVault, 6) : undefined)
     setRollTrigger((t) => t + 1)
-    setPendingRollFrom(undefined)
-  }, [openModal, pendingRollFrom])
-
-  // Derived vault position + activity.
-  const earningUsdc =
-    yieldShares !== null && yieldRate !== null ? sharesToUsdc(yieldShares, yieldRate.rate) : 0n
-  const vaultNumber = usdcToNumber(earningUsdc)
-  const vaultApy = yieldRate !== null ? Number(yieldRate.apyBps) / 100 : undefined
+    setDisplayedBalance(liveBalance)
+    setDisplayedVault(liveVault)
+  }, [gated, openModal, liveBalance, liveVault, displayedBalance, displayedVault])
   // Full activity list (uncapped) so the panel can show everything up to its ceiling and we can tell
   // whether that ceiling was hit. The dashboard preview + the panel then slice their own views.
   const allActivityItems = useMemo(
@@ -121,13 +145,25 @@ export function Dashboard() {
   const hasCompletedDeposit = txList.some(
     (r) => (r.kind === 'shield' || r.kind === 'shield-xchain') && r.executionState === 'completed',
   )
-  const showDepositTooltip = balanceNumber <= 0 && !hasCompletedDeposit
+  const walletConnected = evmAddress !== null
+  // Promo-banner handoff: after a first shield the deposit tooltip holds through the balance roll,
+  // then collapses and hands off to the earn banner (and reverses on vault deposit/withdraw), rather
+  // than the two banners swapping instantly. See useEarnBannerHandoff.
+  const depositTooltipHandoff = useDepositTooltipHandoff(walletConnected, hasCompletedDeposit, displayedBalance)
+  const earnBannerHandoff = useEarnBannerHandoff(walletConnected, hasCompletedDeposit, displayedVault, displayedBalance)
+  const showDepositTooltip = depositTooltipHandoff.showDepositTooltip
+  const depositTooltipPersistVisible = depositTooltipHandoff.depositTooltipPersistVisible
+  const depositTooltipExiting = depositTooltipHandoff.depositTooltipExiting
   // Activity shows automatically whenever there are items (the manual hide toggle was dropped in the
   // polish redesign — the more-menu that held it is gone).
   const showActivity = allActivityItems.length > 0
-  // Earn promo banner — nudge users with idle private USDC and no vault position yet to start earning.
-  const showEarnBanner =
-    !showDepositTooltip && balanceNumber > 0 && vaultNumber <= 0 && vaultApy !== undefined && vaultApy > 0
+  // Earn promo banner — the two banners are mutually exclusive; earn only shows once the deposit
+  // tooltip is gone and the vault pays a real APY.
+  const earnApyAvailable = vaultApy !== undefined && vaultApy > 0
+  const showEarnBanner = earnBannerHandoff.showEarnBanner && !showDepositTooltip && earnApyAvailable
+  const earnBannerHandoffEnter =
+    earnBannerHandoff.earnBannerHandoffEnter || (showEarnBanner && depositTooltipHandoff.revealEarnBanner)
+  const earnBannerPersistVisible = earnBannerHandoff.earnBannerPersistVisible
 
   // Tooltip/earn-banner enter delay — fades up after the balance card's action row settles.
   const tooltipEnterStyle = {
@@ -135,20 +171,34 @@ export function Dashboard() {
   } as CSSProperties
 
   // Gate the dashboard behind the initial shielded-balance sync. The navbar (AppLayout) stays visible.
-  if (isInitialSyncGated(shielded, sync.status)) {
+  if (gated) {
     return <SyncGate />
   }
+
+  // Page-load cascade: activity enters last, after the hero → actions → banner beats. Captured on the
+  // first post-gate paint so activity that appears later (e.g. after a tx) just enters immediately.
+  if (activityVisibleOnPaintRef.current === null) {
+    activityVisibleOnPaintRef.current = showActivity
+  }
+  const activityEnterDelayMs = dashboardActivityEnterDelayMs(
+    showDepositTooltip || showEarnBanner,
+    activityVisibleOnPaintRef.current,
+  )
+  const activityEnterStyle = {
+    '--dashboard-activity-enter-delay': `${activityEnterDelayMs}ms`,
+  } as CSSProperties
 
   return (
     <div className={styles.page}>
       <DashboardScrollTopFade enabled={showActivity} />
       <div className={styles.cardStack}>
         <BalanceCard
-          balance={balanceNumber}
+          balance={displayedBalance}
           balanceRollTrigger={rollTrigger}
           balanceRollMode={rollMode}
           balanceRollFromValue={rollFromValue}
-          vaultBalance={vaultNumber}
+          vaultBalance={displayedVault}
+          vaultRollFromValue={vaultRollFromValue}
           vaultApy={vaultApy}
           armadaAddress={shieldedWallet.shieldedAddress}
           balanceHidden={balanceHidden}
@@ -161,34 +211,51 @@ export function Dashboard() {
         />
 
         {showDepositTooltip ? (
-          <div className={styles.tooltipEnter} style={tooltipEnterStyle}>
-            <DepositTooltip stretch onDeposit={() => openActionModal('shield')} />
+          <div
+            className={[
+              styles.cardStackTooltip,
+              depositTooltipExiting
+                ? styles.tooltipHandoffExit
+                : depositTooltipPersistVisible
+                  ? styles.tooltipVisible
+                  : styles.tooltipEnter,
+            ].join(' ')}
+            style={depositTooltipPersistVisible || depositTooltipExiting ? undefined : tooltipEnterStyle}
+          >
+            <div className={styles.cardStackTooltipInner}>
+              <DepositTooltip stretch onDeposit={() => openActionModal('shield')} />
+            </div>
           </div>
         ) : null}
 
-        {showEarnBanner ? (
-          <div className={styles.tooltipEnter} style={tooltipEnterStyle}>
-            <DepositTooltip
-              stretch
-              BadgeIcon={ChartBarIcon}
-              badgeBackground="white"
-              iconTileTone="purple"
-              headline={`Earn ~${(vaultApy ?? 0).toFixed(1)}% APY`}
-              body="Deposit into the vault and start earning now."
-              infoTooltip="The APY is an estimate from recent vault performance."
-              ariaLabel={`Estimated yearly yield ~${(vaultApy ?? 0).toFixed(1)}%`}
-              onDeposit={() => openActionModal('yield-deposit')}
-            />
-          </div>
-        ) : null}
+        <EarnBannerSlot
+          show={showEarnBanner}
+          handoffEnter={earnBannerHandoffEnter}
+          persistVisible={earnBannerPersistVisible}
+          tooltipEnterStyle={tooltipEnterStyle}
+        >
+          <DepositTooltip
+            stretch
+            BadgeIcon={ChartBarIcon}
+            badgeBackground="white"
+            iconTileTone="purple"
+            headline={`Earn ~${(vaultApy ?? 0).toFixed(1)}% APY`}
+            body="Add USDC to Armada's shielded vault and start earning now."
+            infoTooltip="The APY is an estimate from recent shielded vault performance."
+            ariaLabel={`Estimated yearly yield ~${(vaultApy ?? 0).toFixed(1)}%`}
+            onDeposit={() => openActionModal('yield-deposit')}
+          />
+        </EarnBannerSlot>
 
         {showActivity ? (
-          <RecentActivityList
-            items={previewActivityItems}
-            balanceRevealed={!balanceHidden}
-            onViewAll={() => setActivityPanelOpen(true)}
-            onItemClick={handleActivityItemClick}
-          />
+          <div className={styles.activityEnter} style={activityEnterStyle}>
+            <RecentActivityList
+              items={previewActivityItems}
+              balanceRevealed={!balanceHidden}
+              onViewAll={() => setActivityPanelOpen(true)}
+              onItemClick={handleActivityItemClick}
+            />
+          </div>
         ) : null}
       </div>
 
@@ -207,6 +274,93 @@ export function Dashboard() {
         open={receiptId !== null}
         onClose={() => setReceiptId(null)}
       />
+    </div>
+  )
+}
+
+/**
+ * Earn-banner slot. Owns its own mount lifecycle so it can animate out: it stays mounted after
+ * `show` goes false to play the collapse-out, then unmounts. When it enters via a handoff (after a
+ * first shield / vault deposit) it grows in with the collapse animation; on a plain page load it uses
+ * the delayed fade. `handoffSettled` drops the collapse constraint once the grow-in finishes so the
+ * banner sits normally.
+ */
+function EarnBannerSlot({
+  show,
+  handoffEnter,
+  persistVisible,
+  tooltipEnterStyle,
+  children,
+}: {
+  show: boolean
+  handoffEnter: boolean
+  persistVisible: boolean
+  tooltipEnterStyle?: CSSProperties
+  children: ReactNode
+}) {
+  const [rendered, setRendered] = useState(show)
+  const [exiting, setExiting] = useState(false)
+  const [handoffSettled, setHandoffSettled] = useState(!handoffEnter)
+
+  useEffect(() => {
+    if (show) {
+      setRendered(true)
+      setExiting(false)
+      return
+    }
+    if (!rendered) return
+    // Hide requested while on screen — collapse out, then unmount (or unmount immediately if the
+    // user prefers reduced motion).
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setRendered(false)
+      return
+    }
+    setExiting(true)
+  }, [show, rendered])
+
+  useEffect(() => {
+    if (!handoffEnter) {
+      setHandoffSettled(true)
+      return
+    }
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setHandoffSettled(true)
+      return
+    }
+    setHandoffSettled(false)
+  }, [handoffEnter])
+
+  if (!rendered) return null
+
+  const enterClass = exiting
+    ? styles.tooltipHandoffExit
+    : handoffEnter
+      ? styles.tooltipHandoffEnter
+      : persistVisible
+        ? styles.tooltipVisible
+        : styles.tooltipEnter
+
+  return (
+    <div
+      className={[
+        styles.cardStackTooltip,
+        enterClass,
+        handoffSettled && !exiting ? styles.tooltipHandoffSettled : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      style={exiting || handoffEnter || persistVisible ? undefined : tooltipEnterStyle}
+      onAnimationEnd={(event) => {
+        if (event.target !== event.currentTarget) return
+        if (exiting) {
+          setExiting(false)
+          setRendered(false)
+          return
+        }
+        setHandoffSettled(true)
+      }}
+    >
+      <div className={styles.cardStackTooltipInner}>{children}</div>
     </div>
   )
 }

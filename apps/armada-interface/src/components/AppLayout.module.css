@@ -33,7 +33,7 @@
 }
 
 .gearButton:hover {
-  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 14%, var(--semantic-color-surface-main));
+  background: var(--semantic-color-surface-raised-hover);
 }
 
 .gearIcon {
@@ -62,4 +62,18 @@
 
 .bannerOverlay > * {
   pointer-events: auto;
+}
+
+/* Header logo theme toggle: white monochrome in light (reads over the gem wash), full-colour gem
+   symbol + white wordmark in dark. Two ArmadaLogo instances swapped by data-theme. */
+.logoDark {
+  display: none;
+}
+
+:global([data-theme='dark']) .logoLight {
+  display: none;
+}
+
+:global([data-theme='dark']) .logoDark {
+  display: block;
 }

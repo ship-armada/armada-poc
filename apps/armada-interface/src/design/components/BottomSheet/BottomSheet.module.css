@@ -9,7 +9,7 @@
   justify-content: center;
   padding: 0;
   border: none;
-  background: color-mix(in srgb, var(--semantic-color-text-primary) 32%, transparent);
+  background: var(--semantic-color-overlay);
   cursor: pointer;
   animation: bottomSheetScrimIn 220ms ease;
 }
@@ -20,7 +20,7 @@
 
 .sheet {
   width: 100%;
-  max-height: min(88dvh, calc(100dvh - var(--mobile-safe-area-top) - var(--primitives-spacing-5)));
+  max-height: min(var(--semantic-size-sheet-max), calc(100dvh - var(--mobile-safe-area-top) - var(--primitives-spacing-5)));
   display: flex;
   flex-direction: column;
   background: var(--semantic-color-surface-default);
@@ -29,7 +29,7 @@
   box-shadow: 0
     calc(var(--primitives-spacing-6) * -1)
     calc(var(--primitives-spacing-12) + var(--primitives-spacing-1) * 0.5)
-    0 color-mix(in srgb, var(--semantic-color-text-primary) 12%, transparent);
+    0 color-mix(in srgb, var(--semantic-color-brand-ink) 12%, transparent);
   cursor: default;
   animation: bottomSheetSlideIn 320ms cubic-bezier(0.22, 1, 0.36, 1);
   box-sizing: border-box;
@@ -78,7 +78,7 @@
   justify-content: center;
   width: var(--mobile-touch-target-min);
   height: var(--mobile-touch-target-min);
-  margin: calc(var(--primitives-spacing-3) * -1);
+  margin: 0;
   padding: 0;
   border: none;
   border-radius: calc(var(--primitives-borderRadius-full) * 1px);

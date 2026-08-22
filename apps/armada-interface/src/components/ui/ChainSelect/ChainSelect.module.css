@@ -16,18 +16,33 @@
   padding: var(--primitives-spacing-2) var(--primitives-spacing-5);
   border: none;
   border-radius: calc(var(--primitives-borderRadius-xl) * 1px);
-  background: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
+  background: var(--semantic-color-frost-control);
   text-align: left;
   box-sizing: border-box;
+  transition: background 0.15s ease;
 }
 
 .trigger {
   cursor: pointer;
 }
 
+.trigger[aria-expanded='true'] {
+  background: var(--semantic-color-frost-hover);
+}
+
+.trigger:active {
+  background: var(--semantic-color-frost-pressed);
+}
+
 .trigger:focus-visible {
   outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
   outline-offset: calc(var(--primitives-spacing-1) * 0.5);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .trigger:hover {
+    background: var(--semantic-color-frost-hover);
+  }
 }
 
 .iconSlot {
@@ -101,7 +116,7 @@
   margin: 0;
   padding: var(--primitives-spacing-1);
   list-style: none;
-  background: var(--semantic-color-surface-raised);
+  background: var(--semantic-color-surface-tooltip);
   border: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-default);
   border-radius: calc(var(--semantic-borderRadius-card) * 1px);
   box-shadow: 0 var(--primitives-spacing-3) var(--primitives-spacing-6)
@@ -132,9 +147,12 @@
   text-align: left;
 }
 
-.option:hover,
+.option:hover {
+  background: var(--semantic-color-surface-raised-hover);
+}
+
 .option[aria-selected='true'] {
-  background: var(--semantic-color-surface-hover);
+  background: var(--semantic-color-surface-raised-pressed);
 }
 
 .option:focus-visible {

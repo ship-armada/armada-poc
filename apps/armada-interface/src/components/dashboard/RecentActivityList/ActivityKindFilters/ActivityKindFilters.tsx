@@ -1,7 +1,7 @@
 // ABOUTME: Segmented kind-filter chips for the activity panel — All / Shield / Unshield / Sent / Requests / Received / Earn.
-// ABOUTME: Ported from the armada-app mockup; the chip id equals the activity kind so the predicate is a direct match.
+// ABOUTME: Renders a scroll-layout SegmentedControl; the chip id equals the activity kind so the predicate is a direct match.
 
-import styles from './ActivityKindFilters.module.css'
+import { SegmentedControl } from '@/components/ui'
 
 export type ActivityKindFilter =
   | 'all'
@@ -29,22 +29,14 @@ export interface ActivityKindFiltersProps {
 
 export function ActivityKindFilters({ value, onChange }: ActivityKindFiltersProps) {
   return (
-    <div className={styles.root} role="tablist" aria-label="Filter by transaction type">
-      {FILTERS.map((filter) => {
-        const isActive = value === filter.id
-        return (
-          <button
-            key={filter.id}
-            type="button"
-            className={[styles.filterBtn, isActive && styles.filterBtnActive].filter(Boolean).join(' ')}
-            onClick={() => onChange(filter.id)}
-            role="tab"
-            aria-selected={isActive}
-          >
-            {filter.label}
-          </button>
-        )
-      })}
-    </div>
+    <SegmentedControl
+      options={FILTERS}
+      value={value}
+      onChange={onChange}
+      size="sm"
+      layout="scroll"
+      surface="raised"
+      aria-label="Filter by transaction type"
+    />
   )
 }

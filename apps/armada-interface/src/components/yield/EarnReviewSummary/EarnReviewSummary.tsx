@@ -1,6 +1,7 @@
 // ABOUTME: EarnReviewSummary — transparent vault summary table (mode / APY / amount / fees) with a per-tab total row.
 // ABOUTME: Shares DepositReviewSummary's CSS so the rows sit inside the review/complete frost card; confirmedAt adds a "Date and time" row.
 
+import { ArmadaLogo } from '@/design'
 import { formatTransactionDateTime, formatUsdcAmount } from '@/lib/format'
 import { rateToApy } from '@/lib/yield'
 import type { YieldRate } from '@/hooks/useYieldRate'
@@ -52,6 +53,11 @@ export function EarnReviewSummary({
 }: EarnReviewSummaryProps) {
   const modeLabel = tab === 'add' ? 'Add to vault' : 'Withdraw from shielded vault'
   const amountLabel = tab === 'add' ? 'Your deposit' : 'Your withdrawal'
+  // Vault moves stay inside the shielded pool, so the notice is always the private variant.
+  const privacyBody =
+    tab === 'add'
+      ? "You are sending to Armada's shielded vault"
+      : 'You are withdrawing to your shielded address'
   return (
     <div className={styles.summary}>
       <div className={styles.summaryBody}>
@@ -92,6 +98,22 @@ export function EarnReviewSummary({
           {formatUsdcAmount(netAmount)} USDC
         </span>
       </div>
+      {/* Privacy notice — shown pre-confirmation only; vault moves are always private, so it's the
+          brand (private) variant. The confirmation view carries the date row instead. */}
+      {confirmedAt === undefined ? (
+        <div className={styles.privacyNotice} role="note">
+          <span
+            className={[styles.privacyNoticeIcon, styles.privacyNoticeIconPrivate].join(' ')}
+            aria-hidden
+          >
+            <ArmadaLogo variant="mark" markTone="deep" className={styles.privacyNoticeMark} />
+          </span>
+          <div className={styles.privacyNoticeCopy}>
+            <p className={styles.privacyNoticeTitle}>Private transfer.</p>
+            <p className={styles.privacyNoticeBody}>{privacyBody}</p>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

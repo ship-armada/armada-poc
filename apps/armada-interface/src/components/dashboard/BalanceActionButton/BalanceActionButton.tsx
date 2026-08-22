@@ -5,12 +5,15 @@ import styles from './BalanceActionButton.module.css'
 
 export type BalanceActionButtonVariant = 'primary' | 'subtle'
 export type BalanceActionButtonLayout = 'circle' | 'compact'
+export type BalanceActionButtonSurface = 'frost' | 'tint'
 
 export interface BalanceActionButtonProps {
   label: string
   icon: ReactNode
   variant?: BalanceActionButtonVariant
   layout?: BalanceActionButtonLayout
+  /** `frost` on the dashboard wash; `tint` on opaque panels (lavender in light, frost in dark). */
+  surface?: BalanceActionButtonSurface
   onClick?: () => void
   disabled?: boolean
   className?: string
@@ -22,12 +25,19 @@ export function BalanceActionButton({
   icon,
   variant = 'subtle',
   layout = 'circle',
+  surface = 'frost',
   onClick,
   disabled = false,
   className,
   testingClickId,
 }: BalanceActionButtonProps) {
-  const classNames = [styles.button, styles[variant], styles[layout], className]
+  const classNames = [
+    styles.button,
+    styles[variant],
+    styles[layout],
+    surface === 'tint' ? styles.tint : '',
+    className,
+  ]
     .filter(Boolean)
     .join(' ')
 

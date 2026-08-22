@@ -59,7 +59,7 @@
   align-items: stretch;
   width: 100%;
   min-width: 0;
-  padding-top: calc(var(--primitives-spacing-5) + var(--mobile-safe-area-top, 0px));
+  padding-top: var(--mobile-safe-area-top, 0px);
 }
 
 /* Content column — extra top padding clears the absolutely-positioned close button. */
@@ -145,11 +145,11 @@
   margin-top: var(--primitives-spacing-10);
 }
 
-/* Wallet-panel tint for the BalanceActionButton glyph tile — smaller (48px) purple-50 chip. */
+/* Wallet-panel tint for the BalanceActionButton glyph tile — smaller (48px) control-tint chip. */
 .labeledAction > span:first-child {
   width: var(--primitives-spacing-12);
   height: var(--primitives-spacing-12);
-  background: var(--primitives-color-purple-50);
+  background: var(--semantic-color-control-tint);
 }
 
 .labeledAction > span:first-child :global(svg) {
@@ -158,12 +158,12 @@
 }
 
 .labeledAction:active:not(:disabled) > span:first-child {
-  background: var(--primitives-color-purple-100);
+  background: var(--semantic-color-control-tint-pressed);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .labeledAction:hover:not(:disabled) > span:first-child {
-    background: var(--primitives-color-purple-100);
+    background: var(--semantic-color-control-tint-pressed);
   }
 }
 
@@ -187,7 +187,7 @@
   color: var(--semantic-color-text-muted);
 }
 
-/* USDC balance row — inset purple pill. */
+/* USDC balance row — inset tinted pill. */
 .usdcRow {
   display: flex;
   align-items: center;
@@ -195,8 +195,18 @@
   width: 100%;
   padding: var(--primitives-spacing-3);
   border-radius: calc(var(--primitives-borderRadius-xl) * 1px);
-  background: var(--primitives-color-purple-50);
+  background: var(--semantic-color-surface-raised);
   box-sizing: border-box;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .usdcRow:hover {
+    background: var(--semantic-color-surface-raised-hover);
+  }
+}
+
+.usdcRow:active {
+  background: var(--semantic-color-surface-raised-pressed);
 }
 
 /* Composite USDC glyph + small chain-network overlay badge. */
@@ -296,12 +306,18 @@
     color-mix(in srgb, var(--semantic-color-brand-gradient-rose) 80%, transparent) 50%,
     color-mix(in srgb, var(--semantic-color-brand-lavender) 80%, transparent) 100%
   );
-  color: var(--semantic-color-text-primary);
+  color: var(--semantic-component-button-gradient-text);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .body .depositButton:hover:not(:disabled) {
-    filter: brightness(1.04);
+    filter: none;
+    background: linear-gradient(
+      135deg,
+      var(--semantic-color-brand-amber) 0%,
+      var(--semantic-color-brand-gradient-rose) 50%,
+      var(--semantic-color-brand-lavender) 100%
+    );
   }
 }
 

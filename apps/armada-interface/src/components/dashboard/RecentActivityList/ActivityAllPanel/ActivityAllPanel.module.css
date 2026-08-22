@@ -1,12 +1,63 @@
-/* ABOUTME: Layout for the "All activity" side panel — constrained width and toolbar inline padding. */
+/* ABOUTME: Layout for the "All activity" side panel — constrained width and header/search inset aligned to the list. */
 /* ABOUTME: Ported from the armada-app design mockup. */
 .panel {
   width: min(100%, calc(var(--primitives-spacing-20) * 5 - var(--primitives-spacing-5)));
-  --side-panel-chrome-inline: var(--primitives-spacing-3);
 }
 
-.toolbar {
-  padding-inline: var(--primitives-spacing-3);
+/* Header inset matches the list rows (side-panel-inset), not the deeper chrome-inline default —
+   so the title/close, search, and list rows share one left edge. Long titles ellipsis. */
+.panelHeader {
+  padding:
+    calc(var(--side-panel-inset, var(--primitives-spacing-5)) + var(--mobile-safe-area-top, 0px))
+    var(--side-panel-inset, var(--primitives-spacing-5))
+    var(--primitives-spacing-4);
+}
+
+.sheetHeader {
+  padding: var(--primitives-spacing-5);
+  padding-bottom: var(--primitives-spacing-3);
+}
+
+.sheetHeader :global(h2),
+.panelHeader :global(h2) {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Body is a fixed-chrome + scrolling-list column: search+filters stay put, only the list scrolls. */
+.panelBody,
+.activitySheetBody {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.activitySheet {
+  height: min(
+    var(--semantic-size-sheet-max),
+    calc(100dvh - var(--mobile-safe-area-top, 0px) - var(--primitives-spacing-5))
+  );
+}
+
+.chrome {
+  flex-shrink: 0;
+  padding-bottom: var(--primitives-spacing-4);
+  border-bottom: calc(var(--primitives-borderWidth-default) * 1px) solid
+    var(--semantic-color-border-default);
+}
+
+.listRegion {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-top: var(--primitives-spacing-4);
 }
 
 .truncationNote {

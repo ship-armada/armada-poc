@@ -10,12 +10,20 @@
   display: flex;
   overflow: hidden;
 
-  /* EXCEPTION — brand gem as surface for the in-progress emotional beat. */
+  /* EXCEPTION — brand gem as surface for the in-progress emotional beat (light). */
   background: linear-gradient(
     180deg,
     color-mix(in srgb, var(--semantic-color-brand-lavender) 80%, transparent) 0%,
     color-mix(in srgb, var(--semantic-color-brand-gradient-rose) 80%, transparent) 48%,
     color-mix(in srgb, var(--semantic-color-brand-amber) 80%, transparent) 100%
+  );
+}
+
+:global([data-theme='dark']) .card:not(.cardImmersive) {
+  background: linear-gradient(
+    180deg,
+    var(--semantic-color-frost-hero-from) 0%,
+    var(--semantic-color-frost-hero-to) 100%
   );
 }
 
@@ -126,7 +134,7 @@
 }
 
 .title {
-  composes: displayXl from '../../../../design/styles/displayXlTitle.module.css';
+  composes: displayLg from '../../../../design/styles/displayLgTitle.module.css';
   margin: 0;
   /* EXCEPTION — headline stays white on the fixed light gradient surface. */
   color: var(--semantic-component-tag-label);
@@ -142,8 +150,8 @@
   margin: 0;
   width: 100%;
   line-height: var(--primitives-lineHeight-normal);
-  /* EXCEPTION — dark subtitle on the fixed light gradient surface. */
-  color: rgb(14 13 15 / 65%);
+  /* Dark subtitle on the light gem surface. */
+  color: color-mix(in srgb, var(--semantic-color-brand-ink-active) 65%, transparent);
 }
 
 .subtitleLine {
@@ -153,6 +161,18 @@
 .cardImmersive .subtitle {
   width: auto;
   max-width: 100%;
+}
+
+:global([data-theme='dark']) .tick {
+  background: var(--semantic-color-text-primary);
+}
+
+:global([data-theme='dark']) .title {
+  color: var(--semantic-color-text-primary);
+}
+
+:global([data-theme='dark']) .subtitle {
+  color: var(--semantic-color-text-secondary);
 }
 
 @media (prefers-reduced-motion: reduce) {

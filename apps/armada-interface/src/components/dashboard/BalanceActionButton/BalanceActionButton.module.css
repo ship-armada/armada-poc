@@ -55,10 +55,11 @@
 }
 
 .label {
-  color: var(--semantic-color-text-primary);
+  color: var(--semantic-color-text-secondary);
 }
 
 .primary .glyph {
+  color: var(--semantic-color-brand-ink);
   background: linear-gradient(
     135deg,
     color-mix(in srgb, var(--semantic-color-brand-amber) 80%, transparent) 0%,
@@ -73,24 +74,46 @@
 
 @media (hover: hover) and (pointer: fine) {
   .primary:hover:not(:disabled) .glyph {
-    filter: brightness(1.04);
+    filter: none;
+    background: linear-gradient(
+      135deg,
+      var(--semantic-color-brand-amber) 0%,
+      var(--semantic-color-brand-gradient-rose) 50%,
+      var(--semantic-color-brand-lavender) 100%
+    );
   }
 
   .subtle:hover:not(:disabled) .glyph {
-    background: color-mix(in srgb, var(--primitives-color-neutral-50) 55%, transparent);
+    background: var(--semantic-color-frost-hover);
+  }
+
+  .tint.subtle:hover:not(:disabled) .glyph {
+    background: var(--semantic-color-control-tint-hover);
   }
 
   .compact.subtle:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--primitives-color-neutral-50) 55%, transparent);
+    background: var(--semantic-color-frost-hover);
+  }
+
+  .compact.tint.subtle:hover:not(:disabled) {
+    background: var(--semantic-color-control-tint-hover);
   }
 }
 
 .subtle .glyph {
-  background: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
+  background: var(--semantic-color-frost-control);
 }
 
 .subtle:active:not(:disabled) .glyph {
-  background: color-mix(in srgb, var(--primitives-color-neutral-50) 70%, transparent);
+  background: var(--semantic-color-frost-pressed);
+}
+
+.tint.subtle .glyph {
+  background: var(--semantic-color-control-tint);
+}
+
+.tint.subtle:active:not(:disabled) .glyph {
+  background: var(--semantic-color-control-tint-pressed);
 }
 
 .compact {
@@ -115,11 +138,19 @@
 }
 
 .compact.subtle {
-  background: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
+  background: var(--semantic-color-frost-control);
+}
+
+.compact.tint.subtle {
+  background: var(--semantic-color-control-tint);
 }
 
 .compact.subtle:active:not(:disabled) {
-  background: color-mix(in srgb, var(--primitives-color-neutral-50) 70%, transparent);
+  background: var(--semantic-color-frost-pressed);
+}
+
+.compact.tint.subtle:active:not(:disabled) {
+  background: var(--semantic-color-control-tint-pressed);
 }
 
 .compact .glyph {

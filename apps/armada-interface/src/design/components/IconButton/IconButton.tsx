@@ -3,7 +3,7 @@
 import { forwardRef, type ReactNode } from 'react'
 import styles from './IconButton.module.css'
 
-export type IconButtonVariant = 'solid' | 'gradient' | 'ghost' | 'secondary' | 'frosted'
+export type IconButtonVariant = 'solid' | 'gradient' | 'ghost' | 'secondary' | 'frosted' | 'tinted'
 export type IconButtonSize = 'sm' | 'md' | 'lg'
 
 export interface IconButtonProps {

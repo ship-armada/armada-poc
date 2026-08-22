@@ -72,6 +72,12 @@
   display: block;
 }
 
+/* The "deep" mark ink (brand-deep = purple-900) is near-invisible on the dark review card, so in
+   dark the diamond tracks text-primary (white) to read against the surface. Light keeps the deep ink. */
+:global([data-theme='dark']) .armadaIcon {
+  color: var(--semantic-color-text-primary);
+}
+
 .summaryTotalLabel,
 .summaryTotalValue {
   composes: bodySmSemibold from '../../../design/styles/typographyComposites.module.css';
@@ -95,14 +101,14 @@
   gap: var(--primitives-spacing-3);
   margin: var(--primitives-spacing-2) 0 0;
   padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
-  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
-  background: var(--semantic-color-surface-default);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  background: var(--semantic-color-surface-banner);
   text-align: left;
 }
 
 @media (max-width: 767px) {
   .privacyNotice {
-    background: var(--primitives-color-purple-50);
+    background: var(--semantic-color-control-tint);
   }
 }
 

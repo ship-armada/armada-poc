@@ -14,7 +14,7 @@
   gap: var(--primitives-spacing-4);
   padding: var(--primitives-spacing-2);
   border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
-  background: var(--semantic-color-surface-default);
+  background: var(--semantic-color-surface-banner);
 }
 
 .iconTile {
@@ -27,11 +27,17 @@
   align-items: center;
   justify-content: center;
   border-radius: calc(var(--primitives-borderRadius-xl) * 1px);
+  /* Light: amber/purple illustration tile. Dark: page black. */
   background: var(--primitives-color-amber-100);
 }
 
 .iconTilePurple {
   background: var(--primitives-color-purple-100);
+}
+
+:global([data-theme='dark']) .iconTile,
+:global([data-theme='dark']) .iconTilePurple {
+  background: var(--semantic-color-surface-bg);
 }
 
 .iconCluster {
@@ -65,7 +71,7 @@
     var(--semantic-color-brand-gradient-rose) 50%,
     var(--semantic-color-brand-lavender) 100%
   );
-  color: var(--semantic-color-text-primary);
+  color: var(--semantic-color-brand-ink);
   pointer-events: none;
 }
 
@@ -141,6 +147,22 @@
   left: auto;
   right: 0;
   transform: none;
+}
+
+/* Info button is icon-only — no ghost border/fill (match mockup). */
+.dismiss .dismissButton {
+  background: transparent;
+  border-color: transparent;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .dismiss .dismissButton:hover:not(:disabled) {
+    background: transparent;
+  }
+}
+
+.dismiss .dismissButton:active:not(:disabled) {
+  background: transparent;
 }
 
 .dismiss .dismissIcon {

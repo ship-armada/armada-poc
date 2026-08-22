@@ -25,6 +25,9 @@ describe('<EarnReviewSummary>', () => {
     expect(screen.getByText('~4.50%')).toBeInTheDocument()
     expect(screen.getByText('Total deducted from balance')).toBeInTheDocument()
     expect(screen.getByText('101.00 USDC')).toBeInTheDocument()
+    // Vault moves are private — the notice shows the add-tab copy.
+    expect(screen.getByText('Private transfer.')).toBeInTheDocument()
+    expect(screen.getByText("You are sending to Armada's shielded vault")).toBeInTheDocument()
   })
 
   it('withdraw tab: Mode "Withdraw from shielded vault", "Your withdrawal", and the net-of-fee received total', () => {
@@ -44,6 +47,7 @@ describe('<EarnReviewSummary>', () => {
     expect(screen.getByText('Your withdrawal')).toBeInTheDocument()
     expect(screen.getByText("You'll receive into private balance")).toBeInTheDocument()
     expect(screen.getByText('49.50 USDC')).toBeInTheDocument()
+    expect(screen.getByText('You are withdrawing to your shielded address')).toBeInTheDocument()
   })
 
   it('renders "—" for the fee before a quote loads (fee=null)', () => {
@@ -87,5 +91,7 @@ describe('<EarnReviewSummary>', () => {
       />,
     )
     expect(screen.getByText('Date and time')).toBeInTheDocument()
+    // The confirmation view carries the date row instead of the privacy notice.
+    expect(screen.queryByText('Private transfer.')).not.toBeInTheDocument()
   })
 })

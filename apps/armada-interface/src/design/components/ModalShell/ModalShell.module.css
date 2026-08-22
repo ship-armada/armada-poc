@@ -34,6 +34,10 @@
   padding-bottom: calc(var(--primitives-spacing-5) + var(--mobile-safe-area-bottom, 0px));
 }
 
+:global([data-theme='dark']) .shellImmersive {
+  background: var(--semantic-color-surface-bg);
+}
+
 .headerImmersive {
   position: relative;
   z-index: 2;
@@ -251,7 +255,19 @@
   width: var(--primitives-spacing-10);
   height: var(--primitives-spacing-10);
   display: block;
-  color: var(--semantic-color-brand-deep);
+}
+
+/* Per-theme logo swap: gem mark (dark, default) vs deep-ink mark (light). */
+.logoLight {
+  display: none;
+}
+
+:global([data-theme='light']) .logoSlot .logoLight {
+  display: block;
+}
+
+:global([data-theme='light']) .logoSlot .logoDark {
+  display: none;
 }
 
 .stepsWrap {

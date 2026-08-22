@@ -2,6 +2,8 @@
 /* ABOUTME: Ported from the armada-app design mockup; drives the dashboard activity panel. */
 .root {
   --activity-surface: var(--semantic-color-frost);
+  --activity-surface-hover: var(--semantic-color-frost-control);
+  --activity-surface-pressed: var(--semantic-color-frost-hover);
   width: 100%;
   max-width: none;
   margin-inline: auto;
@@ -56,20 +58,12 @@
   }
 
   .item:hover {
-    background: var(--semantic-color-frost-hover);
-  }
-
-  .rootFull .item:hover {
-    background: var(--semantic-color-surface-hover);
+    background: var(--activity-surface-hover);
   }
 }
 
 .item:active {
-  background: var(--semantic-color-frost-pressed);
-}
-
-.rootFull .item:active {
-  background: var(--primitives-color-purple-50);
+  background: var(--activity-surface-pressed);
 }
 
 .viewAllButton:focus-visible {
@@ -81,6 +75,9 @@
 .rootFull {
   animation: none;
   max-width: none;
+  --activity-surface: var(--semantic-color-surface-raised);
+  --activity-surface-hover: var(--semantic-color-surface-raised-hover);
+  --activity-surface-pressed: var(--semantic-color-surface-raised-pressed);
 }
 
 .rootPreview {
@@ -171,7 +168,7 @@
   align-items: center;
   justify-content: center;
   border-radius: calc(var(--semantic-borderRadius-item) * 1px);
-  background: color-mix(in srgb, var(--primitives-color-purple-500) 15%, transparent);
+  background: var(--semantic-color-surface-thumb);
   color: var(--semantic-color-text-primary);
 }
 
@@ -265,7 +262,7 @@
   align-items: center;
   justify-content: center;
   border-radius: calc(var(--semantic-borderRadius-item) * 1px);
-  background: color-mix(in srgb, var(--primitives-color-purple-500) 15%, transparent);
+  background: var(--semantic-color-surface-thumb);
   color: var(--semantic-color-text-muted);
 }
 

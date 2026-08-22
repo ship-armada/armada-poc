@@ -14,10 +14,10 @@
   transform: translateX(-50%);
   z-index: 100;
   padding: var(--primitives-spacing-5);
-  background: var(--semantic-color-surface-raised);
+  background: var(--semantic-color-surface-tooltip);
   border: 1px solid var(--semantic-color-border-default);
   border-radius: calc(var(--semantic-borderRadius-item) * 1px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+  box-shadow: none;
   pointer-events: none;
   white-space: normal;
 }
@@ -34,14 +34,14 @@
   max-width: calc(var(--primitives-spacing-20) * 3);
   padding: var(--primitives-spacing-2) var(--primitives-spacing-3);
   text-align: center;
-  background: var(--primitives-color-neutral-50);
-  border: none;
-  box-shadow: 0 10px 25px 0 color-mix(in srgb, var(--primitives-color-purple-300) 25%, transparent);
+  background: var(--semantic-color-surface-tooltip);
+  border: 1px solid var(--semantic-color-border-default);
+  box-shadow: none;
 }
 
 .centeredText {
   composes: bodySm from '../../styles/typographyComposites.module.css';
-  color: var(--semantic-color-text-secondary);
+  color: var(--semantic-color-text-primary);
   margin: 0;
   line-height: var(--primitives-lineHeight-normal);
 }
@@ -115,10 +115,10 @@
   width: max-content;
   height: calc(var(--primitives-spacing-5) + var(--primitives-spacing-3) - var(--primitives-spacing-1) * 0.5);
   padding: 0 var(--primitives-spacing-4);
-  background: var(--primitives-color-neutral-50);
-  border: none;
+  background: var(--semantic-color-surface-tooltip);
+  border: 1px solid var(--semantic-color-border-default);
   border-radius: calc(var(--semantic-borderRadius-item) * 1px);
-  box-shadow: 0 10px 25px 0 color-mix(in srgb, var(--primitives-color-purple-300) 25%, transparent);
+  box-shadow: none;
   opacity: 1;
 }
 
@@ -129,7 +129,7 @@
   font-size: var(--semantic-typography-ui-label-md-font-size);
   line-height: var(--primitives-spacing-4);
   letter-spacing: var(--semantic-typography-ui-label-md-letter-spacing);
-  color: var(--semantic-color-text-secondary);
+  color: var(--semantic-color-text-primary);
   white-space: nowrap;
 }
 

@@ -29,7 +29,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
         className="fixed inset-x-6 top-5 z-40 flex h-auto items-center justify-between"
       >
         <Link to="/" aria-label="Home" className="flex shrink-0 items-center gap-2.5 text-white">
-          <ArmadaLogo variant="mono" />
+          {/* Light: white monochrome logo over the gem wash. Dark: full-colour gem symbol +
+              white wordmark (the `full` variant's wordmark tracks text-primary). Toggled per theme. */}
+          <ArmadaLogo variant="mono" className={styles.logoLight} />
+          <ArmadaLogo className={styles.logoDark} />
         </Link>
 
         <div className="hidden shrink-0 items-center gap-3 sm:flex">

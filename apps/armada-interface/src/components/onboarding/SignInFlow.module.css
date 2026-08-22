@@ -335,3 +335,13 @@
 .textLink:focus-visible {
   color: var(--semantic-component-button-primary-bg-active);
 }
+
+/* Dark: the primary-button ink reads too dark against the page here, so links go lavender. */
+:global([data-theme='dark']) .textLink {
+  color: var(--semantic-color-brand-lavender);
+}
+
+:global([data-theme='dark']) .textLink:hover,
+:global([data-theme='dark']) .textLink:focus-visible {
+  color: var(--primitives-color-purple-300);
+}

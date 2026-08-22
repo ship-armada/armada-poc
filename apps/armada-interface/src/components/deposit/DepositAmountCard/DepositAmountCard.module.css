@@ -17,8 +17,8 @@
   padding: var(--primitives-spacing-8);
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent) 0%,
-    color-mix(in srgb, var(--primitives-color-neutral-50) 20%, transparent) 100%
+    var(--semantic-color-frost-hero-from) 0%,
+    var(--semantic-color-frost-hero-to) 100%
   );
   border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
   backdrop-filter: blur(15px);
@@ -65,6 +65,9 @@
   flex-direction: column;
   align-items: stretch;
   gap: var(--primitives-spacing-4);
+  /* Fill the card even though `.cardTop` aligns its children flex-start — otherwise the chain
+     picker collapses to content width. */
+  width: 100%;
 }
 
 .chainRoot {
@@ -123,7 +126,7 @@
   flex-shrink: 0;
 }
 
-/* Frosted fill — mirrors IconButton's `.frostedFill` (translucent neutral-50 over the card blur). */
+/* Frosted fill — mirrors IconButton's `.frostedFill` (frost-raised over the card blur). */
 .pctPill {
   display: inline-flex;
   align-items: center;
@@ -132,7 +135,7 @@
   padding: 0 var(--primitives-spacing-2);
   border: none;
   border-radius: calc(var(--primitives-borderRadius-full) * 1px);
-  background: color-mix(in srgb, var(--primitives-color-neutral-50) 60%, transparent);
+  background: var(--semantic-color-frost-raised);
   font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-weight: var(--primitives-fontWeight-medium);
   font-size: calc(var(--primitives-fontSize-sm) * 1px);
@@ -143,7 +146,7 @@
 
 @media (hover: hover) and (pointer: fine) {
   .pctPill:hover:not(:disabled) {
-    background: var(--primitives-color-neutral-50);
+    background: var(--semantic-color-frost-hover);
   }
 }
 
@@ -194,14 +197,14 @@
   gap: var(--primitives-spacing-1);
 }
 
-/* Available-balance text — full match to the mockup (mono, base size, regular weight, secondary
+/* Available-balance text — full match to the mockup (mono, base size, regular weight, primary
    color); without the explicit size it would inherit the larger 15px body baseline. Shared by the
    deposit + send amount cards. */
 .balanceText {
   font-family: var(--primitives-fontFamily-mono), ui-monospace, monospace;
   font-weight: var(--primitives-fontWeight-regular);
   font-size: calc(var(--primitives-fontSize-base) * 1px);
-  color: var(--semantic-color-text-secondary);
+  color: var(--semantic-color-text-primary);
   white-space: nowrap;
   letter-spacing: 0;
 }
@@ -234,7 +237,7 @@
   margin: 0;
   padding: var(--primitives-spacing-1);
   list-style: none;
-  background: var(--semantic-color-surface-raised);
+  background: var(--semantic-color-surface-tooltip);
   border: var(--primitives-borderWidth-default) solid var(--semantic-color-border-default);
   border-radius: calc(var(--semantic-borderRadius-card) * 1px);
   box-shadow: 0 var(--primitives-spacing-3) var(--primitives-spacing-6)
@@ -252,9 +255,12 @@
   text-align: left;
 }
 
-.chainOption:hover,
+.chainOption:hover {
+  background: var(--semantic-color-surface-raised-hover);
+}
+
 .chainOption[aria-selected='true'] {
-  background: var(--semantic-color-surface-hover);
+  background: var(--semantic-color-surface-raised-pressed);
 }
 
 .chainOption:focus-visible {

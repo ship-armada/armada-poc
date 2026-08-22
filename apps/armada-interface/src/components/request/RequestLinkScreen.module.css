@@ -15,8 +15,8 @@
   border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent) 0%,
-    color-mix(in srgb, var(--primitives-color-neutral-50) 20%, transparent) 100%
+    var(--semantic-color-frost-hero-from) 0%,
+    var(--semantic-color-frost-hero-to) 100%
   );
   backdrop-filter: blur(calc(var(--primitives-spacing-24) * 3 + var(--primitives-spacing-3)));
   -webkit-backdrop-filter: blur(calc(var(--primitives-spacing-24) * 3 + var(--primitives-spacing-3)));
@@ -129,7 +129,7 @@
   font-weight: var(--primitives-fontWeight-regular);
   font-size: calc(var(--amount-size) * 1px);
   line-height: 1;
-  color: var(--semantic-color-brand-ink);
+  color: var(--semantic-color-text-primary);
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
 }
@@ -165,7 +165,7 @@
   margin: 0;
   padding: 0 var(--primitives-spacing-3);
   border-radius: calc(var(--primitives-borderRadius-full) * 1px);
-  background: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
+  background: var(--semantic-color-frost-raised);
   font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-size: var(--semantic-component-button-primary-sm-font-size);
   font-weight: var(--primitives-fontWeight-medium);
@@ -185,7 +185,7 @@
   border-radius: calc(
     (var(--primitives-borderRadius-lg) + var(--primitives-borderRadius-xl)) / 2 * 1px
   );
-  background: color-mix(in srgb, var(--primitives-color-neutral-50) 60%, transparent);
+  background: var(--semantic-color-frost-control);
 }
 
 .linkValue {
@@ -200,7 +200,7 @@
   font-size: calc(var(--primitives-fontSize-base) * 1px);
   font-weight: var(--primitives-fontWeight-regular);
   line-height: var(--primitives-lineHeight-normal);
-  color: var(--semantic-color-brand-ink);
+  color: var(--semantic-color-text-primary);
   text-align: left;
 }
 
@@ -265,7 +265,7 @@
 
 @media (hover: hover) and (pointer: fine) {
   .revokeLink:hover {
-    color: var(--semantic-color-brand-ink);
+    color: var(--semantic-color-text-secondary);
   }
 }
 
@@ -297,7 +297,7 @@
   }
 
   .doneButton:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--primitives-color-neutral-50) 55%, transparent);
+    background: var(--semantic-color-frost-hover);
   }
 }
 
@@ -308,7 +308,7 @@
   width: 100%;
   padding: var(--primitives-spacing-4);
   border-radius: calc(var(--semantic-borderRadius-item) * 1px);
-  background: color-mix(in srgb, var(--primitives-color-neutral-50) 20%, transparent);
+  background: var(--semantic-color-frost);
   box-sizing: border-box;
 }
 
@@ -338,9 +338,9 @@
 .doneButton {
   width: 100%;
   height: var(--primitives-spacing-12);
-  background: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
+  background: var(--semantic-color-frost-control);
   border: calc(var(--primitives-borderWidth-default) * 1px) solid
-    color-mix(in srgb, var(--primitives-color-neutral-50) 14%, transparent);
+    color-mix(in srgb, var(--semantic-color-frost-pigment) 14%, transparent);
   color: var(--semantic-color-text-primary);
 }
 /* Revoke row — disabled trigger + honest "coming soon" marker (real revoke needs backend state). */

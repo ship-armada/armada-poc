@@ -1,7 +1,7 @@
 /* ABOUTME: Gas balance warning — matches xchain notice styling on flow input steps. */
 
 .notice {
-  background: rgba(243, 208, 160, 0.08);
+  background: color-mix(in srgb, var(--primitives-color-amber-300) 8%, transparent);
   border: 1px solid var(--semantic-color-border-amber);
   border-radius: calc(var(--semantic-borderRadius-input) * 1px);
   padding: var(--primitives-spacing-3) var(--primitives-spacing-4);

@@ -93,8 +93,9 @@ export function DepositTooltip({
     <div className={styles.dismiss}>
       <Tooltip variant="centered" content={infoTooltip}>
         <IconButton
-          variant="frosted"
+          variant="ghost"
           size="sm"
+          className={styles.dismissButton}
           iconClassName={styles.dismissIcon}
           icon={<InformationCircleIcon strokeWidth={1.5} aria-hidden />}
           aria-label="About the APY estimate"

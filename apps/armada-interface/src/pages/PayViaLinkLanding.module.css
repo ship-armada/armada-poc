@@ -102,7 +102,7 @@
   font-weight: var(--primitives-fontWeight-regular);
   font-size: calc(var(--primitives-fontSize-4xl) * 1px);
   line-height: 1;
-  color: var(--semantic-color-brand-ink);
+  color: var(--semantic-color-text-primary);
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
 }
@@ -120,10 +120,17 @@
 }
 
 .qrBox {
-  background: color-mix(in srgb, var(--primitives-color-neutral-50) 60%, transparent);
+  background: var(--semantic-color-frost-control);
   border-radius: calc(
     (var(--primitives-borderRadius-lg) + var(--primitives-borderRadius-xl)) / 2 * 1px
   );
+  color: var(--semantic-color-text-primary);
+}
+
+/* Dark: the QR (currentColor modules on transparent) needs a light plate to stay scannable, so
+   the box goes solid white with dark-ink modules. */
+:global([data-theme='dark']) .qrBox {
+  background: var(--primitives-color-white-full);
   color: var(--semantic-color-brand-ink);
 }
 
@@ -168,6 +175,34 @@
 .summaryNote {
   font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-weight: var(--primitives-fontWeight-medium);
+}
+
+/* Recipient value: Armada mark + truncated 0zk address, right-aligned. */
+.valueWithIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--primitives-spacing-2);
+  min-width: 0;
+}
+
+.valueWithIcon > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.armadaIcon {
+  width: var(--primitives-spacing-4);
+  height: var(--primitives-spacing-4);
+  flex-shrink: 0;
+  display: block;
+}
+
+/* The "deep" mark ink (brand-deep = purple-900) is near-invisible on the dark card, so in dark the
+   diamond tracks text-primary (white) to read against the surface. Light keeps the deep ink. */
+:global([data-theme='dark']) .armadaIcon {
+  color: var(--semantic-color-text-primary);
 }
 
 .expiryPill {

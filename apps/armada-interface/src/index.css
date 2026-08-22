@@ -63,8 +63,9 @@ html {
 body {
   margin: 0;
   min-height: 100vh;
-  /* Match the mockup's dashboard shell: flat surface-bg in dark, a soft purple→amber wash in light. */
-  background-color: var(--semantic-color-surface-bg);
+  /* Transparent so the fixed z-index:-1 body::before gem wash shows. The base surface is on <html>
+     (above); an opaque body background here would paint over the negative-z pseudo and hide it. */
+  background-color: transparent;
   background-attachment: fixed;
   font-family: var(--primitives-fontFamily-ui);
   font-size: 15px;

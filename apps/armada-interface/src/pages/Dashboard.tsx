@@ -183,9 +183,13 @@ export function Dashboard() {
   // polish redesign — the more-menu that held it is gone).
   const showActivity = allActivityItems.length > 0
   // Earn promo banner — the two banners are mutually exclusive; earn only shows once the deposit
-  // tooltip is gone and the vault pays a real APY.
+  // tooltip is gone and the vault pays a real APY. Gated on `handoffReady` so it can't flash during
+  // load: yieldRate (→ earnApyAvailable) and the deferred `displayedVault` settle on different renders,
+  // so before the dashboard is ready there's a frame where apy looks available while the vault still
+  // reads 0 — which would briefly show the banner, then collapse it out.
   const earnApyAvailable = vaultApy !== undefined && vaultApy > 0
-  const showEarnBanner = earnBannerHandoff.showEarnBanner && !showDepositTooltip && earnApyAvailable
+  const showEarnBanner =
+    handoffReady && earnBannerHandoff.showEarnBanner && !showDepositTooltip && earnApyAvailable
   const earnBannerHandoffEnter =
     earnBannerHandoff.earnBannerHandoffEnter || (showEarnBanner && depositTooltipHandoff.revealEarnBanner)
   const earnBannerPersistVisible = earnBannerHandoff.earnBannerPersistVisible

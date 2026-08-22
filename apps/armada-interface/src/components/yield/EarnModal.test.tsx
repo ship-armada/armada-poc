@@ -130,7 +130,7 @@ describe('<EarnModal>', () => {
     renderModal({ open: 'yield-deposit', shielded: 10_000_000n })
     fireEvent.change(screen.getByLabelText('Vault deposit amount'), { target: { value: '3' } })
     fireEvent.click(screen.getByRole('button', { name: /Review/ }))
-    expect(screen.getByRole('heading', { name: 'Review your USDC deposit' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Review USDC shielded transfer to the vault' })).toBeInTheDocument()
   })
 
   it('Confirm submits the tx and advances to the progress step', async () => {

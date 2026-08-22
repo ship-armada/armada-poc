@@ -105,6 +105,11 @@
   height: var(--primitives-spacing-5);
   color: var(--semantic-color-text-secondary);
   flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.trigger[aria-expanded='true'] .chevron {
+  transform: rotate(180deg);
 }
 
 .menu {
@@ -114,10 +119,13 @@
   right: 0;
   z-index: 20;
   margin: 0;
-  padding: var(--primitives-spacing-1);
+  padding: var(--primitives-spacing-2);
   list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-1);
   background: var(--semantic-color-surface-tooltip);
-  border: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-default);
+  border: none;
   border-radius: calc(var(--semantic-borderRadius-card) * 1px);
   box-shadow: 0 var(--primitives-spacing-3) var(--primitives-spacing-6)
     color-mix(in srgb, var(--semantic-color-surface-bg) 55%, transparent);
@@ -137,32 +145,56 @@
 .option {
   display: flex;
   align-items: center;
-  gap: var(--primitives-spacing-2);
+  gap: var(--primitives-spacing-3);
   width: 100%;
+  min-height: var(--primitives-spacing-11);
   padding: var(--primitives-spacing-2) var(--primitives-spacing-3);
   border: none;
-  border-radius: calc(var(--primitives-borderRadius-sm) * 1px);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
   background: transparent;
   cursor: pointer;
   text-align: left;
-}
-
-.option:hover {
-  background: var(--semantic-color-surface-raised-hover);
+  box-sizing: border-box;
+  font-weight: var(--primitives-fontWeight-regular);
+  transition: background 0.15s ease;
 }
 
 .option[aria-selected='true'] {
+  background: var(--semantic-color-surface-raised-pressed);
+  font-weight: var(--primitives-fontWeight-medium);
+}
+
+.option:active {
   background: var(--semantic-color-surface-raised-pressed);
 }
 
 .option:focus-visible {
   outline: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-focus);
-  outline-offset: calc(var(--primitives-spacing-1) * -0.5);
+  outline-offset: calc(var(--primitives-spacing-1) * 0.5);
+}
+
+/* Hover only on real pointers so touch taps don't leave a sticky highlight. */
+@media (hover: hover) and (pointer: fine) {
+  .option:hover {
+    background: var(--semantic-color-surface-raised-hover);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron,
+  .option {
+    transition: none;
+  }
+}
+
+/* Comfortable touch targets for the mobile option sheet. */
+.sheetList .option {
+  min-height: var(--primitives-spacing-12);
+  padding-block: var(--primitives-spacing-3);
 }
 
 .optionLabel {
   font-family: var(--primitives-fontFamily-ui), sans-serif;
-  font-weight: var(--primitives-fontWeight-regular);
   font-size: calc(var(--primitives-fontSize-base) * 1px);
   color: var(--semantic-color-text-primary);
 }

@@ -23,13 +23,13 @@ function setupAdd() {
 }
 
 describe('<EarnReviewStep>', () => {
-  it("tab=add: title 'Review your USDC deposit' and mode 'Add to vault'", () => {
+  it("tab=add: title 'Review USDC shielded transfer to the vault' and mode 'Add to vault'", () => {
     setupAdd()
-    expect(screen.getByRole('heading', { name: 'Review your USDC deposit' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Review USDC shielded transfer to the vault' })).toBeInTheDocument()
     expect(screen.getByText('Add to vault')).toBeInTheDocument()
   })
 
-  it("tab=withdraw: title 'Review your USDC withdrawal' and mode 'Withdraw from vault'", () => {
+  it("tab=withdraw: title 'Review USDC withdraw from shielded vault' and mode 'Withdraw from vault'", () => {
     render(
       <EarnReviewStep
         tab="withdraw"
@@ -42,7 +42,7 @@ describe('<EarnReviewStep>', () => {
         onConfirm={() => {}}
       />,
     )
-    expect(screen.getByRole('heading', { name: 'Review your USDC withdrawal' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Review USDC withdraw from shielded vault' })).toBeInTheDocument()
     expect(screen.getByText('Withdraw from shielded vault')).toBeInTheDocument()
   })
 

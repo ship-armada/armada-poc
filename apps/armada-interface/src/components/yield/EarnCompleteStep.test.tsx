@@ -10,7 +10,7 @@ const RATE: YieldRate = { rate: 1_000_000_000_000_000_000n, apyBps: 420n, fetche
 const CONFIRMED_AT = 1_700_000_000_000
 
 describe('<EarnCompleteStep>', () => {
-  it("add tab: 'USDC deposit complete' title + Add-to-vault summary", () => {
+  it("add tab: 'USDC shielded transfer to vault complete' title + Add-to-vault summary", () => {
     render(
       <EarnCompleteStep
         tab="add"
@@ -25,7 +25,7 @@ describe('<EarnCompleteStep>', () => {
         onGoToDashboard={() => {}}
       />,
     )
-    expect(screen.getByRole('heading', { name: 'USDC deposit complete' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'USDC shielded transfer to vault complete' })).toBeInTheDocument()
     expect(screen.getByText('Add to vault')).toBeInTheDocument()
     expect(screen.getByText('Your deposit')).toBeInTheDocument()
     expect(screen.getByText('Total deducted from balance')).toBeInTheDocument()

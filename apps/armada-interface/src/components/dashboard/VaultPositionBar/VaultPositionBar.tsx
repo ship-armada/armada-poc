@@ -132,7 +132,7 @@ export function VaultPositionBar({
   }
 
   return (
-    <div className={styles.root} aria-label="Vault position" {...peekHandlers}>
+    <div className={styles.root} aria-label="Shielded vault position" {...peekHandlers}>
       {content}
     </div>
   )

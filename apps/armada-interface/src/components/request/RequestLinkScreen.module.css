@@ -129,7 +129,7 @@
   font-weight: var(--primitives-fontWeight-regular);
   font-size: calc(var(--amount-size) * 1px);
   line-height: 1;
-  color: var(--semantic-color-brand-ink);
+  color: var(--semantic-color-text-primary);
   letter-spacing: 0;
   font-variant-numeric: tabular-nums;
 }
@@ -200,7 +200,7 @@
   font-size: calc(var(--primitives-fontSize-base) * 1px);
   font-weight: var(--primitives-fontWeight-regular);
   line-height: var(--primitives-lineHeight-normal);
-  color: var(--semantic-color-brand-ink);
+  color: var(--semantic-color-text-primary);
   text-align: left;
 }
 
@@ -265,7 +265,7 @@
 
 @media (hover: hover) and (pointer: fine) {
   .revokeLink:hover {
-    color: var(--semantic-color-brand-ink);
+    color: var(--semantic-color-text-secondary);
   }
 }
 

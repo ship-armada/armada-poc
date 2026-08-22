@@ -228,25 +228,24 @@ export function Dashboard() {
           </div>
         ) : null}
 
-        {showEarnBanner ? (
-          <EarnBannerSlot
-            handoffEnter={earnBannerHandoffEnter}
-            persistVisible={earnBannerPersistVisible}
-            tooltipEnterStyle={tooltipEnterStyle}
-          >
-            <DepositTooltip
-              stretch
-              BadgeIcon={ChartBarIcon}
-              badgeBackground="white"
-              iconTileTone="purple"
-              headline={`Earn ~${(vaultApy ?? 0).toFixed(1)}% APY`}
-              body="Add USDC to Armada's shielded vault and start earning now."
-              infoTooltip="The APY is an estimate from recent shielded vault performance."
-              ariaLabel={`Estimated yearly yield ~${(vaultApy ?? 0).toFixed(1)}%`}
-              onDeposit={() => openActionModal('yield-deposit')}
-            />
-          </EarnBannerSlot>
-        ) : null}
+        <EarnBannerSlot
+          show={showEarnBanner}
+          handoffEnter={earnBannerHandoffEnter}
+          persistVisible={earnBannerPersistVisible}
+          tooltipEnterStyle={tooltipEnterStyle}
+        >
+          <DepositTooltip
+            stretch
+            BadgeIcon={ChartBarIcon}
+            badgeBackground="white"
+            iconTileTone="purple"
+            headline={`Earn ~${(vaultApy ?? 0).toFixed(1)}% APY`}
+            body="Add USDC to Armada's shielded vault and start earning now."
+            infoTooltip="The APY is an estimate from recent shielded vault performance."
+            ariaLabel={`Estimated yearly yield ~${(vaultApy ?? 0).toFixed(1)}%`}
+            onDeposit={() => openActionModal('yield-deposit')}
+          />
+        </EarnBannerSlot>
 
         {showActivity ? (
           <div className={styles.activityEnter} style={activityEnterStyle}>
@@ -280,22 +279,44 @@ export function Dashboard() {
 }
 
 /**
- * Earn-banner slot. When it enters via a handoff (after a first shield / vault deposit) it grows in
- * with the collapse animation; on a plain page load it uses the delayed fade. `handoffSettled` drops
- * the collapse constraint once the grow-in animation finishes so the banner sits normally.
+ * Earn-banner slot. Owns its own mount lifecycle so it can animate out: it stays mounted after
+ * `show` goes false to play the collapse-out, then unmounts. When it enters via a handoff (after a
+ * first shield / vault deposit) it grows in with the collapse animation; on a plain page load it uses
+ * the delayed fade. `handoffSettled` drops the collapse constraint once the grow-in finishes so the
+ * banner sits normally.
  */
 function EarnBannerSlot({
+  show,
   handoffEnter,
   persistVisible,
   tooltipEnterStyle,
   children,
 }: {
+  show: boolean
   handoffEnter: boolean
   persistVisible: boolean
   tooltipEnterStyle?: CSSProperties
   children: ReactNode
 }) {
+  const [rendered, setRendered] = useState(show)
+  const [exiting, setExiting] = useState(false)
   const [handoffSettled, setHandoffSettled] = useState(!handoffEnter)
+
+  useEffect(() => {
+    if (show) {
+      setRendered(true)
+      setExiting(false)
+      return
+    }
+    if (!rendered) return
+    // Hide requested while on screen — collapse out, then unmount (or unmount immediately if the
+    // user prefers reduced motion).
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setRendered(false)
+      return
+    }
+    setExiting(true)
+  }, [show, rendered])
 
   useEffect(() => {
     if (!handoffEnter) {
@@ -309,20 +330,33 @@ function EarnBannerSlot({
     setHandoffSettled(false)
   }, [handoffEnter])
 
-  const enterClass = handoffEnter
-    ? styles.tooltipHandoffEnter
-    : persistVisible
-      ? styles.tooltipVisible
-      : styles.tooltipEnter
+  if (!rendered) return null
+
+  const enterClass = exiting
+    ? styles.tooltipHandoffExit
+    : handoffEnter
+      ? styles.tooltipHandoffEnter
+      : persistVisible
+        ? styles.tooltipVisible
+        : styles.tooltipEnter
 
   return (
     <div
-      className={[styles.cardStackTooltip, enterClass, handoffSettled ? styles.tooltipHandoffSettled : '']
+      className={[
+        styles.cardStackTooltip,
+        enterClass,
+        handoffSettled && !exiting ? styles.tooltipHandoffSettled : '',
+      ]
         .filter(Boolean)
         .join(' ')}
-      style={handoffEnter || persistVisible ? undefined : tooltipEnterStyle}
+      style={exiting || handoffEnter || persistVisible ? undefined : tooltipEnterStyle}
       onAnimationEnd={(event) => {
         if (event.target !== event.currentTarget) return
+        if (exiting) {
+          setExiting(false)
+          setRendered(false)
+          return
+        }
         setHandoffSettled(true)
       }}
     >

@@ -93,7 +93,7 @@ export function DepositTooltip({
     <div className={styles.dismiss}>
       <Tooltip variant="centered" content={infoTooltip}>
         <IconButton
-          variant="frosted"
+          variant="ghost"
           size="sm"
           iconClassName={styles.dismissIcon}
           icon={<InformationCircleIcon strokeWidth={1.5} aria-hidden />}

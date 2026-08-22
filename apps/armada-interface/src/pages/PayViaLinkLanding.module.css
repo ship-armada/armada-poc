@@ -170,6 +170,34 @@
   font-weight: var(--primitives-fontWeight-medium);
 }
 
+/* Recipient value: Armada mark + truncated 0zk address, right-aligned. */
+.valueWithIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--primitives-spacing-2);
+  min-width: 0;
+}
+
+.valueWithIcon > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.armadaIcon {
+  width: var(--primitives-spacing-4);
+  height: var(--primitives-spacing-4);
+  flex-shrink: 0;
+  display: block;
+}
+
+/* The "deep" mark ink (brand-deep = purple-900) is near-invisible on the dark card, so in dark the
+   diamond tracks text-primary (white) to read against the surface. Light keeps the deep ink. */
+:global([data-theme='dark']) .armadaIcon {
+  color: var(--semantic-color-text-primary);
+}
+
 .expiryPill {
   flex-shrink: 0;
   margin: 0;

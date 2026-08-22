@@ -72,6 +72,12 @@
   display: block;
 }
 
+/* The "deep" mark ink (brand-deep = purple-900) is near-invisible on the dark review card, so in
+   dark the diamond tracks text-primary (white) to read against the surface. Light keeps the deep ink. */
+:global([data-theme='dark']) .armadaIcon {
+  color: var(--semantic-color-text-primary);
+}
+
 .summaryTotalLabel,
 .summaryTotalValue {
   composes: bodySmSemibold from '../../../design/styles/typographyComposites.module.css';

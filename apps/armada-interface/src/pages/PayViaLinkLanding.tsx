@@ -135,7 +135,12 @@ export function PayViaLinkLanding() {
         ) : null}
         <div className={styles.summaryRow}>
           <dt className={styles.summaryLabel}>To</dt>
-          <dd className={styles.summaryValue}>{truncateArmadaAddress(params.recipient)}</dd>
+          <dd className={styles.summaryValue}>
+            <span className={styles.valueWithIcon}>
+              <ArmadaLogo variant="mark" markTone="deep" className={styles.armadaIcon} />
+              <span>{truncateArmadaAddress(params.recipient)}</span>
+            </span>
+          </dd>
         </div>
         <div className={styles.summaryRow}>
           <dt className={styles.summaryLabel}>Expires</dt>

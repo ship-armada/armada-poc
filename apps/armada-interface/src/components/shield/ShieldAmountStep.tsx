@@ -2,7 +2,7 @@
 // ABOUTME: Direction-agnostic: the caller (ShieldModal) feeds it the active flow's values; footer gates Review on amount (+ shield's fee floor).
 
 import type { Ref } from 'react'
-import { Button } from '@/design'
+import { Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { ChainSelect, GasBalanceNotice, SegmentedControl } from '@/components/ui'
 import { useNudgeShake } from '@/hooks/useNudgeShake'
 import { DepositAmountCard } from '@/components/deposit/DepositAmountCard/DepositAmountCard'
@@ -88,7 +88,7 @@ export function ShieldAmountStepContent({
       : undefined)
 
   return (
-    <div className={styles.contentZone}>
+    <div className={`${styles.contentZone} ${modalStepBodyEnter}`}>
       <DepositAmountCard
         chainId={chainId}
         // Match the Send flow's network selector — the shared ChainSelect instead of the card's
@@ -153,7 +153,7 @@ export function ShieldAmountStepFooter({
   const { shaking, nudge, onShakeAnimationEnd } = useNudgeShake()
 
   return (
-    <div className={depositOverlayShellStyles.buttonRow}>
+    <div className={`${depositOverlayShellStyles.buttonRow} ${modalActionRowEnter}`}>
       <Button variant="secondary" size="lg" label="Cancel" showIcon={false} onClick={onCancel} />
       <Button
         variant="primary"

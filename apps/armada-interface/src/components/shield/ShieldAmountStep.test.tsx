@@ -3,6 +3,7 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import { modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import {
   ShieldAmountStepContent,
   ShieldAmountStepFooter,
@@ -30,7 +31,7 @@ const FLOW_BREAKDOWN: FlowFeeBreakdown = {
 }
 
 function renderContent(tab: ShieldTab, onTabChange = vi.fn()) {
-  render(
+  return render(
     <ShieldAmountStepContent
       tab={tab}
       onTabChange={onTabChange}
@@ -49,7 +50,7 @@ function renderContent(tab: ShieldTab, onTabChange = vi.fn()) {
 }
 
 function renderFooter(amountStr: string, minAmount = 0n, onContinue = vi.fn(), onCancel = vi.fn()) {
-  render(
+  const { container } = render(
     <ShieldAmountStepFooter
       amountStr={amountStr}
       maxInput={100_000_000n}
@@ -58,7 +59,7 @@ function renderFooter(amountStr: string, minAmount = 0n, onContinue = vi.fn(), o
       onCancel={onCancel}
     />,
   )
-  return { onContinue, onCancel }
+  return { onContinue, onCancel, container }
 }
 
 describe('ShieldAmountStepContent (direction)', () => {
@@ -81,6 +82,20 @@ describe('ShieldAmountStepContent (direction)', () => {
     renderContent('shield', onTabChange)
     fireEvent.click(screen.getByRole('tab', { name: 'Unshield' }))
     expect(onTabChange).toHaveBeenCalledWith('unshield')
+  })
+})
+
+describe('ShieldAmountStep step-enter animation (regression)', () => {
+  // The amount step is the only step that once shipped without the FlowShell step-enter classes,
+  // so its main card never transitioned in on open. Guard both the body + footer enter hooks here.
+  it('applies modalStepBodyEnter to the content wrapper', () => {
+    const { container } = renderContent('shield')
+    expect((container.firstChild as HTMLElement).className).toContain(modalStepBodyEnter)
+  })
+
+  it('applies modalActionRowEnter to the footer button row', () => {
+    const { container } = renderFooter('5')
+    expect((container.firstChild as HTMLElement).className).toContain(modalActionRowEnter)
   })
 })
 

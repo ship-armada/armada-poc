@@ -738,7 +738,7 @@
   padding-block: var(--primitives-spacing-2);
 }
 
-@media (max-width: 767px) {
+@media (max-width: 479px) {
   .balanceClusterPrivate {
     cursor: pointer;
   }

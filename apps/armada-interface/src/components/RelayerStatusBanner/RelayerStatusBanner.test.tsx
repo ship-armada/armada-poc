@@ -46,26 +46,23 @@ describe('<RelayerStatusBanner>', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it('renders the banner with the relayer\'s status when degraded', () => {
-    // WHY: the status word must reach the user — "stale" vs "unhealthy" tell them whether to
-    // hand-fall-back now or wait. The role="status" container holds the message; assert against
-    // its textContent so the surrounding <strong> emphasis tag doesn't trip the matcher.
+  it('renders the degraded-relayer banner with the wallet-submit CTA', () => {
+    // WHY: when the relayer is degraded the user must know their tx may not broadcast and be
+    // offered the wallet path. Copy is static now (no dynamic status word from the payload).
     mockUseRelayerHealth.mockReturnValue({ isConfigured: true, isDegraded: true, data: { status: 'stale' } })
     const store = createStore()
     const { getByRole } = render(wrapWith(store, <RelayerStatusBanner isOpen />))
-    const statusRegion = getByRole('status')
-    expect(statusRegion.textContent).toMatch(/relayer is reporting/i)
-    expect(statusRegion.textContent).toMatch(/stale/i)
+    expect(getByRole('status').textContent).toMatch(/can't find an available relayer/i)
     expect(getByRole('button', { name: /Submit from my wallet instead/i })).toBeInTheDocument()
   })
 
-  it('falls back to "unreachable" when the hook returned no data', () => {
-    // WHY: a network-level failure has no `data.status` to read — the banner must still render
-    // something meaningful. "unreachable" is the right semantic distinction from "stale".
+  it('still renders the degraded banner when the hook returned no data', () => {
+    // WHY: a network-level failure has no `data.status`, but the banner must still surface — its
+    // copy no longer depends on the health payload.
     mockUseRelayerHealth.mockReturnValue({ isConfigured: true, isDegraded: true, data: undefined })
     const store = createStore()
     const { getByRole } = render(wrapWith(store, <RelayerStatusBanner isOpen />))
-    expect(getByRole('status').textContent).toMatch(/unreachable/i)
+    expect(getByRole('status').textContent).toMatch(/can't find an available relayer/i)
   })
 
   it('renders a distinct "no relayer configured" banner with a wallet-submit CTA (P0-10)', () => {

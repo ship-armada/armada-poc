@@ -109,7 +109,7 @@
   to { transform: translateX(100%); }
 }
 
-@media (min-width: 768px) {
+@media (min-width: 480px) {
   .scrim {
     padding: var(--primitives-spacing-6);
   }

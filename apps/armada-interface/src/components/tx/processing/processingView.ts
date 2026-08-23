@@ -34,12 +34,15 @@ const STAGE_COPY: Record<TxKind, Record<string, StageCopyEntry>> = {
   },
   'unshield-local': {
     'build-proof': { label: 'Preparing transaction', subtitle: 'Building zero-knowledge proof' },
-    'submit-relayer': { label: 'Submitting privately', subtitle: 'Relaying to the hub' },
-    'hub-confirmed': { label: 'Unshielding', subtitle: 'Sending USDC to your wallet', completedLabel: 'Unshielded' },
+    'submit-relayer': { label: 'Submitting transaction', subtitle: 'Relaying to public chain' },
+    // One kind-keyed entry serves both external-send and withdraw (accepted limitation): the mockup
+    // splits these by mode. We use the external-send subtitle (neutral — a withdraw also lands in an
+    // external wallet) + the unshield completedLabel (accurate for both).
+    'hub-confirmed': { label: 'Unshielding', subtitle: 'Sending USDC to external wallet', completedLabel: 'Unshielded' },
   },
   'unshield-xchain': {
     'build-proof': { label: 'Preparing transaction', subtitle: 'Building zero-knowledge proof' },
-    'submit-relayer': { label: 'Submitting privately', subtitle: 'Relaying to the hub' },
+    'submit-relayer': { label: 'Submitting transaction', subtitle: 'Relaying to public chain' },
     'hub-burn-confirmed': { label: 'Bridging', subtitle: 'Confirmed on hub' },
     'iris-attestation-pending': { label: 'Bridging', subtitle: 'Waiting for cross-chain confirmation' },
     'iris-attestation-ready': { label: 'Bridging', subtitle: 'Cross-chain confirmation ready' },
@@ -48,21 +51,21 @@ const STAGE_COPY: Record<TxKind, Record<string, StageCopyEntry>> = {
   },
   'transfer-shielded': {
     'build-proof': { label: 'Preparing transaction', subtitle: 'Building zero-knowledge proof' },
-    'submit-relayer': { label: 'Submitting privately', subtitle: 'Delivering to the recipient' },
-    'hub-confirmed': { label: 'Sending', subtitle: 'Confirming on chain', completedLabel: 'Sent' },
+    'submit-relayer': { label: 'Submitting transaction', subtitle: 'Relaying privately to recipient' },
+    'hub-confirmed': { label: 'Sending', subtitle: 'Delivering privately to recipient', completedLabel: 'Sent' },
   },
   'transfer-shielded-received': {
     observed: { label: 'Received', subtitle: 'Payment received', completedLabel: 'Received' },
   },
   'yield-deposit': {
     'build-proof': { label: 'Preparing transaction', subtitle: 'Building zero-knowledge proof' },
-    'submit-relayer': { label: 'Submitting privately', subtitle: 'Relaying to the shielded vault' },
-    'hub-confirmed': { label: 'Adding to shielded vault', subtitle: 'Confirming on chain', completedLabel: 'Earning' },
+    'submit-relayer': { label: 'Submitting privately', subtitle: 'Relaying to shielded vault' },
+    'hub-confirmed': { label: 'Adding to shielded vault', subtitle: 'USDC is entering the shielded vault', completedLabel: 'Earning' },
   },
   'yield-withdraw': {
     'build-proof': { label: 'Preparing transaction', subtitle: 'Building zero-knowledge proof' },
-    'submit-relayer': { label: 'Submitting privately', subtitle: 'Relaying to the vault' },
-    'hub-confirmed': { label: 'Withdrawing', subtitle: 'Confirming on chain', completedLabel: 'Returned to balance' },
+    'submit-relayer': { label: 'Submitting privately', subtitle: 'Relaying to shielded vault' },
+    'hub-confirmed': { label: 'Withdrawing', subtitle: 'USDC is returning to your balance', completedLabel: 'Returned to balance' },
   },
 }
 
@@ -113,18 +116,25 @@ function resolveCardBase(record: TxRecord, sendVariant?: SendVariant): CardBase 
       return sendVariant === 'withdraw'
         ? {
             tag: 'Unshield in progress',
-            title: 'Your unshield is in progress',
-            titleLines: ['Your unshield', 'is in progress'],
+            title: 'Unshielding your USDC',
+            titleLines: ['Unshielding your', 'USDC'],
           }
-        : { tag: 'Send in progress', title: 'Unshielding your USDC' }
+        : {
+            tag: 'Send in progress',
+            title: 'Unshielding and sending your USDC',
+            titleLines: ['Unshielding and sending', 'your USDC'],
+          }
     case 'yield-deposit':
       return {
         tag: 'Deposit to shielded vault in progress',
-        title: 'Depositing USDC into the shielded vault',
+        title: 'Sending USDC to shielded vault',
         titleBreakAfter: 'USDC',
       }
     case 'yield-withdraw':
-      return { tag: 'Withdraw from shielded vault in progress', title: 'Your withdrawal is in progress' }
+      return {
+        tag: 'Withdraw from shielded vault in progress',
+        title: 'Withdraw from shielded vault in progress',
+      }
   }
 }
 

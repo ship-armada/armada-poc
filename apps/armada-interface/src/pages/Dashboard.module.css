@@ -142,7 +142,7 @@
   }
 }
 
-@media (max-width: 767px) {
+@media (max-width: 479px) {
   .page {
     padding-bottom: var(--primitives-spacing-5);
   }

@@ -294,7 +294,7 @@
   animation-delay: 420ms;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 479px) {
   .page {
     justify-content: flex-start;
     padding: calc(var(--primitives-spacing-5) + var(--mobile-safe-area-top, 0px))

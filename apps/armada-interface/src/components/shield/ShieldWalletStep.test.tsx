@@ -14,7 +14,7 @@ describe('ShieldWalletStep', () => {
     ]
     render(<ShieldWalletStep steps={steps} />)
     expect(
-      screen.getByRole('heading', { name: 'Confirm transactions on your wallet' }),
+      screen.getByRole('heading', { name: 'Confirm transactions in your wallet' }),
     ).toBeInTheDocument()
     expect(screen.getByRole('list', { name: 'Wallet confirmations' })).toBeInTheDocument()
     expect(screen.getByText('Sign shield transaction')).toBeInTheDocument()

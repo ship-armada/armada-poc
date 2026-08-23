@@ -108,6 +108,7 @@ export function SendInputStepContent({
           feeLoading={feeLoading}
           // maxInput drives the 25% / 50% / 75% / Max percent pills; onMax keeps the exact fee-aware cap.
           maxInput={maxInput}
+          balanceRaw={max}
           onMax={() => onAmountChange(formatUsdcPlain(maxInput))}
           error={amountError}
           amountAriaLabel={variant === 'withdraw' ? 'Withdrawal amount' : 'Send amount'}

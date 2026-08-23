@@ -29,7 +29,7 @@
   width: auto;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 479px) {
   .actions {
     margin-top: var(--primitives-spacing-5);
   }

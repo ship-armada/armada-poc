@@ -42,6 +42,11 @@ function unresolvedShield(amount: bigint): TxRecord {
 vi.mock('@/lib/tx/executor', async (importActual) => ({
   ...await importActual<typeof import('@/lib/tx/executor')>(),
   getIsLeader: () => true,
+  // No-op the executor so a submitted record deterministically sits at build-proof (the wallet
+  // step). With the real executor the shield handler can't complete in the test env and the record
+  // races to `failed`, flipping the step off `wallet` before the assertions can catch it. These
+  // tests exercise the submit → wallet-step UI orchestration, not real executor progression.
+  executeTx: () => {},
 }))
 
 vi.mock('@/hooks/useDisplayFees', () => ({

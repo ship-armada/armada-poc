@@ -141,7 +141,7 @@ export function EarnInputStepContent({
   const fieldError = amountError ?? continueBlockedReason ?? undefined
 
   const question =
-    tab === 'add' ? 'Deposit USDC to the vault' : 'Withdraw USDC from the vault'
+    tab === 'add' ? 'Add USDC to the shielded vault' : 'Withdraw USDC from the shielded vault'
 
   return (
     <div className={`${styles.root} ${modalStepBodyEnter}`}>
@@ -182,9 +182,10 @@ export function EarnInputStepContent({
         feeLoading={feeLoading}
         // maxInput drives the 25% / 50% / 75% / Max percent pills; onMax keeps the exact fee-aware cap.
         maxInput={maxInput}
+        balanceRaw={max}
         onMax={() => onAmountChange(formatUsdcPlain(maxInput))}
         error={fieldError}
-        amountAriaLabel={tab === 'add' ? 'Vault deposit amount' : 'Vault withdrawal amount'}
+        amountAriaLabel={tab === 'add' ? 'Shielded vault deposit amount' : 'Shielded vault withdrawal amount'}
         inputRef={inputRef}
       />
 

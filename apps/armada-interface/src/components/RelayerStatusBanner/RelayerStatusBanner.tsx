@@ -2,6 +2,7 @@
 // ABOUTME: Offers a one-click "Submit from your wallet instead" path that toggles the persisted preference.
 
 import { useAtom } from 'jotai'
+import { Button } from '@/design'
 import { preferencesAtom } from '@/state/preferences'
 import { useRelayerHealth } from '@/hooks/useRelayerHealth'
 import styles from './RelayerStatusBanner.module.css'
@@ -21,7 +22,7 @@ export interface RelayerStatusBannerProps {
  * read `preferencesAtom.submitFromWallet` directly at submit-time.
  */
 export function RelayerStatusBanner({ isOpen }: RelayerStatusBannerProps) {
-  const { isDegraded, isConfigured, data } = useRelayerHealth({ enabled: isOpen })
+  const { isDegraded, isConfigured } = useRelayerHealth({ enabled: isOpen })
   // preferencesAtom is `atomWithStorage` → persisted to localStorage. The action button's flip
   // therefore SURVIVES page reload + session restart; reverting requires the Settings toggle.
   const [prefs, setPrefs] = useAtom(preferencesAtom)
@@ -38,13 +39,14 @@ export function RelayerStatusBanner({ isOpen }: RelayerStatusBannerProps) {
           No relayer is configured for this site. You can still submit transactions from your own
           wallet (you'll pay network gas).
         </div>
-        <button
-          type="button"
+        <Button
+          variant="secondary"
+          size="sm"
+          label="Submit from my wallet"
+          showIcon={false}
           className={styles.action}
           onClick={() => setPrefs({ ...prefs, submitFromWallet: true })}
-        >
-          Submit from my wallet
-        </button>
+        />
       </div>
     )
   }
@@ -52,21 +54,19 @@ export function RelayerStatusBanner({ isOpen }: RelayerStatusBannerProps) {
   // Relayer's fine — no banner, default relayer-mediated path proceeds.
   if (!isDegraded) return null
 
-  const statusLabel = data?.status ?? 'unreachable'
-
   return (
     <div className={styles.root} role="status" aria-live="polite">
       <div className={styles.message}>
-        The relayer is reporting <strong>{statusLabel}</strong>. Your transaction may not be
-        broadcast promptly.
+        Can't find an available relayer. Your transaction may not be broadcast promptly.
       </div>
-      <button
-        type="button"
+      <Button
+        variant="secondary"
+        size="sm"
+        label="Submit from my wallet instead"
+        showIcon={false}
         className={styles.action}
         onClick={() => setPrefs({ ...prefs, submitFromWallet: true })}
-      >
-        Submit from my wallet instead
-      </button>
+      />
     </div>
   )
 }

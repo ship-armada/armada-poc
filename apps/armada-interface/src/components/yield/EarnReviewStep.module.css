@@ -121,7 +121,7 @@
   }
 }
 
-@media (max-width: 767px) {
+@media (max-width: 479px) {
   .root {
     padding: var(--primitives-spacing-5);
   }

@@ -106,6 +106,7 @@ export function ShieldModal() {
       currentStep={currentStep}
       status={status}
     >
+      <RelayerStatusBanner isOpen={isOpen} />
       {step === 'input' && (
         <>
           <ShieldAmountStepContent
@@ -227,7 +228,6 @@ export function ShieldModal() {
           onRetry={active.onErrorPrimary}
         />
       )}
-      <RelayerStatusBanner isOpen={isOpen} />
     </FlowShell>
   )
 }

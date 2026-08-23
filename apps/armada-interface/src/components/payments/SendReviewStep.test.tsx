@@ -51,13 +51,13 @@ describe('<SendReviewStep>', () => {
 
   it('withdraw variant: uses the unshield title + "Confirm" label', () => {
     renderReview({ variant: 'withdraw', recipient: VALID_EVM, networkName: 'Anvil Hub (local)' })
-    expect(screen.getByText('Review your USDC unshield')).toBeInTheDocument()
+    expect(screen.getByText('Review unshielding transfer')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Confirm' })).toBeInTheDocument()
   })
 
   it('send variant: uses the transfer title + fires onConfirm on the primary CTA', () => {
     const { onConfirm } = renderReview()
-    expect(screen.getByText('Review your USDC transfer')).toBeInTheDocument()
+    expect(screen.getByText('Review your USDC shielded transfer')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Confirm send/ }))
     expect(onConfirm).toHaveBeenCalledTimes(1)
   })

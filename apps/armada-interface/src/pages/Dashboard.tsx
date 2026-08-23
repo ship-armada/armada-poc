@@ -83,6 +83,20 @@ export function Dashboard() {
   // flashing NEW then rolling. Mirrors the mockup, which defers the whole advance (value + roll)
   // until the user is back on the dashboard.
   const gated = isInitialSyncGated(shielded, sync.status)
+  // The vault position depends on yieldRate, which loads from a separate poll (useYieldRate) — later
+  // than the wallet scan the sync gate waits on. Only prime the promo-banner handoffs once BOTH the
+  // gate has lifted and the vault data has loaded, so the established balance/vault values form the
+  // baseline rather than a late 0 → real arrival that flashes a banner in and out.
+  const vaultLoaded = yieldShares !== null && yieldRate !== null
+  const [handoffReady, setHandoffReady] = useState(false)
+  useEffect(() => {
+    if (gated || !vaultLoaded) {
+      setHandoffReady(false)
+      return
+    }
+    const id = requestAnimationFrame(() => setHandoffReady(true))
+    return () => cancelAnimationFrame(id)
+  }, [gated, vaultLoaded])
   const liveBalance = usdcToNumber(displayBalance)
   const earningUsdc =
     yieldShares !== null && yieldRate !== null ? sharesToUsdc(yieldShares, yieldRate.rate) : 0n
@@ -118,10 +132,12 @@ export function Dashboard() {
       setDisplayedVault(liveVault)
       return
     }
-    // Full precision (6 decimals) so the odometer digit counts line up with the card display.
+    // Roll-from precision must match each row's display so the odometer settles cleanly: the balance
+    // card shows full 6 decimals, the vault row shows 2 (VaultPositionBar's formatUsdcAmount default).
+    // Passing 6 for the vault made it spin 6 fraction digits then snap-truncate to 2.
     setRollMode('fromValue')
     setRollFromValue(formatUsdcAmount(displayedBalance, 6))
-    setVaultRollFromValue(vaultChanged ? formatUsdcAmount(displayedVault, 6) : undefined)
+    setVaultRollFromValue(vaultChanged ? formatUsdcAmount(displayedVault, 2) : undefined)
     setRollTrigger((t) => t + 1)
     setDisplayedBalance(liveBalance)
     setDisplayedVault(liveVault)
@@ -149,8 +165,19 @@ export function Dashboard() {
   // Promo-banner handoff: after a first shield the deposit tooltip holds through the balance roll,
   // then collapses and hands off to the earn banner (and reverses on vault deposit/withdraw), rather
   // than the two banners swapping instantly. See useEarnBannerHandoff.
-  const depositTooltipHandoff = useDepositTooltipHandoff(walletConnected, hasCompletedDeposit, displayedBalance)
-  const earnBannerHandoff = useEarnBannerHandoff(walletConnected, hasCompletedDeposit, displayedVault, displayedBalance)
+  const depositTooltipHandoff = useDepositTooltipHandoff(
+    walletConnected,
+    hasCompletedDeposit,
+    displayedBalance,
+    handoffReady,
+  )
+  const earnBannerHandoff = useEarnBannerHandoff(
+    walletConnected,
+    hasCompletedDeposit,
+    displayedVault,
+    displayedBalance,
+    handoffReady,
+  )
   const showDepositTooltip = depositTooltipHandoff.showDepositTooltip
   const depositTooltipPersistVisible = depositTooltipHandoff.depositTooltipPersistVisible
   const depositTooltipExiting = depositTooltipHandoff.depositTooltipExiting
@@ -158,9 +185,13 @@ export function Dashboard() {
   // polish redesign — the more-menu that held it is gone).
   const showActivity = allActivityItems.length > 0
   // Earn promo banner — the two banners are mutually exclusive; earn only shows once the deposit
-  // tooltip is gone and the vault pays a real APY.
+  // tooltip is gone and the vault pays a real APY. Gated on `handoffReady` so it can't flash during
+  // load: yieldRate (→ earnApyAvailable) and the deferred `displayedVault` settle on different renders,
+  // so before the dashboard is ready there's a frame where apy looks available while the vault still
+  // reads 0 — which would briefly show the banner, then collapse it out.
   const earnApyAvailable = vaultApy !== undefined && vaultApy > 0
-  const showEarnBanner = earnBannerHandoff.showEarnBanner && !showDepositTooltip && earnApyAvailable
+  const showEarnBanner =
+    handoffReady && earnBannerHandoff.showEarnBanner && !showDepositTooltip && earnApyAvailable
   const earnBannerHandoffEnter =
     earnBannerHandoff.earnBannerHandoffEnter || (showEarnBanner && depositTooltipHandoff.revealEarnBanner)
   const earnBannerPersistVisible = earnBannerHandoff.earnBannerPersistVisible

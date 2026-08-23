@@ -81,12 +81,12 @@ describe('<EarnInputStep>', () => {
 
   it('uses the vault-deposit aria-label when tab=add', () => {
     setup({ tab: 'add' })
-    expect(screen.getByLabelText('Vault deposit amount')).toBeInTheDocument()
+    expect(screen.getByLabelText('Shielded vault deposit amount')).toBeInTheDocument()
   })
 
   it('uses the vault-withdraw aria-label when tab=withdraw', () => {
     setup({ tab: 'withdraw' })
-    expect(screen.getByLabelText('Vault withdrawal amount')).toBeInTheDocument()
+    expect(screen.getByLabelText('Shielded vault withdrawal amount')).toBeInTheDocument()
   })
 
   it('shows the syncing APY headline when rate is null', () => {
@@ -162,6 +162,6 @@ describe('<EarnInputStep>', () => {
     const cta = screen.getByRole('button', { name: 'Input amount' })
     fireEvent.click(cta)
     expect(props.onContinue).not.toHaveBeenCalled()
-    expect(screen.getByLabelText('Vault deposit amount')).toHaveFocus()
+    expect(screen.getByLabelText('Shielded vault deposit amount')).toHaveFocus()
   })
 })

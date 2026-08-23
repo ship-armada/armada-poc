@@ -109,6 +109,23 @@ function ActivityListItems({
 }) {
   const isMobile = useMobileLayout()
   const [peekedId, setPeekedId] = useState<string | null>(null)
+  // Animate only a freshly-prepended top row (not the whole list, and not on first paint — the
+  // list-level enter handles that). Mirrors the mockup's enteringId/skipEnter.
+  const [enteringId, setEnteringId] = useState<string | null>(null)
+  const seenFirstIdRef = useRef<string | null>(null)
+  const skipEnterRef = useRef(true)
+  useEffect(() => {
+    const firstId = items[0]?.id ?? null
+    if (skipEnterRef.current) {
+      skipEnterRef.current = false
+      seenFirstIdRef.current = firstId
+      return
+    }
+    if (firstId && firstId !== seenFirstIdRef.current) {
+      setEnteringId(firstId)
+      seenFirstIdRef.current = firstId
+    }
+  }, [items])
 
   return (
     <ul className={styles.list}>
@@ -136,7 +153,9 @@ function ActivityListItems({
           <li key={item.id}>
             <button
               type="button"
-              className={styles.item}
+              className={[styles.item, enteringId === item.id ? styles.itemEnter : '']
+                .filter(Boolean)
+                .join(' ')}
               onClick={() => onItemClick?.(item)}
               {...peekHandlers}
             >

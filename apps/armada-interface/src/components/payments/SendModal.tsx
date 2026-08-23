@@ -40,6 +40,7 @@ import {
 } from '@/components/flow'
 import { FlowShell } from '@/components/flow/FlowShell'
 import { useFlowExit } from '@/components/flow/useFlowExit'
+import { useNudgeShake } from '@/hooks/useNudgeShake'
 import { SendRecipientStep, type SendFlowVariant } from './SendRecipientStep'
 import { SendInputStepContent, SendInputStepFooter } from './SendInputStep'
 import { ForceOutcomeSelect } from '@/components/debug/ForceOutcomeSelect'
@@ -120,6 +121,13 @@ export function SendModal() {
   // Shared across the amount step's card + footer (siblings) so tapping the disabled "Input amount"
   // CTA can focus the amount field alongside the shake.
   const amountInputRef = useRef<HTMLInputElement>(null)
+  // The nudge shakes the amount CARD (mockup), so the hook lives here — the common parent of the
+  // card (Content) + CTA (Footer). Tapping the incomplete CTA fires nudge() + focus.
+  const { shaking, nudge, onShakeAnimationEnd } = useNudgeShake()
+  const nudgeIncomplete = () => {
+    nudge()
+    amountInputRef.current?.focus()
+  }
 
   // Source data. `max` (and the fee-on-top guard) draws from SPENDABLE only, so a not-yet-final
   // ("pending") note can't be selected; `pendingUsdc` is display-only (0 on local Anvil).
@@ -465,6 +473,8 @@ export function SendModal() {
             // they've toggled Preferences → "Submit transactions from my wallet".
             gaslessMode={!prefs.submitFromWallet}
             inputRef={amountInputRef}
+            shaking={shaking}
+            onShakeAnimationEnd={onShakeAnimationEnd}
           />
           <ForceOutcomeSelect />
           <SendInputStepFooter
@@ -472,7 +482,7 @@ export function SendModal() {
             maxInput={inputMax}
             onBack={() => setStep('recipient')}
             onContinue={() => setStep('review')}
-            onIncompleteContinue={() => amountInputRef.current?.focus()}
+            onIncompleteContinue={nudgeIncomplete}
           />
         </>
       )}

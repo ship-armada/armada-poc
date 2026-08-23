@@ -3,6 +3,7 @@
 
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import { incompleteCtaShakeClass } from '@/design'
 import { formatUsdcPlain } from '@/lib/format'
 import { DepositAmountCard } from './DepositAmountCard'
 
@@ -165,5 +166,19 @@ describe('DepositAmountCard — presets + amount roll', () => {
       />,
     )
     expect(screen.getByLabelText('Deposit amount')).not.toHaveAttribute('readonly')
+  })
+})
+
+describe('DepositAmountCard — incomplete-CTA nudge shake', () => {
+  // The mockup nudges by shaking the amount CARD (not the button) to point the eye at the empty
+  // field; the modal drives this via the `shaking` prop when the disabled "Input amount" CTA is tapped.
+  it('applies the shake class to the card root when shaking', () => {
+    const { container } = renderCard({ shaking: true })
+    expect((container.firstChild as HTMLElement).className).toContain(incompleteCtaShakeClass)
+  })
+
+  it('does not apply the shake class when not shaking', () => {
+    const { container } = renderCard()
+    expect((container.firstChild as HTMLElement).className).not.toContain(incompleteCtaShakeClass)
   })
 })

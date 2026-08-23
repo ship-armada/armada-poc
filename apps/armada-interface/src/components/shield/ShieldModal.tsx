@@ -19,6 +19,7 @@ import {
 } from '@/components/flow'
 import { FlowShell } from '@/components/flow/FlowShell'
 import { useFlowExit } from '@/components/flow/useFlowExit'
+import { useNudgeShake } from '@/hooks/useNudgeShake'
 import { RelayerStatusBanner } from '@/components/RelayerStatusBanner'
 import {
   ShieldAmountStepContent,
@@ -56,6 +57,13 @@ export function ShieldModal() {
   // Shared across the amount step's card + footer (siblings) so tapping the disabled "Input amount"
   // CTA can focus the amount field alongside the shake.
   const amountInputRef = useRef<HTMLInputElement>(null)
+  // The nudge shakes the amount CARD (mockup), so the hook lives here — the common parent of the
+  // card (Content) + CTA (Footer). Tapping the incomplete CTA fires nudge() + focus.
+  const { shaking, nudge, onShakeAnimationEnd } = useNudgeShake()
+  const nudgeIncomplete = () => {
+    nudge()
+    amountInputRef.current?.focus()
+  }
 
   function handleTabChange(next: ShieldTab) {
     if (next === tab) return
@@ -130,6 +138,8 @@ export function ShieldModal() {
             gaslessMode={isShield ? shieldFlow.useGasless : !prefs.submitFromWallet}
             gasChainId={isShield ? shieldFlow.fromChainId : hubChainId}
             inputRef={amountInputRef}
+            shaking={shaking}
+            onShakeAnimationEnd={onShakeAnimationEnd}
           />
           <ShieldAmountStepFooter
             amountStr={active.amountStr}
@@ -137,7 +147,7 @@ export function ShieldModal() {
             minAmount={isShield ? shieldFlow.minAmount : 0n}
             onCancel={close}
             onContinue={active.onContinueToReview}
-            onIncompleteContinue={() => amountInputRef.current?.focus()}
+            onIncompleteContinue={nudgeIncomplete}
           />
         </>
       )}

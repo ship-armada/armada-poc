@@ -14,6 +14,7 @@ import {
 } from '@/components/dashboard/BalanceCard/balanceRevealMotion'
 import { formatUsdcAmount, formatUsdcPlain } from '@/lib/format'
 import type { DisplayFees } from '@/lib/fees/displayFees'
+import { incompleteCtaShakeClass } from '@/design'
 import styles from './DepositAmountCard.module.css'
 
 const ICON_SIZE = 32
@@ -87,6 +88,13 @@ export interface DepositAmountCardProps {
   amountAriaLabel?: string
   /** Ref onto the amount `<input>` — lets a sibling footer focus the field (e.g. the incomplete-CTA nudge). */
   inputRef?: React.Ref<HTMLInputElement>
+  /**
+   * When true, plays a one-shot shake on the card — the incomplete-CTA nudge (mockup: the field the
+   * disabled "Input amount" CTA points at shakes, not the button). Pair with `onShakeAnimationEnd`.
+   */
+  shaking?: boolean
+  /** Clears the shake once the animation finishes; wire to `useNudgeShake().onShakeAnimationEnd`. */
+  onShakeAnimationEnd?: (event: React.AnimationEvent<HTMLDivElement>) => void
 }
 
 function ChainIcon({ chainId, label }: { chainId: number; label: string }) {
@@ -126,6 +134,8 @@ export function DepositAmountCard({
   error,
   amountAriaLabel = 'Amount',
   inputRef,
+  shaking = false,
+  onShakeAnimationEnd,
 }: DepositAmountCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const chainRootRef = useRef<HTMLDivElement>(null)
@@ -256,7 +266,10 @@ export function DepositAmountCard({
   const showFee = showActiveAmount && displayFees !== undefined && totalFeeRaw > 0n
 
   return (
-    <div className={styles.card}>
+    <div
+      className={[styles.card, shaking && incompleteCtaShakeClass].filter(Boolean).join(' ')}
+      onAnimationEnd={onShakeAnimationEnd}
+    >
       <div className={styles.cardTop}>
       {header ? <div className={styles.cardHeader}>{header}</div> : null}
       {title ? <p className={styles.cardTitle}>{title}</p> : null}

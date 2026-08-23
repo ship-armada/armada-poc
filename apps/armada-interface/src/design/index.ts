@@ -1,6 +1,11 @@
 // ABOUTME: Public barrel for the app-vendored design system — the primitives this app consumes.
 // ABOUTME: Vendored from @armada/ui so the interface is self-contained; style sheets live in ./styles.
 
+import incompleteCtaNudgeStyles from './styles/incompleteCtaNudge.module.css'
+
+/** One-shot "nudge" shake class for an incomplete/disabled CTA — pair with `useNudgeShake`. */
+export const incompleteCtaShakeClass = incompleteCtaNudgeStyles.shake
+
 export { ArmadaLogo } from './components/ArmadaLogo'
 export type { ArmadaLogoProps } from './components/ArmadaLogo'
 

@@ -4,7 +4,6 @@
 import type { Ref } from 'react'
 import { Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { ChainSelect, GasBalanceNotice, SegmentedControl } from '@/components/ui'
-import { useNudgeShake } from '@/hooks/useNudgeShake'
 import { DepositAmountCard } from '@/components/deposit/DepositAmountCard/DepositAmountCard'
 import { depositOverlayShellStyles } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
 import type { FlowFeeBreakdown } from '@/components/ui/FeeBreakdownTooltip'
@@ -46,6 +45,10 @@ interface ShieldAmountStepContentProps {
   gasChainId: number
   /** Ref onto the amount input so the footer's incomplete-CTA nudge can focus the field. */
   inputRef?: Ref<HTMLInputElement>
+  /** One-shot shake on the amount card — the incomplete-CTA nudge (owned by the modal). */
+  shaking?: boolean
+  /** Clears the shake once its animation ends; wire to `useNudgeShake().onShakeAnimationEnd`. */
+  onShakeAnimationEnd?: (event: React.AnimationEvent<HTMLDivElement>) => void
 }
 
 export function ShieldAmountStepContent({
@@ -65,6 +68,8 @@ export function ShieldAmountStepContent({
   gaslessMode = true,
   gasChainId,
   inputRef,
+  shaking = false,
+  onShakeAnimationEnd,
 }: ShieldAmountStepContentProps) {
   const gasWarning = useGasBalanceWarning(gasChainId)
   const showGasNotice = !gaslessMode && gasWarning.show
@@ -116,6 +121,8 @@ export function ShieldAmountStepContent({
         error={errorMessage}
         amountAriaLabel={amountAriaLabel}
         inputRef={inputRef}
+        shaking={shaking}
+        onShakeAnimationEnd={onShakeAnimationEnd}
       />
       {showGasNotice ? (
         <GasBalanceNotice
@@ -150,7 +157,6 @@ export function ShieldAmountStepFooter({
   const tooMuch = amount > maxInput
   const tooSmall = minAmount > 0n && amount > 0n && amount <= minAmount
   const canReview = hasActiveAmount(amountStr) && !tooMuch && !tooSmall && !parseError
-  const { shaking, nudge, onShakeAnimationEnd } = useNudgeShake()
 
   return (
     <div className={`${depositOverlayShellStyles.buttonRow} ${modalActionRowEnter}`}>
@@ -162,12 +168,9 @@ export function ShieldAmountStepFooter({
         showIcon={false}
         disabled={!canReview}
         onClick={onContinue}
-        onDisabledClick={() => {
-          nudge()
-          onIncompleteContinue?.()
-        }}
-        shaking={shaking}
-        onShakeAnimationEnd={onShakeAnimationEnd}
+        // Tapping the incomplete CTA nudges (shake the amount card) + focuses the field — the modal
+        // owns useNudgeShake and folds nudge() into onIncompleteContinue.
+        onDisabledClick={() => onIncompleteContinue?.()}
       />
     </div>
   )

@@ -42,7 +42,13 @@ describe('<RequestModal>', () => {
   it('opens on the compose step with the create-link CTA gated on an amount', () => {
     renderRequest()
     expect(screen.getByRole('heading', { name: 'Request USDC via link' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Input amount' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Input amount' })).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('nudge: tapping the disabled create-link CTA focuses the amount input', () => {
+    renderRequest()
+    fireEvent.click(screen.getByRole('button', { name: 'Input amount' }))
+    expect(screen.getByLabelText('Requested amount in USDC')).toHaveFocus()
   })
 
   it('generates a real pay-via-link on Create and shows the link screen', () => {

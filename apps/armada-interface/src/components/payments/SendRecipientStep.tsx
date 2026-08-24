@@ -1,12 +1,13 @@
 // ABOUTME: Send/Withdraw recipient step — a frost card (title + address input with Clear + a paste row that
 // ABOUTME: previews a valid 0zk/0x on the clipboard + public-only chain selector + privacy badge once valid) over an always-visible Cancel / Continue action row + a recent-recipients list.
 
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { XMarkIcon, GlobeAltIcon, ClipboardDocumentIcon } from '@heroicons/react/24/outline'
-import { ArmadaLogo, Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
+import { ArmadaLogo, Button, modalStepBodyEnter, modalActionRowEnter, incompleteCtaShakeClass } from '@/design'
 import iconButtonStyles from '@/design/components/IconButton/IconButton.module.css'
 import { ChainSelect } from '@/components/ui'
 import { AmountFieldWarning } from '@/components/ui/AmountFieldWarning'
+import { useNudgeShake } from '@/hooks/useNudgeShake'
 import { isShieldedAddress, validateEvmAddress } from '@/lib/address'
 import { truncateAddress } from '@/lib/format'
 import { useMobileLayout } from '@/hooks/useMobileLayout'
@@ -57,6 +58,10 @@ export function SendRecipientStep({
 }: SendRecipientStepProps) {
   const [inputFocused, setInputFocused] = useState(false)
   const isMobile = useMobileLayout()
+  // Incomplete-CTA nudge: tapping the disabled Continue shakes the recipient card + focuses the input
+  // (mockup SendRecipientScreen). The card is the shake target, not the button.
+  const inputRef = useRef<HTMLInputElement>(null)
+  const { shaking, nudge, onShakeAnimationEnd } = useNudgeShake()
   // Trimmed clipboard content (null if empty / unreadable), used by the paste row. Probed on open +
   // whenever the tab regains focus (the user may copy then return).
   const [clipboardText, setClipboardText] = useState<string | null>(null)
@@ -121,7 +126,12 @@ export function SendRecipientStep({
 
   return (
     <div className={styles.root}>
-      <div className={`${styles.card} ${modalStepBodyEnter}`}>
+      <div
+        className={[styles.card, modalStepBodyEnter, shaking && incompleteCtaShakeClass]
+          .filter(Boolean)
+          .join(' ')}
+        onAnimationEnd={onShakeAnimationEnd}
+      >
         <h1 className={`armada-text-ui-body-lg ${styles.cardTitle}`}>{title}</h1>
 
         <div className={styles.addressBlock}>
@@ -132,6 +142,7 @@ export function SendRecipientStep({
           >
             <div className={styles.addressField}>
               <input
+                ref={inputRef}
                 className={styles.addressInput}
                 type="text"
                 value={inputDisplayValue}
@@ -246,6 +257,10 @@ export function SendRecipientStep({
           showIcon={false}
           disabled={!canContinue}
           onClick={onContinue}
+          onDisabledClick={() => {
+            nudge()
+            inputRef.current?.focus()
+          }}
         />
       </div>
 

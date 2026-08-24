@@ -27,10 +27,6 @@ export interface ButtonProps {
    * `disabled`, the click routes here instead of `onClick`.
    */
   onDisabledClick?: () => void
-  /** When true, plays a one-shot horizontal shake (reduced-motion no-op). Pair with `onShakeAnimationEnd`. */
-  shaking?: boolean
-  /** Clears the shake once the animation finishes; wire to `useNudgeShake().onShakeAnimationEnd`. */
-  onShakeAnimationEnd?: (event: React.AnimationEvent<HTMLButtonElement>) => void
   style?: React.CSSProperties
   className?: string
   type?: 'button' | 'submit' | 'reset'
@@ -63,8 +59,6 @@ export function Button({
   loading = false,
   onClick,
   onDisabledClick,
-  shaking = false,
-  onShakeAnimationEnd,
   className,
   type = 'button',
   style,
@@ -86,7 +80,6 @@ export function Button({
     !showTrailing && styles.noIcon,
     loading && styles.loading,
     leadingIcon && styles.leading,
-    shaking && styles.shake,
     className ?? '',
   ]
     .filter(Boolean)
@@ -110,7 +103,6 @@ export function Button({
               onClick?.()
             }
       }
-      onAnimationEnd={onShakeAnimationEnd}
       style={style}
     >
       {leadingIcon ? (

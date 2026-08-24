@@ -38,14 +38,20 @@ describe('<SendRecipientStep>', () => {
 
   it('shows a disabled "Enter address" CTA while the recipient is empty', () => {
     setup()
-    expect(screen.getByRole('button', { name: /Enter address/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Enter address/ })).toHaveAttribute('aria-disabled', 'true')
     expect(screen.queryByRole('button', { name: /^Continue$/ })).toBeNull()
   })
 
   it('shows an error and keeps the CTA disabled + labeled "Enter address" for a malformed address', () => {
     setup({ recipient: 'nonsense' })
     expect(screen.getByRole('alert')).toHaveTextContent(/valid 0zk or 0x/i)
-    expect(screen.getByRole('button', { name: /Enter address/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Enter address/ })).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('nudge: tapping the disabled CTA focuses the recipient input (incomplete-CTA nudge)', () => {
+    setup()
+    fireEvent.click(screen.getByRole('button', { name: /Enter address/ }))
+    expect(screen.getByLabelText('Recipient address')).toHaveFocus()
   })
 
   it('0zk recipient: private badge, no chain selector, Continue enabled', () => {
@@ -76,7 +82,7 @@ describe('<SendRecipientStep>', () => {
     })
     expect(screen.getByRole('alert')).toHaveTextContent(/no deployment manifest/i)
     // The address is valid so the label reads "Continue", but the deployment error keeps it disabled.
-    expect(screen.getByRole('button', { name: /^Continue$/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /^Continue$/ })).toHaveAttribute('aria-disabled', 'true')
   })
 
   it('fires onContinue for a valid recipient', () => {

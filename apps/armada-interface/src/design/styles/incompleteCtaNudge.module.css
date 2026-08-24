@@ -1,0 +1,30 @@
+/* ABOUTME: Shared one-shot "nudge" shake for an incomplete/disabled CTA — shakes the field card the CTA points at. */
+/* ABOUTME: Ported from the armada-app mockup (incompleteCtaNudge.module.css); paired with useNudgeShake. Reduced-motion no-op. */
+.shake {
+  animation: incompleteCtaShake 400ms ease-in-out;
+}
+
+@keyframes incompleteCtaShake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(calc(var(--primitives-spacing-1) * -1));
+  }
+  40% {
+    transform: translateX(var(--primitives-spacing-1));
+  }
+  60% {
+    transform: translateX(calc(var(--primitives-spacing-1) * -0.5));
+  }
+  80% {
+    transform: translateX(calc(var(--primitives-spacing-1) * 0.5));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shake {
+    animation: none;
+  }
+}

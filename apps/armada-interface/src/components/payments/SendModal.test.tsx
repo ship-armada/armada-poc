@@ -182,10 +182,10 @@ describe('<SendModal>', () => {
   it('Continue enables only once the recipient is a valid address', () => {
     renderModal({ open: 'payment', shielded: 10_000_000n })
     // Empty + invalid: the CTA is always present but disabled + labeled "Enter address".
-    expect(screen.getByRole('button', { name: /Enter address/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Enter address/ })).toHaveAttribute('aria-disabled', 'true')
     fireEvent.change(screen.getByLabelText('Recipient address'), { target: { value: 'not-an-address' } })
     expect(screen.getByRole('alert')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Enter address/ })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /Enter address/ })).toHaveAttribute('aria-disabled', 'true')
     fireEvent.change(screen.getByLabelText('Recipient address'), { target: { value: VALID_0ZK } })
     expect(screen.getByRole('button', { name: /^Continue$/ })).not.toBeDisabled()
   })

@@ -44,6 +44,10 @@ export interface SendInputStepProps {
   inputRef?: Ref<HTMLInputElement>
   /** Called when the disabled "Input amount" CTA is tapped — focuses the amount field alongside the shake. */
   onIncompleteContinue?: () => void
+  /** One-shot shake on the amount card — the incomplete-CTA nudge (owned by the modal). */
+  shaking?: boolean
+  /** Clears the shake once its animation ends; wire to `useNudgeShake().onShakeAnimationEnd`. */
+  onShakeAnimationEnd?: (event: React.AnimationEvent<HTMLDivElement>) => void
 }
 
 export function SendInputStepContent({
@@ -60,6 +64,8 @@ export function SendInputStepContent({
   gasChainId,
   gaslessMode = true,
   inputRef,
+  shaking = false,
+  onShakeAnimationEnd,
 }: Pick<
   SendInputStepProps,
   | 'variant'
@@ -75,6 +81,8 @@ export function SendInputStepContent({
   | 'gasChainId'
   | 'gaslessMode'
   | 'inputRef'
+  | 'shaking'
+  | 'onShakeAnimationEnd'
 >) {
   const allChains = useMemo(
     () => getAllChainIdentities().map((c) => ({ chainId: c.chainId, label: c.name })),
@@ -113,6 +121,8 @@ export function SendInputStepContent({
           error={amountError}
           amountAriaLabel={variant === 'withdraw' ? 'Withdrawal amount' : 'Send amount'}
           inputRef={inputRef}
+          shaking={shaking}
+          onShakeAnimationEnd={onShakeAnimationEnd}
         />
         {showGasNotice ? (
           <GasBalanceNotice
@@ -138,7 +148,6 @@ export function SendInputStepFooter({
   const { value: amount, error: parseError } = parseUsdcInput(amountStr)
   const tooMuch = amount > maxInput
   const canReview = hasActiveAmount(amountStr) && !tooMuch && !parseError
-  const { shaking, nudge, onShakeAnimationEnd } = useNudgeShake()
 
   return (
     <div className={`${depositOverlayShellStyles.buttonRow} ${modalActionRowEnter}`}>
@@ -156,26 +165,33 @@ export function SendInputStepFooter({
         showIcon={false}
         disabled={!canReview}
         onClick={onContinue}
-        onDisabledClick={() => {
-          nudge()
-          onIncompleteContinue?.()
-        }}
-        shaking={shaking}
-        onShakeAnimationEnd={onShakeAnimationEnd}
+        // Tapping the incomplete CTA nudges (shake the amount card) + focuses the field — the modal
+        // owns useNudgeShake and folds nudge() into onIncompleteContinue.
+        onDisabledClick={() => onIncompleteContinue?.()}
       />
     </div>
   )
 }
 
 export function SendInputStep(props: SendInputStepProps) {
-  // The step is the common parent of the amount card + footer, so it owns the ref shared between them.
+  // The step is the common parent of the amount card + footer, so it owns the ref + nudge shared
+  // between them (the modals render Content/Footer directly and own their own; this covers standalone use).
   const amountInputRef = useRef<HTMLInputElement>(null)
+  const { shaking, nudge, onShakeAnimationEnd } = useNudgeShake()
   return (
     <>
-      <SendInputStepContent {...props} inputRef={amountInputRef} />
+      <SendInputStepContent
+        {...props}
+        inputRef={amountInputRef}
+        shaking={shaking}
+        onShakeAnimationEnd={onShakeAnimationEnd}
+      />
       <SendInputStepFooter
         {...props}
-        onIncompleteContinue={() => amountInputRef.current?.focus()}
+        onIncompleteContinue={() => {
+          nudge()
+          amountInputRef.current?.focus()
+        }}
       />
     </>
   )

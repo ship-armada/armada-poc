@@ -28,6 +28,7 @@ import {
 } from '@/components/flow'
 import { FlowShell } from '@/components/flow/FlowShell'
 import { useFlowExit } from '@/components/flow/useFlowExit'
+import { useNudgeShake } from '@/hooks/useNudgeShake'
 import { EarnInputStepContent, EarnInputStepFooter, type EarnTab } from './EarnInputStep'
 import { useDisplayFees } from '@/hooks/useDisplayFees'
 import { EarnReviewStep } from './EarnReviewStep'
@@ -59,6 +60,13 @@ export function EarnModal() {
   // Shared across the amount step's card + footer (siblings) so tapping the disabled "Input amount"
   // CTA can focus the amount field alongside the shake.
   const amountInputRef = useRef<HTMLInputElement>(null)
+  // The nudge shakes the amount CARD (mockup), so the hook lives here — the common parent of the
+  // card (Content) + CTA (Footer). Tapping the incomplete CTA fires nudge() + focus.
+  const { shaking, nudge, onShakeAnimationEnd } = useNudgeShake()
+  const nudgeIncomplete = () => {
+    nudge()
+    amountInputRef.current?.focus()
+  }
 
   // Source data. The USDC leg (deposit amount + the withdraw-fee reserve + the fee-on-top guard) draws
   // from SPENDABLE only, so a not-yet-final ("pending") note can't be used; `pendingUsdc` is
@@ -346,6 +354,8 @@ export function EarnModal() {
             rate={yieldRate}
             continueBlockedReason={withdrawFeeBlockedReason}
             inputRef={amountInputRef}
+            shaking={shaking}
+            onShakeAnimationEnd={onShakeAnimationEnd}
           />
           <EarnInputStepFooter
             amountStr={amountStr}
@@ -353,7 +363,7 @@ export function EarnModal() {
             continueBlockedReason={withdrawFeeBlockedReason}
             onCancel={close}
             onContinue={() => setStep('review')}
-            onIncompleteContinue={() => amountInputRef.current?.focus()}
+            onIncompleteContinue={nudgeIncomplete}
           />
         </>
       )}

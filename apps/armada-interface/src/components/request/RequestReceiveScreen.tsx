@@ -1,9 +1,10 @@
 // ABOUTME: RequestReceiveScreen — compose a payment request (amount + expiry + note) that becomes a shareable link.
 // ABOUTME: The first step of the Request flow; "Create link" advances to RequestLinkScreen. Amount-less requests copy the raw address instead.
 
-import { useId } from 'react'
-import { Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
+import { useId, useRef } from 'react'
+import { Button, modalStepBodyEnter, modalActionRowEnter, incompleteCtaShakeClass } from '@/design'
 import { SegmentedControl } from '@/components/ui'
+import { useNudgeShake } from '@/hooks/useNudgeShake'
 import { hasActiveAmount, sanitizeAmountInput } from '@/utils/amountInput'
 import {
   REQUEST_LINK_EXPIRY_OPTIONS,
@@ -35,6 +36,10 @@ export function RequestReceiveScreen({
 }: RequestReceiveScreenProps) {
   const amountInputId = useId()
   const noteInputId = useId()
+  // Incomplete-CTA nudge: tapping the disabled "Input amount" shakes the link card + focuses the
+  // amount input (mockup RequestReceiveScreen). The card is the shake target, not the button.
+  const amountInputRef = useRef<HTMLInputElement>(null)
+  const { shaking, nudge, onShakeAnimationEnd } = useNudgeShake()
 
   const canCreateLink = hasActiveAmount(amount)
   const ctaLabel = canCreateLink ? 'Create link' : 'Input amount'
@@ -47,13 +52,17 @@ export function RequestReceiveScreen({
   return (
     <div className={styles.column}>
       <div className={modalStepBodyEnter}>
-        <div className={styles.linkCard}>
+        <div
+          className={[styles.linkCard, shaking && incompleteCtaShakeClass].filter(Boolean).join(' ')}
+          onAnimationEnd={onShakeAnimationEnd}
+        >
           <h1 className={`armada-text-ui-body-lg ${styles.cardTitle}`}>Request USDC via link</h1>
 
           <div className={styles.amountRow}>
             <div className={styles.amountGroup}>
               <div className={styles.amountField}>
                 <input
+                  ref={amountInputRef}
                   id={amountInputId}
                   className={styles.amountInput}
                   type="text"
@@ -109,6 +118,10 @@ export function RequestReceiveScreen({
           showIcon={false}
           disabled={!canCreateLink}
           onClick={onCreateLink}
+          onDisabledClick={() => {
+            nudge()
+            amountInputRef.current?.focus()
+          }}
         />
       </div>
     </div>

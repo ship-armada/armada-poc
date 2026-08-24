@@ -29,7 +29,6 @@ For detailed architecture, see @.claude/ARCHITECTURE_NOTES.md
 npm run chains              # Start 3 Anvil instances (hub:8545, clientA:8546, clientB:8547)
 npm run setup               # Compile + deploy all contracts to local chains
 npm run armada-relayer      # Start unified relayer (HTTP API + CCTP relay)
-npm run demo                # Start frontend dev server
 
 # Testing — run these before committing
 npm run test                # Core privacy pool integration test (Hardhat/Mocha)
@@ -98,7 +97,6 @@ When writing new code, follow production security practices even though these le
 | `scripts/` | Hardhat deployment and utility scripts |
 | `tasks/` | Hardhat CLI tasks (crowdfund, governance operations) |
 | `relayer/` | Node.js relayer service |
-| `apps/` | `armada-interface` — user app for shield/unshield/yield/payments (React, Vite); Launch 2 |
 | `crowdfund-ui/` | Crowdfund UIs — committer, admin (React, Vite, Jotai); observer is deprecated as a standalone app |
 | `governance-ui/` | Standalone governance proposal builder (React, Vite); not in npm workspaces |
 | `packages/` | Shared workspace packages — `@armada/ui` design system + showcase |
@@ -167,7 +165,6 @@ The following are intentional design decisions or inherited code that may look l
 - **Railgun internals** (`contracts/railgun/logic/`) — Adapted from Railgun's open-source codebase. Changes break ZK circuit compatibility silently.
 - **Non-standard ERC-4626 vault** (`ArmadaYieldVault`) — Intentionally deviates from the standard. Do not "fix" it to conform.
 - **Frozen Launch 1 interfaces** (`IShieldPauseController`, `IFeeCollector` in `contracts/governance/`) — These are consumed by immutable governance contracts deployed at the crowdfund launch. Once Launch 1 ships, changing their function signatures or semantics breaks the Launch 2 privacy-pool/fee-module integration. Treat as external ABI. See `.context/two-launch-feasibility.md`.
-- **`apps/armada-interface`** — The current user app (Launch 2). Residual Namada/Noble/Cosmos code paths inherited from the earlier frontend are harmless. (The predecessor `usdc-v2-frontend` now lives in `_legacy/`.)
 - **Testing mode / verification bypass code** — These POC shortcuts exist in the codebase. Do not remove them (they're tracked), but never enable them without human instruction.
 - **`_legacy/` directory** — Deprecated earlier approach. Do not modify or reference in new code.
 

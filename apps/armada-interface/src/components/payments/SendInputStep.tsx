@@ -1,7 +1,7 @@
 // ABOUTME: Send/Withdraw amount step — DepositAmountCard (no chain row; chosen on the recipient step) + percent pills + gas notice.
 // ABOUTME: Recipient + chain live on the preceding recipient step, so this step gates only on the amount.
 
-import { useMemo, useRef, type Ref } from 'react'
+import { useRef, type Ref } from 'react'
 import { Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { DepositAmountCard } from '@/components/deposit/DepositAmountCard/DepositAmountCard'
 import { depositOverlayShellStyles } from '@/components/deposit/DepositOverlayShell/DepositOverlayShell'
@@ -10,7 +10,6 @@ import { useNudgeShake } from '@/hooks/useNudgeShake'
 import type { DisplayFees } from '@/lib/fees/displayFees'
 import type { FlowFeeBreakdown } from '@/components/ui/FeeBreakdownTooltip'
 import { useGasBalanceWarning } from '@/hooks/useGasBalanceWarning'
-import { getAllChainIdentities } from '@/config/network'
 import { formatUsdcPlain, parseUsdcInput, usdcInputErrorMessage } from '@/lib/format'
 import { hasActiveAmount } from '@/utils/amountInput'
 import type { SendFlowVariant } from './SendRecipientStep'
@@ -18,8 +17,6 @@ import styles from './SendInputStep.module.css'
 
 export interface SendInputStepProps {
   variant: SendFlowVariant
-  /** Destination chain — chosen on the recipient step; rendered statically here. */
-  destChainId: number
   amountStr: string
   onAmountChange: (next: string) => void
   max: bigint
@@ -52,7 +49,6 @@ export interface SendInputStepProps {
 
 export function SendInputStepContent({
   variant,
-  destChainId,
   amountStr,
   onAmountChange,
   max,
@@ -69,7 +65,6 @@ export function SendInputStepContent({
 }: Pick<
   SendInputStepProps,
   | 'variant'
-  | 'destChainId'
   | 'amountStr'
   | 'onAmountChange'
   | 'max'
@@ -84,11 +79,6 @@ export function SendInputStepContent({
   | 'shaking'
   | 'onShakeAnimationEnd'
 >) {
-  const allChains = useMemo(
-    () => getAllChainIdentities().map((c) => ({ chainId: c.chainId, label: c.name })),
-    [],
-  )
-
   const { value: amount, error: parseError } = parseUsdcInput(amountStr)
   const gasWarning = useGasBalanceWarning(gasChainId)
   // Only surface the gas notice when the user actually pays gas themselves. All three SendModal
@@ -102,11 +92,8 @@ export function SendInputStepContent({
     <div className={`${styles.sendContent} ${modalStepBodyEnter}`}>
       <div className={styles.amountGroup}>
         <DepositAmountCard
-          chains={allChains}
-          chainId={destChainId}
-          // Title now lives inside the card; the chain is chosen on the recipient step (no chain row here).
+          // Title lives inside the card; the chain is chosen on the recipient step (no chain row here).
           title="How much USDC?"
-          showChain={false}
           amount={amountStr}
           onAmountChange={onAmountChange}
           balance={formatUsdcPlain(max)}

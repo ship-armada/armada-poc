@@ -456,7 +456,6 @@ export function SendModal() {
         <>
           <SendInputStepContent
             variant={variant}
-            destChainId={destChainId}
             amountStr={amountStr}
             onAmountChange={setAmountStr}
             max={max}

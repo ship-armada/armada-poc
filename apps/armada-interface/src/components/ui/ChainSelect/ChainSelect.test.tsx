@@ -38,6 +38,24 @@ describe('<ChainSelect>', () => {
     expect(onChange).toHaveBeenCalledWith(31338)
   })
 
+  it('shows a non-interactive "more chains soon" notice below the chains (desktop)', () => {
+    render(<ChainSelect value={31337} onChange={() => {}} label="From chain" />)
+    fireEvent.click(screen.getByLabelText('From chain'))
+    const notice = screen.getByText('More chains supported soon')
+    expect(notice).toBeInTheDocument()
+    // Not part of the selectable set: not an option, not a button.
+    expect(notice).not.toHaveAttribute('role', 'option')
+    expect(notice.closest('button')).toBeNull()
+  })
+
+  it('shows the notice in the mobile bottom sheet too', () => {
+    vi.mocked(useMobileLayout).mockReturnValue(true)
+    render(<ChainSelect value={31337} onChange={() => {}} label="From chain" />)
+    fireEvent.click(screen.getByLabelText('From chain'))
+    expect(screen.getByText('More chains supported soon')).toBeInTheDocument()
+    vi.mocked(useMobileLayout).mockReturnValue(false)
+  })
+
   it('collapses to a static, non-interactive trigger with a single chain', () => {
     render(<ChainSelect value={1} onChange={() => {}} chains={[MAINNET]} label="From chain" />)
     // Only one chain → nothing to pick → no trigger button, just the label shown statically.

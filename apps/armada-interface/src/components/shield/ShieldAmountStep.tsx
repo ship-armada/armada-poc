@@ -95,9 +95,7 @@ export function ShieldAmountStepContent({
   return (
     <div className={`${styles.contentZone} ${modalStepBodyEnter}`}>
       <DepositAmountCard
-        chainId={chainId}
-        // Match the Send flow's network selector — the shared ChainSelect instead of the card's
-        // built-in picker (which the mockup lacks; we keep a picker here but style it consistently).
+        // The chain row is the shared ChainSelect (matches the Send flow's network selector).
         chainSlot={<ChainSelect value={chainId} onChange={onChainIdChange} label="Network" />}
         header={
           <SegmentedControl<ShieldTab>

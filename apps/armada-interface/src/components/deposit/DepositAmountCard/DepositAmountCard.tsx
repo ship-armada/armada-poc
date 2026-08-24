@@ -1,10 +1,9 @@
-// ABOUTME: Deposit amount card — optional in-card title, chain dropdown, left-aligned large mono amount, balance/fee row.
-// ABOUTME: Chain list from parent (network config); icons via @web3icons when mapped, else letter fallback.
+// ABOUTME: Deposit amount card — optional in-card title, chain slot, left-aligned large mono amount, balance/fee row.
+// ABOUTME: The chain UI (when shown) is supplied by the caller via `chainSlot` (e.g. the shared ChainSelect).
 
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { ChevronDownIcon, WalletIcon } from '@heroicons/react/24/solid'
+import { WalletIcon } from '@heroicons/react/24/solid'
 import { formatAmountInputDisplay, hasActiveAmount, sanitizeAmountInput } from '@/utils/amountInput'
-import { chainIconForChainId } from '@/components/ui/chainIcons'
 import { AmountFieldWarning } from '@/components/ui/AmountFieldWarning'
 import { FeeBreakdownTooltip, type FlowFeeBreakdown } from '@/components/ui/FeeBreakdownTooltip'
 import { RollingBalanceValue } from '@/components/dashboard/RollingBalanceValue'
@@ -17,8 +16,6 @@ import type { DisplayFees } from '@/lib/fees/displayFees'
 import { incompleteCtaShakeClass } from '@/design'
 import styles from './DepositAmountCard.module.css'
 
-const ICON_SIZE = 32
-
 function prefersReducedMotion(): boolean {
   if (typeof window === 'undefined') return false
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -30,21 +27,10 @@ function amountRollMs(formatted: string): number {
   return BALANCE_ROLL_DURATION_MS + Math.max(0, digitCount - 1) * BALANCE_ROLL_DIGIT_STAGGER_MS + 80
 }
 
-export interface DepositChainOption {
-  chainId: number
-  label: string
-}
-
 export interface DepositAmountCardProps {
-  chains?: ReadonlyArray<DepositChainOption>
-  chainId: number
-  onChainIdChange?: (chainId: number) => void
-  /** Hide the chain row entirely (e.g. the Send flow, where the chain is chosen on a prior step). */
-  showChain?: boolean
   /**
-   * Custom chain-row content rendered in place of the built-in picker (e.g. the shared `ChainSelect`
-   * so shield/unshield match the Send flow's network selector). When set, the built-in picker +
-   * `chains`/`showChain` are ignored.
+   * Chain-row content rendered above the title (e.g. the shared `ChainSelect`). Omit for flows with
+   * no in-card chain row (e.g. Send/Earn, where the chain is chosen on a prior step or is fixed).
    */
   chainSlot?: ReactNode
   /**
@@ -97,27 +83,7 @@ export interface DepositAmountCardProps {
   onShakeAnimationEnd?: (event: React.AnimationEvent<HTMLDivElement>) => void
 }
 
-function ChainIcon({ chainId, label }: { chainId: number; label: string }) {
-  const Icon = chainIconForChainId(chainId)
-  if (Icon) {
-    return (
-      <span className={styles.chainIconSlot} aria-hidden>
-        <Icon size={ICON_SIZE} variant="branded" />
-      </span>
-    )
-  }
-  return (
-    <span className={styles.chainIconSlot} aria-hidden>
-      {label.charAt(0).toUpperCase()}
-    </span>
-  )
-}
-
 export function DepositAmountCard({
-  chains = [],
-  chainId,
-  onChainIdChange,
-  showChain = true,
   chainSlot,
   header,
   title,
@@ -137,30 +103,8 @@ export function DepositAmountCard({
   shaking = false,
   onShakeAnimationEnd,
 }: DepositAmountCardProps) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const chainRootRef = useRef<HTMLDivElement>(null)
-  const listboxId = useId()
   const amountInputId = useId()
   const amountErrorId = useId()
-
-  const selected = chains.find((c) => c.chainId === chainId) ?? chains[0]
-  const chainSelectable = Boolean(onChainIdChange) && chains.length > 1
-
-  useEffect(() => {
-    if (!menuOpen) return
-    function handlePointerDown(event: MouseEvent) {
-      if (!chainRootRef.current?.contains(event.target as Node)) {
-        setMenuOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handlePointerDown)
-    return () => document.removeEventListener('mousedown', handlePointerDown)
-  }, [menuOpen])
-
-  function selectChain(nextId: number) {
-    onChainIdChange?.(nextId)
-    setMenuOpen(false)
-  }
 
   // Odometer roll for preset/Max taps (mockup): the amount digit-spins from the old value to the new
   // one. A preset handler records where we're rolling *from*; the effect below detects the resulting
@@ -273,53 +217,7 @@ export function DepositAmountCard({
       <div className={styles.cardTop}>
       {header ? <div className={styles.cardHeader}>{header}</div> : null}
       {title ? <p className={styles.cardTitle}>{title}</p> : null}
-      {chainSlot ? (
-        <div className={styles.topRow}>{chainSlot}</div>
-      ) : showChain ? (
-      <div className={styles.topRow}>
-        <div className={styles.chainRoot} ref={chainRootRef}>
-          {chainSelectable ? (
-            <button
-              type="button"
-              className={styles.chainTrigger}
-              aria-haspopup="listbox"
-              aria-expanded={menuOpen}
-              aria-controls={listboxId}
-              onClick={() => setMenuOpen((open) => !open)}
-            >
-              <ChainIcon chainId={chainId} label={selected?.label ?? ''} />
-              <span className={styles.chainName}>{selected?.label}</span>
-              <ChevronDownIcon className={styles.chevron} aria-hidden />
-            </button>
-          ) : (
-            <div className={styles.chainTriggerStatic}>
-              <ChainIcon chainId={chainId} label={selected?.label ?? ''} />
-              <span className={styles.chainName}>{selected?.label}</span>
-            </div>
-          )}
-
-          {menuOpen && chainSelectable ? (
-            <ul id={listboxId} className={styles.chainMenu} role="listbox" aria-label="Network">
-              {chains.map((option) => (
-                <li key={option.chainId} role="presentation">
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={option.chainId === chainId}
-                    className={styles.chainOption}
-                    onClick={() => selectChain(option.chainId)}
-                  >
-                    <ChainIcon chainId={option.chainId} label={option.label} />
-                    <span className={styles.chainOptionLabel}>{option.label}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-
-      </div>
-      ) : null}
+      {chainSlot ? <div className={styles.topRow}>{chainSlot}</div> : null}
 
       <div className={styles.amountStack}>
         <label className={styles.amountWrapper} htmlFor={amountInputId}>

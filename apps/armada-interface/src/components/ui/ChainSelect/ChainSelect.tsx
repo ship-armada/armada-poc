@@ -88,6 +88,14 @@ export function ChainSelect({ value, onChange, chains, label, disabled, classNam
     </li>
   ))
 
+  // Non-interactive "coming soon" hint below the selectable chains. `role="presentation"` keeps it
+  // out of the listbox's option set (not selectable, not arrow-navigable); the text stays perceivable.
+  const moreChainsNotice = (
+    <li role="presentation" className={styles.notice}>
+      More chains supported soon
+    </li>
+  )
+
   return (
     <div className={cls} ref={rootRef}>
       {selectable ? (
@@ -120,6 +128,7 @@ export function ChainSelect({ value, onChange, chains, label, disabled, classNam
       {menuOpen && selectable && !isMobile ? (
         <ul id={listboxId} className={styles.menu} role="listbox" aria-label="Network">
           {optionItems}
+          {moreChainsNotice}
         </ul>
       ) : null}
 
@@ -132,6 +141,7 @@ export function ChainSelect({ value, onChange, chains, label, disabled, classNam
         >
           <ul className={styles.sheetList} role="listbox" aria-label="Network">
             {optionItems}
+            {moreChainsNotice}
           </ul>
         </BottomSheet>
       ) : null}

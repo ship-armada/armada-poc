@@ -198,3 +198,15 @@
   font-size: calc(var(--primitives-fontSize-base) * 1px);
   color: var(--semantic-color-text-primary);
 }
+
+/* Non-interactive "more chains soon" hint below the selectable chains — muted, with a hairline
+   divider separating it from the last option. Not an option: no hover/pointer affordance. */
+.notice {
+  margin-top: var(--primitives-spacing-1);
+  padding: var(--primitives-spacing-2) var(--primitives-spacing-3);
+  border-top: calc(var(--primitives-borderWidth-default) * 1px) solid var(--semantic-color-border-default);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-muted);
+  cursor: default;
+}

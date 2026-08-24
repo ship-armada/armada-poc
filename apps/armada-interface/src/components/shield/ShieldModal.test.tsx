@@ -62,6 +62,36 @@ vi.mock('@/hooks/useDisplayFees', () => ({
   }),
 }))
 
+// useFees hits the relayer's /fees endpoint (React Query); there's no backend in the test env, so
+// the real hook's `refresh()` resolves to null. Since #506, `submit()` calls `resolveFreshQuote`
+// (which awaits `refresh()`) before advancing, and throws → 'error' step when the quote is null —
+// so the wallet-step assertions can't be reached without a deterministic quote. Stub a zero-fee
+// hub quote (matches the mocked useDisplayFees) + a `refresh` that resolves to it, keeping the
+// submit path hermetic and order-independent. (Live fee fetching is covered in useFees.test.ts.)
+const STUB_FEE_QUOTE = {
+  cacheId: 'test-cache-id',
+  expiresAt: Number.MAX_SAFE_INTEGER,
+  chainId: 31337,
+  broadcasterShieldedAddress: '0zk' + '0'.repeat(60),
+  fees: {
+    transfer: '0',
+    unshield: '0',
+    crossContract: '0',
+    crossChainShield: '0',
+    crossChainUnshield: '0',
+    shield: '0',
+    shieldXchain: '0',
+  },
+}
+vi.mock('@/hooks/useFees', () => ({
+  useFees: () => ({
+    quote: STUB_FEE_QUOTE,
+    isStale: false,
+    isUnavailable: false,
+    refresh: async () => STUB_FEE_QUOTE,
+  }),
+}))
+
 // ShieldModal reads the connected EVM address via wagmi's useAccount for the review-step summary;
 // these tests don't mount a WagmiProvider, so stub it with a fixed address.
 vi.mock('wagmi', async (importOriginal) => ({

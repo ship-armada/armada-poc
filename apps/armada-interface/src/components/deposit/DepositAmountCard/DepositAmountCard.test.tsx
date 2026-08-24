@@ -7,8 +7,6 @@ import { incompleteCtaShakeClass } from '@/design'
 import { formatUsdcPlain } from '@/lib/format'
 import { DepositAmountCard } from './DepositAmountCard'
 
-const CHAINS = [{ chainId: 31337, label: 'Hub' }]
-
 /** Temporarily report non-reduced motion (setup defaults to reduced) for the duration of `fn`. */
 function withMotionEnabled(fn: () => void) {
   const original = window.matchMedia
@@ -33,8 +31,6 @@ function withMotionEnabled(fn: () => void) {
 function renderCard(props: Partial<Parameters<typeof DepositAmountCard>[0]> = {}) {
   return render(
     <DepositAmountCard
-      chains={CHAINS}
-      chainId={31337}
       amount=""
       onAmountChange={() => {}}
       balance="12.00"
@@ -117,8 +113,6 @@ describe('DepositAmountCard — presets + amount roll', () => {
       const onAmountChange = vi.fn()
       const { rerender } = render(
         <DepositAmountCard
-          chains={CHAINS}
-          chainId={31337}
           amount="1"
           onAmountChange={onAmountChange}
           maxInput={12_000000n}
@@ -129,8 +123,6 @@ describe('DepositAmountCard — presets + amount roll', () => {
       // The parent commits the new amount → the roll effect starts on the prop change.
       rerender(
         <DepositAmountCard
-          chains={CHAINS}
-          chainId={31337}
           amount="6"
           onAmountChange={onAmountChange}
           maxInput={12_000000n}
@@ -146,8 +138,6 @@ describe('DepositAmountCard — presets + amount roll', () => {
     const onAmountChange = vi.fn()
     const { rerender } = render(
       <DepositAmountCard
-        chains={CHAINS}
-        chainId={31337}
         amount="1"
         onAmountChange={onAmountChange}
         maxInput={12_000000n}
@@ -157,8 +147,6 @@ describe('DepositAmountCard — presets + amount roll', () => {
     fireEvent.click(screen.getByRole('button', { name: '50%' }))
     rerender(
       <DepositAmountCard
-        chains={CHAINS}
-        chainId={31337}
         amount="6"
         onAmountChange={onAmountChange}
         maxInput={12_000000n}

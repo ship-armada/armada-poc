@@ -1,7 +1,7 @@
 // ABOUTME: Earn amount step — APY intro banner (DepositTooltip) above a chain-less DepositAmountCard whose in-card header holds the Add/Withdraw SegmentedControl.
 // ABOUTME: The vault has no chain selection; the banner headline is driven by the live vault rate and shows on both tabs (matches the mockup).
 
-import { useMemo, useRef, type Ref } from 'react'
+import { useRef, type Ref } from 'react'
 import { ChartBarIcon } from '@heroicons/react/24/solid'
 import { Button, modalStepBodyEnter, modalActionRowEnter } from '@/design'
 import { DepositAmountCard } from '@/components/deposit/DepositAmountCard/DepositAmountCard'
@@ -12,7 +12,6 @@ import { useNudgeShake } from '@/hooks/useNudgeShake'
 import type { DisplayFees } from '@/lib/fees/displayFees'
 import type { FlowFeeBreakdown } from '@/components/ui/FeeBreakdownTooltip'
 import { useGasBalanceWarning } from '@/hooks/useGasBalanceWarning'
-import { getNetworkConfig } from '@/config/network'
 import { formatUsdcPlain, parseUsdcInput, usdcInputErrorMessage } from '@/lib/format'
 import { rateToApy } from '@/lib/yield'
 import type { YieldRate } from '@/hooks/useYieldRate'
@@ -123,12 +122,6 @@ export function EarnInputStepContent({
   | 'shaking'
   | 'onShakeAnimationEnd'
 >) {
-  const hub = getNetworkConfig().hub
-  const chains = useMemo(
-    () => [{ chainId: hub.chainId, label: hub.name }],
-    [hub.chainId, hub.name],
-  )
-
   const gasWarning = useGasBalanceWarning(gasChainId)
   // Only surface the gas notice when the user actually pays gas themselves. `yield-deposit`
   // defaults to relayer-mediated; `yield-withdraw` is force-routed through the wallet today,
@@ -166,8 +159,6 @@ export function EarnInputStepContent({
       />
 
       <DepositAmountCard
-        chains={chains}
-        chainId={hub.chainId}
         // Add/Withdraw mode tabs live inside the card, above the title (mockup headerSlot).
         header={
           <SegmentedControl<EarnTab>
@@ -178,9 +169,8 @@ export function EarnInputStepContent({
             options={TABS}
           />
         }
-        // Title now lives inside the card; the vault has no chain selection (no chain row here).
+        // Title lives inside the card; the vault has no chain selection (no chain row).
         title={question}
-        showChain={false}
         amount={amountStr}
         onAmountChange={onAmountChange}
         balance={formatUsdcPlain(max)}

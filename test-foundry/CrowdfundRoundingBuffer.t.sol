@@ -51,15 +51,22 @@ contract CrowdfundRoundingBufferTest is Test {
         return address(uint160(0x1000 + i));
     }
 
+    function _hop1(uint256 i) internal pure returns (address) {
+        return address(uint160(0x2000 + i));
+    }
+
     // WHY: audit-71 — the original buffer was `participantNodes.length * NUM_HOPS`,
     // which over-reserves by a factor of NUM_HOPS = 3 because each participant only
-    // commits at one hop. The auditor's PoC: 100 seeds each commit $15k at hop-0,
-    // alloc is integer-exact (zero actual dust), so the entire buffer is stranded.
+    // commits at one hop. The auditor's PoC uses 100 seeds at hop-0 plus enough
+    // hop-1 demand to clear MIN_SALE; the allocations are integer-exact (zero
+    // actual dust), so the entire buffer is stranded.
     // Post-fix: buffer = participantNodes.length; the (NUM_HOPS - 1) overage is
     // recovered to treasury. Confirms the fix delivers the recovered amount.
     function test_buffer_recoversOverReservation_integerExactAllocations() public {
         uint256 SEED_COUNT = 100;
+        uint256 HOP1_COUNT = 39;
         uint256 SEED_COMMIT = 15_000 * 1e6;
+        uint256 HOP1_COMMIT = 4_000 * 1e6;
 
         address[] memory seeds = new address[](SEED_COUNT);
         for (uint256 i = 0; i < SEED_COUNT; i++) seeds[i] = _seed(i);
@@ -73,14 +80,26 @@ contract CrowdfundRoundingBufferTest is Test {
             vm.stopPrank();
         }
 
+        for (uint256 i = 0; i < HOP1_COUNT; i++) {
+            address hop1 = _hop1(i);
+            vm.prank(seeds[i % SEED_COUNT]);
+            crowdfund.invite(hop1, 0);
+            usdc.mint(hop1, HOP1_COMMIT);
+            vm.startPrank(hop1);
+            usdc.approve(address(crowdfund), HOP1_COMMIT);
+            crowdfund.commit(1, HOP1_COMMIT);
+            vm.stopPrank();
+        }
+
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();
         assertFalse(crowdfund.refundMode(), "should be success-path");
 
-        // Per-seed alloc: (15000 * 1197000) / 1500000 = 11970 (integer-exact, zero dust)
-        uint256 allocPerSeed = 11_970 * 1e6;
-        uint256 totalAlloc = SEED_COUNT * allocPerSeed;
-        uint256 buffer = SEED_COUNT;  // post-fix: participantNodes.length
+        // The expanded H0 ceiling is $846K; each of 100 seeds receives $8,460.
+        // Hop-1 demand receives its full $156K, so all allocations are exact.
+        uint256 allocPerSeed = 8_460 * 1e6;
+        uint256 totalAlloc = SEED_COUNT * allocPerSeed + HOP1_COUNT * HOP1_COMMIT;
+        uint256 buffer = SEED_COUNT + HOP1_COUNT;  // post-fix: participantNodes.length
 
         assertEq(crowdfund.totalAllocatedUsdc(), totalAlloc, "alloc total");
         // Treasury receives totalAlloc - buffer.
@@ -91,6 +110,10 @@ contract CrowdfundRoundingBufferTest is Test {
         for (uint256 i = 0; i < SEED_COUNT; i++) {
             vm.prank(seeds[i]);
             crowdfund.claim(_seed(i));
+        }
+        for (uint256 i = 0; i < HOP1_COUNT; i++) {
+            vm.prank(_hop1(i));
+            crowdfund.claim(_hop1(i));
         }
 
         // After all claims, the contract holds the unused buffer (integer-exact
@@ -107,17 +130,15 @@ contract CrowdfundRoundingBufferTest is Test {
     //   2. All refunds succeed (contract does not run short)
     //   3. Settlement identity: treasuryReceived + contractDust + sumRefunds == totalCommitted
     function test_buffer_refundsSucceed_underWorstCaseDust() public {
-        // 110 seeds each at the $15k hop-0 cap — total $1.65M, exceeds the
-        // $1.5M ELASTIC_TRIGGER so expansion to MAX_SALE fires (hop-0 ceiling
-        // becomes $1,197,000). With 110 committers and demand $1,650,000:
-        //   per-seed alloc = floor(15000 * 1_197_000 / 1_650_000) = floor(10881.81…) = 10881 USDC
-        //   sum across 110 = 1,196,910 USDC
-        //   total dust = 1_197_000 - 1_196_910 = 90 USDC (in raw units of 1)
-        // The bound under test: dust < participantNodes.length (90 < 110). The
-        // contract retains buffer - dust = 20 raw units after all claims, the
-        // unrecoverable dust portion the spec acknowledges.
+        // 110 seeds each at the $15k hop-0 cap plus 39 full hop-1 commitments.
+        // Expansion sets the H0 ceiling to $846K. The H0 pro-rata allocation is
+        // floor(15000 * 846000 / 1650000) = 7690.909... USDC, leaving 100 raw
+        // USDC units of dust across 110 seed claims. The 39 H1 claims are exact.
+        // The bound under test remains dust < participantNodes.length.
         uint256 SEED_COUNT = 110;
+        uint256 HOP1_COUNT = 39;
         uint256 SEED_COMMIT = 15_000 * 1e6;
+        uint256 HOP1_COMMIT = 4_000 * 1e6;
         address[] memory seeds = new address[](SEED_COUNT);
         for (uint256 i = 0; i < SEED_COUNT; i++) seeds[i] = _seed(i);
         crowdfund.addSeeds(seeds);
@@ -132,6 +153,18 @@ contract CrowdfundRoundingBufferTest is Test {
             totalCommitted += SEED_COMMIT;
         }
 
+        for (uint256 i = 0; i < HOP1_COUNT; i++) {
+            address hop1 = _hop1(i);
+            vm.prank(seeds[i % SEED_COUNT]);
+            crowdfund.invite(hop1, 0);
+            usdc.mint(hop1, HOP1_COMMIT);
+            vm.startPrank(hop1);
+            usdc.approve(address(crowdfund), HOP1_COMMIT);
+            crowdfund.commit(1, HOP1_COMMIT);
+            vm.stopPrank();
+            totalCommitted += HOP1_COMMIT;
+        }
+
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();
         assertFalse(crowdfund.refundMode(), "should be success-path");
@@ -139,10 +172,11 @@ contract CrowdfundRoundingBufferTest is Test {
         uint256 totalAlloc = crowdfund.totalAllocatedUsdc();
         uint256 treasuryReceived = usdc.balanceOf(treasury);
 
-        // Buffer = participantNodes.length = SEED_COUNT (no invites). For tiny
+        // Buffer = participantNodes.length. For tiny
         // sales the saturating ternary in finalize() floors at zero, but here the
         // alloc is large so we expect the simple subtraction.
-        assertEq(treasuryReceived, totalAlloc - SEED_COUNT, "treasury = totalAlloc - buffer");
+        uint256 participantCount = SEED_COUNT + HOP1_COUNT;
+        assertEq(treasuryReceived, totalAlloc - participantCount, "treasury = totalAlloc - buffer");
 
         // Settlement identity sanity (pre-claims): contract holds totalCommitted - treasury.
         assertEq(
@@ -159,6 +193,13 @@ contract CrowdfundRoundingBufferTest is Test {
             crowdfund.claim(_seed(i));
             sumRefunds += usdc.balanceOf(seeds[i]) - refundBefore;
         }
+        for (uint256 i = 0; i < HOP1_COUNT; i++) {
+            address hop1 = _hop1(i);
+            uint256 refundBefore = usdc.balanceOf(hop1);
+            vm.prank(hop1);
+            crowdfund.claim(hop1);
+            sumRefunds += usdc.balanceOf(hop1) - refundBefore;
+        }
 
         // Settlement identity holds: treasuryReceived + contractDust + sumRefunds == totalCommitted
         uint256 contractDust = usdc.balanceOf(address(crowdfund));
@@ -172,7 +213,7 @@ contract CrowdfundRoundingBufferTest is Test {
         // dust < N strictly, so contractDust must be < SEED_COUNT (could equal
         // SEED_COUNT - 1 in the absolute-worst-case alignment, but never reach SEED_COUNT
         // because actual_dust < N). After claims, contractDust = buffer - actual_dust ≥ 1.
-        assertLe(contractDust, SEED_COUNT, "contract dust within buffer bound");
+        assertLe(contractDust, participantCount, "contract dust within buffer bound");
         assertGt(contractDust, 0, "buffer never fully consumed (dust < N strictly)");
     }
 }

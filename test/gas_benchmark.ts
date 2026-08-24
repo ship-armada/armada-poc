@@ -45,7 +45,7 @@ describe("Gas Benchmarks", function () {
   // ============================================================
 
   describe("Crowdfund finalize() gas scaling", function () {
-    const participantCounts = [70, 100, 160]; // min 67 for MIN_SALE, max 160 (MAX_SEEDS cap)
+    const participantCounts = [70, 100, 180]; // min 67 for MIN_SALE, max 180 (MAX_SEEDS cap)
     const results: { count: number; gas: bigint; perParticipant: bigint }[] = [];
 
     for (const count of participantCounts) {
@@ -249,6 +249,18 @@ describe("Gas Benchmarks", function () {
         await usdc.mint(s.address, USDC(15_000));
         await usdc.connect(s).approve(await crowdfund.getAddress(), USDC(15_000));
         await crowdfund.connect(s).commit(0, USDC(15_000));
+      }
+
+      // 100 seeds × $15K = $1.5M capped → expansion to MAX_SALE, where hop-0
+      // alloc caps at $846K (< MIN_SALE). Add $160K of hop-1 demand (40 × $4K)
+      // so finalize() clears MIN_SALE and does not enter refundMode (otherwise
+      // the claim() calls below revert with "sale in refund mode").
+      const hop1Signers = allSigners.slice(count + 1, count + 41); // 40 signers
+      for (let i = 0; i < hop1Signers.length; i++) {
+        await crowdfund.connect(seeds[i]).invite(hop1Signers[i].address, 0);
+        await usdc.mint(hop1Signers[i].address, USDC(4_000));
+        await usdc.connect(hop1Signers[i]).approve(cfAddr, USDC(4_000));
+        await crowdfund.connect(hop1Signers[i]).commit(1, USDC(4_000));
       }
 
       await time.increase(THREE_WEEKS + 1);

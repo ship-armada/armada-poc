@@ -95,7 +95,7 @@ Ian must produce the following before handoff. Each item has a pass/fail criteri
 
 | Evidence | Pass criterion |
 |---|---|
-| S16 max-network `finalize()` gas | Measured and recorded. Expected 3-5M under lazy settlement (aggregate-only). |
+| S16 max-network `finalize()` gas | Measured cold: ~8,200 gas/node → ~7-12M at ~800 participants. One-shot at the ~2,220-node structural max ≈18.6M **exceeds the 16,777,216 (2^24, EIP-7825) per-tx cap**, so participant count is capped below ~2,000. |
 | `claim()` gas per participant | Measured. Expected ~200k. |
 | `computeAllocation()` gas (view) | Measured. Should be negligible. |
 | Slot-count model confirmed | `slotCount[address][hop]` is a counter, not a boolean. Required for `computeAllocation()` correctness. |
@@ -143,7 +143,7 @@ These are design choices that may look like bugs. They are deliberate and specif
 | **Same-address multi-hop** — one address can commit at hop-0, hop-1, and hop-2 simultaneously and receive ARM from all three | Transparency model. Same-address multi-hop creates unambiguous self-loops in the graph. | CROWDFUND.md §Self-Filling |
 | **$33k single-entity capture** — a hop-0 participant can control a full subtree ($15k + 3×$4k + 6×$1k) via recursive self-invitation | This is the design ceiling, not a bug. It's 2.75% of the base raise. Bounded by real capital and graph visibility. | CROWDFUND.md §Self-Filling |
 | **Duplicate same-hop invites are permitted** — same inviter can invite the same address to the same hop multiple times | Consistency: "allow everything, make it visible." Inviter's slot budget limits the scope. | CROWDFUND.md §Duplicate Invites |
-| **`refundMode` is a defined outcome, not a failure** — occurs when capped_demand qualifies but net_proceeds falls short after allocation | Happens at base size when hop-0 is oversubscribed. Cannot happen after expansion. | CROWDFUND.md §Finalization step 5 |
+| **`refundMode` is a defined outcome, not a failure** — occurs when post-waterfall `totalAllocatedUsdc` falls below `MINIMUM_RAISE` | Reachable at both base and expanded sale sizes: the expanded hop-0 ceiling is only $846,000, below the $1,000,000 minimum. | CROWDFUND.md §Finalization step 5 |
 | **Over-cap deposits are accepted, not reverted** — excess is refunded at settlement | Simpler UX. Participants don't need to calculate exact caps. | CROWDFUND.md §Commitment |
 | **`commitWithInvite()` bundles invite + commit atomically** — invitee appears in graph only when they commit with funds | Prevents invite squatting (redeeming a slot without deploying capital). | CROWDFUND.md §Invite Mechanism Path A |
 | **Sub-MIN_COMMIT commits revert** — `amount >= MIN_COMMIT` (10 USDC) enforced on both `commit()` and `commitWithInvite()` | Prevents free slot acquisition and graph noise without meaningful capital. The $10 floor is sized to keep dust commits out of the participant graph (which would inflate `participantNodes.length` and the rounding buffer); it is not enforced as a percentage of cap. | CROWDFUND.md §Contract Interface |
@@ -151,7 +151,7 @@ These are design choices that may look like bugs. They are deliberate and specif
 | **Nonce 0 reserved** — direct invites emit `nonce = 0`; link-based invites require `nonce > 0` | Sentinel value distinguishes invite paths in events. | CROWDFUND.md §EIP-712 Typed Data |
 | **`claim()` boundary is inclusive (`<=`); sweep boundary is exclusive (`>`)** — at exactly the 3-year mark, claims are still permitted | Prevents off-by-one that locks out a last-second claimer. | CROWDFUND.md §Finalization, Claim deadline |
 | **No admin-mutable parameters** — every value is immutable post-deployment | The mechanism is fully predeclared. No address can change any parameter after deployment. | PARAMETER_MANIFEST.md §12 |
-| **`capped_demand` counts all hops independently** — an address at hop-0 and hop-1 contributes to both hop totals, with no primary-hop deduplication | This is the canonical demand variable for minimum raise, expansion trigger, and live stats. Multi-hop participation is real economic commitment at each hop and should be counted as such. | CROWDFUND.md §Allocation, §Commitment |
+| **`capped_demand` counts all hops independently** — an address at hop-0 and hop-1 contributes to both hop totals, with no primary-hop deduplication | This is the canonical demand variable for the expansion trigger and live per-hop statistics. Multi-hop participation is real economic commitment at each hop and should be counted as such. | CROWDFUND.md §Allocation, §Commitment |
 
 ---
 

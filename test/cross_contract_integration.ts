@@ -33,10 +33,8 @@ const USDC = (n: number) => ethers.parseUnits(n.toString(), 6);
 // Eligible supply ≈ DEPLOYER_KEEP + seed-claimed ARM. Quorum = 20% of eligible.
 // Deployer delegates half of DEPLOYER_KEEP. That plus seed claims must exceed quorum.
 // With 100 seeds × $15K = $1.5M (hits ELASTIC_TRIGGER), MAX_SALE = $1.8M applies.
-// Hop-0 ceiling = 70% × ($1.8M - $90K) = $1,197K. Demand $1.5M > ceiling → pro-rata.
-// Each seed gets $1,197K / 100 = $11,970 ARM. Total claimed = 1,197,000 ARM.
-// Eligible ≈ 1.2M + ~1.197M = ~2.397M, quorum = 20% ≈ ~479K.
-// Deployer delegates 1.2M > 479K quorum. ✓
+// Hop-0 ceiling at the expanded sale is $846K. The helpers below add H1 demand
+// so finalization succeeds before governance claims are exercised.
 const DEPLOYER_KEEP = ARM(1_200_000);
 
 describe("Cross-Contract Integration (Phase 6)", function () {
@@ -53,6 +51,25 @@ describe("Cross-Contract Integration (Phase 6)", function () {
   let treasuryAddr: SignerWithAddress;
   let seeds: SignerWithAddress[];
   let hop1Addrs: SignerWithAddress[];
+
+  async function addHop1DemandForSuccess(cf: any, token: any, seedPool: SignerWithAddress[]) {
+    const signers = await ethers.getSigners();
+    const hop1Pool = signers.slice(140, 195);
+    const committedSlots = new Map<string, { signer: SignerWithAddress; slots: number }>();
+    for (let i = 0; i < 109; i++) {
+      const signer = hop1Pool[i % hop1Pool.length];
+      await cf.connect(seedPool[i % seedPool.length]).invite(signer.address, 0);
+      const entry = committedSlots.get(signer.address) ?? { signer, slots: 0 };
+      entry.slots++;
+      committedSlots.set(signer.address, entry);
+    }
+    for (const { signer, slots } of committedSlots.values()) {
+      const amount = USDC(4_000 * slots);
+      await token.mint(signer.address, amount);
+      await token.connect(signer).approve(await cf.getAddress(), amount);
+      await cf.connect(signer).commit(1, amount);
+    }
+  }
 
   // Role hashes
   const PROPOSER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("PROPOSER_ROLE"));
@@ -177,6 +194,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await usdc.connect(seed).approve(await crowdfund.getAddress(), amount);
         await crowdfund.connect(seed).commit(0, amount);
       }
+      await addHop1DemandForSuccess(crowdfund, usdc, seeds);
 
       // 4. Fast-forward past active window
       await time.increase(THREE_WEEKS + 1);
@@ -277,6 +295,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await usdc.connect(seed).approve(await crowdfund.getAddress(), amount);
         await crowdfund.connect(seed).commit(0, amount);
       }
+      await addHop1DemandForSuccess(crowdfund, usdc, seeds);
 
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
@@ -327,9 +346,9 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     it("proposal threshold (5,000 ARM) is reachable by a single crowdfund participant", async function () {
       // WHY: GOVERNANCE.md specifies a flat 5,000 ARM proposal threshold so
       // typical crowdfund seeds can submit proposals without forming pools.
-      // With BASE_SALE ($1.2M), hop-0 ceiling = 70% of netRaise = 70% of $1.14M = $798K.
-      // 80 seeds * $15K = $1.2M demand > $798K ceiling → pro-rata.
-      // Each seed gets (15K * 798K) / 1.2M = $9,975 = 9,975 ARM, which clears the 5,000 ARM threshold.
+      // The $564K H0 base-sale ceiling is pro-rated among seed demand; the H1
+      // success fixture keeps finalization out of refund mode. Each seed still
+      // receives more than the 5,000 ARM proposal threshold.
       await runCrowdfundAndClaim();
 
       const threshold = await governor.proposalThreshold();
@@ -371,6 +390,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await usdc.connect(seed).approve(await crowdfund.getAddress(), amount);
         await crowdfund.connect(seed).commit(0, amount);
       }
+      await addHop1DemandForSuccess(crowdfund, usdc, seeds);
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
@@ -759,6 +779,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await localUsdc.connect(seed).approve(await localCrowdfund.getAddress(), amount);
         await localCrowdfund.connect(seed).commit(0, amount);
       }
+      await addHop1DemandForSuccess(localCrowdfund, localUsdc, localSeeds);
 
       await time.increase(THREE_WEEKS + 1);
       await localCrowdfund.finalize();
@@ -819,6 +840,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await localUsdc.connect(seed).approve(await localCrowdfund.getAddress(), amount);
         await localCrowdfund.connect(seed).commit(0, amount);
       }
+      await addHop1DemandForSuccess(localCrowdfund, localUsdc, localSeeds);
 
       await time.increase(THREE_WEEKS + 1);
       await localCrowdfund.finalize();
@@ -849,6 +871,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await localUsdc.connect(seed).approve(await localCrowdfund.getAddress(), amount);
         await localCrowdfund.connect(seed).commit(0, amount);
       }
+      await addHop1DemandForSuccess(localCrowdfund, localUsdc, localSeeds);
 
       await time.increase(THREE_WEEKS + 1);
       await localCrowdfund.finalize();
@@ -874,6 +897,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await localUsdc.connect(seed).approve(await localCrowdfund.getAddress(), amount);
         await localCrowdfund.connect(seed).commit(0, amount);
       }
+      await addHop1DemandForSuccess(localCrowdfund, localUsdc, localSeeds);
 
       await time.increase(THREE_WEEKS + 1);
       await localCrowdfund.finalize();

@@ -1,5 +1,5 @@
-// ABOUTME: Gas profiling for ArmadaCrowdfund.finalize() at structurally-realistic participant counts.
-// ABOUTME: Pins the per-iteration gas of _iterateCappedDemand and exposes the practical block-gas ceiling.
+// ABOUTME: WARM-slot per-iteration microbenchmark for ArmadaCrowdfund.finalize()'s _iterateCappedDemand.
+// ABOUTME: NOT representative of real finalize() gas — see CrowdfundFinalizeGasCold.t.sol for the cold profile.
 
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
@@ -11,14 +11,14 @@ import "../contracts/crowdfund/IArmadaCrowdfund.sol";
 import "../contracts/governance/ArmadaToken.sol";
 import "../contracts/cctp/MockUSDCV2.sol";
 
-/// @notice Issue #213: profile finalize() gas vs participantNodes count.
-///         The loop in _iterateCappedDemand is O(n); the question is where n lands
-///         relative to the 30M block gas limit.
-///
-///         The structural maximum participantNodes count is bounded by the invite
-///         chain: MAX_SEEDS (160) + 3*MAX_SEEDS hop-1 (480) + 2*hop-1 hop-2 (960)
-///         + launch-team direct invites (120) ≈ 1,720. The sweep covers the
-///         spec-cited 300/500/800/1000/1500/1740 grid.
+/// @notice Issue #213: per-iteration cost of _iterateCappedDemand's O(n) loop.
+///         WARNING: this measures gasleft() with participant slots already WARM (written by
+///         _populate in the same test transaction), so the ~2,220 gas/iteration it reports is a
+///         per-iteration LOWER BOUND, not real finalize() gas. On-chain finalize() is its own tx
+///         where every first-touch SLOAD is COLD (~8,200 gas/node) — this understates it ~3.6x.
+///         For the real cold profile and the MAX_FINALIZE_NODES cap guard see
+///         CrowdfundFinalizeGasCold.t.sol. The binding limit is the 16,777,216 (2^24, EIP-7825)
+///         per-tx cap, not the block gas limit.
 contract CrowdfundFinalizeGasTest is Test {
     MockUSDCV2 public usdc;
     ArmadaToken public armToken;
@@ -30,7 +30,7 @@ contract CrowdfundFinalizeGasTest is Test {
     uint256 constant HOP1_CAP = 4_000 * 1e6;
     uint256 constant HOP2_CAP = 1_000 * 1e6;
     uint256 constant MIN_COMMIT = 10 * 1e6;
-    uint8   constant MAX_SEEDS = 160;
+    uint8   constant MAX_SEEDS = 180;
 
     function setUp() public {
         admin = address(this);

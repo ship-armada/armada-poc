@@ -74,6 +74,7 @@
     "crowdfund:indexer": "npm run dev --workspace=@armada/crowdfund-indexer",
     "crowdfund:indexer:cli": "npm run cli --workspace=@armada/crowdfund-indexer",
     "crowdfund:populate": "hardhat run scripts/crowdfund_populate.ts --network hub",
+    "crowdfund:gas-dryrun": "hardhat run scripts/crowdfund_gas_dryrun.ts",
     "demo:build": "npm run build --workspace=@armada/interface",
     "setup:sepolia": "npx ts-node scripts/deploy_sepolia.ts",
     "setup:mainnet": "npx ts-node scripts/deploy_mainnet.ts",

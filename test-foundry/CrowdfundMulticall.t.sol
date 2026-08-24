@@ -68,7 +68,7 @@ contract CrowdfundMulticallTest is Test {
         crowdfund.loadArm();
 
         // Single seed for self-fill tests. Finalization-path tests call
-        // _setupForFinalization() to populate 80 seeds and commit.
+        // _setupForFinalization() to populate a mixed hop-0/hop-1 success case.
         address[] memory s = new address[](1);
         s[0] = seed0;
         crowdfund.addSeeds(s);
@@ -133,10 +133,10 @@ contract CrowdfundMulticallTest is Test {
         usdc.approve(address(crowdfund), amount);
     }
 
-    /// @notice Populate 53 hop-0 seeds + 53 hop-1 invitees so the net
+    /// @notice Populate 53 hop-0 seeds + 109 hop-1 invitees so the net
     ///         post-ceiling allocation clears MIN_SALE and finalize() takes
     ///         the success path. (Hop-0-only with 80 seeds caps the net
-    ///         allocation at the hop-0 ceiling ≈ $798K < $1M MIN_SALE,
+    ///         allocation at the hop-0 ceiling ≈ $564K < $1M MIN_SALE,
     ///         which forces refundMode — see audit-75 / hop ceilings.)
     ///         Mirrors the pattern in CrowdfundDonationTest.
     function _setupForFinalization() internal {
@@ -152,12 +152,12 @@ contract CrowdfundMulticallTest is Test {
             crowdfund.commit(0, HOP0_CAP);
         }
 
-        // 53 hop-1 invitees, each commits $4K → hop-1 capped demand $212K.
-        // Total capped demand $1.007M > MIN_SALE $1M, and net allocation
-        // (hop-0 ceiling $798K + hop-1 actual $212K) ≥ $1M.
-        for (uint160 i = 0; i < 53; i++) {
+        // 109 hop-1 invitees, each commits $4K → hop-1 demand $436K.
+        // The projected allocation is $564K + $436K = $1M, so finalization
+        // follows the success path.
+        for (uint160 i = 0; i < 109; i++) {
             address h1 = address(uint160(0xD000) + i);
-            vm.prank(manySeeds[i]);
+            vm.prank(manySeeds[i % manySeeds.length]);
             crowdfund.invite(h1, 0);
             _mintAndApprove(h1, HOP1_CAP);
             vm.prank(h1);
@@ -289,7 +289,7 @@ contract CrowdfundMulticallTest is Test {
     function test_Multicall_DoubleClaim_Reverts() public {
         _setupForFinalization();
 
-        // Use one of the 80 seeds from _setupForFinalization (manySeeds[0]).
+        // Use a seed from _setupForFinalization (manySeeds[0]).
         address claimant = manySeeds[0];
         bytes[] memory calls = new bytes[](2);
         calls[0] = _encClaim(delegateAddr);
@@ -480,7 +480,7 @@ contract CrowdfundMulticallTest is Test {
         arm2.transfer(address(c2), ARM_FUNDING);
         c2.loadArm();
 
-        // Add a seed during week-1-of-future-window (warp forward),
+        // Add a seed during the future launch-team window (warp forward),
         // then warp back to BEFORE windowStart to test pre-open behavior.
         vm.warp(futureOpen + 1);
         address[] memory s = new address[](1);

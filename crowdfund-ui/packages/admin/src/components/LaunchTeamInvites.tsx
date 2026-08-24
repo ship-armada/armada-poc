@@ -1,5 +1,5 @@
 // ABOUTME: Launch team invite panel with budget display, hop toggle, ENS resolution, and whitelist check.
-// ABOUTME: Sends launchTeamInvite() transactions within the week-1 window.
+// ABOUTME: Sends launchTeamInvite() transactions within the 14-day launch-team window.
 
 import { useState, useCallback, useEffect } from 'react'
 import { Contract, isAddress } from 'ethers'

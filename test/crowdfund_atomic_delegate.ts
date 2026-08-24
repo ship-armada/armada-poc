@@ -59,19 +59,26 @@ describe("Crowdfund: Atomic Delegation on Claim", function () {
       await crowdfund.connect(s).commit(0, USDC(15_000));
     }
 
-    // Add hop-1 demand to meet MIN_SALE
+    // Add $436K of hop-1 demand so projected allocation clears MIN_SALE.
+    // Under the July-2026 waterfall hop-0 alloc caps at $564K (base sale), so
+    // 70 seeds ($1.05M capped) alone would enter refundMode. Stack invites onto
+    // a small signer pool (each extra invite raises that node's invitesReceived,
+    // and thus its cap) to reach the $436K needed: $564K + $436K = $1M MIN_SALE.
     const hop1Pool = allSigners.slice(140, 195);
     const hop1Invitees: HardhatEthersSigner[] = [];
-    const inviterCount = Math.min(70, 18);
-    for (let i = 0; i < inviterCount; i++) {
-      for (let j = 0; j < 3 && (i * 3 + j) < hop1Pool.length; j++) {
-        const hop1Idx = i * 3 + j;
-        const invitee = hop1Pool[hop1Idx];
-        await crowdfund.connect(seeds[i]).invite(invitee.address, 0);
-        await fundAndApprove(invitee, USDC(4_000), crowdfund);
-        await crowdfund.connect(invitee).commit(1, USDC(4_000));
-        hop1Invitees.push(invitee);
-      }
+    const committedSlots = new Map<string, { signer: HardhatEthersSigner; slots: number }>();
+    for (let i = 0; i < 109; i++) {
+      const invitee = hop1Pool[i % hop1Pool.length];
+      await crowdfund.connect(seeds[i % seeds.length]).invite(invitee.address, 0);
+      const entry = committedSlots.get(invitee.address) ?? { signer: invitee, slots: 0 };
+      entry.slots++;
+      committedSlots.set(invitee.address, entry);
+    }
+    for (const { signer, slots } of committedSlots.values()) {
+      const amount = USDC(4_000 * slots);
+      await fundAndApprove(signer, amount, crowdfund);
+      await crowdfund.connect(signer).commit(1, amount);
+      hop1Invitees.push(signer);
     }
 
     await time.increase(THREE_WEEKS + 1);

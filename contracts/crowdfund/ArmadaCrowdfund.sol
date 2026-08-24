@@ -33,11 +33,26 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
     uint256 public constant ARM_PRICE = 1e6;                    // $1.00 per ARM in USDC
     uint256 public constant ELASTIC_TRIGGER = 1_500_000 * 1e6;  // $1.5M capped demand triggers expansion
     uint8 public constant NUM_HOPS = 3;
-    uint256 public constant HOP2_FLOOR_BPS = 500;  // 5% of saleSize reserved for hop-2
 
-    /// @notice Per-hop ceiling shares (basis points of the post-hop2-floor available pool).
-    ///         Sum exceeds 100% intentionally; rollover from earlier hops absorbs the gap.
-    uint16 public constant HOP0_CEILING_BPS = 7000; // 70%
+    /// @dev WATERFALL DESIGN NOTE. Allocation is computed against `saleSize` (BASE_SALE, or MAX_SALE
+    ///      after expansion). Hop-2's guaranteed floor is split across two constants, which differ in
+    ///      HOW they are funded:
+    ///        - HOP2_BASE_FLOOR_BPS (5%): shrinks the pool the hop-0/hop-1 *raw* ceilings apply to.
+    ///          basePool = saleSize * (10000 - HOP2_BASE_FLOOR_BPS) / 10000 = 95% of saleSize.
+    ///        - HOP2_EXTRA_FLOOR_BPS (10%): an additional slice reserved for hop-2, funded entirely
+    ///          out of hop-0's ceiling (subtracted from it) so hop-1's ceiling is left untouched.
+    ///      Effective ceilings as a share of saleSize (derived in _computeHopAllocations):
+    ///        hop-0       = 60% * 95% - 10% = 47%
+    ///        hop-1       = 45% * 95%       = 42.75%
+    ///        hop-2 floor = 5% + 10%        = 15%   (+ unconditional rollover of hop-0/hop-1 leftover)
+    ///      Raw ceilings overlap (60% + 45% of basePool > 100%); a remainingAvailable tracker in
+    ///      _computeHopAllocations guarantees total allocation never exceeds saleSize.
+    uint256 public constant HOP2_BASE_FLOOR_BPS = 500;   // 5% base-pool reduction
+    uint256 public constant HOP2_EXTRA_FLOOR_BPS = 1000; // additional 10% reserved for hop-2
+
+    /// @notice Per-hop raw ceiling shares (basis points of the 95% base pool). Hop-0 additionally
+    ///         funds hop-2's extra floor from its own ceiling (see WATERFALL DESIGN NOTE above).
+    uint16 public constant HOP0_CEILING_BPS = 6000; // 60%
     uint16 public constant HOP1_CEILING_BPS = 4500; // 45%
 
     /// @notice Per-slot effective USDC caps at each hop. Multiplied by `invitesReceived`
@@ -57,13 +72,17 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
     uint16 public constant HOP2_MAX_INVITES_RECEIVED = 20;
 
     uint256 public constant WINDOW_DURATION = 21 days;
-    uint256 public constant LAUNCH_TEAM_INVITE_PERIOD = 7 days;
+    uint256 public constant LAUNCH_TEAM_INVITE_PERIOD = 14 days;
     uint256 public constant CLAIM_DEADLINE_DURATION = 1095 days; // 3 years
     uint256 public constant MIN_COMMIT = 10 * 1e6;               // $10 USDC minimum per commit
     // Per-hop invite stacking caps are stored in hopConfigs[].maxInvitesReceived (1, 10, 20)
-    uint8 public constant MAX_SEEDS = 160;                       // max number of seeds (hop-0 participants)
-    uint8 public constant LAUNCH_TEAM_HOP1_BUDGET = 60;          // launch team direct hop-1 invite slots
-    uint8 public constant LAUNCH_TEAM_HOP2_BUDGET = 60;          // launch team direct hop-2 invite slots
+    uint8 public constant MAX_SEEDS = 180;                       // max number of seeds (hop-0 participants)
+    uint8 public constant LAUNCH_TEAM_HOP1_BUDGET = 100;         // launch team direct hop-1 invite slots
+    uint8 public constant LAUNCH_TEAM_HOP2_BUDGET = 120;         // launch team direct hop-2 invite slots
+    // Hard cap on total participant nodes. finalize() iterates every node in one tx at ~8,200 gas/node
+    // (cold); this bound keeps it under the 16,777,216 (2^24, EIP-7825) per-tx gas cap. 1,800 nodes
+    // ≈ 15.2M gas (~9% margin). Enforced in _initParticipant. See the DESIGN NOTE on _iterateCappedDemand.
+    uint256 public constant MAX_FINALIZE_NODES = 1800;
 
     // EIP-712 typehash for off-chain invite signatures
     bytes32 public constant INVITE_TYPEHASH = keccak256(
@@ -197,7 +216,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
 
     // ============ Seed Management ============
 
-    /// @notice Add seed addresses (hop 0). Allowed during week 1 only (requires ARM loaded).
+    /// @notice Add seed addresses (hop 0). Allowed during the launch-team window (requires ARM loaded).
     function addSeeds(address[] calldata seeds) external onlyLaunchTeam {
         _requireArmLoadedAndPreInviteEnd();
         for (uint256 i = 0; i < seeds.length; i++) {
@@ -205,7 +224,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
         }
     }
 
-    /// @notice Add a single seed address (hop 0). Allowed during week 1 only (requires ARM loaded).
+    /// @notice Add a single seed address (hop 0). Allowed during the launch-team window (requires ARM loaded).
     function addSeed(address seed) external onlyLaunchTeam {
         _requireArmLoadedAndPreInviteEnd();
         _addSeed(seed);
@@ -224,6 +243,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
 
     /// @dev Initialize a new participant node at the given hop.
     function _initParticipant(address participant, uint8 hop, address inviter_) private {
+        // Bound total nodes so one-shot finalize() stays under the 16,777,216 (2^24, EIP-7825)
+        // per-tx gas cap. Single choke point for all node creation (seeds + every invite path).
+        require(participantNodes.length < MAX_FINALIZE_NODES, "ArmadaCrowdfund: node cap reached");
         participants[participant][hop].isWhitelisted = true;
         participants[participant][hop].invitesReceived = 1;
         participants[participant][hop].invitedBy = inviter_;
@@ -276,7 +298,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
         emit Invited(msg.sender, invitee, inviteeHop, 0);
     }
 
-    /// @notice Launch team issues a direct invite at hop-1 or hop-2 (week 1 only).
+    /// @notice Launch team issues a direct invite at hop-1 or hop-2 during its 14-day window.
     ///         The launch team is a sentinel with predeclared invite budgets — it is not
     ///         a participant and cannot commit USDC.
     /// @param invitee Address to invite
@@ -287,7 +309,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
         require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
         require(
             block.timestamp >= windowStart && block.timestamp < launchTeamInviteEnd,
-            "ArmadaCrowdfund: outside week-1 window"
+            "ArmadaCrowdfund: outside launch-team invite window"
         );
         require(fromHop == 0 || fromHop == 1, "ArmadaCrowdfund: invalid hop for launch team");
         require(invitee != address(0), "ArmadaCrowdfund: zero address");
@@ -450,9 +472,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
 
         // Step 2: Per-hop allocation (matches spec pseudocode steps 3–6)
         //
-        // Hop-2 floor is reserved off the top. Hop-0/hop-1 ceilings are BPS of the
-        // available pool (saleSize minus floor). Ceilings overlap (sum > 100%) so a
-        // remainingAvailable tracker ensures total allocation never exceeds saleSize.
+        // Hop-2 floor is reserved off the top. Hop-0/hop-1 raw ceilings are BPS of
+        // the 95% base pool, and hop-0 additionally funds the extra hop-2 floor.
+        // A remainingAvailable tracker ensures total allocation never exceeds saleSize.
         // Hop-2 has no BPS ceiling — its effective ceiling is floor + hop-1 leftover.
         // Rollover is unconditional: leftover always flows to the next hop.
 
@@ -464,8 +486,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
         // Post-allocation minimum raise check: if net proceeds (allocated USDC) fall
         // below MIN_SALE, enter refundMode. Participants get full USDC refunds via
         // claimRefund(); no ARM is distributed. This can occur at BASE_SALE when hop-0
-        // is oversubscribed and later hops don't close the gap to $1M. Cannot occur
-        // after expansion (hop-0 ceiling alone exceeds MIN_SALE).
+        // is oversubscribed and later hops don't close the gap to $1M. It can occur
+        // at either sale size because hop-0 alone remains below MIN_SALE.
         if (totalAllocUsdc_ < MIN_SALE) {
             refundMode = true;
             phase = Phase.Finalized;
@@ -760,13 +782,13 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
 
     // ============ Internal ============
 
-    /// @dev Enforces that seeds can only be added during week 1 (requires ARM loaded).
+    /// @dev Enforces that seeds can only be added during the launch-team window (requires ARM loaded).
     function _requireArmLoadedAndPreInviteEnd() internal view {
         require(phase == Phase.Active, "ArmadaCrowdfund: not active");
         require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
         require(
             block.timestamp >= windowStart && block.timestamp < launchTeamInviteEnd,
-            "ArmadaCrowdfund: outside week-1 window"
+            "ArmadaCrowdfund: outside launch-team invite window"
         );
     }
 
@@ -827,12 +849,15 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
     ///      capped totals as a parameter so it doesn't have to re-SLOAD
     ///      hopStats[h].cappedCommitted that _computeCappedDemand just wrote (audit-75).
     function _computeHopAllocations(uint256 saleSize_, uint256[3] memory perHopCapped) internal returns (uint256 totalAllocUsdc_) {
-        uint256 hop2Floor = (saleSize_ * HOP2_FLOOR_BPS) / 10000;
+        uint256 hop2Floor = (saleSize_ * (HOP2_BASE_FLOOR_BPS + HOP2_EXTRA_FLOOR_BPS)) / 10000;
         uint256 available = saleSize_ - hop2Floor;
+        uint256 basePool = (saleSize_ * (10000 - HOP2_BASE_FLOOR_BPS)) / 10000;
 
-        // Hop-0/hop-1 base ceilings (BPS of available pool)
-        uint256 hop0Ceiling = (available * hopConfigs[0].ceilingBps) / 10000;
-        uint256 hop1Ceiling = (available * hopConfigs[1].ceilingBps) / 10000;
+        // Raw BPS terms overlap (60% + 45% of basePool). The extra hop-2 floor is
+        // funded solely from hop-0's raw ceiling, preserving hop-1's raw ceiling.
+        uint256 hop0Ceiling = ((basePool * hopConfigs[0].ceilingBps) / 10000)
+            - ((saleSize_ * HOP2_EXTRA_FLOOR_BPS) / 10000);
+        uint256 hop1Ceiling = (basePool * hopConfigs[1].ceilingBps) / 10000;
 
         // --- Hop-0: allocate from available pool ---
         // Uses cappedCommitted (set by _computeCappedDemand) — over-cap deposits excluded
@@ -898,13 +923,18 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
     /// @dev Pure iteration: compute capped demand per hop and globally without writing state.
     ///      DESIGN NOTE: This iterates the full participantNodes array — O(n) where n is total
     ///      participants across all hops. The array is bounded by invite chain limits:
-    ///      MAX_SEEDS (160) at hop-0, with HOPx_MAX_INVITES at each subsequent hop, giving a
-    ///      structural maximum of ~1,740 nodes (incl. launch-team direct invites).
-    ///      Measured profile (test-foundry/CrowdfundFinalizeGas.t.sol): ~2,220 gas per iteration
-    ///      with ~332k fixed overhead, so finalize() at structural max ≈ 4.2M gas — 14% of the
-    ///      30M block limit. An incremental tracking approach was considered but rejected to
-    ///      avoid changing the accounting flow. If invite limits are ever significantly
-    ///      increased, this should be revisited.
+    ///      MAX_SEEDS (180) at hop-0, with HOPx_MAX_INVITES at each subsequent hop, giving a
+    ///      structural maximum of ~2,220 nodes (incl. launch-team direct invites).
+    ///      Cold-storage cost is ~8,200 gas/node (measured; test-foundry/CrowdfundFinalizeGasCold.t.sol);
+    ///      an invited-but-uncommitted node still costs ~4,950 gas (2 cold SLOADs before the skip),
+    ///      so cost scales with whitelist count, not commit count. A single Ethereum transaction is
+    ///      capped at 16,777,216 gas (2^24, EIP-7825), so one-shot finalize() at the structural max
+    ///      (~18.6M gas) would EXCEED that cap and be unsubmittable. Total node count is therefore
+    ///      capped at MAX_FINALIZE_NODES (enforced in _initParticipant): 1,800 nodes ≈ 15.2M gas,
+    ///      ~9% under the cap.
+    ///      NOTE: an earlier profile (test-foundry/CrowdfundFinalizeGas.t.sol) reported ~2,220 gas
+    ///      per iteration / ~4.2M at max, but it measured WARM slots and understates a real
+    ///      cold-first-touch transaction by ~3.6x; do not rely on it.
     function _iterateCappedDemand() internal view returns (
         uint256 globalCapped,
         uint256[3] memory perHopCapped

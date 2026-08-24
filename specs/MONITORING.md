@@ -85,8 +85,8 @@ Monitoring derives the current lifecycle phase from events and timestamps.
 |---|---|
 | **PRE-ARMED** | No `ArmLoaded` emitted |
 | **ARMED / PRE-OPEN** | `ArmLoaded` emitted; `now < openTimestamp` |
-| **OPEN / WEEK 1** | `ArmLoaded`; `openTimestamp ≤ now ≤ week1Deadline` |
-| **OPEN / WEEKS 2–3** | `ArmLoaded`; `week1Deadline < now ≤ commitmentDeadline` |
+| **OPEN / LAUNCH-TEAM WINDOW** | `ArmLoaded`; `openTimestamp ≤ now ≤ launchTeamInviteDeadline` |
+| **OPEN / FINAL WEEK** | `ArmLoaded`; `launchTeamInviteDeadline < now ≤ commitmentDeadline` |
 | **DEADLINE PASSED / NOT FINALIZED** | `now > commitmentDeadline`; no `Finalized`; no `Cancelled` |
 | **FINALIZED / SUCCESS / CLAIMS OPEN** | `Finalized(refundMode=false)`; `Allocated` + `AllocatedHop` events emitted individually at each participant's `claim()` time (lazy settlement). |
 | **FINALIZED / REFUND MODE** | `Finalized(refundMode=true)` |
@@ -174,7 +174,7 @@ Post-finalization, track:
 
 ### A3 — (retired)
 
-A week-1 action (`SeedAdded` / `LaunchTeamInvited`) emitted after the week-1 deadline is
+A launch-team action (`SeedAdded` / `LaunchTeamInvited`) emitted after the launch-team invite deadline is
 enforced on-chain by the crowdfund's `_requireArmLoadedAndPreInviteEnd` guard, so no
 off-chain alert covers that condition.
 
@@ -185,10 +185,10 @@ off-chain alert covers that condition.
 | Field | Value |
 |---|---|
 | **Signal** | Derived seed count from `SeedAdded` |
-| **Condition** | Seed count reaches 80%, 90%, 100% of configured budget (160) |
+| **Condition** | Seed count reaches 80%, 90%, 100% of configured budget (180) |
 | **Severity** | P2 at 80%/90%; P1 at 100% |
-| **Meaning** | Week-1 hop-0 expansion capacity running low |
-| **Runbook** | `OPERATIONS.md` §4 Week-1 go/no-go checkpoint; §10 decision log |
+| **Meaning** | Launch-team-window hop-0 expansion capacity running low |
+| **Runbook** | `OPERATIONS.md` §4 launch-team cadence; §10 decision log |
 
 ---
 
@@ -197,10 +197,10 @@ off-chain alert covers that condition.
 | Field | Value |
 |---|---|
 | **Signal** | COUNT of ROOT-issued `Invited` events, filtered by `hop` field (where `hop` in the `Invited` event is the invitee's hop level, not `fromHop` — so `hop == 1` counts hop-1 placements and `hop == 2` counts hop-2 placements) |
-| **Condition** | Hop-1 or hop-2 placement count reaches 80%, 90%, 100% of budget (60 each) |
+| **Condition** | Hop-1 or hop-2 placement count reaches 80%, 90%, 100% of budget (100 and 120 respectively) |
 | **Severity** | P2 at 80%/90%; P1 at 100% |
-| **Meaning** | Week-1 discretionary placement capacity running low |
-| **Runbook** | `OPERATIONS.md` §4 Week-1 operations; §10 decision log |
+| **Meaning** | Launch-team discretionary placement capacity running low |
+| **Runbook** | `OPERATIONS.md` §4 launch-team operations; §10 decision log |
 
 ---
 
@@ -233,8 +233,8 @@ off-chain alert covers that condition.
 
 | Field | Value |
 |---|---|
-| **Signal** | Derived `capped_demand` vs `MINIMUM_RAISE` ($1,000,000) |
-| **Condition** | `capped_demand < MINIMUM_RAISE` with <72h remaining; then <24h remaining |
+| **Signal** | Projected `totalAllocatedUsdc` after the full waterfall vs `MINIMUM_RAISE` ($1,000,000) |
+| **Condition** | Projected `totalAllocatedUsdc < MINIMUM_RAISE` with <72h remaining; then <24h remaining |
 | **Severity** | P2 |
 | **Meaning** | RefundMode risk increasing. Note: demand often concentrates near deadline. |
 | **Runbook** | `OPERATIONS.md` §5 Weeks 2–3 cadence; §11 Checkpoint 3 |
@@ -246,22 +246,22 @@ off-chain alert covers that condition.
 | Field | Value |
 |---|---|
 | **Signal** | Absence of `Finalized` and `Cancelled` |
-| **Condition** | `now > commitmentDeadline` AND derived `capped_demand ≥ MINIMUM_RAISE` |
+| **Condition** | `now > commitmentDeadline` AND projected `totalAllocatedUsdc ≥ MINIMUM_RAISE` |
 | **Severity** | P1 initially; P0 if unresolved beyond configured grace window (e.g. 2 hours) |
-| **Meaning** | Sale qualified — finalization action required. Someone must call `finalize()`. |
+| **Meaning** | Projected allocation qualifies the sale — finalization action required. Someone must call `finalize()`. |
 | **Runbook** | `OPERATIONS.md` §11 Checkpoint 3; §6 Finalization procedure |
 
 ---
 
-### A9b — Deadline passed, sub-minimum demand
+### A9b — Deadline passed, projected allocation below minimum
 
 | Field | Value |
 |---|---|
 | **Signal** | Absence of `Finalized` and `Cancelled` |
-| **Condition** | `now > commitmentDeadline` AND derived `capped_demand < MINIMUM_RAISE` |
+| **Condition** | `now > commitmentDeadline` AND projected `totalAllocatedUsdc < MINIMUM_RAISE` |
 | **Severity** | P1 |
-| **Meaning** | Sale did not qualify. Someone must call `finalize()` (permissionless) to activate refunds. `finalize()` sets `refundMode = true`, after which participants call `claimRefund()` to withdraw their full deposited USDC. There is no auto-refund path without `finalize()`. |
-| **Runbook** | `OPERATIONS.md` §5 pre-finalization checkpoint (capped_demand < MINIMUM_RAISE branch) |
+| **Meaning** | Sale did not qualify after the waterfall. Someone must call `finalize()` (permissionless) to activate refunds. `finalize()` sets `refundMode = true`, after which participants call `claimRefund()` to withdraw their full deposited USDC. There is no auto-refund path without `finalize()`. |
+| **Runbook** | `OPERATIONS.md` §5 pre-finalization checkpoint (projected allocation branch) |
 
 ---
 
@@ -400,7 +400,7 @@ Alert A6 exists for operator **awareness**, not for automatic escalation or reme
 
 ### 9.2 `refundMode` is not a security incident
 
-`refundMode` is a defined crowdfund outcome that occurs when `capped_demand ≥ MINIMUM_RAISE` but `net_proceeds < MINIMUM_RAISE` after allocation — typically at base size when hop-0 is oversubscribed and later-hop demand doesn't close the gap. It cannot occur after expansion.
+`refundMode` is a defined crowdfund outcome that occurs when post-waterfall `totalAllocatedUsdc < MINIMUM_RAISE`, including when capped demand crossed the expansion trigger. It is reachable at both base and expanded sale sizes because hop-0's expanded ceiling is only $846,000.
 
 Alert A10 is P1 (not P0) because operators must shift participant guidance immediately, but there is no security threat. Alert text and participant communications must avoid exploit-like framing.
 
@@ -425,23 +425,23 @@ Operators must have read access to the following views before and throughout the
 ### 10.1 Lifecycle view
 
 - Current derived phase
-- `openTimestamp`, `week1Deadline`, `commitmentDeadline`
+- `openTimestamp`, `launchTeamInviteDeadline`, `commitmentDeadline`
 - Finalization timestamp (if any)
 - `refundMode` / `cancelled` flags
 - Claim progress: `Allocated` events received vs expected participant count
 
 ### 10.2 Budget view
 
-- Hop-0 count used / 160 total
-- Launch-team hop-1 placements used / 60 total
-- Launch-team hop-2 placements used / 60 total
+- Hop-0 count used / 180 total
+- Launch-team hop-1 placements used / 100 total
+- Launch-team hop-2 placements used / 120 total
 - Inviter slot consumption per active seed node (where reconstructable from events)
 
 ### 10.3 Demand view
 
 - Raw committed USDC (per hop and total)
 - Derived `capped_demand` (slot-capped, per hop and total)
-- % of `MINIMUM_RAISE` ($1M)
+- Projected `totalAllocatedUsdc` and % of `MINIMUM_RAISE` ($1M)
 - % of `EXPANSION_TRIGGER` ($1.5M)
 
 ### 10.4 Settlement view
@@ -486,7 +486,7 @@ Each alert must include:
 | Alert(s) | `OPERATIONS.md` section |
 |---|---|
 | A1, A2 | §3 Deployment sequence (Steps 4–8) |
-| A4, A5 | §4 Week-1 cadence; §10 Decision log; §11 Checkpoint 2 |
+| A4, A5 | §4 launch-team cadence; §10 Decision log; §11 Checkpoint 2 |
 | A6 | §4/§5 Monitoring; no automatic action |
 | A7, A8 | §5 Weeks 2–3 cadence; §11 Checkpoint 3 |
 | A9a | `OPERATIONS.md` §11 Checkpoint 3; §6 Finalization procedure |

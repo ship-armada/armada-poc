@@ -59,7 +59,7 @@ describe('StatusDashboard', () => {
 
   it('renders timeline rows', () => {
     render(<StatusDashboard state={makeState()} role="observer" />)
-    expect(screen.getByText('Week 1 (Seeds + LT Invites)')).toBeInTheDocument()
+    expect(screen.getByText('Days 1-14 (Seeds + LT Invites)')).toBeInTheDocument()
     expect(screen.getByText('Commitment Window')).toBeInTheDocument()
     expect(screen.getByText('Claim Period')).toBeInTheDocument()
   })
@@ -74,7 +74,7 @@ describe('StatusDashboard', () => {
 
   it('shows hop-0 whitelist in N/MAX format', () => {
     render(<StatusDashboard state={makeState()} role="observer" />)
-    expect(screen.getByText('142/160')).toBeInTheDocument()
+    expect(screen.getByText('142/180')).toBeInTheDocument()
   })
 
   it('shows plain count for hop-1 and hop-2 whitelist', () => {
@@ -106,10 +106,10 @@ describe('StatusDashboard', () => {
 
   it('shows Ceiling column with percentage for hop 0-1 and Floor for hop 2', () => {
     render(<StatusDashboard state={makeState()} role="observer" />)
-    // HOP_CONFIGS[0].ceilingBps = 7000 → 70%, HOP_CONFIGS[1].ceilingBps = 4500 → 45%
-    expect(screen.getByText('70%')).toBeInTheDocument()
-    expect(screen.getByText('45%')).toBeInTheDocument()
-    expect(screen.getByText('Floor')).toBeInTheDocument()
+    // HOP_CONFIGS[0].ceilingBps = 6000 → 60%, HOP_CONFIGS[1].ceilingBps = 4500 → 45%.
+    expect(screen.getByText('60% raw')).toBeInTheDocument()
+    expect(screen.getByText('45% raw')).toBeInTheDocument()
+    expect(screen.getByText('15% floor')).toBeInTheDocument()
   })
 
   it('shows Cap/Slot column values', () => {

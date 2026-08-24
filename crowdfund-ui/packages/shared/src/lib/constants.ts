@@ -25,7 +25,8 @@ export interface CrowdfundConstants {
   readonly CLAIM_DEADLINE_DURATION: number
   /** Matches ArmadaGovernor.QUIET_PERIOD_DURATION. */
   readonly GOVERNANCE_QUIET_PERIOD: number
-  readonly HOP2_FLOOR_BPS: number
+  readonly HOP2_BASE_FLOOR_BPS: number
+  readonly HOP2_EXTRA_FLOOR_BPS: number
 }
 
 /** Per-hop configuration matching the contract's hopConfigs[3] */
@@ -43,15 +44,16 @@ const CONSTANTS_BY_PROFILE: Record<CrowdfundProfile, CrowdfundConstants> = {
     MIN_SALE: 1_000_000n * 10n ** 6n,
     ELASTIC_TRIGGER: 1_500_000n * 10n ** 6n,
     ARM_PRICE: 1_000_000n,
-    MAX_SEEDS: 160,
-    LAUNCH_TEAM_HOP1_BUDGET: 60,
-    LAUNCH_TEAM_HOP2_BUDGET: 60,
+    MAX_SEEDS: 180,
+    LAUNCH_TEAM_HOP1_BUDGET: 100,
+    LAUNCH_TEAM_HOP2_BUDGET: 120,
     MIN_COMMIT: 10n * 10n ** 6n,
     WINDOW_DURATION: 21 * 24 * 60 * 60, // 21 days
-    LAUNCH_TEAM_INVITE_PERIOD: 7 * 24 * 60 * 60, // 7 days
+    LAUNCH_TEAM_INVITE_PERIOD: 14 * 24 * 60 * 60, // 14 days
     CLAIM_DEADLINE_DURATION: 1095 * 24 * 60 * 60, // 3 years
     GOVERNANCE_QUIET_PERIOD: 7 * 24 * 60 * 60, // 7 days
-    HOP2_FLOOR_BPS: 500, // 5%
+    HOP2_BASE_FLOOR_BPS: 500,
+    HOP2_EXTRA_FLOOR_BPS: 1000,
   },
   medi: {
     BASE_SALE: 1_000n * 10n ** 6n,
@@ -71,7 +73,8 @@ const CONSTANTS_BY_PROFILE: Record<CrowdfundProfile, CrowdfundConstants> = {
     LAUNCH_TEAM_INVITE_PERIOD: 14 * 24 * 60 * 60, // 14 days (equal to WINDOW_DURATION on medi-Sepolia)
     CLAIM_DEADLINE_DURATION: 60 * 24 * 60 * 60, // 60 days
     GOVERNANCE_QUIET_PERIOD: 1 * 24 * 60 * 60, // 1 day
-    HOP2_FLOOR_BPS: 500, // 5%
+    HOP2_BASE_FLOOR_BPS: 500,
+    HOP2_EXTRA_FLOOR_BPS: 0,
   },
 }
 
@@ -80,7 +83,7 @@ const HOP_CONFIGS_BY_PROFILE: Record<
   readonly [HopConfig, HopConfig, HopConfig]
 > = {
   mainnet: [
-    { ceilingBps: 7000, capUsdc: 15_000n * 10n ** 6n, maxInvites: 3, maxInvitesReceived: 1 },
+    { ceilingBps: 6000, capUsdc: 15_000n * 10n ** 6n, maxInvites: 3, maxInvitesReceived: 1 },
     { ceilingBps: 4500, capUsdc: 4_000n * 10n ** 6n, maxInvites: 2, maxInvitesReceived: 10 },
     { ceilingBps: 0, capUsdc: 1_000n * 10n ** 6n, maxInvites: 0, maxInvitesReceived: 20 },
   ],

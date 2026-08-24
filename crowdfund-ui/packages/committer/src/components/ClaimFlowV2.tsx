@@ -11,6 +11,8 @@ import {
   CROWDFUND_ABI_FRAGMENTS,
   CROWDFUND_CONSTANTS,
   HOP_CONFIGS,
+  estimateAllocation,
+  type HopAllocationStats,
   formatArm,
   formatUsdc,
   formatCountdown,
@@ -63,6 +65,9 @@ export interface ClaimFlowV2Props {
   totalCommitted: bigint
   windowEnd: number
   cappedDemand: bigint
+  /** Per-hop capped-demand aggregates, for projecting the post-waterfall
+   *  allocation pre-finalization (mirrors the admin FinalizePanel). */
+  hopStats: readonly HopAllocationStats[]
   claimAvailable: boolean
   claimCountdownSeconds?: number
   onGoToMyPosition: () => void
@@ -604,18 +609,20 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     )
   }
 
-  // Pre-finalize disambiguation: when the commit window has ended but
-  // `finalize()` hasn't been called yet, the contract still reports
-  // `phase=0` and `refundMode=false`, and `computeAllocation()` returns
-  // (0, 0) for everyone (allocations only exist post-finalization). Without
-  // this branch the user falls through to the generic "Nothing to claim"
-  // copy below, which is misleading when the sale's outcome is already
-  // determined (e.g., capped demand fell short of MIN_SALE → everyone gets
-  // a USDC refund, but no one can claim it until someone calls finalize()).
+  // Before finalize(), the contract still reports `phase=0` and
+  // `refundMode=false`, and computeAllocation() returns (0,0) for everyone
+  // (allocations only exist post-finalization). Once the commit window closes,
+  // cappedDemand is frozen, so the post-waterfall outcome is deterministic —
+  // project it the same way finalize() will (estimateAllocation, matching the
+  // admin FinalizePanel) to give a below-min committer a definitive heads-up.
   const windowEnded = props.windowEnd > 0 && props.blockTimestamp > props.windowEnd
-  const saleBelowMin = props.cappedDemand < CROWDFUND_CONSTANTS.MIN_SALE
   if (phase === 0 && windowEnded) {
-    if (saleBelowMin) {
+    // Refund is triggered by post-waterfall totalAllocatedUsdc < MIN_SALE — NOT
+    // raw cappedDemand, which the July-2026 waterfall makes an incomplete
+    // predictor (concentrated hop-0 demand can clear the expansion trigger yet
+    // still allocate below the minimum raise).
+    const projectedAlloc = estimateAllocation(props.hopStats, props.cappedDemand, 0n).totalAllocUsdc
+    if (projectedAlloc < CROWDFUND_CONSTANTS.MIN_SALE) {
       return (
         <CardShell title="Sale ended below minimum">
           <p className={styles.gateBody}>

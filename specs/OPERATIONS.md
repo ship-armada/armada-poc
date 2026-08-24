@@ -25,7 +25,7 @@ Complete this table before deployment. Every address must be confirmed before an
 | USDC token contract | Committed currency | Circle mainnet USDC | — | — |
 
 **Key access rules (from CROWDFUND.md):**
-- `addSeed()` and `launchTeamInvite()`: ROOT only, week 1 only
+- `addSeed()` and `launchTeamInvite()`: ROOT only, days 1-14 only
 - `cancel()`: Security Council only, pre-finalization only
 - `finalize()`, `withdrawUnallocatedArm()`: permissionless (anyone)
 - `claim(delegate)`, `claimRefund()`: permissionless (participant-initiated)
@@ -51,14 +51,14 @@ Complete every item before calling the deploy script. Sign off with initials and
 | Security Council address | `[address]` | ☐ | Must match 3-of-5 multisig above |
 | Commitment window open timestamp | `[unix timestamp]` | ☐ | Verify against intended date/time + timezone |
 | Commitment deadline timestamp | `[unix timestamp]` | ☐ | Open + 21 days |
-| Launch team invite deadline | `[unix timestamp]` | ☐ | Open + 7 days |
+| Launch team invite deadline | `[unix timestamp]` | ☐ | Open + 14 days |
 | MAX_SALE | 1,800,000 × 10^18 | ☐ | ARM units (18 decimals) |
 | BASE_SALE | 1,200,000 × 10^18 | ☐ | ARM units |
 | MINIMUM_RAISE | 1,000,000 × 10^6 | ☐ | USDC units (6 decimals) |
 | EXPANSION_TRIGGER | 1,500,000 × 10^6 | ☐ | USDC units |
-| Hop-0 budget | 160 | ☐ | Max hop-0 participants |
-| Launch team hop-1 budget | 60 | ☐ | |
-| Launch team hop-2 budget | 60 | ☐ | |
+| Hop-0 budget | 180 | ☐ | Max hop-0 participants |
+| Launch team hop-1 budget | 100 | ☐ | |
+| Launch team hop-2 budget | 120 | ☐ | |
 
 ### EIP-712 domain
 
@@ -148,15 +148,15 @@ Record: `contract_address = [address]`, `deploy_tx = [hash]`, `block = [number]`
 
 Record: `loadArm_tx = [hash]`
 
-> **If `loadArm()` was called before `openTimestamp`:** Stop here. Verify observer shows ARMED / PRE-OPEN. Do not proceed to Steps 6, 7, or 10 until `block.timestamp ≥ openTimestamp`. The contract is armed but commitments will revert and `addSeed()` / `launchTeamInvite()` may also revert until the week-1 window is active. (Step 8, the committer integrity-anchor config, is not gated by `openTimestamp` and may be done now.)
+> **If `loadArm()` was called before `openTimestamp`:** Stop here. Verify observer shows ARMED / PRE-OPEN. Do not proceed to Steps 6, 7, or 10 until `block.timestamp ≥ openTimestamp`. The contract is armed but commitments will revert and `addSeed()` / `launchTeamInvite()` may also revert until the days 1-14 launch-team window is active. (Step 8, the committer integrity-anchor config, is not gated by `openTimestamp` and may be done now.)
 
 > **At or after `openTimestamp`:** Continue to Steps 6, 7, 8, 9, and 10 in order.
 
 ### Step 6: Add initial seeds
 
-**Execute only once `block.timestamp ≥ openTimestamp` and the week-1 window is active.**
+**Execute only once `block.timestamp ≥ openTimestamp` and the days 1-14 launch-team window is active.**
 
-See §4 (Week-1 operating cadence) for the full seed addition procedure. The first batch of seeds should be added immediately once the week-1 window is active (`block.timestamp ≥ openTimestamp`), before announcing the sale.
+See §4 (Launch-team operating cadence) for the full seed addition procedure. The first batch of seeds should be added immediately once the launch-team window is active (`block.timestamp ≥ openTimestamp`), before announcing the sale.
 
 ### Step 7: Issue launch-team placements (if any are pre-planned)
 
@@ -197,9 +197,9 @@ published manifest exist — it does not depend on `openTimestamp`.
 
 ---
 
-## 4. Week-1 Operating Cadence
+## 4. Launch-Team Operating Cadence (Days 1-14)
 
-Week 1 is the highest-risk operational phase. Hop-0 participants are added, launch-team budgets are spent, and these actions are either irreversible (`invite()` path) or immediately visible on-chain. Execute with care.
+Days 1-14 are the highest-risk operational phase. Hop-0 participants are added, launch-team budgets are spent, and these actions are either irreversible (`invite()` path) or immediately visible on-chain. Execute with care.
 
 ### Adding a hop-0 participant
 
@@ -207,9 +207,9 @@ Week 1 is the highest-risk operational phase. Hop-0 participants are added, laun
 |---|---|
 | **Actor** | ROOT (launch team multisig) |
 | **Action** | Call `addSeed(address)` |
-| **Preconditions** | Within week-1 window; hop-0 count < 160; address not already a seed (duplicate `addSeed()` for the same address is invalid); address confirmed with seed (they know what they're signing up for); entry recorded in decision log (§10) |
+| **Preconditions** | Within launch-team window; hop-0 count < 180; address not already a seed (duplicate `addSeed()` for the same address is invalid); address confirmed with seed (they know what they're signing up for); entry recorded in decision log (§10) |
 | **On-chain confirmation** | `SeedAdded(address)` event emitted; observer shows new hop-0 node with edge from ROOT |
-| **Fallback** | If `addSeed()` reverts: check week-1 deadline; check hop-0 count; see failure scenario §9.1 (wrong seed added) |
+| **Fallback** | If `addSeed()` reverts: check launch-team invite deadline; check hop-0 count; see failure scenario §9.1 (wrong seed added) |
 
 ### Issuing a launch-team hop-1 or hop-2 placement
 
@@ -217,26 +217,26 @@ Week 1 is the highest-risk operational phase. Hop-0 participants are added, laun
 |---|---|
 | **Actor** | ROOT (launch team multisig) |
 | **Action** | Call `launchTeamInvite(invitee, fromHop)` where `fromHop` is 0 (for hop-1 placement) or 1 (for hop-2 placement) |
-| **Preconditions** | Within week-1 window; budget remaining for target hop; invitee address confirmed; entry recorded in decision log (§10) |
+| **Preconditions** | Within launch-team window; budget remaining for target hop; invitee address confirmed; entry recorded in decision log (§10) |
 | **On-chain confirmation** | `Invited(ROOT, invitee, fromHop+1, 0)` emitted; observer shows new node with dashed edge from ROOT |
 | **Fallback** | If placement was wrong: see failure scenario §9.2 (bad launch-team invite) |
 
-### Daily checks (days 1–7)
+### Daily checks (days 1-14)
 
-Each day during week 1, the operator should verify:
+Each day during the launch-team window, the operator should verify:
 
 - [ ] Current hop-0 count (observer or `getHopStats(0).whitelistCount` view on `ArmadaCrowdfund`)
-- [ ] Remaining hop-0 budget: 160 − current count
-- [ ] Remaining launch-team hop-1 budget: 60 − issued count
-- [ ] Remaining launch-team hop-2 budget: 60 − issued count
+- [ ] Remaining hop-0 budget: 180 − current count
+- [ ] Remaining launch-team hop-1 budget: 100 − issued count
+- [ ] Remaining launch-team hop-2 budget: 120 − issued count
 - [ ] Any unexpected addresses in the graph (check for anomalies)
-- [ ] Total `capped_demand` trend (is it on track for minimum raise?)
+- [ ] Projected `totalAllocatedUsdc` trend vs `MINIMUM_RAISE`, plus `capped_demand` vs `EXPANSION_TRIGGER`
 - [ ] Observer and committer responding normally
 - [ ] No anomalous contract calls (check events for unexpected interactions)
 
-### End-of-week-1 go/no-go checkpoint
+### Day-14 launch-team deadline checkpoint
 
-Before the launch-team invite window closes (end of day 7), verify:
+Before the launch-team invite window closes (end of day 14), verify:
 
 | Condition | Status | Owner |
 |---|---|---|
@@ -244,20 +244,20 @@ Before the launch-team invite window closes (end of day 7), verify:
 | All planned launch-team hop-1 placements issued or budget explicitly reserved | ☐ | ROOT |
 | All planned launch-team hop-2 placements issued or budget explicitly reserved | ☐ | ROOT |
 | Remaining budgets documented (no phantom unspent slots) | ☐ | ROOT |
-| `capped_demand` trend reviewed; minimum raise reachable | ☐ | Ops |
+| Projected `totalAllocatedUsdc` reviewed for minimum-raise reachability; `capped_demand` reviewed for expansion | ☐ | Ops |
 | Security Council confirmed reachable for remainder of window | ☐ | Ops |
 
-**If minimum raise looks unreachable:** Do not cancel yet. Week-1 demand is rarely representative of final demand. Monitor through week 2 before any decision. Cancel is only appropriate for catastrophic events (exploit, legal injunction), not low demand.
+**If minimum raise looks unreachable:** Do not cancel yet. Projected post-waterfall `totalAllocatedUsdc`, rather than capped demand alone, determines success. Monitor through the final week before any decision. Cancel is only appropriate for catastrophic events (exploit, legal injunction), not low demand.
 
 ---
 
-## 5. Weeks 2–3 Operating Cadence
+## 5. Final-Week Operating Cadence
 
-After the launch-team invite window closes, the operator's role is monitoring, not action.
+After the launch-team invite window closes on day 14, the operator's role is monitoring, not action.
 
-### Daily checks (days 8–21)
+### Daily checks (days 15-21)
 
-- [ ] `capped_demand` vs MINIMUM_RAISE ($1M) and EXPANSION_TRIGGER ($1.5M)
+- [ ] Projected `totalAllocatedUsdc` vs MINIMUM_RAISE ($1M), plus `capped_demand` vs EXPANSION_TRIGGER ($1.5M)
 - [ ] Per-hop demand vs ceilings (observer stats banner)
 - [ ] Commitment count and graph growth
 - [ ] Observer and committer responding normally
@@ -270,12 +270,12 @@ After commitment deadline passes (day 21+), before calling `finalize()`:
 | Condition | Check | Owner |
 |---|---|---|
 | `block.timestamp > commitmentDeadline` | Confirmed | Ops |
-| `capped_demand ≥ MINIMUM_RAISE ($1M)` | Read from contract state, or derive from events using slot-capped logic: for each `(address, hop)`, cap = `participation_slots[(address, hop)] × HOP_CAP[hop]`; sum across all pairs. Do **not** sum raw `Committed` amounts — that overstates demand and may give a false go signal. | Ops |
+| Projected `totalAllocatedUsdc ≥ MINIMUM_RAISE ($1M)` | Apply per-address caps, sale-size selection, hop-2 floor, hop-0 ceiling, hop-0 rollover, hop-1 remaining-pool bound, hop-1 rollover, and hop-2 demand bound. Do **not** use capped demand alone as proof of success. | Ops |
 | `cancelled == false` | Read from contract state | Ops |
 | `finalized == false` | Read from contract state | Ops |
-| Gas estimation for `finalize()` | Run `eth_estimateGas`; compare to block gas limit (should be 3-5M under lazy settlement) | Ops |
+| Gas estimation for `finalize()` | Run `eth_estimateGas`; must be under the 16,777,216 (2^24, EIP-7825) per-tx cap. Expect ~7-12M at ~800 participants (cold); node count is capped below ~2,000 to stay submittable | Ops |
 
-**If `capped_demand < MINIMUM_RAISE`:** Call `finalize()` anyway — it is permissionless and will set `refundMode = true`, enabling refunds via `claimRefund()` and ARM recovery via `withdrawUnallocatedArm()`. Announce to participants immediately.
+**If projected `totalAllocatedUsdc < MINIMUM_RAISE`:** Call `finalize()` anyway — it is permissionless and will set `refundMode = true`, enabling refunds via `claimRefund()` and ARM recovery via `withdrawUnallocatedArm()`. Announce to participants immediately.
 
 ---
 
@@ -285,7 +285,7 @@ After commitment deadline passes (day 21+), before calling `finalize()`:
 
 Under lazy settlement, `finalize()` writes only aggregate state — zero per-participant storage writes. Individual allocations are computed on-the-fly by `computeAllocation(address)` and executed when each participant calls `claim(delegate)`. There is no settlement mode selection, no `emitSettlement()`, and no batched event emission. See `CROWDFUND.md` §Finalization and §Gas Considerations.
 
-**Gas estimation:** `finalize()` iterates all participants once to compute `hopDemand[]` — estimated 3-5M gas at ~800 participants. Run `eth_estimateGas` before calling to confirm. If it exceeds 25M, investigate the participant count and storage layout before proceeding.
+**Gas estimation:** `finalize()` iterates every whitelisted node once to compute `hopDemand[]` — cold cost is ~8,200 gas/node, so ~7-12M gas at ~800 participants (scales with whitelist count, not commit count). Run `eth_estimateGas` before calling to confirm. **A single tx is capped at 16,777,216 gas (2^24, EIP-7825)** — node count is bounded below ~2,000 so `finalize()` stays under it; if the estimate approaches the cap, do NOT submit — investigate the participant count first.
 
 ---
 
@@ -321,7 +321,7 @@ Record: `finalize_tx = [hash]`, `block = [number]`, `refundMode = [true/false]`,
 
 ### Path C: RefundMode outcome
 
-This occurs when `finalize()` succeeds (capped_demand ≥ MINIMUM_RAISE) but `net_proceeds < MINIMUM_RAISE` after allocation — typically when hop-0 is oversubscribed at base size and later hops don't close the gap.
+This occurs when `finalize()` calculates `totalAllocatedUsdc < MINIMUM_RAISE` after allocation. It can happen at either sale size, including after expansion when concentrated hop-0 demand crosses the trigger but later-hop demand does not close the gap.
 
 | | |
 |---|---|
@@ -423,8 +423,8 @@ When `block.timestamp > finalization_timestamp + (3 * 365 * 24 * 3600)`:
 **Impact:** `addSeed()` is irrevocable — the address has a permanent hop-0 position. They will appear in the graph and can commit and invite others.
 
 **Options:**
-- If discovered during week 1: cannot be undone. Assess whether the address poses a genuine governance risk. If severe (compromised key, adversarial actor): escalate to Security Council for cancel decision.
-- If discovered post-week-1: no action available; monitor the address's behavior in the graph.
+- If discovered during the launch-team window: cannot be undone. Assess whether the address poses a genuine governance risk. If severe (compromised key, adversarial actor): escalate to Security Council for cancel decision.
+- If discovered after the launch-team deadline: no action available; monitor the address's behavior in the graph.
 - In all cases: record in decision log with rationale for how it happened and what was decided.
 
 **Prevention:** Confirm every seed address directly with the intended recipient before calling `addSeed()`. Use a pre-signed message or voice confirmation.
@@ -446,7 +446,7 @@ When `block.timestamp > finalization_timestamp + (3 * 365 * 24 * 3600)`:
 **Detection:** Cannot reach enough multisig signers for a required action (ROOT invite, Security Council cancel).
 
 **Severity by action:**
-- ROOT invite during week 1: non-critical; delay the invite until quorum is reachable.
+- ROOT invite during the launch-team window: non-critical; delay the invite until quorum is reachable.
 - Security Council cancel during active exploit: critical — activate backup signer protocol immediately.
 
 **Mitigation:**
@@ -485,9 +485,9 @@ When `block.timestamp > finalization_timestamp + (3 * 365 * 24 * 3600)`:
 
 ### 9.6 Gas too high for finalization
 
-**Detection:** `eth_estimateGas` for `finalize()` exceeds expected range (3-5M), or `finalize()` tx reverts with out-of-gas.
+**Detection:** `eth_estimateGas` for `finalize()` exceeds the expected range (~7-12M at ~800 participants, cold), approaches the 16,777,216 (2^24) per-tx cap, or `finalize()` tx reverts with out-of-gas.
 
-Under lazy settlement, `finalize()` writes only aggregate state — it should be well within block gas limits at ~800 participants. If gas is unexpectedly high, investigate:
+Under lazy settlement, `finalize()` writes only aggregate state, but it still **iterates every whitelisted node** — cold cost ~8,200 gas/node (~7-12M at ~800 participants). The binding limit is the **16,777,216 (2^24, EIP-7825) per-tx cap**, not the block gas limit; node count is capped below ~2,000 to stay under it. If gas is unexpectedly high, investigate:
 
 - **Participant count higher than expected?** More participants = more SLOADs during `hopDemand` iteration. Check actual participant count against the ~800 estimate.
 - **Storage layout issue?** Cold reads (2,100 gas) vs warm reads (100 gas) depend on storage packing. If participant data is spread across many storage slots, cold read costs accumulate.
@@ -501,9 +501,9 @@ Under lazy settlement, `finalize()` writes only aggregate state — it should be
 
 ### 9.7 RefundMode surprise
 
-**Detection:** `Finalized` event has `refundMode == true` despite `capped_demand ≥ MINIMUM_RAISE`.
+**Detection:** `Finalized` event has `refundMode == true`, including where capped demand met the expansion trigger.
 
-**What happened:** `capped_demand` met the threshold but `net_proceeds < MINIMUM_RAISE` after allocation — this occurs at base size when hop-0 is oversubscribed and combined later-hop allocation doesn't reach $1M. It cannot occur after expansion (expanded hop-0 ceiling > $1M).
+**What happened:** Post-waterfall `totalAllocatedUsdc` was below `MINIMUM_RAISE`. This can occur at base or expanded size because the expanded hop-0 ceiling is $846,000, below the $1,000,000 minimum.
 
 **Immediate actions:**
 - Announce immediately: "Crowdfund entered refund mode — full refunds available"
@@ -589,7 +589,7 @@ Every irreversible action must be logged here before it is executed. This is the
 
 ---
 
-### Checkpoint 2: End of week 1 (before launch-team invite window closes)
+### Checkpoint 2: Day 14 (before launch-team invite window closes)
 
 | Condition | Status | Owner |
 |---|---|---|
@@ -597,11 +597,11 @@ Every irreversible action must be logged here before it is executed. This is the
 | Launch-team hop-1 budget accounted for (issued + reserved) | ☐ | ROOT |
 | Launch-team hop-2 budget accounted for (issued + reserved) | ☐ | ROOT |
 | Decision log entries complete for all addSeed/launchTeamInvite actions | ☐ | ROOT |
-| `capped_demand` trend reviewed | ☐ | Ops |
+| Projected `totalAllocatedUsdc` reviewed for minimum-raise reachability; `capped_demand` reviewed for expansion | ☐ | Ops |
 | Observer graph reviewed for anomalies | ☐ | Ops |
 | No active security concerns | ☐ | Security Council |
 
-**If capped_demand trend suggests minimum raise is unlikely:** Do not cancel. Monitor through week 3.
+**If projected `totalAllocatedUsdc` suggests the minimum raise is unlikely:** Do not cancel. Monitor through the final week.
 
 ---
 
@@ -610,11 +610,11 @@ Every irreversible action must be logged here before it is executed. This is the
 | Condition | Status | Owner |
 |---|---|---|
 | `block.timestamp > commitmentDeadline` | ☐ | Ops |
-| `capped_demand` reviewed (if sub-minimum, finalize will set refundMode) | ☐ | Ops |
+| Projected `totalAllocatedUsdc` reviewed (if sub-minimum, finalize will set refundMode) | ☐ | Ops |
 | `finalized == false` | ☐ | Ops |
 | `cancelled == false` | ☐ | Ops |
-| `finalize()` gas estimate verified (should be 3-5M under lazy settlement) | ☐ | Ops |
+| `finalize()` gas estimate verified under the 16,777,216 (2^24) per-tx cap (expect ~7-12M at ~800 participants, cold) | ☐ | Ops |
 | Treasury standing by to verify proceeds | ☐ | Treasury |
 | Participant announcement drafted for both success and refundMode outcomes | ☐ | Ops |
 
-**If capped_demand < MINIMUM_RAISE:** Call `finalize()` anyway — it sets `refundMode = true`. Announce immediately.
+**If projected `totalAllocatedUsdc < MINIMUM_RAISE:** Call `finalize()` anyway — it sets `refundMode = true`. Announce immediately.

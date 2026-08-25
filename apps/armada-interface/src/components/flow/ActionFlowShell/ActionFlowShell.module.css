@@ -1,7 +1,0 @@
-/* ABOUTME: ActionFlowShell body container — padded, scroll-aware, sits between FlowHeader and step-owned FlowFooter. */
-/* ABOUTME: The Modal handles its own max-height; we only manage internal padding and overflow. */
-
-.body {
-  padding: var(--primitives-spacing-6);
-  overflow-y: auto;
-}

@@ -1,7 +1,0 @@
-/* ABOUTME: TxActions row — Cancel + Retry buttons aligned right with small gap. */
-
-.row {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--primitives-spacing-2);
-}

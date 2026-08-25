@@ -5,7 +5,7 @@
 The project is transitioning from POC to production and ships in two launches:
 
 1. **Crowdfund + Governance** (near-term) — the token sale and on-chain governance stack. Apps live in `crowdfund-ui/` (committer, admin); see `specs/` for the governance, crowdfund, and operations specs.
-2. **Shielded Pool** (later) — the privacy pool, yield vault, fee module, and the `apps/armada-interface` user app. Deploys after the sale via governance proposals.
+2. **Shielded Pool** (later) — the privacy pool, yield vault, and fee module. Deploys after the sale via governance proposals. The user app (shield/unshield/yield/payments) lives in its own repo: [ship-armada/armada-interface](https://github.com/ship-armada/armada-interface).
 
 This README covers the **local privacy-pool + shielded-yield demo**. For the crowdfund/governance apps and their deploy flows, see `CLAUDE.md`, `crowdfund-ui/`, and `specs/`.
 
@@ -39,10 +39,10 @@ npm run setup
 # 5. Start the Armada Relayer (HTTP fee API + CCTP relay)
 npm run armada-relayer
 
-# 6. In a new terminal: start the demo app (apps/armada-interface, local mode)
-npm run demo
-
-# 7. Open http://localhost:5176 in your browser
+# 6. The user app (shield/unshield/yield/payments) now lives in its own repo:
+#      https://github.com/ship-armada/armada-interface
+#    Clone it alongside this checkout and point it at these local deployments —
+#    set ARMADA_POC_DIR to this repo's path (see that repo's LOCAL_VS_DEPLOY.md).
 ```
 
 ### Add Local Chains to MetaMask
@@ -153,7 +153,6 @@ This ensures the dashboard shows accurate yield even though yield accrues passiv
 | `npm run setup` | Compile & deploy all contracts |
 | `npm run armada-relayer` | Start the unified relayer (HTTP fee API + CCTP relay) |
 | `npm run relayer` | Start legacy CCTP-only relay (no HTTP API) |
-| `npm run demo` | Start the frontend demo app (`apps/armada-interface`, port 5176) |
 | `npm run test` | Run integration tests |
 | `npm run clean` | Remove deployments and build artifacts |
 
@@ -186,8 +185,6 @@ poc/
 │   ├── fees/               # ArmadaFeeModule (volume tiers, integrators)
 │   ├── MockUSDC.sol        # CCTP simulation (burn/mint)
 │   └── Faucet.sol          # Test token faucet
-├── apps/
-│   └── armada-interface/   # User app — shield/unshield/yield/payments (Launch 2)
 ├── crowdfund-ui/           # Crowdfund committer + admin apps (Launch 1)
 ├── governance-ui/          # Standalone governance proposal builder
 ├── packages/               # Shared workspace packages (@armada/ui design system)

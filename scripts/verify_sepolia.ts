@@ -11,8 +11,8 @@
  *   source config/sepolia.env
  *   export ETHERSCAN_API_KEY=your_key_here
  *   npx hardhat run scripts/verify_sepolia.ts --network sepoliaHub
- *   npx hardhat run scripts/verify_sepolia.ts --network sepoliaClientA   # Base Sepolia
- *   npx hardhat run scripts/verify_sepolia.ts --network sepoliaClientB   # Arbitrum Sepolia
+ *   npx hardhat run scripts/verify_sepolia.ts --network sepoliaClient1   # first client chain
+ *   npx hardhat run scripts/verify_sepolia.ts --network sepoliaClient2   # ...sepoliaClient<n>
  *
  * Some contracts require values not stored in manifests (e.g. crowdfund openTimestamp).
  * These are read from the deployed contract on-chain where possible.
@@ -28,6 +28,8 @@
 import { ethers, run } from "hardhat";
 import {
   getNetworkConfig,
+  getChainRole,
+  getChainByRole,
   getGovernanceDeploymentFile,
   getCrowdfundDeploymentFile,
   getPrivacyPoolDeploymentFile,
@@ -35,6 +37,7 @@ import {
   getAaveMockDeploymentFile,
   getFeeModuleDeploymentFile,
   getCCTPDeploymentFile,
+  type ChainRole,
 } from "../config/networks";
 import { loadDeployment } from "./deploy-utils";
 
@@ -300,9 +303,9 @@ async function buildHubProtocolTasks(): Promise<VerifyTask[]> {
 
 /**
  * Build PrivacyPoolClient + CCTPHookRouter tasks for a client chain.
- * Loads the per-role manifest (clientA = Base Sepolia, clientB = Arbitrum Sepolia).
+ * Loads the per-role manifest for the given client (client1, client2, ...).
  */
-async function buildClientChainTasks(role: "clientA" | "clientB"): Promise<VerifyTask[]> {
+async function buildClientChainTasks(role: ChainRole): Promise<VerifyTask[]> {
   const client = loadDeployment(getPrivacyPoolDeploymentFile(role));
   if (!client?.contracts) {
     throw new Error(`PrivacyPoolClient manifest not found for role=${role}`);
@@ -335,31 +338,26 @@ async function main() {
   const tasks: VerifyTask[] = [];
   let label: string;
 
-  // Dispatch by chain id. Hub gets the full protocol stack; clients only their
+  // Dispatch by role. Hub gets the full protocol stack; clients only their
   // PrivacyPoolClient + CCTPHookRouter.
-  switch (chainId) {
-    case 11155111: // Ethereum Sepolia (hub)
-      label = "Sepolia (hub)";
-      tasks.push(...(await buildGovernanceCrowdfundTasks()));
-      tasks.push(...(await buildHubProtocolTasks()));
-      console.log(
-        "\nNote: MerkleModule, ShieldModule, TransactModule are skipped — they link to Poseidon\n" +
-        "libraries whose addresses aren't in the deployment manifest. The PrivacyPool router itself\n" +
-        "is verified, which is the user-facing explorer surface.",
-      );
-      break;
-    case 84532: // Base Sepolia (clientA)
-      label = "Base Sepolia (clientA)";
-      tasks.push(...(await buildClientChainTasks("clientA")));
-      break;
-    case 421614: // Arbitrum Sepolia (clientB)
-      label = "Arbitrum Sepolia (clientB)";
-      tasks.push(...(await buildClientChainTasks("clientB")));
-      break;
-    default:
-      throw new Error(
-        `Unsupported chain id ${chainId}. Run with --network sepoliaHub | sepoliaClientA | sepoliaClientB.`,
-      );
+  const role = getChainRole(chainId);
+  if (role === "hub") {
+    label = "Sepolia (hub)";
+    tasks.push(...(await buildGovernanceCrowdfundTasks()));
+    tasks.push(...(await buildHubProtocolTasks()));
+    console.log(
+      "\nNote: MerkleModule, ShieldModule, TransactModule are skipped — they link to Poseidon\n" +
+      "libraries whose addresses aren't in the deployment manifest. The PrivacyPool router itself\n" +
+      "is verified, which is the user-facing explorer surface.",
+    );
+  } else if (role) {
+    const chain = getChainByRole(role);
+    label = `${chain.name} (${role})`;
+    tasks.push(...(await buildClientChainTasks(role)));
+  } else {
+    throw new Error(
+      `Unsupported chain id ${chainId}. Run with --network sepoliaHub or a sepoliaClient<n> network.`,
+    );
   }
 
   console.log(`\n=== Verifying ${tasks.length} contracts on ${label} Etherscan ===\n`);

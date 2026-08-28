@@ -19,7 +19,7 @@ describe("MCP Server — Integration Tests (requires running chains)", function 
       expect(reports).to.have.length(3);
 
       for (const report of reports) {
-        expect(report.role).to.be.oneOf(["hub", "clientA", "clientB"]);
+        expect(report.role).to.be.oneOf(["hub", "client1", "client2"]);
         expect(report.rpc).to.be.a("string");
       }
     });
@@ -88,14 +88,14 @@ describe("MCP Server — Integration Tests (requires running chains)", function 
       expect(result).to.have.property("modules");
     });
 
-    it("returns pool state for clientA", async function () {
-      const result = await getContractState("local", "privacy-pool", "clientA");
+    it("returns pool state for client1", async function () {
+      const result = await getContractState("local", "privacy-pool", "client1");
       expect(result.error).to.be.undefined;
       expect(result.address).to.be.a("string");
     });
 
-    it("returns pool state for clientB", async function () {
-      const result = await getContractState("local", "privacy-pool", "clientB");
+    it("returns pool state for client2", async function () {
+      const result = await getContractState("local", "privacy-pool", "client2");
       expect(result.error).to.be.undefined;
       expect(result.address).to.be.a("string");
     });

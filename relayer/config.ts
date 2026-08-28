@@ -159,11 +159,10 @@ const netConfig = getNetworkConfig();
 // Hub chain configuration
 export const hubChain: ChainConfig = toChainConfig(netConfig.hub, netConfig.env);
 
-// Client chains configuration
-export const clientChains: ChainConfig[] = [
-  toChainConfig(netConfig.clientA, netConfig.env),
-  toChainConfig(netConfig.clientB, netConfig.env),
-];
+// Client chains configuration (one entry per configured client, in order)
+export const clientChains: ChainConfig[] = netConfig.clients.map((c) =>
+  toChainConfig(c, netConfig.env),
+);
 
 // All chains combined
 export const allChains: ChainConfig[] = [hubChain, ...clientChains];

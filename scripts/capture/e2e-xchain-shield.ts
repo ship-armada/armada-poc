@@ -105,7 +105,7 @@ async function main() {
   const clientDeployment = loadDeployment(`privacy-pool-client${suffix}.json`);
   if (!clientDeployment) throw new Error(`privacy-pool-client${suffix}.json not found — deploy the client chain first`);
 
-  console.log(`\nClient A (chainId ${clientDeployment.chainId}, CCTP domain ${config.clientA.cctpDomain}) → Hub: ${config.env} (chainId ${hubDeployment.chainId})`);
+  console.log(`\nClient A (chainId ${clientDeployment.chainId}, CCTP domain ${config.clients[0].cctpDomain}) → Hub: ${config.env} (chainId ${hubDeployment.chainId})`);
   console.log(`Relayer required: ${local ? 'npm run armada-relayer (mock CCTP)' : 'npm run relayer:sepolia (real CCTP)'}`);
 
   const shieldAmount = ethers.parseUnits('5', 6);
@@ -123,7 +123,7 @@ async function main() {
   const hubUsdcAddress: string = hubDeployment.cctp.usdc;
 
   // Client chain: separate provider + signer (the burn happens here, NOT on the hardhat network).
-  const clientProvider = new ethers.JsonRpcProvider(local ? getRpcUrl(getChainById(clientDeployment.chainId)!) : config.clientA.rpc);
+  const clientProvider = new ethers.JsonRpcProvider(local ? getRpcUrl(getChainById(clientDeployment.chainId)!) : config.clients[0].rpc);
   const clientSigner = new ethers.Wallet(config.deployerPrivateKey, clientProvider);
   const clientUsdc = new ethers.Contract(clientDeployment.cctp.usdc, CLIENT_USDC_ABI, clientSigner);
   const clientPoolAddress: string = clientDeployment.contracts.privacyPoolClient;

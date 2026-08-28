@@ -108,7 +108,7 @@ async function main() {
   const clientDeployment = loadDeployment(`privacy-pool-client${suffix}.json`);
   if (!clientDeployment) throw new Error(`privacy-pool-client${suffix}.json not found — deploy the client chain first`);
 
-  const destinationDomain = config.clientA.cctpDomain;
+  const destinationDomain = config.clients[0].cctpDomain;
   console.log(`\nHub: ${config.env} (chainId ${hubDeployment.chainId}) → Client A (chainId ${clientDeployment.chainId}, CCTP domain ${destinationDomain})`);
   console.log(`Relayer required: ${local ? 'npm run armada-relayer (mock CCTP)' : 'npm run relayer:sepolia (real CCTP)'}`);
 
@@ -142,7 +142,7 @@ async function main() {
   const hubUsdcAddress = await hubUsdc.getAddress();
 
   // Client chain USDC (read-only) for polling delivery — separate provider on the client RPC.
-  const clientProvider = new ethers.JsonRpcProvider(local ? getRpcUrl(getChainById(clientDeployment.chainId)!) : config.clientA.rpc);
+  const clientProvider = new ethers.JsonRpcProvider(local ? getRpcUrl(getChainById(clientDeployment.chainId)!) : config.clients[0].rpc);
   const clientUsdc = new ethers.Contract(clientDeployment.cctp.usdc, ERC20_BALANCE_ABI, clientProvider);
 
   // Verify SNARK mode + a few vkeys on the hub.

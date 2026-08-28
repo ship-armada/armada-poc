@@ -71,8 +71,9 @@ async function main() {
   console.log("=".repeat(60));
   console.log();
   console.log(`  Hub:      ${config.hub.name} (Chain ${config.hub.chainId}, Domain ${config.hub.cctpDomain})`);
-  console.log(`  Client A: ${config.clientA.name} (Chain ${config.clientA.chainId}, Domain ${config.clientA.cctpDomain})`);
-  console.log(`  Client B: ${config.clientB.name} (Chain ${config.clientB.chainId}, Domain ${config.clientB.cctpDomain})`);
+  for (const client of config.clients) {
+    console.log(`  ${client.name}: (Chain ${client.chainId}, Domain ${client.cctpDomain})`);
+  }
   console.log(`  CCTP Mode: ${config.cctpMode}`);
   console.log();
 
@@ -94,14 +95,12 @@ async function main() {
     );
 
     if (!hubOnly) {
-      run(
-        "npx hardhat run scripts/deploy_cctp_sepolia.ts --network sepoliaClientA",
-        "Configuring CCTP for Client A (Base Sepolia)"
-      );
-      run(
-        "npx hardhat run scripts/deploy_cctp_sepolia.ts --network sepoliaClientB",
-        "Configuring CCTP for Client B (Arbitrum Sepolia)"
-      );
+      for (const client of config.clients) {
+        run(
+          `npx hardhat run scripts/deploy_cctp_sepolia.ts --network ${client.hardhatNetwork}`,
+          `Configuring CCTP for ${client.name}`
+        );
+      }
     }
   }
 
@@ -134,14 +133,12 @@ async function main() {
     );
 
     if (!hubOnly) {
-      run(
-        "npx hardhat run scripts/deploy_privacy_pool.ts --network sepoliaClientA",
-        "Deploying PrivacyPoolClient to Client A"
-      );
-      run(
-        "npx hardhat run scripts/deploy_privacy_pool.ts --network sepoliaClientB",
-        "Deploying PrivacyPoolClient to Client B"
-      );
+      for (const client of config.clients) {
+        run(
+          `npx hardhat run scripts/deploy_privacy_pool.ts --network ${client.hardhatNetwork}`,
+          `Deploying PrivacyPoolClient to ${client.name}`
+        );
+      }
     }
   }
 
@@ -208,14 +205,12 @@ async function main() {
     );
 
     if (!hubOnly) {
-      run(
-        "npx hardhat run scripts/deploy_gasless_wrapper.ts --network sepoliaClientA",
-        "Deploying GaslessShieldWrapperClient (Client A)"
-      );
-      run(
-        "npx hardhat run scripts/deploy_gasless_wrapper.ts --network sepoliaClientB",
-        "Deploying GaslessShieldWrapperClient (Client B)"
-      );
+      for (const client of config.clients) {
+        run(
+          `npx hardhat run scripts/deploy_gasless_wrapper.ts --network ${client.hardhatNetwork}`,
+          `Deploying GaslessShieldWrapperClient (${client.name})`
+        );
+      }
     }
   }
 

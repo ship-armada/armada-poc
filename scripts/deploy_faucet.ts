@@ -9,6 +9,7 @@ import "dotenv/config";
 import { ethers } from "hardhat";
 import * as fs from "fs";
 import * as path from "path";
+import { getNetworkConfig } from "../config/networks";
 
 const DEPLOYMENTS_DIR = path.join(__dirname, "../deployments");
 
@@ -115,14 +116,15 @@ async function main() {
   console.log("Deploying Faucet contracts to all chains (local only)");
   console.log("=".repeat(60));
 
+  const config = getNetworkConfig();
+
   // Deploy to Hub (port 8545, chain ID 31337)
-  await deployFaucet("Hub", "http://localhost:8545", "hub", "hub-v3");
+  await deployFaucet("Hub", config.hub.rpc, "hub", "hub-v3");
 
-  // Deploy to Client A (port 8546, chain ID 31338)
-  await deployFaucet("Client A", "http://localhost:8546", "client", "client-v3");
-
-  // Deploy to Client B (port 8547, chain ID 31339)
-  await deployFaucet("Client B", "http://localhost:8547", "clientB", "clientB-v3");
+  // Deploy to each configured client chain
+  for (const client of config.clients) {
+    await deployFaucet(client.name, client.rpc, client.deploymentPrefix, `${client.deploymentPrefix}-v3`);
+  }
 
   console.log("\n" + "=".repeat(60));
   console.log("All Faucet contracts deployed!");

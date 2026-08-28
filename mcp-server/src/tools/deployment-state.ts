@@ -8,19 +8,25 @@ import {
   type ChainDeployments,
   type HubDeployments,
 } from "../lib/deployments";
-import { type DeployEnv } from "../../../config/networks";
+import { type DeployEnv, type ChainRole, getChainByRole } from "../../../config/networks";
 
 interface DeploymentIssue {
   severity: "error" | "warning";
   message: string;
 }
 
+// One client chain's component summary, tagged with its role and human name.
+interface ClientSummary {
+  role: ChainRole;
+  name: string;
+  summary: ComponentSummary;
+}
+
 interface DeploymentReport {
   env: DeployEnv;
   files: string[];
   hub: ComponentSummary;
-  clientA: ComponentSummary;
-  clientB: ComponentSummary;
+  clients: ClientSummary[];
   issues: DeploymentIssue[];
 }
 
@@ -112,10 +118,8 @@ function crossReferenceChecks(
   issues: DeploymentIssue[]
 ): void {
   // Check that client pool CCTP references match the CCTP deployment
-  for (const [label, chain] of [
-    ["Client A", deployments.clientA],
-    ["Client B", deployments.clientB],
-  ] as const) {
+  for (const chain of deployments.clients) {
+    const label = getChainByRole(chain.role).name;
     if (chain.privacyPool && chain.cctp) {
       const poolUsdc = chain.privacyPool.cctp.usdc;
       const cctpUsdc = chain.cctp.contracts.usdc;
@@ -171,10 +175,16 @@ export function getDeploymentState(env: DeployEnv): DeploymentReport {
   const issues: DeploymentIssue[] = [];
 
   const hub = summarizeHub(deployments.hub, issues);
-  const clientA = summarizeChain(deployments.clientA, "Client A", issues);
-  const clientB = summarizeChain(deployments.clientB, "Client B", issues);
+  const clients: ClientSummary[] = deployments.clients.map((client) => {
+    const name = getChainByRole(client.role).name;
+    return {
+      role: client.role,
+      name,
+      summary: summarizeChain(client, name, issues),
+    };
+  });
 
   crossReferenceChecks(deployments, issues);
 
-  return { env, files, hub, clientA, clientB, issues };
+  return { env, files, hub, clients, issues };
 }

@@ -3,7 +3,11 @@
 
 import { type ChainRole, type DeployEnv } from "../../../config/networks";
 import { callView, getProvider } from "../lib/providers";
-import { loadAllDeployments, getPoolAddress } from "../lib/deployments";
+import {
+  loadAllDeployments,
+  getPoolAddress,
+  getChainDeploymentsByRole,
+} from "../lib/deployments";
 import { ethers } from "ethers";
 
 // ============================================================================
@@ -98,14 +102,9 @@ async function queryPrivacyPool(
   role: ChainRole
 ): Promise<ContractQueryResult> {
   const deployments = loadAllDeployments(env);
-  const chain =
-    role === "hub"
-      ? deployments.hub
-      : role === "clientA"
-        ? deployments.clientA
-        : deployments.clientB;
+  const chain = getChainDeploymentsByRole(deployments, role);
 
-  if (!chain.privacyPool) {
+  if (!chain || !chain.privacyPool) {
     return { error: `No privacy pool deployment found for ${role}` };
   }
 

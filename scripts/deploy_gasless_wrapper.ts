@@ -42,6 +42,7 @@ import { ethers } from "hardhat";
 import {
   getNetworkConfig,
   getChainRole,
+  getAllChains,
   getPrivacyPoolDeploymentFile,
   type ChainRole,
 } from "../config/networks";
@@ -148,8 +149,7 @@ async function main() {
   if (!role) {
     console.error(`Unknown chain ID: ${chainId}`);
     console.error(
-      `Configured chains: hub=${config.hub.chainId}, clientA=${config.clientA.chainId}, ` +
-        `clientB=${config.clientB.chainId}`,
+      `Configured chains: ${getAllChains().map((c) => `${c.role}=${c.chainId}`).join(", ")}`,
     );
     process.exit(1);
   }

@@ -23,7 +23,7 @@
  */
 
 import { ethers } from "ethers";
-import { getNetworkConfig } from "../config/networks";
+import { getNetworkConfig, getPrivacyPoolDeploymentFile } from "../config/networks";
 import { loadDeployment } from "./deploy-utils";
 
 // ============================================================================
@@ -120,7 +120,7 @@ async function testConnectivity(config: ReturnType<typeof getNetworkConfig>) {
   console.log("=".repeat(60));
 
   const hubProvider = new ethers.JsonRpcProvider(config.hub.rpc);
-  const clientAProvider = new ethers.JsonRpcProvider(config.clientA.rpc);
+  const clientAProvider = new ethers.JsonRpcProvider(config.clients[0].rpc);
 
   // Hub chain
   console.log("\n  Hub (Ethereum Sepolia):");
@@ -178,18 +178,18 @@ async function testConnectivity(config: ReturnType<typeof getNetworkConfig>) {
     }
 
     // Check authorized spoke clients (Hub's remotePools mapping)
-    const remotePoolA = await hubPool.remotePools(config.clientA.cctpDomain);
+    const remotePoolA = await hubPool.remotePools(config.clients[0].cctpDomain);
     if (remotePoolA !== ethers.ZeroHash) {
-      passed(`Client A authorized on Hub (domain ${config.clientA.cctpDomain}): ${remotePoolA}`);
+      passed(`Client A authorized on Hub (domain ${config.clients[0].cctpDomain}): ${remotePoolA}`);
     } else {
-      failed(`Client A not authorized on Hub (domain ${config.clientA.cctpDomain})`);
+      failed(`Client A not authorized on Hub (domain ${config.clients[0].cctpDomain})`);
     }
 
-    const remotePoolB = await hubPool.remotePools(config.clientB.cctpDomain);
+    const remotePoolB = await hubPool.remotePools(config.clients[1].cctpDomain);
     if (remotePoolB !== ethers.ZeroHash) {
-      passed(`Client B authorized on Hub (domain ${config.clientB.cctpDomain}): ${remotePoolB}`);
+      passed(`Client B authorized on Hub (domain ${config.clients[1].cctpDomain}): ${remotePoolB}`);
     } else {
-      info(`Client B not authorized on Hub (domain ${config.clientB.cctpDomain})`);
+      info(`Client B not authorized on Hub (domain ${config.clients[1].cctpDomain})`);
     }
   } catch (e: any) {
     failed(`Hub contract calls failed: ${e.message}`);
@@ -198,7 +198,7 @@ async function testConnectivity(config: ReturnType<typeof getNetworkConfig>) {
 
   // Client A chain
   console.log("\n  Client A (Base Sepolia):");
-  const clientDeployment = loadDeployment("privacy-pool-client-sepolia.json");
+  const clientDeployment = loadDeployment(getPrivacyPoolDeploymentFile("client1"));
   if (!clientDeployment) { failed("Client A deployment not found"); return false; }
 
   const clientPool = new ethers.Contract(clientDeployment.contracts.privacyPoolClient, PRIVACY_POOL_CLIENT_ABI, clientAProvider);
@@ -220,11 +220,11 @@ async function testConnectivity(config: ReturnType<typeof getNetworkConfig>) {
 
   // Client B chain
   console.log("\n  Client B (Arbitrum Sepolia):");
-  const clientBDeployment = loadDeployment("privacy-pool-clientB-sepolia.json");
+  const clientBDeployment = loadDeployment(getPrivacyPoolDeploymentFile("client2"));
   if (!clientBDeployment) {
     info("Client B deployment not found (skipped)");
   } else {
-    const clientBProvider = new ethers.JsonRpcProvider(config.clientB.rpc);
+    const clientBProvider = new ethers.JsonRpcProvider(config.clients[1].rpc);
     const clientBPool = new ethers.Contract(clientBDeployment.contracts.privacyPoolClient, PRIVACY_POOL_CLIENT_ABI, clientBProvider);
 
     try {
@@ -259,7 +259,7 @@ async function testConnectivity(config: ReturnType<typeof getNetworkConfig>) {
   info(`Client A USDC: ${formatUsdc(BigInt(clientAUsdcBal))}`);
 
   if (clientBDeployment) {
-    const clientBProvider = new ethers.JsonRpcProvider(config.clientB.rpc);
+    const clientBProvider = new ethers.JsonRpcProvider(config.clients[1].rpc);
     const clientBUsdc = new ethers.Contract(clientBDeployment.cctp.usdc, ERC20_ABI, clientBProvider);
     const clientBEth = await clientBProvider.getBalance(deployerAddress);
     const clientBUsdcBal = await clientBUsdc.balanceOf(deployerAddress);
@@ -406,11 +406,11 @@ async function testCrossChainShield(config: ReturnType<typeof getNetworkConfig>,
   console.log("  CHECK 3: Cross-Chain Shield (Base Sepolia → Ethereum Sepolia)");
   console.log("=".repeat(60));
 
-  const clientAProvider = new ethers.JsonRpcProvider(config.clientA.rpc);
+  const clientAProvider = new ethers.JsonRpcProvider(config.clients[0].rpc);
   const signer = new ethers.Wallet(config.deployerPrivateKey, clientAProvider);
   const deployerAddress = signer.address;
 
-  const clientDeployment = loadDeployment("privacy-pool-client-sepolia.json");
+  const clientDeployment = loadDeployment(getPrivacyPoolDeploymentFile("client1"));
   if (!clientDeployment) { failed("Client A deployment not found"); return false; }
 
   const clientAddress = clientDeployment.contracts.privacyPoolClient;
@@ -514,8 +514,8 @@ async function main() {
   console.log("  SEPOLIA SMOKE TEST");
   console.log("=".repeat(60));
   console.log(`  Hub:      ${config.hub.name} (${config.hub.rpc})`);
-  console.log(`  Client A: ${config.clientA.name} (${config.clientA.rpc})`);
-  console.log(`  Client B: ${config.clientB.name} (${config.clientB.rpc})`);
+  console.log(`  Client A: ${config.clients[0].name} (${config.clients[0].rpc})`);
+  console.log(`  Client B: ${config.clients[1].name} (${config.clients[1].rpc})`);
 
   // Always run connectivity check
   const connected = await testConnectivity(config);

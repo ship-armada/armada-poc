@@ -13,6 +13,46 @@ const ANVIL_MNEMONIC = "test test test test test test test test test test test j
 // Deployer key: use env var for testnets, Anvil default for local
 const DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY || ANVIL_KEY;
 
+// Client networks are generated from the indexed CLIENT_<n>_* env scheme (CLIENT_COUNT clients),
+// mirroring config/networks.ts so adding a client needs no manual network entry. Each client i
+// yields three entries — client<i> (local), sepoliaClient<i>, mainnetClient<i> — all reading the
+// same CLIENT_<i>_RPC / CLIENT_<i>_CHAIN_ID (only one env file is sourced at a time, so the chainId
+// matches the selected environment). sepolia/mainnet gasMultiplier is 2.0/1.2 for the same reason
+// as the hub networks below (public-RPC eth_estimateGas underestimates refund-heavy SSTOREs).
+function buildClientNetworks(): Record<string, any> {
+  const localDefaults: Array<{ rpc: string; chainId: number }> = [
+    { rpc: "http://localhost:8546", chainId: 31338 },
+    { rpc: "http://localhost:8547", chainId: 31339 },
+  ];
+  const count = parseInt(process.env.CLIENT_COUNT || "2", 10);
+  const nets: Record<string, any> = {};
+  for (let i = 1; i <= count; i++) {
+    const def = localDefaults[i - 1];
+    const rpc = process.env[`CLIENT_${i}_RPC`];
+    const chainIdEnv = process.env[`CLIENT_${i}_CHAIN_ID`];
+    const chainId = chainIdEnv ? parseInt(chainIdEnv, 10) : def?.chainId;
+
+    nets[`client${i}`] = {
+      url: rpc || def?.rpc || "http://localhost:8546",
+      chainId,
+      accounts: [ANVIL_KEY],
+    };
+    nets[`sepoliaClient${i}`] = {
+      url: rpc || "",
+      chainId,
+      accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
+      gasMultiplier: 2.0,
+    };
+    nets[`mainnetClient${i}`] = {
+      url: rpc || "",
+      chainId,
+      accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
+      gasMultiplier: 1.2,
+    };
+  }
+  return nets;
+}
+
 const config: HardhatUserConfig = {
   solidity: {
     compilers: [
@@ -90,18 +130,8 @@ const config: HardhatUserConfig = {
         count: 200,
       },
     },
-    // Client Chain A
-    client: {
-      url: process.env.CLIENT_A_RPC || process.env.CLIENT_RPC || "http://localhost:8546",
-      chainId: 31338,
-      accounts: [ANVIL_KEY],
-    },
-    // Client Chain B
-    clientB: {
-      url: process.env.CLIENT_B_RPC || "http://localhost:8547",
-      chainId: 31339,
-      accounts: [ANVIL_KEY],
-    },
+    // Client networks (client<i>, sepoliaClient<i>, mainnetClient<i>) are generated from
+    // CLIENT_COUNT below via buildClientNetworks().
 
     // ========== Sepolia Testnet Networks ==========
 
@@ -116,23 +146,10 @@ const config: HardhatUserConfig = {
       accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
       gasMultiplier: 2.0,
     },
-    // Client A: Base Sepolia
-    sepoliaClientA: {
-      url: process.env.CLIENT_A_RPC || "https://sepolia.base.org",
-      chainId: 84532,
-      accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
-      gasMultiplier: 2.0,
-    },
-    // Client B: Arbitrum Sepolia
-    sepoliaClientB: {
-      url: process.env.CLIENT_B_RPC || "https://sepolia-rollup.arbitrum.io/rpc",
-      chainId: 421614,
-      accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
-      gasMultiplier: 2.0,
-    },
+    // Client networks (sepoliaClient<i>) are generated from CLIENT_COUNT via buildClientNetworks().
 
     // ========== Mainnet Networks ==========
-    // Production. RPC must be supplied via env (HUB_RPC / CLIENT_A_RPC / CLIENT_B_RPC);
+    // Production. RPC must be supplied via env (HUB_RPC / CLIENT_<i>_RPC);
     // the public fallbacks are last-resort defaults, not production endpoints.
     // The crowdfund/governance launch is hub-only — clients are for the later
     // shielded-pool deployment.
@@ -144,20 +161,10 @@ const config: HardhatUserConfig = {
       accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
       gasMultiplier: 1.2,
     },
-    // Client A: Base mainnet
-    mainnetClientA: {
-      url: process.env.CLIENT_A_RPC || "https://mainnet.base.org",
-      chainId: 8453,
-      accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
-      gasMultiplier: 1.2,
-    },
-    // Client B: Arbitrum One
-    mainnetClientB: {
-      url: process.env.CLIENT_B_RPC || "https://arb1.arbitrum.io/rpc",
-      chainId: 42161,
-      accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
-      gasMultiplier: 1.2,
-    },
+    // Client networks (mainnetClient<i>) are generated from CLIENT_COUNT via buildClientNetworks().
+
+    // Generated client networks: client<i> (local), sepoliaClient<i>, mainnetClient<i>.
+    ...buildClientNetworks(),
   },
   paths: {
     sources: "./contracts",

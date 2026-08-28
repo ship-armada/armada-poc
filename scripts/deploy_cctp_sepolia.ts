@@ -11,14 +11,16 @@
  *
  * Usage:
  *   npx hardhat run scripts/deploy_cctp_sepolia.ts --network sepoliaHub
- *   npx hardhat run scripts/deploy_cctp_sepolia.ts --network sepoliaClientA
- *   npx hardhat run scripts/deploy_cctp_sepolia.ts --network sepoliaClientB
+ *   npx hardhat run scripts/deploy_cctp_sepolia.ts --network sepoliaClient1
+ *   npx hardhat run scripts/deploy_cctp_sepolia.ts --network sepoliaClient2   # ...sepoliaClient<n>
  */
 
 import { ethers } from "hardhat";
 import {
   getNetworkConfig,
   getChainRole,
+  getChainByRole,
+  getAllChains,
   getCCTPAddresses,
   getCCTPDeploymentFile,
   validateCCTPConfig,
@@ -43,10 +45,7 @@ async function configureCCTP(role: ChainRole): Promise<DeploymentInfo> {
   const [deployer] = await ethers.getSigners();
   const network = await ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
-  const config = getNetworkConfig();
-  const chain = role === "hub" ? config.hub
-    : role === "clientA" ? config.clientA
-    : config.clientB;
+  const chain = getChainByRole(role);
 
   // Validate that all CCTP addresses are configured
   validateCCTPConfig(role);
@@ -137,7 +136,7 @@ async function main() {
   const role = getChainRole(chainId);
   if (!role) {
     console.error(`Unknown chain ID: ${chainId}`);
-    console.error(`Expected: ${config.hub.chainId} (hub), ${config.clientA.chainId} (clientA), or ${config.clientB.chainId} (clientB)`);
+    console.error(`Expected one of: ${getAllChains().map((c) => `${c.chainId} (${c.role})`).join(", ")}`);
     process.exit(1);
   }
 
@@ -149,9 +148,7 @@ async function main() {
   console.log(`Saved to: deployments/${filename}`);
   console.log("");
   console.log("Next step: deploy privacy pool contracts");
-  console.log(`  npx hardhat run scripts/deploy_privacy_pool.ts --network ${
-    role === "hub" ? "sepoliaHub" : role === "clientA" ? "sepoliaClientA" : "sepoliaClientB"
-  }`);
+  console.log(`  npx hardhat run scripts/deploy_privacy_pool.ts --network ${getChainByRole(role).hardhatNetwork}`);
 }
 
 main()

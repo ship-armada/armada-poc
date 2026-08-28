@@ -31,8 +31,8 @@ function loadDeployment(networkName: string) {
 
 function getNetworkName(chainId: number): string {
   if (chainId === 31337) return "hub";
-  if (chainId === 31338) return "client";
-  if (chainId === 31339) return "clientB";
+  if (chainId === 31338) return "client1";
+  if (chainId === 31339) return "client2";
   return "unknown";
 }
 

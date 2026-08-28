@@ -4,6 +4,11 @@
  * Single source of truth for chain configs, CCTP addresses, and domain mappings.
  * Reads from environment variables (set via config/local.env or config/sepolia.env).
  *
+ * Supports a hub plus an arbitrary number (N) of client chains. Client chains are
+ * configured via an indexed env scheme: CLIENT_COUNT sets how many, and each client
+ * n (1-based) is described by CLIENT_<n>_RPC / CLIENT_<n>_CHAIN_ID /
+ * CLIENT_<n>_CCTP_DOMAIN / CLIENT_<n>_USDC.
+ *
  * Usage:
  *   import { getNetworkConfig, getDeployEnv, isCCTPReal } from "../config/networks";
  *   const config = getNetworkConfig();
@@ -17,7 +22,13 @@ import "dotenv/config";
 
 export type DeployEnv = "local" | "sepolia" | "mainnet";
 export type CCTPMode = "mock" | "real";
-export type ChainRole = "hub" | "clientA" | "clientB";
+/**
+ * A chain's role. The hub is unique; client chains are numbered 1..CLIENT_COUNT
+ * (e.g. "client1", "client2", ...). Client roles are 1-based to match the
+ * CLIENT_<n>_* env scheme and the human-facing "Client N" labels.
+ */
+export type ClientRole = `client${number}`;
+export type ChainRole = "hub" | ClientRole;
 
 export interface ChainConfig {
   rpc: string;
@@ -29,6 +40,8 @@ export interface ChainConfig {
   hardhatNetwork: string;
   /** Deployment JSON filename prefix */
   deploymentPrefix: string;
+  /** USDC token address on this chain (only populated when CCTP_MODE=real) */
+  usdc: string;
 }
 
 export interface CCTPAddresses {
@@ -61,10 +74,19 @@ export interface NetworkConfig {
   cctpMode: CCTPMode;
   deployerPrivateKey: string;
   hub: ChainConfig;
-  clientA: ChainConfig;
-  clientB: ChainConfig;
-  /** CCTP addresses per chain role (only populated when CCTP_MODE=real) */
-  cctpAddresses: Record<ChainRole, CCTPAddresses>;
+  /** Client chains, in order (client1, client2, ...). Length == CLIENT_COUNT. */
+  clients: ChainConfig[];
+  /**
+   * Shared CCTP infrastructure addresses. On EVM testnets/mainnet Circle deploys the
+   * TokenMessenger/MessageTransmitter/TokenMinter at the same address on every chain
+   * (via CREATE2), so these are chain-agnostic. Per-chain USDC lives on ChainConfig.usdc.
+   * Only populated when CCTP_MODE=real.
+   */
+  cctpShared: {
+    tokenMessenger: string;
+    messageTransmitter: string;
+    tokenMinter: string;
+  };
   /** Iris attestation config (only used when CCTP_MODE=real) */
   iris: {
     apiUrl: string;
@@ -163,6 +185,59 @@ function boolEnv(key: string, defaultValue: boolean): boolean {
 }
 
 // ============================================================================
+// Client Chain Builder
+// ============================================================================
+
+/**
+ * Build the ordered list of client chain configs from the indexed env scheme.
+ *
+ * CLIENT_COUNT sets how many clients (default 2). Client n (1-based) reads
+ * CLIENT_<n>_RPC / CLIENT_<n>_CHAIN_ID / CLIENT_<n>_CCTP_DOMAIN / CLIENT_<n>_USDC,
+ * plus an optional CLIENT_<n>_NAME label. For local dev, sensible Anvil defaults are
+ * provided for the first two clients so the chain topology works without explicit env.
+ */
+function buildClients(env: DeployEnv): ChainConfig[] {
+  // Local defaults for the first two Anvil client chains (ports 8546/8547).
+  const localDefaults: Array<{ rpc: string; chainId: number; cctpDomain: number }> = [
+    { rpc: "http://localhost:8546", chainId: 31338, cctpDomain: 101 },
+    { rpc: "http://localhost:8547", chainId: 31339, cctpDomain: 102 },
+  ];
+
+  const count = numEnv("CLIENT_COUNT", env === "local" ? 2 : 0);
+  if (count < 1) {
+    throw new Error(
+      `CLIENT_COUNT must be >= 1 (got ${count}). Configure at least one client chain.`
+    );
+  }
+
+  const clients: ChainConfig[] = [];
+  for (let i = 1; i <= count; i++) {
+    const def = localDefaults[i - 1];
+    const rpc = env === "local" && def
+      ? optionalEnv(`CLIENT_${i}_RPC`, def.rpc)
+      : requireEnv(`CLIENT_${i}_RPC`);
+    const chainId = env === "local" && def
+      ? numEnv(`CLIENT_${i}_CHAIN_ID`, def.chainId)
+      : parseInt(requireEnv(`CLIENT_${i}_CHAIN_ID`), 10);
+    const cctpDomain = env === "local" && def
+      ? numEnv(`CLIENT_${i}_CCTP_DOMAIN`, def.cctpDomain)
+      : parseInt(requireEnv(`CLIENT_${i}_CCTP_DOMAIN`), 10);
+
+    clients.push({
+      rpc,
+      chainId,
+      cctpDomain,
+      name: optionalEnv(`CLIENT_${i}_NAME`, `Client ${i}`),
+      role: `client${i}`,
+      hardhatNetwork: env === "local" ? `client${i}` : `${env}Client${i}`,
+      deploymentPrefix: `client${i}`,
+      usdc: optionalEnv(`CLIENT_${i}_USDC`, ""),
+    });
+  }
+  return clients;
+}
+
+// ============================================================================
 // RevenueLock Beneficiary Builder
 // ============================================================================
 
@@ -256,52 +331,16 @@ export function getNetworkConfig(): NetworkConfig {
     role: "hub",
     hardhatNetwork: env === "local" ? "hub" : `${env}Hub`,
     deploymentPrefix: "hub",
+    usdc: optionalEnv("HUB_USDC", ""),
   };
 
-  const clientA: ChainConfig = {
-    rpc: optionalEnv("CLIENT_A_RPC", "http://localhost:8546"),
-    chainId: numEnv("CLIENT_A_CHAIN_ID", 31338),
-    cctpDomain: numEnv("CLIENT_A_CCTP_DOMAIN", 101),
-    name: "Client A",
-    role: "clientA",
-    hardhatNetwork: env === "local" ? "client" : `${env}ClientA`,
-    deploymentPrefix: "client",
-  };
+  const clients = buildClients(env);
 
-  const clientB: ChainConfig = {
-    rpc: optionalEnv("CLIENT_B_RPC", "http://localhost:8547"),
-    chainId: numEnv("CLIENT_B_CHAIN_ID", 31339),
-    cctpDomain: numEnv("CLIENT_B_CCTP_DOMAIN", 102),
-    name: "Client B",
-    role: "clientB",
-    hardhatNetwork: env === "local" ? "clientB" : `${env}ClientB`,
-    deploymentPrefix: "clientB",
-  };
-
-  // CCTP addresses (same contract addresses on all EVM testnets via CREATE2)
-  const sharedMessenger = optionalEnv("CCTP_TOKEN_MESSENGER", "");
-  const sharedTransmitter = optionalEnv("CCTP_MESSAGE_TRANSMITTER", "");
-  const sharedMinter = optionalEnv("CCTP_TOKEN_MINTER", "");
-
-  const cctpAddresses: Record<ChainRole, CCTPAddresses> = {
-    hub: {
-      tokenMessenger: sharedMessenger,
-      messageTransmitter: sharedTransmitter,
-      tokenMinter: sharedMinter,
-      usdc: optionalEnv("HUB_USDC", ""),
-    },
-    clientA: {
-      tokenMessenger: sharedMessenger,
-      messageTransmitter: sharedTransmitter,
-      tokenMinter: sharedMinter,
-      usdc: optionalEnv("CLIENT_A_USDC", ""),
-    },
-    clientB: {
-      tokenMessenger: sharedMessenger,
-      messageTransmitter: sharedTransmitter,
-      tokenMinter: sharedMinter,
-      usdc: optionalEnv("CLIENT_B_USDC", ""),
-    },
+  // CCTP infrastructure addresses (same contract addresses on all EVM testnets via CREATE2)
+  const cctpShared = {
+    tokenMessenger: optionalEnv("CCTP_TOKEN_MESSENGER", ""),
+    messageTransmitter: optionalEnv("CCTP_MESSAGE_TRANSMITTER", ""),
+    tokenMinter: optionalEnv("CCTP_TOKEN_MINTER", ""),
   };
 
   // RevenueLock beneficiaries: local uses Anvil defaults, non-local requires explicit config
@@ -312,9 +351,8 @@ export function getNetworkConfig(): NetworkConfig {
     cctpMode,
     deployerPrivateKey,
     hub,
-    clientA,
-    clientB,
-    cctpAddresses,
+    clients,
+    cctpShared,
     iris: {
       apiUrl: optionalEnv("IRIS_API_URL", "https://iris-api-sandbox.circle.com"),
       pollIntervalMs: numEnv("IRIS_POLL_INTERVAL_MS", 10000),
@@ -387,39 +425,44 @@ export function isLocal(): boolean {
 
 /** Get chain config by chain ID (runtime lookup) */
 export function getChainByChainId(chainId: number): ChainConfig | undefined {
-  const config = getNetworkConfig();
-  return [config.hub, config.clientA, config.clientB].find(
-    (c) => c.chainId === chainId
-  );
+  return getAllChains().find((c) => c.chainId === chainId);
 }
 
 /** Get chain config by CCTP domain ID */
 export function getChainByDomain(domain: number): ChainConfig | undefined {
-  const config = getNetworkConfig();
-  return [config.hub, config.clientA, config.clientB].find(
-    (c) => c.cctpDomain === domain
-  );
+  return getAllChains().find((c) => c.cctpDomain === domain);
 }
 
 /** Get chain config by role */
 export function getChainByRole(role: ChainRole): ChainConfig {
-  const config = getNetworkConfig();
-  switch (role) {
-    case "hub": return config.hub;
-    case "clientA": return config.clientA;
-    case "clientB": return config.clientB;
+  const chain = getAllChains().find((c) => c.role === role);
+  if (!chain) {
+    throw new Error(`No chain configured for role "${role}"`);
   }
+  return chain;
 }
 
-/** Get all chain configs */
+/** Get all chain configs (hub first, then clients in order) */
 export function getAllChains(): ChainConfig[] {
   const config = getNetworkConfig();
-  return [config.hub, config.clientA, config.clientB];
+  return [config.hub, ...config.clients];
 }
 
-/** Get CCTP addresses for a chain role */
+/** Get all client chain configs (excludes the hub) */
+export function getClientChains(): ChainConfig[] {
+  return getNetworkConfig().clients;
+}
+
+/** Get CCTP addresses for a chain role (shared infra + that chain's USDC) */
 export function getCCTPAddresses(role: ChainRole): CCTPAddresses {
-  return getNetworkConfig().cctpAddresses[role];
+  const config = getNetworkConfig();
+  const chain = getChainByRole(role);
+  return {
+    tokenMessenger: config.cctpShared.tokenMessenger,
+    messageTransmitter: config.cctpShared.messageTransmitter,
+    tokenMinter: config.cctpShared.tokenMinter,
+    usdc: chain.usdc,
+  };
 }
 
 /** Map chain ID to its CCTP domain */
@@ -504,11 +547,7 @@ export function getCrowdfundDeploymentFile(): string {
  * Returns null if the chain ID doesn't match any configured chain.
  */
 export function getChainRole(chainId: number): ChainRole | null {
-  const config = getNetworkConfig();
-  if (chainId === config.hub.chainId) return "hub";
-  if (chainId === config.clientA.chainId) return "clientA";
-  if (chainId === config.clientB.chainId) return "clientB";
-  return null;
+  return getChainByChainId(chainId)?.role ?? null;
 }
 
 // ============================================================================
@@ -523,7 +562,7 @@ export function validateCCTPConfig(role: ChainRole): void {
   const config = getNetworkConfig();
   if (config.cctpMode !== "real") return;
 
-  const addrs = config.cctpAddresses[role];
+  const addrs = getCCTPAddresses(role);
   if (!addrs.tokenMessenger) throw new Error(`CCTP_TOKEN_MESSENGER not set`);
   if (!addrs.messageTransmitter) throw new Error(`CCTP_MESSAGE_TRANSMITTER not set`);
   if (!addrs.usdc) {

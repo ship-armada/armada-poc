@@ -179,7 +179,8 @@ async function checkPrivacyPoolWiring(
   const pool = await ethers.getContractAt("PrivacyPool", poolAddr);
 
   // Check client pool linking
-  for (const role of ["clientA", "clientB"] as const) {
+  for (const client of getNetworkConfig().clients) {
+    const role = client.role;
     const clientFile = getPrivacyPoolDeploymentFile(role);
     const clientManifest = loadDeployment(clientFile);
     if (!clientManifest) {

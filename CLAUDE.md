@@ -26,7 +26,7 @@ For detailed architecture, see @.claude/ARCHITECTURE_NOTES.md
 
 ```bash
 # Local environment
-npm run chains              # Start 3 Anvil instances (hub:8545, clientA:8546, clientB:8547)
+npm run chains              # Start 3 Anvil instances (hub:8545, client1:8546, client2:8547)
 npm run setup               # Compile + deploy all contracts to local chains
 npm run armada-relayer      # Start unified relayer (HTTP API + CCTP relay)
 

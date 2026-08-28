@@ -14,13 +14,13 @@
  *
  * Usage (local):
  *   npx hardhat run scripts/deploy_privacy_pool.ts --network hub
- *   npx hardhat run scripts/deploy_privacy_pool.ts --network client
- *   npx hardhat run scripts/deploy_privacy_pool.ts --network clientB
+ *   npx hardhat run scripts/deploy_privacy_pool.ts --network client1
+ *   npx hardhat run scripts/deploy_privacy_pool.ts --network client2   # ...client<n> for CLIENT_COUNT
  *
  * Usage (sepolia):
  *   npx hardhat run scripts/deploy_privacy_pool.ts --network sepoliaHub
- *   npx hardhat run scripts/deploy_privacy_pool.ts --network sepoliaClientA
- *   npx hardhat run scripts/deploy_privacy_pool.ts --network sepoliaClientB
+ *   npx hardhat run scripts/deploy_privacy_pool.ts --network sepoliaClient1
+ *   npx hardhat run scripts/deploy_privacy_pool.ts --network sepoliaClient2
  */
 
 import { ethers } from "hardhat";
@@ -29,6 +29,8 @@ import * as path from "path";
 import {
   getNetworkConfig,
   getChainRole,
+  getChainByRole,
+  getAllChains,
   getCCTPDeploymentFile,
   getGovernanceDeploymentFile,
   getPrivacyPoolDeploymentFile,
@@ -286,7 +288,7 @@ async function deployClient(role: ChainRole): Promise<ClientDeploymentInfo> {
   const network = await ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
   const config = getNetworkConfig();
-  const chain = role === "clientA" ? config.clientA : config.clientB;
+  const chain = getChainByRole(role);
   const domain = chain.cctpDomain;
   const name = chain.name;
   const nm = await createNonceManager(deployer);
@@ -396,12 +398,11 @@ async function deployClient(role: ChainRole): Promise<ClientDeploymentInfo> {
 async function main() {
   const network = await ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
-  const config = getNetworkConfig();
 
   const role = getChainRole(chainId);
   if (!role) {
     console.error(`Unknown chain ID: ${chainId}`);
-    console.error(`Configured chains: hub=${config.hub.chainId}, clientA=${config.clientA.chainId}, clientB=${config.clientB.chainId}`);
+    console.error(`Configured chains: ${getAllChains().map((c) => `${c.role}=${c.chainId}`).join(", ")}`);
     process.exit(1);
   }
 

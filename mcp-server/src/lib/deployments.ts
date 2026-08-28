@@ -12,6 +12,7 @@ import {
   getAaveMockDeploymentFile,
   getGovernanceDeploymentFile,
   getCrowdfundDeploymentFile,
+  getClientChains,
 } from "../../../config/networks";
 
 // ============================================================================
@@ -148,11 +149,17 @@ export interface HubDeployments extends ChainDeployments {
   crowdfund: CrowdfundDeployment | null;
 }
 
+// A client chain's deployments, tagged with its role ("client1", "client2", ...)
+// so consumers can select a chain without relying on array position.
+export interface ClientDeployments extends ChainDeployments {
+  role: ChainRole;
+}
+
 export interface AllDeployments {
   env: DeployEnv;
   hub: HubDeployments;
-  clientA: ChainDeployments;
-  clientB: ChainDeployments;
+  // Client chains in order (client1, client2, ...); length == configured CLIENT_COUNT.
+  clients: ClientDeployments[];
 }
 
 // ============================================================================
@@ -195,9 +202,24 @@ export function loadAllDeployments(env: DeployEnv): AllDeployments {
       governance: loadJson<GovernanceDeployment>(getGovernanceDeploymentFile()),
       crowdfund: loadJson<CrowdfundDeployment>(getCrowdfundDeploymentFile()),
     },
-    clientA: loadChainDeployments("clientA"),
-    clientB: loadChainDeployments("clientB"),
+    // One entry per configured client chain, tagged with its role.
+    clients: getClientChains().map((client) => ({
+      role: client.role,
+      ...loadChainDeployments(client.role),
+    })),
   };
+}
+
+/**
+ * Resolve a chain role ("hub", "client1", "client2", ...) to its ChainDeployments.
+ * Returns undefined if no chain with that role is present in the loaded set.
+ */
+export function getChainDeploymentsByRole(
+  deployments: AllDeployments,
+  role: ChainRole
+): ChainDeployments | undefined {
+  if (role === "hub") return deployments.hub;
+  return deployments.clients.find((c) => c.role === role);
 }
 
 /**

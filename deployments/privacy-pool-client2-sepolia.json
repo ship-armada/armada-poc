@@ -3,9 +3,9 @@
   "domain": 6,
   "deployer": "0x98b1CBa0908C98c95c9C87D94e4fCdddc87C933d",
   "contracts": {
-    "privacyPoolClient": "0x3376660cCda97fb215C3548801426A38B2490A08",
-    "hookRouter": "0x78923B94C65Ff26075304C76346dDCe2c5D593dD",
-    "gaslessShieldWrapperClient": "0x52b6F5a44D5D92cd1fD8dEdC15f742DdEB3A08AC"
+    "privacyPoolClient": "0x4d25F9D0B0Cd67F6FB2e6e1F2e9B072e750B0c30",
+    "hookRouter": "0x2DfeFc00D0d4eAB815cfB43F2fFCBf38A5c9F62C",
+    "gaslessShieldWrapperClient": "0x78aA586Cb6fEAF189EB8A6bf01Efd5E7747212d6"
   },
   "cctp": {
     "tokenMessenger": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
@@ -14,8 +14,8 @@
   },
   "hub": {
     "domain": 0,
-    "privacyPool": "0x3442e860d9Ec64c30e6beF2d3AFc21ef8605a1c3"
+    "privacyPool": "0x5f3324b47b3CFf937BB67C30B362898E193e5216"
   },
-  "deployBlock": 44457386,
-  "timestamp": "2026-07-22T01:25:27.222Z"
+  "deployBlock": 46211247,
+  "timestamp": "2026-08-31T15:39:50.065Z"
 }

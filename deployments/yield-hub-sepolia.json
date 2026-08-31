@@ -2,15 +2,15 @@
   "chainId": 11155111,
   "deployer": "0x98b1CBa0908C98c95c9C87D94e4fCdddc87C933d",
   "contracts": {
-    "armadaYieldVault": "0xF0Ff34b740CF56abF3E830168e186c267D2A8f4E",
-    "armadaYieldAdapter": "0xe2EF26c8Ea2c1F2de358260839225701c89E2338"
+    "armadaYieldVault": "0xB59a4D8f27b9204Fc3477239D54f4E32C40C45E9",
+    "armadaYieldAdapter": "0xE36B974dc4f08aFbD0C1C013Fa5dfEE3a80fC1Ea"
   },
   "config": {
     "usdc": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
-    "mockAaveSpoke": "0xbCbAc73B51db9A23504Dc3C453Cd0A71d1510177",
+    "mockAaveSpoke": "0xa89552552C7B4c62310b5F3BBeAB21E913FEBC30",
     "reserveId": 0,
     "yieldFeeBps": 1000,
-    "treasury": "0x2BEB5AF24350acD4C5F69453938B1edf73e3340b"
+    "treasury": "0x5b90C233D259Ad251531ffc8e04F6c24fc1996Af"
   },
-  "timestamp": "2026-07-22T01:18:48.552Z"
+  "timestamp": "2026-08-28T23:48:36.961Z"
 }

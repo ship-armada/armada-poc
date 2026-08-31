@@ -2,7 +2,7 @@
   "chainId": 11155111,
   "deployer": "0x98b1CBa0908C98c95c9C87D94e4fCdddc87C933d",
   "contracts": {
-    "mockAaveSpoke": "0xbCbAc73B51db9A23504Dc3C453Cd0A71d1510177"
+    "mockAaveSpoke": "0xa89552552C7B4c62310b5F3BBeAB21E913FEBC30"
   },
   "reserves": {
     "usdc": {
@@ -11,5 +11,5 @@
       "annualYieldBps": 50000
     }
   },
-  "timestamp": "2026-07-22T01:18:13.315Z"
+  "timestamp": "2026-08-28T23:47:37.444Z"
 }

@@ -269,14 +269,30 @@ export async function timelockCall(
     await new Promise(resolve => setTimeout(resolve, sleepSec * 1000));
   }
 
-  console.log(`   ${description}: executing...`);
-  const executeTx = await timelock.execute(
-    targetAddr, value, calldata, ZERO_BYTES32, salt, nm.override()
-  );
-  const executeReceipt = await executeTx.wait();
-  if (!executeReceipt || executeReceipt.status === 0) {
-    throw new Error(`Timelock execute reverted: ${description}`);
+  // The execute's gas estimation can transiently revert "TimelockController: operation is not
+  // ready" when a load-balanced RPC serves the estimate from a node whose head still lags the
+  // delay we already waited out on the canonical chain. That failure is pre-send (at
+  // eth_estimateGas), so no tx is broadcast and the allocated nonce stays unused — retry with
+  // the SAME override (nonce) until a synced-enough backend accepts it.
+  const executeOverride = nm.override();
+  for (let attempt = 1; attempt <= 8; attempt++) {
+    try {
+      console.log(`   ${description}: executing...`);
+      const executeTx = await timelock.execute(
+        targetAddr, value, calldata, ZERO_BYTES32, salt, executeOverride
+      );
+      const executeReceipt = await executeTx.wait();
+      if (!executeReceipt || executeReceipt.status === 0) {
+        throw new Error(`Timelock execute reverted: ${description}`);
+      }
+      console.log(`   ${description}: done`);
+      return true;
+    } catch (err) {
+      const msg = String((err as { message?: string })?.message ?? err);
+      if (!/not ready/i.test(msg) || attempt >= 8) throw err;
+      console.log(`   ${description}: not ready on this RPC node (lag) — retry ${attempt}/8 in 15s...`);
+      await new Promise((resolve) => setTimeout(resolve, 15000));
+    }
   }
-  console.log(`   ${description}: done`);
-  return true;
+  throw new Error(`Timelock execute did not complete after retries: ${description}`);
 }

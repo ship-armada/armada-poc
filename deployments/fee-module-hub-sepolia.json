@@ -2,14 +2,14 @@
   "chainId": 11155111,
   "deployer": "0x98b1CBa0908C98c95c9C87D94e4fCdddc87C933d",
   "contracts": {
-    "feeModuleImpl": "0xc5B4d046255adEf777D1e46D16C3A1FbB7De28D3",
-    "feeModuleProxy": "0x48474Ea7B443231B29DBBE23C305926C773847e5"
+    "feeModuleImpl": "0x0D132A8A739EbF8e7cF77184D98958dCc5c1096F",
+    "feeModuleProxy": "0x84d94735ADa0dA38FfED4C892d3a3EB12eD41A97"
   },
   "config": {
-    "owner": "0xeE7FB07EDDCf2d886a58135a5700C6582C89C034",
-    "treasury": "0x2BEB5AF24350acD4C5F69453938B1edf73e3340b",
-    "privacyPool": "0x3442e860d9Ec64c30e6beF2d3AFc21ef8605a1c3",
-    "yieldVault": "0xF0Ff34b740CF56abF3E830168e186c267D2A8f4E"
+    "owner": "0xB1e8381702f934FbdA33D1C916eE72948a6ED406",
+    "treasury": "0x5b90C233D259Ad251531ffc8e04F6c24fc1996Af",
+    "privacyPool": "0x5f3324b47b3CFf937BB67C30B362898E193e5216",
+    "yieldVault": "0xB59a4D8f27b9204Fc3477239D54f4E32C40C45E9"
   },
-  "timestamp": "2026-07-22T01:25:12.859Z"
+  "timestamp": "2026-08-29T00:18:13.577Z"
 }

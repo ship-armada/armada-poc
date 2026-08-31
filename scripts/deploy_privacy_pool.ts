@@ -44,6 +44,17 @@ const poseidonBytecode = JSON.parse(
   fs.readFileSync(path.join(__dirname, "..", "lib", "poseidon_bytecode.json"), "utf-8")
 );
 
+// On fast-block chains (e.g. OP Sepolia) the client initialize() that immediately follows the
+// PrivacyPoolClient deploy must pass an EXPLICIT gasLimit. The RPC backend serving
+// eth_estimateGas has not yet synced the just-deployed contract's code, so it estimates a no-op
+// call to a code-less address (~27k gas) and the real tx then runs out of gas mid-initialize.
+// The client init's real cost (~136k) sits safely under this fixed limit. The hub initialize()
+// is left on normal auto-estimation: it runs on Ethereum Sepolia (slow blocks, reliable
+// estimation) and its cost (~1.5M gas — merkle tree setup + module delegatecalls) is too large
+// and change-prone to safely hardcode. A hub deployed on a fast-block chain would need the same
+// explicit-limit treatment as the client.
+const CLIENT_INIT_GAS_LIMIT = 300_000;
+
 interface HubDeploymentInfo {
   chainId: number;
   domain: number;
@@ -352,7 +363,7 @@ async function deployClient(role: ChainRole): Promise<ClientDeploymentInfo> {
     hubDomain,
     hubPoolBytes32,
     deployer.address,
-    nm.override()
+    { ...nm.override(), gasLimit: CLIENT_INIT_GAS_LIMIT }
   );
   await initTx.wait();
   console.log("   PrivacyPoolClient initialized");

@@ -4,6 +4,9 @@
 /** Known contract revert reasons → user-facing messages */
 const REVERT_MAP: [RegExp, string][] = [
   [/user rejected/i, 'Transaction rejected by user'],
+  // Pre-broadcast guard from submitWrite/assertHubChain: the wallet is on a
+  // non-hub chain. Keep this above the generic patterns so the message survives.
+  [/wrong network/i, 'Wrong network — switch to the hub chain in your wallet and retry.'],
   [/insufficient funds/i, 'Insufficient funds for gas'],
   [/deadline passed/i, 'The commitment deadline has passed.'],
   [/cancelled/i, 'This crowdfund has been cancelled.'],

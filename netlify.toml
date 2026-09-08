@@ -122,7 +122,7 @@ script-src 'self'; \
 style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; \
 font-src 'self' https://fonts.gstatic.com; \
 img-src 'self' data: https:; \
-connect-src 'self' https://sepolia.drpc.org https://ethereum-sepolia-rpc.publicnode.com https://api.knowable.run wss://relay.walletconnect.com wss://relay.walletconnect.org https://*.walletconnect.com https://*.walletconnect.org https://api.web3modal.org https://pulse.walletconnect.org https://*.ingest.sentry.io; \
+connect-src 'self' https://eth-sepolia.g.alchemy.com https://ethereum-sepolia-rpc.publicnode.com https://api.knowable.run wss://relay.walletconnect.com wss://relay.walletconnect.org https://*.walletconnect.com https://*.walletconnect.org https://api.web3modal.org https://pulse.walletconnect.org https://*.ingest.sentry.io; \
 frame-src https://verify.walletconnect.com https://verify.walletconnect.org; \
 frame-ancestors 'none'; \
 base-uri 'self'; \

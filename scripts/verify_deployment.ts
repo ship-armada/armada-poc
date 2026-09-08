@@ -490,13 +490,15 @@ async function checkArmTokenCrowdfund(govManifest: any, crowdfundManifest: any) 
   const armTokenAddr = govManifest.contracts.armToken;
   const armToken = await ethers.getContractAt("ArmadaToken", armTokenAddr);
 
-  // Total supply
+  // Total supply must equal the token's own INITIAL_SUPPLY constant (varies by
+  // deployment profile — 12M mainnet, 10K mini-Sepolia).
   const totalSupply = await armToken.totalSupply();
-  const expected12M = ethers.parseUnits("12000000", 18);
-  if (totalSupply === expected12M) {
-    pass(GROUP, "ARM total supply = 12M");
+  const expectedSupply = await armToken.INITIAL_SUPPLY();
+  const expectedLabel = `ARM total supply = ${ethers.formatUnits(expectedSupply, 18)}`;
+  if (totalSupply === expectedSupply) {
+    pass(GROUP, expectedLabel);
   } else {
-    fail(GROUP, "ARM total supply = 12M", `Actual: ${ethers.formatUnits(totalSupply, 18)}`);
+    fail(GROUP, expectedLabel, `Actual: ${ethers.formatUnits(totalSupply, 18)}`);
   }
 
   // Deployer balance should be 0

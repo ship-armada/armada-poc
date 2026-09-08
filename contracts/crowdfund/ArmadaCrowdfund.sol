@@ -27,11 +27,11 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
 
     // ============ Constants ============
 
-    uint256 public constant BASE_SALE = 1_200_000 * 1e6;       // $1.2M USDC
-    uint256 public constant MAX_SALE  = 1_800_000 * 1e6;       // $1.8M USDC
-    uint256 public constant MIN_SALE  = 1_000_000 * 1e6;       // $1.0M USDC
+    uint256 public constant BASE_SALE = 240 * 1e6;             // $240 USDC (mini-Sepolia)
+    uint256 public constant MAX_SALE  = 360 * 1e6;             // $360 USDC (mini-Sepolia)
+    uint256 public constant MIN_SALE  = 200 * 1e6;             // $200 USDC (mini-Sepolia)
     uint256 public constant ARM_PRICE = 1e6;                    // $1.00 per ARM in USDC
-    uint256 public constant ELASTIC_TRIGGER = 1_500_000 * 1e6;  // $1.5M capped demand triggers expansion
+    uint256 public constant ELASTIC_TRIGGER = 300 * 1e6;       // $300 capped demand triggers expansion (mini-Sepolia)
     uint8 public constant NUM_HOPS = 3;
     uint256 public constant HOP2_FLOOR_BPS = 500;  // 5% of saleSize reserved for hop-2
 
@@ -42,9 +42,9 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
 
     /// @notice Per-slot effective USDC caps at each hop. Multiplied by `invitesReceived`
     ///         to derive an address's effective slot allowance at that hop.
-    uint256 public constant HOP0_CAP_USDC = 15_000 * 1e6;
-    uint256 public constant HOP1_CAP_USDC = 4_000 * 1e6;
-    uint256 public constant HOP2_CAP_USDC = 1_000 * 1e6;
+    uint256 public constant HOP0_CAP_USDC = 15 * 1e6;          // $15 (mini-Sepolia)
+    uint256 public constant HOP1_CAP_USDC = 4 * 1e6;           // $4 (mini-Sepolia)
+    uint256 public constant HOP2_CAP_USDC = 1 * 1e6;           // $1 (mini-Sepolia)
 
     /// @notice Per-hop outgoing-invite stacking caps (per `invitesReceived`).
     uint8 public constant HOP0_MAX_INVITES = 3;
@@ -56,14 +56,14 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
     uint16 public constant HOP1_MAX_INVITES_RECEIVED = 10;
     uint16 public constant HOP2_MAX_INVITES_RECEIVED = 20;
 
-    uint256 public constant WINDOW_DURATION = 21 days;
-    uint256 public constant LAUNCH_TEAM_INVITE_PERIOD = 7 days;
-    uint256 public constant CLAIM_DEADLINE_DURATION = 1095 days; // 3 years
-    uint256 public constant MIN_COMMIT = 10 * 1e6;               // $10 USDC minimum per commit
+    uint256 public constant WINDOW_DURATION = 72 hours;          // 3 days (mini-Sepolia)
+    uint256 public constant LAUNCH_TEAM_INVITE_PERIOD = 48 hours; // (mini-Sepolia: shorter than the 72h window)
+    uint256 public constant CLAIM_DEADLINE_DURATION = 30 days;   // (mini-Sepolia)
+    uint256 public constant MIN_COMMIT = 1e5;                    // $0.10 USDC minimum per commit (mini-Sepolia)
     // Per-hop invite stacking caps are stored in hopConfigs[].maxInvitesReceived (1, 10, 20)
-    uint8 public constant MAX_SEEDS = 160;                       // max number of seeds (hop-0 participants)
-    uint8 public constant LAUNCH_TEAM_HOP1_BUDGET = 60;          // launch team direct hop-1 invite slots
-    uint8 public constant LAUNCH_TEAM_HOP2_BUDGET = 60;          // launch team direct hop-2 invite slots
+    uint8 public constant MAX_SEEDS = 25;                        // max number of seeds (mini-Sepolia)
+    uint8 public constant LAUNCH_TEAM_HOP1_BUDGET = 15;          // launch team direct hop-1 invite slots (mini-Sepolia)
+    uint8 public constant LAUNCH_TEAM_HOP2_BUDGET = 15;          // launch team direct hop-2 invite slots (mini-Sepolia)
 
     // EIP-712 typehash for off-chain invite signatures
     bytes32 public constant INVITE_TYPEHASH = keccak256(

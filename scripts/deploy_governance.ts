@@ -198,10 +198,11 @@ async function main() {
   const revenueLockAmounts = beneficiaryConfig.map(b => ethers.parseUnits(b.amount, 18));
 
   // Max advance per elapsed day for the observed-revenue ratchet — 18-decimal USD.
-  // $10k/day per PARAMETER_MANIFEST.md (ship-armada/crowdfund) and issue #225:
-  // forces a malicious RevenueCounter upgrade to take ≥100 days to accelerate
-  // $0 → $1M full-unlock, giving community + Security Council time to respond.
-  const MAX_REVENUE_INCREASE_PER_DAY = ethers.parseUnits("10000", 18);
+  // Production target is $10k/day per PARAMETER_MANIFEST.md (ship-armada/crowdfund)
+  // and issue #225, which forces a malicious RevenueCounter upgrade to take ≥100 days
+  // to accelerate $0 → $1M full-unlock. mini-Sepolia raises this to $10M/day so
+  // beneficiary releases are exercisable within minutes during an hours-scale public test.
+  const MAX_REVENUE_INCREASE_PER_DAY = ethers.parseUnits("10000000", 18); // mini-Sepolia
 
   // Guard: reject Anvil default addresses on non-local environments
   rejectAnvilAddresses(revenueLockBeneficiaries, "RevenueLock beneficiaries");
@@ -362,7 +363,7 @@ async function main() {
     },
     config: {
       timelockMinDelay: timelockDelay,
-      totalSupply: "12000000",
+      totalSupply: "10000",
       treasuryAllocation: config.armDistribution.treasury,
     },
     timestamp: new Date().toISOString(),

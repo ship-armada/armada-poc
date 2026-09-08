@@ -61,7 +61,8 @@ contract ArmadaTreasuryGov is ReentrancyGuard {
     ///      enforces this invariant at setter time so a captured governance cannot stretch
     ///      the Extended cycle to exceed this delay and bypass the defense.
     ///      24 days > 23 days (current Extended default: 2d + 14d + 7d).
-    uint256 public constant LIMIT_ACTIVATION_DELAY = 24 days;
+    ///      mini-Sepolia: 1 day > 11h (Extended cycle 1h + 8h + 2h).
+    uint256 public constant LIMIT_ACTIVATION_DELAY = 1 days;
 
     /// @notice Upper bound on outflow window duration to prevent self-lockdown.
     /// @dev A window of `type(uint256).max` (or any sufficiently large value) makes the

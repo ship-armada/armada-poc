@@ -1,26 +1,26 @@
 {
   "chainId": 11155111,
   "deployer": "0x98b1CBa0908C98c95c9C87D94e4fCdddc87C933d",
-  "deployBlock": 11587999,
+  "deployBlock": 11661719,
   "contracts": {
-    "timelockController": "0xB1e8381702f934FbdA33D1C916eE72948a6ED406",
-    "armToken": "0x30eBb523CC15282D36330261D6C003BC7b434d52",
-    "treasury": "0x5b90C233D259Ad251531ffc8e04F6c24fc1996Af",
-    "governor": "0x5bDDA65E8cd8D9f2839EB01c3DFbf2c54b77839C",
-    "governorImpl": "0x713976732507FF8A7944D9D20f48ba20750b80dc",
-    "steward": "0x90f58b3Ce361c8350497FCa86B7ebCbf6Af0Dc5a",
-    "adapterRegistry": "0xDdeBD265fE7ebB5777C2a00708dc60165479F7d3",
-    "revenueCounter": "0xdFEadd95A3a7FbDF3917E3ac755c4Bde6d66FbA6",
-    "revenueCounterImpl": "0xb5C9220544F5BfD973272ac3409B87168559a18c",
-    "revenueLock": "0x8C0B3464E6250D6ab66e3FC3369fCe169161fc61",
-    "shieldPauseController": "0xDAC54DcC9fFFaA522e31178e8C1E03192851Da80",
-    "redemption": "0x2d2988c1CeD476449E76ee629f9aff779eD16D2A",
-    "windDown": "0x0eE724B5B1695D2340e0423C779F430704091015"
+    "timelockController": "0x0dd374961b2dE235aF74e119DdBb0141b1eB2B05",
+    "armToken": "0x54b4a43C58c772e5d346AdfEeb4B62E17299B3a5",
+    "treasury": "0xd1E042844C959c5a4ccF5b9Edd101FFeC71232Ed",
+    "governor": "0x1D0599f1aCd9A243BebFf64AD598BFd439A4255a",
+    "governorImpl": "0x2338052AF86E5d8d68Da15381087e583fa5f3730",
+    "steward": "0x43CF796fE68F3c28Bb4539EAf656f60373fe145b",
+    "adapterRegistry": "0xb8f3f48DDcD34f30aF628D9f32E31270baDF31B8",
+    "revenueCounter": "0xaFc5654552A56491f844cC8ebA209617Bc8883f4",
+    "revenueCounterImpl": "0x3a81e0d1697C556a058ff1efD73C68FdF2eC654c",
+    "revenueLock": "0x235e9E252F871B3D82e923eEfE48864e321b64Ec",
+    "shieldPauseController": "0xe1FA37CAFD1517f0E4B353974065caCD1bc2E39F",
+    "redemption": "0x1657139f19b8642D33dA7a9544a32Eb0D0F2D684",
+    "windDown": "0x43Cf85b0E28de0a1bfB403f4A67bD8914fDA6A84"
   },
   "config": {
     "timelockMinDelay": 60,
-    "totalSupply": "12000000",
-    "treasuryAllocation": "7800000"
+    "totalSupply": "10000",
+    "treasuryAllocation": "9440"
   },
-  "timestamp": "2026-08-28T23:23:49.619Z"
+  "timestamp": "2026-09-08T14:49:36.553Z"
 }

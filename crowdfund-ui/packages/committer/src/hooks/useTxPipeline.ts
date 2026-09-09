@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect } from 'react'
 import { atom, useAtomValue, useStore } from 'jotai'
-import type { TransactionResponse } from 'ethers'
+import type { JsonRpcProvider, TransactionResponse } from 'ethers'
 import type { ReceiptLogLike, Step4Transaction } from '@armada/crowdfund-shared'
 import { sendAndWaitTx } from '@/lib/sendAndWaitTx'
 import { savePendingTx, removePendingTx, loadPendingTxs } from '@/lib/pendingTx'
@@ -76,6 +76,10 @@ interface EngineRecord {
   running: boolean
   aborted: boolean
   onSuccess?: () => void | Promise<void>
+  /** App read provider (our dedicated RPC). Raced against the wallet's tx.wait()
+   *  so confirmation doesn't depend on the wallet's own — possibly throttled —
+   *  RPC endpoint. Undefined falls back to wallet-only confirmation. */
+  readProvider?: JsonRpcProvider | null
 }
 const records = new Map<string, EngineRecord>()
 
@@ -170,21 +174,25 @@ async function drive(store: Store, address: string): Promise<void> {
       })
       setPhase(store, address, 'running')
 
-      const result = await sendAndWaitTx(step.send, (hash) => {
-        // Phase 2: broadcast — show the explorer link and persist for resume-watch.
-        setRow(store, address, i, {
-          phaseLabel: 'Submitting…',
-          hash,
-          explorerUrl: getExplorerUrl(),
-        })
-        savePendingTx({
-          chainId: getHubChainId(),
-          address,
-          txHash: hash,
-          label: step.label,
-          sentAt: Date.now(),
-        })
-      })
+      const result = await sendAndWaitTx(
+        step.send,
+        (hash) => {
+          // Phase 2: broadcast — show the explorer link and persist for resume-watch.
+          setRow(store, address, i, {
+            phaseLabel: 'Submitting…',
+            hash,
+            explorerUrl: getExplorerUrl(),
+          })
+          savePendingTx({
+            chainId: getHubChainId(),
+            address,
+            txHash: hash,
+            label: step.label,
+            sentAt: Date.now(),
+          })
+        },
+        rec.readProvider,
+      )
       // A tx that definitively resolved no longer needs watching: `success` is
       // done, and `reverted` changed no state (safe to re-send on retry). A
       // `timeout` or `error` with a broadcast hash may still be in the mempool —
@@ -237,11 +245,13 @@ export interface RunTxPipelineParams {
   onSuccess?: () => void | Promise<void>
   /** Confirmation snapshot to surface if the flow re-attaches after a close. */
   confirmation?: PipelineConfirmation
+  /** App read provider raced against the wallet's tx.wait() (see EngineRecord). */
+  readProvider?: JsonRpcProvider | null
 }
 
 /** Start a pipeline for `address`. No-op if one is already running or paused (single-flight). */
 export function runTxPipeline(store: Store, params: RunTxPipelineParams): void {
-  const { address, steps, onSuccess, confirmation } = params
+  const { address, steps, onSuccess, confirmation, readProvider } = params
   const existing = records.get(address)
   const phase = readState(store, address).phase
   if (existing && (existing.running || phase === 'running' || phase === 'paused')) return
@@ -253,6 +263,7 @@ export function runTxPipeline(store: Store, params: RunTxPipelineParams): void {
     running: false,
     aborted: false,
     onSuccess,
+    readProvider,
   })
   writeState(store, address, { rows: initialRows(steps), phase: 'running', confirmation })
   void drive(store, address)
@@ -383,7 +394,11 @@ export interface UseTxPipelineResult {
   state: PipelineState
   run: (
     steps: TxStep[],
-    opts?: { onSuccess?: () => void | Promise<void>; confirmation?: PipelineConfirmation },
+    opts?: {
+      onSuccess?: () => void | Promise<void>
+      confirmation?: PipelineConfirmation
+      readProvider?: JsonRpcProvider | null
+    },
   ) => void
   retry: () => void
   reset: () => void
@@ -408,7 +423,11 @@ export function useTxPipeline(address: string | null): UseTxPipelineResult {
   const run = useCallback(
     (
       steps: TxStep[],
-      opts?: { onSuccess?: () => void | Promise<void>; confirmation?: PipelineConfirmation },
+      opts?: {
+        onSuccess?: () => void | Promise<void>
+        confirmation?: PipelineConfirmation
+        readProvider?: JsonRpcProvider | null
+      },
     ) => {
       if (!address) return
       runTxPipeline(store, {
@@ -416,6 +435,7 @@ export function useTxPipeline(address: string | null): UseTxPipelineResult {
         steps,
         onSuccess: opts?.onSuccess,
         confirmation: opts?.confirmation,
+        readProvider: opts?.readProvider,
       })
     },
     [store, address],

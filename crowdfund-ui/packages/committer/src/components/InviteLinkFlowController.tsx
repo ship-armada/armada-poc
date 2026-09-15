@@ -494,7 +494,9 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
           totalCommittedUsdc={maxedOut ? usdcToNumber(existingCommittedUsdc) : undefined}
           maxedOut={maxedOut}
           showViewPositionButton
+          canInvite={!inviteSlots.empty}
           onViewPosition={() => navigate('/?view=myposition')}
+          onBackToCrowdfund={() => navigate('/')}
           onInvite={() => {
             // Match ParticipateFlowV2: stay in the flow's slot, swap to the
             // invite-slots step. Falls back to navigating to MyPosition only if

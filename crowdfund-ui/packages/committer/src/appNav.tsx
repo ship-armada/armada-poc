@@ -1,5 +1,5 @@
 // ABOUTME: Shared page-nav types + component and the dev-only ?mock parser.
-// ABOUTME: Extracted from App so the lazy-loaded MockCommitterApp can reuse them without a circular import.
+// ABOUTME: Left tabs: Crowdfund, My position, Claim (Claim disabled until claim opens).
 
 import { cn } from '@armada/crowdfund-shared'
 import { NavBar, type NavBarItem } from '@armada/ui'
@@ -7,14 +7,7 @@ import { NavBar, type NavBarItem } from '@armada/ui'
 export type ActionTab = 'commit' | 'invite'
 export type Page = 'network' | 'participate' | 'claim' | 'my-position' | 'observe'
 
-const PROJECT_URL = 'https://armada.wtf'
-
-const HORIZONTAL_NAV_ITEMS: ReadonlyArray<{ id: Page | 'project'; label: string }> = [
-  { id: 'project', label: 'The project' },
-  { id: 'network', label: 'Crowdfund' },
-]
-
-const MOBILE_NAV_ITEMS: ReadonlyArray<{ id: Page; label: string }> = [
+const NAV_ITEMS: ReadonlyArray<{ id: Page; label: string }> = [
   { id: 'network', label: 'Crowdfund' },
   { id: 'my-position', label: 'My position' },
   { id: 'claim', label: 'Claim' },
@@ -23,36 +16,30 @@ const MOBILE_NAV_ITEMS: ReadonlyArray<{ id: Page; label: string }> = [
 /**
  *  Page navigation — renders as header nav on desktop, stacked list on mobile.
  *
- *  Horizontal variant: pill nav from @armada/ui (NavBar + NavItem) matching
- *  the armada-crowdfund mockup's Hero layout (Project + Crowdfund only).
- *  Vertical variant (mobile sheet) shows every destination since the desktop
- *  right-side action buttons are hidden below sm.
+ *  Tabs: Crowdfund · My position · Claim. Claim stays in the strip but is
+ *  disabled until the claim phase opens (`claimEnabled`).
  */
 export function PageNav({
   current,
   onChange,
   orientation = 'horizontal',
+  claimEnabled = false,
 }: {
   current: Page
   onChange: (p: Page) => void
   orientation?: 'horizontal' | 'vertical'
+  /** When false, Claim is visible but not navigable. */
+  claimEnabled?: boolean
 }) {
   if (orientation === 'horizontal') {
-    const items: NavBarItem[] = HORIZONTAL_NAV_ITEMS.map((item) => {
-      // Extract `id` to a local so the narrowed type carries through the
-      // closure passed to NavBar — narrowing inside `.map` doesn't propagate
-      // into onClick otherwise (TS sees the wider `Page | 'project'`).
+    const items: NavBarItem[] = NAV_ITEMS.map((item) => {
       const id = item.id
-      if (id === 'project') {
-        return {
-          label: item.label,
-          onClick: () => window.open(PROJECT_URL, '_blank', 'noopener,noreferrer'),
-        }
-      }
+      const disabled = id === 'claim' && !claimEnabled
       return {
         label: item.label,
-        active: id === current,
-        onClick: () => onChange(id),
+        active: !disabled && id === current,
+        disabled,
+        onClick: disabled ? undefined : () => onChange(id),
       }
     })
     return <NavBar items={items} />
@@ -60,29 +47,26 @@ export function PageNav({
 
   return (
     <ul className="flex flex-col items-stretch gap-1">
-      <li>
-        <a
-          href={PROJECT_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          className={cn(
-            'block w-full rounded-md px-3 py-1.5 text-left text-muted-foreground transition-colors hover:text-foreground',
-          )}
-        >
-          The project
-        </a>
-      </li>
-      {MOBILE_NAV_ITEMS.map((item) => {
-        const active = item.id === current
+      {NAV_ITEMS.map((item) => {
+        const disabled = item.id === 'claim' && !claimEnabled
+        const active = !disabled && item.id === current
         return (
           <li key={item.id}>
             <button
               type="button"
-              onClick={() => onChange(item.id)}
+              onClick={() => {
+                if (!disabled) onChange(item.id)
+              }}
+              disabled={disabled}
               aria-current={active ? 'page' : undefined}
+              aria-disabled={disabled || undefined}
               className={cn(
-                'w-full rounded-md px-3 py-1.5 text-left transition-colors hover:text-foreground',
-                active ? 'bg-muted/60 text-foreground' : 'text-muted-foreground',
+                'w-full rounded-md px-3 py-1.5 text-left transition-colors',
+                disabled
+                  ? 'cursor-not-allowed text-muted-foreground opacity-40'
+                  : active
+                    ? 'bg-muted/60 text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
               )}
             >
               {item.label}

@@ -8,7 +8,7 @@ import styles from './HopPill.module.css'
 export type HopVariant = 'seed' | 'hop-1' | 'hop-2' | 'multi-hop'
 
 const VARIANT_LABEL: Record<HopVariant, string> = {
-  seed: 'SEED',
+  seed: 'HOP-0',
   'hop-1': 'HOP-1',
   'hop-2': 'HOP-2',
   'multi-hop': 'MULTI-HOP',

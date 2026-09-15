@@ -863,7 +863,7 @@ fill={hopColorVar(h)}
 fillOpacity={0.9}
 className="pointer-events-none select-none"
 >
-{h === 0 ?'Seed' : `Hop ${h}`}
+{h === 0 ? 'Hop-0' : `Hop ${h}`}
                 </text>
               )
             })

@@ -26,6 +26,7 @@ const NAV: NavBarItem[] = [
 
 const COLOR_SWATCHES = [
   { name: 'brand.lavender', token: '--semantic-color-brand-lavender' },
+  { name: 'brand.gradient-rose', token: '--semantic-color-brand-gradient-rose' },
   { name: 'brand.amber', token: '--semantic-color-brand-amber' },
   { name: 'brand.amber-dark', token: '--semantic-color-brand-amber-dark' },
   { name: 'brand.deep', token: '--semantic-color-brand-deep' },

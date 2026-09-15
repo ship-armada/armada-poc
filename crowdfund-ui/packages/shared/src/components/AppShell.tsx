@@ -113,6 +113,7 @@ children,
         headerStatus={headerStatus}
         headerRight={headerRight}
         mobileMenu={mobileMenu}
+        scrollWithPageOnMobile={bare}
       />
 
       {/* pt-20 clears the inset AppHeader (top-6 + h-14 = 24 + 56 = 80px). Bare

@@ -40,8 +40,9 @@ export function ArmadaSymbol({ className, size = 32 }: ArmadaSymbolProps) {
             y2="0"
             gradientUnits="userSpaceOnUse"
           >
-            <stop stopColor="#F8D197" />
-            <stop offset="1" stopColor="#CA8AEA" />
+            <stop stopColor="var(--semantic-color-brand-amber)" />
+            <stop offset="0.48" stopColor="var(--semantic-color-brand-gradient-rose)" />
+            <stop offset="1" stopColor="var(--semantic-color-brand-lavender)" />
           </linearGradient>
         ))}
       </defs>

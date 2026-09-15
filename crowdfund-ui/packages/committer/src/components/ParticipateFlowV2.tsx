@@ -104,7 +104,7 @@ function armToNumber(amount: bigint): number {
   return Number(whole) + Number(frac) / 1e18
 }
 
-const HOP_LABELS = ['SEED', 'HOP-1', 'HOP-2'] as const
+const HOP_LABELS = ['HOP-0', 'HOP-1', 'HOP-2'] as const
 const HOP_DOT_KEYS = ['seed', 'hop-1', 'hop-2'] as const
 
 type AmountsByHop = Record<0 | 1 | 2, number>
@@ -368,6 +368,8 @@ export function ParticipateFlowV2({
         {maxOutOption && <MaxOutBanner maxOut={maxOutOption} />}
         <Step5Confirmation
           onViewPosition={onGoToMyPosition}
+          onBackToCrowdfund={onGoToNetwork}
+          canInvite={Boolean(inviteSlotSections && inviteSlotSections.length > 0)}
           onInvite={() => {
             if (inviteSlotSections && inviteSlotSections.length > 0) {
               setStep('invites')

@@ -201,7 +201,7 @@ describe('ParticipateFlowV2 fully-committed shortcut', () => {
     rerender(<ParticipateFlowV2 {...makeProps()} eventsLoading={false} positions={[fullPosition]} />)
 
     expect(await screen.findByText("You're fully committed.")).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Invite participants' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Whitelist a friend' })).toBeTruthy()
     // No amount input — we skipped the commit/input step entirely.
     expect(screen.queryByRole('textbox')).toBeNull()
   })
@@ -249,7 +249,7 @@ describe('ParticipateFlowV2 finished-pipeline cleanup', () => {
 
     const { unmount } = render(<ParticipateFlowV2 {...makeProps()} />)
     // Re-attaches to the confirmation screen on open.
-    expect(screen.getByRole('button', { name: 'Invite participants' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Whitelist a friend' })).toBeTruthy()
 
     // Closing clears the finished pipeline → a reopen starts fresh (can commit more).
     unmount()

@@ -124,7 +124,7 @@ export function MaxOutBanner({ maxOut }: { maxOut: Step2MaxOutOption }) {
  *  for that case (cleaner visual). */
 export interface Step2CommitHopRow {
   hop: 0 | 1 | 2
-  /** Display label — e.g. 'SEED', 'HOP-1', 'HOP-2'. */
+  /** Display label — e.g. 'HOP-0', 'HOP-1', 'HOP-2'. */
   hopLabel: string
   /** Dot color from the canonical hop palette (`graphHopColors.ts`). */
   hopColor: string
@@ -147,7 +147,7 @@ interface Step2CommitProps extends ParticipateStepBarProps {
   maxArm?: number
   /** Already committed USDC — bar shows this before new input. */
   existingCommittedUsdc?: number
-  /** Single-hop only: label of the hop being committed to (e.g. 'SEED',
+  /** Single-hop only: label of the hop being committed to (e.g. 'HOP-0',
    *  'HOP-1', 'HOP-2'). When provided, renders a hop badge above the title.
    *  Ignored in the multi-hop variant (each row already shows its own hop). */
   hopLabel?: string
@@ -228,7 +228,7 @@ function SingleHopVariant({
   onBack,
   maxAmount,
   availableBalance,
-  maxArm,
+  maxArm: _maxArm,
   existingCommittedUsdc,
   hopLabel,
   hopColor,
@@ -351,93 +351,100 @@ function SingleHopVariant({
       <div className={styles.content}>
         {maxOut && <MaxOutBanner maxOut={maxOut} />}
         <div className={styles.inputBlock}>
-          <div className={styles.titleBlock}>
-            {hopLabel && (
-              <span className={styles.hopBadge}>
-                {hopColor && (
+          <div className={styles.amountGroup}>
+            <div className={styles.titleBlock}>
+              {hopLabel && (
+                <span className={styles.hopBadge}>
+                  {hopColor && (
+                    <span
+                      className={styles.hopBadgeDot}
+                      style={{ background: hopColor }}
+                      aria-hidden
+                    />
+                  )}
+                  <span className={styles.hopBadgeLabel}>{hopLabel}</span>
+                </span>
+              )}
+              <h2 className={styles.title} id="commit-title">How much USDC?</h2>
+            </div>
+
+            <div className={styles.amountCluster}>
+              <label className={styles.amountWrapper} htmlFor="commit-amount">
+                <span className={styles.visuallyHidden}>Amount in USDC</span>
+                <span className={styles.amountField}>
                   <span
-                    className={styles.hopBadgeDot}
-                    style={{ background: hopColor }}
-                    aria-hidden
+                    className={[
+                      styles.amountDisplay,
+                      showActiveAmount ? styles.amountDisplayActive : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    aria-hidden="true"
+                  >
+                    {showActiveAmount ? amountInput : '0'}
+                  </span>
+                  <input
+                    id="commit-amount"
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={amountInput}
+                    onChange={(e) => handleInput(e.target.value)}
+                    className={styles.amountInput}
+                    aria-labelledby="commit-title"
+                    aria-describedby="commit-balance"
                   />
-                )}
-                <span className={styles.hopBadgeLabel}>{hopLabel}</span>
-              </span>
-            )}
-            <h2 className={styles.title} id="commit-title">How much USDC?</h2>
-            <p className={styles.maxLabel} id="commit-max">
-              {hasExisting
-                ? `${remainingCap.toLocaleString()} remaining · ${maxAmount.toLocaleString()} cap`
-                : `Max ${maxAmount.toLocaleString()}`}
-            </p>
+                </span>
+              </label>
+
+              <p className={styles.balanceLabel} id="commit-balance">
+                Balance {formatBalance(availableBalance)}
+              </p>
+              {overBalance && hasNewAmount && (
+                <p className={styles.overBalance}>Amount exceeds your wallet balance.</p>
+              )}
+              {belowMin && !overBalance && (
+                <p className={styles.overBalance}>
+                  Minimum {MIN_COMMIT_USD.toLocaleString()} USDC per commit.
+                </p>
+              )}
+              {commaError && (
+                <p className={styles.overBalance}>Use a period for decimals.</p>
+              )}
+            </div>
           </div>
-
-          <label className={styles.amountWrapper} htmlFor="commit-amount">
-            <span className={styles.visuallyHidden}>Amount in USDC</span>
-            <span className={styles.amountField}>
-              <span
-                className={[
-                  styles.amountDisplay,
-                  showActiveAmount ? styles.amountDisplayActive : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-                aria-hidden="true"
-              >
-                {showActiveAmount ? amountInput : '0'}
-              </span>
-              <input
-                id="commit-amount"
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                value={amountInput}
-                onChange={(e) => handleInput(e.target.value)}
-                className={styles.amountInput}
-                aria-labelledby="commit-title"
-                aria-describedby="commit-max commit-available"
-              />
-            </span>
-          </label>
-
-          <p className={styles.availableLabel} id="commit-available">
-            Available {formatBalance(availableBalance)}
-          </p>
-          {overBalance && hasNewAmount && (
-            <p className={styles.overBalance}>Amount exceeds your wallet balance.</p>
-          )}
-          {belowMin && !overBalance && (
-            <p className={styles.overBalance}>
-              Minimum {MIN_COMMIT_USD.toLocaleString()} USDC per commit.
-            </p>
-          )}
-          {commaError && (
-            <p className={styles.overBalance}>Use a period for decimals.</p>
-          )}
         </div>
 
         <div className={styles.allocationBlock}>
-          <div
-            className={styles.barTrack}
-            role="progressbar"
-            aria-valuenow={Math.round((existingRatio + newRatio) * 100)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label="Committed amount progress"
-          >
-            {hasExisting && (
-              <div
-                className={styles.barFillExisting}
-                style={{ width: `${existingRatio * 100}%` }}
-              />
-            )}
-            {hasNewAmount && (
-              <div className={styles.barFillNew} style={{ width: `${newRatio * 100}%` }} />
-            )}
+          <div className={styles.barSection}>
+            <div
+              className={styles.barTrack}
+              role="progressbar"
+              aria-valuenow={Math.round((existingRatio + newRatio) * 100)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Committed amount toward your maximum"
+            >
+              {hasExisting && (
+                <div
+                  className={styles.barFillExisting}
+                  style={{ width: `${existingRatio * 100}%` }}
+                />
+              )}
+              {hasNewAmount && (
+                <div className={styles.barFillNew} style={{ width: `${newRatio * 100}%` }} />
+              )}
+            </div>
+            <div className={styles.barScale}>
+              <span className={styles.barScaleMin}>0 USDC</span>
+              <span className={styles.barScaleMax}>
+                MAX {maxAmount.toLocaleString('en-US')} USDC
+              </span>
+            </div>
           </div>
-          <div className={styles.allocationRow}>
+          <div className={styles.armCard}>
             <div className={styles.allocationLeft}>
-              <span className={styles.allocationLabel}>EST. ARM ALLOCATION</span>
+              <span className={styles.allocationLabel}>EST. ARM allocation</span>
               <Tooltip
                 variant="rich"
                 title="EST. ARM Allocation"
@@ -457,19 +464,13 @@ function SingleHopVariant({
                 </button>
               </Tooltip>
             </div>
-            <div className={styles.allocationRight}>
-              <span
-                className={
-                  hasNewAmount || hasExisting ? styles.allocationValueActive : styles.allocationValue
-                }
-              >
-                {totalArm.toLocaleString()}
-              </span>
-              <span className={styles.allocationDivider} aria-hidden="true">
-                /
-              </span>
-              <span className={styles.allocationMax}>{maxArm.toLocaleString()} ARM</span>
-            </div>
+            <span
+              className={
+                hasNewAmount || hasExisting ? styles.allocationValueActive : styles.allocationValue
+              }
+            >
+              {totalArm.toLocaleString()}
+            </span>
           </div>
         </div>
       </div>
@@ -481,10 +482,14 @@ function SingleHopVariant({
         <Button
           variant="primary"
           size="lg"
-          label="Review"
+          label={hasNewAmount ? 'Review' : 'Insert amount'}
           showIcon={false}
-          onClick={() => onNext(amount)}
-          disabled={amount < MIN_COMMIT_USD || overBalance}
+          className={amount < MIN_COMMIT_USD || overBalance ? styles.ctaBlocked : undefined}
+          aria-disabled={amount < MIN_COMMIT_USD || overBalance || undefined}
+          onClick={() => {
+            if (amount < MIN_COMMIT_USD || overBalance) return
+            onNext(amount)
+          }}
         />
       </div>
     </div>
@@ -652,7 +657,7 @@ function MultiHopVariant({
           <div>
             <h2 className={styles.multiTitle}>How much USDC?</h2>
             <p className={styles.multiAvailableLabel}>
-              Available {formatBalance(availableBalance)}
+              Balance {formatBalance(availableBalance)}
             </p>
           </div>
 
@@ -695,27 +700,35 @@ function MultiHopVariant({
         </div>
 
         <div className={styles.allocationBlock}>
-          <div
-            className={styles.barTrack}
-            role="progressbar"
-            aria-valuenow={Math.round((existingRatio + newRatio) * 100)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label="Total committed amount progress"
-          >
-            {existingRatio > 0 && (
-              <div
-                className={styles.barFillExisting}
-                style={{ width: `${existingRatio * 100}%` }}
-              />
-            )}
-            {newRatio > 0 && (
-              <div className={styles.barFillNew} style={{ width: `${newRatio * 100}%` }} />
-            )}
+          <div className={styles.barSection}>
+            <div
+              className={styles.barTrack}
+              role="progressbar"
+              aria-valuenow={Math.round((existingRatio + newRatio) * 100)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Total committed amount toward your maximum"
+            >
+              {existingRatio > 0 && (
+                <div
+                  className={styles.barFillExisting}
+                  style={{ width: `${existingRatio * 100}%` }}
+                />
+              )}
+              {newRatio > 0 && (
+                <div className={styles.barFillNew} style={{ width: `${newRatio * 100}%` }} />
+              )}
+            </div>
+            <div className={styles.barScale}>
+              <span className={styles.barScaleMin}>0 USDC</span>
+              <span className={styles.barScaleMax}>
+                MAX {totalCap.toLocaleString('en-US')} USDC
+              </span>
+            </div>
           </div>
-          <div className={styles.allocationRow}>
+          <div className={styles.armCard}>
             <div className={styles.allocationLeft}>
-              <span className={styles.allocationLabel}>EST. ARM ALLOCATION</span>
+              <span className={styles.allocationLabel}>EST. ARM allocation</span>
               <Tooltip
                 variant="rich"
                 title="EST. ARM Allocation"
@@ -735,21 +748,15 @@ function MultiHopVariant({
                 </button>
               </Tooltip>
             </div>
-            <div className={styles.allocationRight}>
-              <span
-                className={
-                  totalNew > 0 || totalExisting > 0
-                    ? styles.allocationValueActive
-                    : styles.allocationValue
-                }
-              >
-                {totalArm.toLocaleString()}
-              </span>
-              <span className={styles.allocationDivider} aria-hidden="true">
-                /
-              </span>
-              <span className={styles.allocationMax}>{totalCap.toLocaleString()} ARM</span>
-            </div>
+            <span
+              className={
+                totalNew > 0 || totalExisting > 0
+                  ? styles.allocationValueActive
+                  : styles.allocationValue
+              }
+            >
+              {totalArm.toLocaleString()}
+            </span>
           </div>
           {overBalance && (
             <p className={styles.overBalance}>
@@ -774,10 +781,14 @@ function MultiHopVariant({
         <Button
           variant="primary"
           size="lg"
-          label="Review"
+          label={totalNew > 0 ? 'Review' : 'Insert amount'}
           showIcon={false}
-          onClick={handleNext}
-          disabled={!canReview}
+          className={!canReview ? styles.ctaBlocked : undefined}
+          aria-disabled={!canReview || undefined}
+          onClick={() => {
+            if (!canReview) return
+            handleNext()
+          }}
         />
       </div>
     </div>

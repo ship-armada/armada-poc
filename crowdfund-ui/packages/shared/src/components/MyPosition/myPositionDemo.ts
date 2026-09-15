@@ -32,6 +32,8 @@ export const DEMO_SLOTS: SlotData[] = [
     id: 1,
     status: 'redeemed',
     redeemedBy: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+    joinedAt: new Date('2026-03-12T14:00:00Z'),
+    inviteeHop: 2,
   },
   {
     id: 2,

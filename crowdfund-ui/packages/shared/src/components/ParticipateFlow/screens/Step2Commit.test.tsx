@@ -1,5 +1,5 @@
 // ABOUTME: Regression tests for Step2Commit's MIN_COMMIT gating.
-// ABOUTME: A non-zero amount below the per-commit minimum must block Review.
+// ABOUTME: A non-zero amount below the per-commit minimum must block Review (aria-disabled, primary look).
 // @vitest-environment jsdom
 
 import { render, screen, fireEvent } from '@testing-library/react'
@@ -20,27 +20,38 @@ function renderSingle() {
   )
   return {
     input: screen.getByRole('textbox'),
-    review: () => screen.getByRole('button', { name: 'Review' }) as HTMLButtonElement,
+    primary: () =>
+      (screen.queryByRole('button', { name: 'Review' }) ??
+        screen.getByRole('button', { name: 'Insert amount' })) as HTMLButtonElement,
   }
 }
 
 describe('Step2Commit MIN_COMMIT gate (single hop)', () => {
-  it('disables Review for a non-zero amount below the minimum', () => {
-    const { input, review } = renderSingle()
+  it('blocks Review for a non-zero amount below the minimum without muted disabled styles', () => {
+    const { input, primary } = renderSingle()
     fireEvent.change(input, { target: { value: String(MIN - 5) } })
-    expect(review().disabled).toBe(true)
+    const btn = primary()
+    expect(btn.disabled).toBe(false)
+    expect(btn.getAttribute('aria-disabled')).toBe('true')
+    expect(btn.textContent).toContain('Review')
     expect(screen.getByText(/Minimum .* USDC per commit/)).toBeTruthy()
   })
 
-  it('enables Review at the minimum', () => {
-    const { input, review } = renderSingle()
+  it('allows Review at the minimum', () => {
+    const { input, primary } = renderSingle()
     fireEvent.change(input, { target: { value: String(MIN) } })
-    expect(review().disabled).toBe(false)
+    const btn = primary()
+    expect(btn.disabled).toBe(false)
+    expect(btn.getAttribute('aria-disabled')).toBeNull()
+    expect(btn.textContent).toContain('Review')
   })
 
-  it('disables Review at zero', () => {
-    const { review } = renderSingle()
-    expect(review().disabled).toBe(true)
+  it('shows Insert amount at zero with aria-disabled', () => {
+    const { primary } = renderSingle()
+    const btn = primary()
+    expect(btn.textContent).toContain('Insert amount')
+    expect(btn.disabled).toBe(false)
+    expect(btn.getAttribute('aria-disabled')).toBe('true')
   })
 })
 

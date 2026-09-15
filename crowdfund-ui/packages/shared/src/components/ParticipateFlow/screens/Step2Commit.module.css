@@ -37,10 +37,19 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
   align-items: center;
-  justify-content: center;
   width: 100%;
+}
+
+/* Vertically centers title + amount + balance between Steps and the progress bar. */
+.amountGroup {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--primitives-spacing-5);
+  width: 100%;
+  margin-top: auto;
+  margin-bottom: auto;
 }
 
 .titleBlock {
@@ -174,13 +183,39 @@
   letter-spacing: var(--primitives-letterSpacing-wider);
 }
 
+.amountCluster {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  width: 100%;
+}
+
+.balanceLabel {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-muted);
+  margin: 0;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: var(--primitives-letterSpacing-wider);
+}
+
 /* ── Allocation block — pinned above button row ── */
 .allocationBlock {
   display: flex;
   flex-direction: column;
-  gap: var(--primitives-spacing-4);
+  gap: var(--primitives-spacing-6);
   width: 100%;
   flex-shrink: 0;
+}
+
+.barSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+  width: 100%;
 }
 
 .barTrack {
@@ -215,6 +250,46 @@
 
 .barFillNew:first-child {
   border-radius: 999px;
+}
+
+.barScale {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  width: 100%;
+  gap: var(--primitives-spacing-3);
+}
+
+.barScaleMin {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: var(--primitives-letterSpacing-wider);
+  text-transform: uppercase;
+  color: var(--semantic-color-brand-lavender);
+}
+
+.barScaleMax {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: var(--primitives-letterSpacing-wider);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-muted);
+  text-align: right;
+}
+
+.armCard {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  gap: var(--primitives-spacing-3);
+  padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
+  box-sizing: border-box;
+  background: var(--semantic-color-surface-raised);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
 }
 
 .allocationRow {
@@ -306,11 +381,16 @@
   gap: var(--primitives-spacing-3);
   width: 100%;
   flex-shrink: 0;
-  margin-top: var(--primitives-spacing-11);
+  /* Match gap above the ARM card (bar scale → card). */
+  margin-top: var(--primitives-spacing-6);
 }
 
 .buttonRow > * {
   flex: 1;
+}
+
+.ctaBlocked {
+  cursor: not-allowed;
 }
 
 /* Mobile (≤767px) — stack the action buttons full-width, primary on top.

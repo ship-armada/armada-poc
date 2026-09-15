@@ -1,0 +1,194 @@
+/* ABOUTME: Full-surface invite action screen (link / onchain) with slot badge + Cancel/primary CTAs. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-5);
+  width: 100%;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.topRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
+  flex-shrink: 0;
+}
+
+.slotMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  min-width: 0;
+}
+
+.badge {
+  width: 40px;
+  height: 40px;
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: color-mix(
+    in srgb,
+    var(--semantic-color-brand-lavender) 24%,
+    var(--semantic-color-surface-default)
+  );
+  border: 1px solid var(--semantic-color-border-lavender);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.badgeNumber {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+}
+
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-1);
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+}
+
+.slotLabel {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.hint {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.hintStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+}
+
+.ctaRow {
+  display: flex;
+  align-items: stretch;
+  gap: var(--primitives-spacing-3);
+  flex-shrink: 0;
+  margin-top: auto;
+}
+
+.ctaRow > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.ctaBlocked {
+  cursor: not-allowed;
+}
+
+.inputWrapper {
+  position: relative;
+  width: 100%;
+}
+
+.input {
+  width: 100%;
+  height: 40px;
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  padding: 0 var(--primitives-spacing-4);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-primary);
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 150ms ease;
+}
+
+.input::placeholder {
+  color: var(--semantic-color-text-muted);
+}
+
+.input:focus {
+  border-color: var(--semantic-color-border-lavender);
+}
+
+.inputError {
+  border-color: var(--semantic-color-status-error) !important;
+}
+
+.inputResolved {
+  border-color: var(--semantic-color-status-success);
+}
+
+.spinner {
+  position: absolute;
+  right: var(--primitives-spacing-4);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--semantic-color-border-lavender);
+  border-top-color: var(--semantic-color-brand-lavender);
+  animation: spin 700ms linear infinite;
+  display: inline-block;
+}
+
+@keyframes spin {
+  to {
+    transform: translateY(-50%) rotate(360deg);
+  }
+}
+
+.inlineResolved {
+  position: absolute;
+  right: var(--primitives-spacing-4);
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-status-success);
+  pointer-events: none;
+}
+
+.errorMsg {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-status-error);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+    border-top-color: var(--semantic-color-brand-lavender);
+    opacity: 0.6;
+  }
+}

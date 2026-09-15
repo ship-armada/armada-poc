@@ -1,5 +1,5 @@
-/* ABOUTME: CSS Module for Hero — see Hero.tsx for usage. */
-/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup. */
+/* ABOUTME: CSS Module for Hero — see CrowdfundExperience.tsx for usage. */
+/* ABOUTME: Ported from armada-crowdfund; expand lives on CrowdfundLeftColumn, not leftStack. */
 
 .page {
   height: 100vh;
@@ -65,7 +65,7 @@
   );
   position: absolute;
   left: var(--primitives-spacing-6);
-  bottom: var(--primitives-spacing-6); /* bottom gutter, matching the left/right page gutter */
+  bottom: var(--primitives-spacing-6);
   z-index: 10;
   width: 582px;
   max-width: calc(100vw - var(--primitives-spacing-6) * 2);
@@ -76,66 +76,39 @@
   z-index: 20;
 }
 
-.rightCorner {
-  position: absolute;
-  right: var(--primitives-spacing-6);
-  bottom: var(--primitives-spacing-6); /* bottom gutter, matching the left/right page gutter */
-  z-index: 10;
-}
-
-.leftStack {
-  --hero-stack-gap: var(--primitives-spacing-5);
-  display: flex;
-  flex-direction: column;
-  gap: var(--hero-stack-gap);
-  align-items: stretch;
-  width: 582px;
-  flex: 0 0 auto;
-  overflow: visible;
-  min-height: 0;
-  max-height: var(--hero-stack-collapsed-height);
-  transition:
-    max-height var(--hero-expand-duration, 380ms) var(--hero-expand-ease, cubic-bezier(0.32, 0, 0.15, 1)),
-    min-height var(--hero-expand-duration, 380ms) var(--hero-expand-ease, cubic-bezier(0.32, 0, 0.15, 1));
-}
-
-.leftCornerExpanded .leftStack {
-  max-height: var(--hero-stack-expanded-max);
-  min-height: var(--hero-stack-expanded-max);
-}
-
-.leftStack > :first-child {
-  flex: 0 0 auto;
-  min-height: 0;
-}
-
-.participantsWrap {
-  flex: 0 0 auto;
-  display: flex;
-  overflow: hidden;
-}
-
-.leftCornerExpanded .participantsWrap {
-  flex: 1 1 0;
-  min-height: 0;
-}
-
-.participantsWrap > * {
-  width: 100%;
-}
-
-.leftCornerExpanded .participantsWrap > * {
-  flex: 1 1 0;
-  min-height: 0;
-  height: 100%;
-}
-
-/* Mobile — the left column is a full-width stacked panel, so the Progress-card
- * stack fills it instead of holding the desktop 582px column width. */
-@media (max-width: 767px) {
-  .leftStack {
-    width: 100%;
-    max-height: none;
+@media (max-width: 1440px) {
+  .leftCorner {
+    width: 480px;
   }
 }
 
+@media (max-width: 767px) {
+  .headerOverride {
+    position: relative !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    width: 100% !important;
+    --header-concealed-extra: 0px;
+  }
+
+  .leftCorner {
+    width: 100%;
+    max-width: none;
+  }
+
+  /* Show primary content immediately — no staggered fade-up on mobile */
+  .enter {
+    opacity: 1;
+    animation: none;
+    transform: none;
+    will-change: auto;
+  }
+}
+
+.rightCorner {
+  position: absolute;
+  right: var(--primitives-spacing-6);
+  bottom: var(--primitives-spacing-6);
+  z-index: 10;
+}

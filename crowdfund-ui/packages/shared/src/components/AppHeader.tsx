@@ -45,6 +45,12 @@ export interface AppHeaderProps {
    * actions can dismiss the Sheet. Omit to suppress the hamburger entirely.
    */
   mobileMenu?: ReactNode | ((close: () => void) => ReactNode)
+  /**
+   * Hero / bare pages: on ≤767px the header sits in document flow and scrolls
+   * with the page (designer `Header.module.css` `.headerHero`), instead of
+   * staying fixed over the stack. Desktop keeps the floating inset bar.
+   */
+  scrollWithPageOnMobile?: boolean
   className?: string
 }
 
@@ -55,6 +61,7 @@ export function AppHeader({
   headerStatus,
   headerRight,
   mobileMenu,
+  scrollWithPageOnMobile,
   className,
 }: AppHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -67,6 +74,10 @@ export function AppHeader({
         // unobstructed. Consumers needing contrast under busy content can add
         // their own bg via className.
         'fixed inset-x-6 top-6 z-40 flex h-14 items-center justify-between',
+        // Crowdfund hero mobile — relative frosted bar that scrolls away with
+        // content (Header.module.css `.headerHero` / Hero `.headerOverride`).
+        scrollWithPageOnMobile &&
+          'max-[767px]:relative max-[767px]:inset-x-0 max-[767px]:top-0 max-[767px]:h-auto max-[767px]:min-h-[calc(2rem+var(--primitives-spacing-5))] max-[767px]:w-full max-[767px]:box-border max-[767px]:px-5 max-[767px]:pt-5 max-[767px]:pb-0 max-[767px]:bg-[color-mix(in_srgb,var(--semantic-color-surface-default)_92%,transparent)] max-[767px]:backdrop-blur-[12px]',
         className,
       )}
     >

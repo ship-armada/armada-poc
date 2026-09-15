@@ -50,7 +50,7 @@ export function FinalizePanel({ signer, crowdfundAddress, totalCommitted, capped
           <span>Capped demand: <span className="">{formatUsdc(cappedDemand)}</span></span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-muted-foreground">Minimum raise: {formatUsdc(MIN_SALE)}</span>
+          <span className="text-muted-foreground">Minimum fund: {formatUsdc(MIN_SALE)}</span>
           <span className={meetsMin ? 'text-success' : 'text-destructive'}>{meetsMin ? '✓ Met' : '✗ Not met'}</span>
         </div>
         <div className="flex items-center justify-between">
@@ -77,7 +77,7 @@ export function FinalizePanel({ signer, crowdfundAddress, totalCommitted, capped
       {/* Below-min: finalization enters refund mode */}
       {belowMin && (
         <div className="rounded bg-amber-500/10 border border-amber-500/30 p-2 text-amber-600 space-y-1">
-          <div>Capped demand is below the minimum raise ({formatUsdc(MIN_SALE)}). Finalizing will enter refund mode — all participants receive full USDC refunds.</div>
+          <div>Capped demand is below the minimum fund ({formatUsdc(MIN_SALE)}). Finalizing will enter refund mode — all participants receive full USDC refunds.</div>
         </div>
       )}
 

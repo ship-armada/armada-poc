@@ -8,6 +8,8 @@ import { Tag } from '@armada/ui'
 import { InformationCircleIcon } from '@heroicons/react/24/solid'
 import { Tooltip } from '@armada/ui'
 import SlotCard from '../InviteFlow/screens/SlotCard'
+import { InviteFocusChrome, useInviteSlotFocus } from '../InviteFlow/useInviteSlotFocus'
+import { INVITE_METHOD_PICKER_UX } from '../../lib/inviteUx'
 import { NodeSphere } from '../NodeSphere/NodeSphere'
 import {
   buildInvitePinnedNodes,
@@ -33,6 +35,7 @@ export interface MyPositionSplitProps {
 export function MyPositionSplit({ header }: MyPositionSplitProps = {}) {
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [loadingId, setLoadingId] = useState<number | null>(null)
+  const focusApi = useInviteSlotFocus()
 
   const invitePinnedNodes = useMemo(() => buildInvitePinnedNodes(DEMO_SLOTS), [])
 
@@ -49,11 +52,37 @@ export function MyPositionSplit({ header }: MyPositionSplitProps = {}) {
   }
 
   const handleRevoke = async () => {}
-  const handleInviteOnchain = async (slotId: number) => {
+  const handleInviteOnchain = async (slotId: number, _address: string, _ensName?: string) => {
     setLoadingId(slotId)
     await new Promise((r) => setTimeout(r, 800))
     setLoadingId(null)
   }
+
+  const slotList = (
+    <div className={styles.slotList}>
+      {DEMO_SLOTS.map((slot) => (
+        <SlotCard
+          key={slot.id}
+          slot={slot}
+          onGenerateLink={handleGenerateLink}
+          onCopy={handleCopy}
+          onRevoke={handleRevoke}
+          onInviteOnchain={handleInviteOnchain}
+          copied={copiedId === slot.id}
+          loading={loadingId === slot.id}
+          onInviteClick={INVITE_METHOD_PICKER_UX ? focusApi.openPicker : undefined}
+          onInviteButtonRef={INVITE_METHOD_PICKER_UX ? focusApi.registerInviteButton : undefined}
+          invitePickerOpen={focusApi.pickerSlotId === slot.id}
+          onViewRedeemed={(address) => {
+            const url = new URL('/', window.location.origin)
+            url.searchParams.set('view', 'crowdfund')
+            url.searchParams.set('select', address)
+            window.location.assign(url.toString())
+          }}
+        />
+      ))}
+    </div>
+  )
 
   return (
     <div className={styles.page}>
@@ -136,22 +165,25 @@ export function MyPositionSplit({ header }: MyPositionSplitProps = {}) {
               </div>
             </section>
 
-            <section className={styles.inviteCard} aria-label="Your invites">
-              <h2 className={styles.inviteTitle}>Your Invites</h2>
-              <div className={styles.slotList}>
-                {DEMO_SLOTS.map((slot) => (
-                  <SlotCard
-                    key={slot.id}
-                    slot={slot}
-                    onGenerateLink={handleGenerateLink}
-                    onCopy={handleCopy}
-                    onRevoke={handleRevoke}
-                    onInviteOnchain={handleInviteOnchain}
-                    copied={copiedId === slot.id}
-                    loading={loadingId === slot.id}
-                  />
-                ))}
-              </div>
+            <section
+              className={styles.inviteCard}
+              aria-label="Whitelist a friend"
+              data-invite-surface=""
+            >
+              {!(INVITE_METHOD_PICKER_UX && focusApi.view === 'action') && (
+                <h2 className={styles.inviteTitle}>Whitelist a friend</h2>
+              )}
+              {INVITE_METHOD_PICKER_UX ? (
+                <InviteFocusChrome
+                  focusApi={focusApi}
+                  loadingSlotId={loadingId}
+                  onGenerateLink={handleGenerateLink}
+                  onInviteOnchain={handleInviteOnchain}
+                  list={slotList}
+                />
+              ) : (
+                slotList
+              )}
             </section>
           </div>
         </aside>

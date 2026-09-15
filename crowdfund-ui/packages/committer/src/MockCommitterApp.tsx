@@ -273,7 +273,7 @@ function MockActionPanel({
         )}
         {activeTab === 'invite' && (
           <>
-            <div className="text-foreground">Invite participants</div>
+            <div className="text-foreground">Whitelist a friend</div>
             <div className="text-muted-foreground">
               Generate an EIP-712 signed invite link or issue a direct
               on-chain invite to a specific address. Slot counts and

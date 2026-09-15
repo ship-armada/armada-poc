@@ -13,7 +13,7 @@ import type { ParticipateStepBarProps } from '../participateFlowSteps'
  *  multi-hop layout when `hopCommits.length > 1`. */
 export interface Step3ReviewHopCommit {
   hop: 0 | 1 | 2
-  /** Display label — e.g. 'SEED', 'HOP-1'. */
+  /** Display label — e.g. 'HOP-0', 'HOP-1'. */
   hopLabel: string
   /** Dot color from the canonical hop palette (`graphHopColors.ts`). */
   hopColor: string

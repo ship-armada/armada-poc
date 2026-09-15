@@ -34,13 +34,6 @@
   display: none;
 }
 
-/* Mobile-only frosted band behind the floating header so content scrolling
- * under the transparent header doesn't bleed through. Hidden on desktop;
- * shown in the ≤767px block below. Mirrors the Observe page's header backdrop. */
-.mobileHeaderBackdrop {
-  display: none;
-}
-
 /* Wraps the @armada/ui Progress card so the "Details" affordance can be
  * absolutely positioned over its top-right corner. Mirrors the card's own
  * responsive width (582px, narrowing to 480px at ≤1440px) so the wrapper stays
@@ -51,6 +44,15 @@
   position: relative;
   width: 582px;
   max-width: 100%;
+}
+
+.participantsListHitArea {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
 }
 
 @media (max-width: 1440px) {
@@ -181,32 +183,17 @@
 
 /* Mobile — scrollable vertical stack: Progress → Participate → Graph →
  * Participants. The corners drop from absolute to in-flow flex items ordered
- * via `order`; the desktop participants panel is hidden in favor of the
- * mobileParticipantsStack. Adapted from the armada-crowdfund mockup, retargeted
- * to our HeroParticipantsPanel structure (no CrowdfundLeftColumn). */
+ * via `order`; the desktop list/controls are hidden in favor of the
+ * mobileParticipantsStack (CrowdfundLeftColumn middle slots). */
 @media (max-width: 767px) {
+  /* Document/body scrolls (AppHeader is in flow via scrollWithPageOnMobile).
+   * Keep overflow visible so the shell header scrolls away with the stack —
+   * matches armada-crowdfund CrowdfundExperience mobile + Header `.headerHero`. */
   .page {
     height: auto;
     min-height: 100vh;
     overflow-x: hidden;
-    overflow-y: auto;
-  }
-
-  /* Frosted band behind the floating header (below it at z-30, above content),
-   * masked to fade out below the header band so it's near-invisible unscrolled. */
-  .mobileHeaderBackdrop {
-    display: block;
-    position: fixed;
-    inset-inline: 0;
-    top: 0;
-    height: 120px;
-    z-index: 30;
-    pointer-events: none;
-    background: color-mix(in srgb, var(--semantic-color-surface-default) 70%, transparent);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    mask-image: linear-gradient(to bottom, black 0%, black 70%, transparent 100%);
-    -webkit-mask-image: linear-gradient(to bottom, black 0%, black 70%, transparent 100%);
+    overflow-y: visible;
   }
 
   .experienceLayout {
@@ -214,10 +201,8 @@
     flex-direction: column;
     gap: var(--primitives-spacing-5);
     min-height: 0;
-    /* Clear the fixed AppHeader (top: spacing-6 inset + 56px tall) so the
-     * stacked content starts below it instead of under it. */
     padding:
-      calc(var(--primitives-spacing-6) + 56px + var(--primitives-spacing-3))
+      var(--primitives-spacing-3)
       var(--primitives-spacing-5)
       var(--primitives-spacing-6);
     box-sizing: border-box;
@@ -284,11 +269,29 @@
     transform: none;
   }
 
-  /* The desktop participants list/controls are replaced by the
-   * mobileParticipantsStack below the graph — hide them so only the Progress
-   * card remains in the left column. */
-  .hideOnMobileStack {
+  /* Crowdfund: stats card only — participant list expand deferred on mobile */
+  .mobileCrowdfundColumn [class*='controlsSlot'] {
     display: none;
+  }
+
+  .mobileCrowdfundColumn [class*='listRegion'] {
+    display: none;
+  }
+
+  .mobileCrowdfundColumn {
+    max-height: none !important;
+    min-height: 0 !important;
+    grid-template-rows: auto !important;
+    gap: 0 !important;
+  }
+
+  .mobileCrowdfundColumn [class*='middle'] {
+    display: none;
+  }
+
+  .mobileCrowdfundColumn[class*='shellOpen'] {
+    min-height: 0 !important;
+    max-height: none !important;
   }
 
   /* Summary (Progress) card stretches full-width on mobile — lifts the ≤1440px

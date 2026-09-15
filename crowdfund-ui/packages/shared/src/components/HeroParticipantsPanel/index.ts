@@ -1,10 +1,15 @@
-// ABOUTME: Barrel for the HeroParticipantsPanel component.
-// ABOUTME: Re-exports the named component plus its prop, filter, and participant types.
+// ABOUTME: Barrel for HeroParticipantsPanel list/controls + mobile stack.
+// ABOUTME: Desktop pieces require CrowdfundLeftColumn animation context.
 
-export { HeroParticipantsPanel, HeroParticipantsMobileStack } from './HeroParticipantsPanel'
+export {
+  HeroParticipantList,
+  HeroParticipantControls,
+  HeroParticipantsMobileStack,
+} from './HeroParticipantsPanel.js'
 export type {
-  HeroParticipantsPanelProps,
+  HeroParticipantListProps,
+  HeroParticipantControlsProps,
   HeroParticipantsMobileStackProps,
   HeroHopFilter,
   HeroParticipant,
-} from './HeroParticipantsPanel'
+} from './HeroParticipantsPanel.js'

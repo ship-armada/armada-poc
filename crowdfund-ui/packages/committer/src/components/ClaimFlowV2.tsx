@@ -542,7 +542,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
       <CardShell title="Claiming isn't open yet">
         <p className={styles.gateBody}>
           You'll be able to claim ARM tokens (or a USDC refund if the sale ends below the minimum
-          raise) from here.
+          fund) from here.
         </p>
         {claimCountdownSeconds !== undefined && claimCountdownSeconds > 0 && (
           <p className={styles.gateBodyFootnote}>
@@ -620,8 +620,8 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
         <CardShell title="Sale ended below minimum">
           <p className={styles.gateBody}>
             {props.totalCommitted > 0n
-              ? `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum raise. Once it's finalized, you'll be able to claim a refund of your committed ${formatUsdc(props.totalCommitted)} from here.`
-              : `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum raise. Once it's finalized, all committed USDC will be refundable to the addresses that participated.`}
+              ? `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum fund. Once it's finalized, you'll be able to claim a refund of your committed ${formatUsdc(props.totalCommitted)} from here.`
+              : `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum fund. Once it's finalized, all committed USDC will be refundable to the addresses that participated.`}
           </p>
           <p className={styles.gateBodyFootnote}>
             Finalization is permissionless — anyone can trigger it. Refresh this page once it's done.
@@ -701,7 +701,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
         <div className={styles.gateActions}>
           {hasRefund && (
             <ArmadaButton
-              variant="gradient"
+              variant="primary"
               size="md"
               label={`Claim ${formatUsdc(refundAmount)} refund`}
               showIcon={false}
@@ -793,7 +793,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
                   : 'A single transaction delivers your ARM and any over-cap USDC refund.'
                 : phase === 2
                   ? 'The sale was cancelled by the security council. Your full committed USDC is available to claim back.'
-                  : 'The sale ended below the minimum raise, so no ARM was sold. Your full committed USDC is available to claim back.'}
+                  : 'The sale ended below the minimum fund, so no ARM was sold. Your full committed USDC is available to claim back.'}
             </p>
           </div>
 
@@ -853,7 +853,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
             onClick={onGoToNetwork}
           />
           <ArmadaButton
-            variant="gradient"
+            variant="primary"
             size="lg"
             label={mode === 'arm' ? 'Claim ARM' : 'Claim refund'}
             showIcon={false}
@@ -1015,7 +1015,7 @@ function NothingToClaimScreen({
           onClick={onGoToNetwork}
         />
         <ArmadaButton
-          variant="gradient"
+          variant="primary"
           size="lg"
           label="View my position"
           showIcon={false}
@@ -1113,7 +1113,7 @@ function DoneScreen({
           onClick={onGoToNetwork}
         />
         <ArmadaButton
-          variant="gradient"
+          variant="primary"
           size="lg"
           label="View my position"
           showIcon={false}

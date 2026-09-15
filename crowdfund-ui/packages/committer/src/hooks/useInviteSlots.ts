@@ -35,7 +35,7 @@ export interface UseInviteSlotsResult {
   empty: boolean
 }
 
-const HOP_LABELS = ['SEED', 'HOP-1', 'HOP-2'] as const
+const HOP_LABELS = ['HOP-0', 'HOP-1', 'HOP-2'] as const
 const HOP_DOT_KEYS = ['seed', 'hop-1', 'hop-2'] as const
 
 /** Map an `HopPosition` plus its slot UI to one `CrowdfundInviteSlotSection`.
@@ -165,8 +165,9 @@ function useHopSection(args: {
         linkRedemptions,
         directInvitedAddresses,
         selfAddress: address,
+        inviteeHop: (hop + 1 <= 2 ? hop + 1 : 2) as 0 | 1 | 2,
       }),
-    [totalSlots, activeLinks, directInvitedAddresses, linkRedemptions, startId, address],
+    [totalSlots, activeLinks, directInvitedAddresses, linkRedemptions, startId, address, hop],
   )
 
   const onGenerateLink = useCallback(

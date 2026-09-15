@@ -226,13 +226,27 @@ export type {
   ParticipantRow,
 } from './components/ParticipantsTable/index.js'
 
-export { HeroParticipantsPanel, HeroParticipantsMobileStack } from './components/HeroParticipantsPanel/index.js'
+export {
+  HeroParticipantList,
+  HeroParticipantControls,
+  HeroParticipantsMobileStack,
+} from './components/HeroParticipantsPanel/index.js'
 export type {
-  HeroParticipantsPanelProps,
+  HeroParticipantListProps,
+  HeroParticipantControlsProps,
   HeroParticipantsMobileStackProps,
   HeroHopFilter,
   HeroParticipant,
 } from './components/HeroParticipantsPanel/index.js'
+
+export {
+  CrowdfundLeftColumn,
+  useCrowdfundListAnimation,
+} from './components/CrowdfundLeftColumn/index.js'
+export type {
+  CrowdfundLeftColumnProps,
+  CrowdfundListAnimationContextValue,
+} from './components/CrowdfundLeftColumn/index.js'
 
 export { NodeSphere } from './components/NodeSphere/index.js'
 export type { NodeSphereProps, PinnedNode } from './components/NodeSphere/index.js'

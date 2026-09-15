@@ -18,6 +18,8 @@ export interface BuildSlotRowsArgs {
   /** The connected (inviter) address — used to flag self-invites so the row
    *  reads "self-invited" instead of "invited". Case-insensitive. */
   selfAddress?: string | null
+  /** Hop the invitee joins as (inviter hop + 1). Applied to redeemed rows. */
+  inviteeHop?: 0 | 1 | 2
 }
 
 export interface BuildSlotRowsResult {
@@ -42,7 +44,14 @@ export interface BuildSlotRowsResult {
  * never the ones dropped).
  */
 export function buildSlotRows(args: BuildSlotRowsArgs): BuildSlotRowsResult {
-  const { totalSlots, startId, activeLinks, linkRedemptions, directInvitedAddresses } = args
+  const {
+    totalSlots,
+    startId,
+    activeLinks,
+    linkRedemptions,
+    directInvitedAddresses,
+    inviteeHop,
+  } = args
   const self = args.selfAddress ? args.selfAddress.toLowerCase() : null
   const isSelf = (addr: string | undefined): boolean =>
     self != null && addr != null && addr.toLowerCase() === self
@@ -53,13 +62,28 @@ export function buildSlotRows(args: BuildSlotRowsArgs): BuildSlotRowsResult {
   // 1a. On-chain redemptions (have a redeemer address). Stable order by nonce.
   for (const nonce of [...linkRedemptions.keys()].sort((a, b) => a - b)) {
     const redeemedBy = linkRedemptions.get(nonce)
-    rows.push({ slot: { status: 'redeemed', redeemedBy, isSelf: isSelf(redeemedBy) } })
+    const matchedLink = activeLinks.find((l) => l.nonce === nonce)
+    rows.push({
+      slot: {
+        status: 'redeemed',
+        redeemedBy,
+        isSelf: isSelf(redeemedBy),
+        inviteeHop,
+        joinedAt: matchedLink ? new Date(matchedLink.createdAt) : undefined,
+      },
+    })
     redeemedNonces.add(nonce)
   }
   // 1b. Locally-persisted redeemed links not (yet) reflected in the events.
   for (const link of activeLinks) {
     if (link.status === 'redeemed' && !redeemedNonces.has(link.nonce)) {
-      rows.push({ slot: { status: 'redeemed' } })
+      rows.push({
+        slot: {
+          status: 'redeemed',
+          inviteeHop,
+          joinedAt: new Date(link.createdAt),
+        },
+      })
       redeemedNonces.add(link.nonce)
     }
   }

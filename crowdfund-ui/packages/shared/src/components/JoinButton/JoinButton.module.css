@@ -14,8 +14,9 @@
   overflow: hidden;
   background: linear-gradient(
     135deg,
-    var(--primitives-color-purple-300),
-    var(--primitives-color-amber-300)
+    var(--semantic-color-brand-lavender) 0%,
+    var(--semantic-color-brand-gradient-rose) 52%,
+    var(--semantic-color-brand-amber) 100%
   );
   color: var(--semantic-color-surface-bg);
   gap: 0px;

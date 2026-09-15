@@ -131,15 +131,27 @@
   }
 }
 
-/* Mobile — full-bleed step, corner mark top-left + fixed close top-right.
- * Ported from the armada-crowdfund mockup mobile rework. */
+@media (prefers-reduced-motion: reduce) {
+  .backdrop,
+  .backdropExit,
+  .panel,
+  .panelExit,
+  .step,
+  .stepExit {
+    animation: none !important;
+  }
+}
+
+/* Mobile — bottom sheet: docked panel, corner mark + fixed close over the
+ * frosted backdrop. Step shells stay full-bleed via [data-flow-shell]. */
 @media (max-width: 767px) {
   .backdrop {
-    align-items: flex-start;
-    padding:
-      calc(var(--primitives-spacing-5) + 40px + var(--primitives-spacing-5))
-      var(--primitives-spacing-5)
-      var(--primitives-spacing-5);
+    align-items: flex-end;
+    justify-content: stretch;
+    padding: 0;
+    /* Stop iOS/Android overscroll from chaining into the page behind. */
+    overscroll-behavior: none;
+    touch-action: none;
   }
 
   .mobileLogo {
@@ -178,11 +190,55 @@
     width: 100%;
     max-width: none;
     min-width: 0;
+    max-height: min(90dvh, calc(100dvh - var(--primitives-spacing-5) - 40px - var(--primitives-spacing-5)));
     align-items: stretch;
     gap: 0;
+    /* Sheet may need internal scroll when a tall step is shown. */
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    animation: modalSheetIn 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .panelExit {
+    animation: modalSheetOut 280ms ease forwards;
   }
 
   .step {
     min-width: 0;
+    width: 100%;
+  }
+
+  /* Docked sheet chrome — square bottom edge against the screen. */
+  .step > * {
+    width: 100%;
+    max-width: none;
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+  }
+}
+
+@keyframes modalSheetIn {
+  from {
+    opacity: 1;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes modalSheetOut {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(100%);
   }
 }

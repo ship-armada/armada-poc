@@ -42,7 +42,7 @@ import { useAllowance } from '@/hooks/useAllowance'
 import { useInviteLinks } from '@/hooks/useInviteLinks'
 import { ParticipateFlowV2 } from '@/components/ParticipateFlowV2'
 import { ClaimFlowV2 } from '@/components/ClaimFlowV2'
-import { ObserveView } from '@/components/ObserveView'
+import { ObserveDetailsModal } from '@/components/ObserveDetailsModal'
 import { CommitterMobileMenu } from '@/components/CommitterMobileMenu'
 import { useInviteSlots } from '@/hooks/useInviteSlots'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
@@ -179,7 +179,11 @@ function HeaderWalletButton({
  *  that case, which is the user-facing signal we want without a stale tag. */
 function formatRemainingLabel(seconds: number): string | null {
   const label = formatTimeLeft(seconds)
-  return label ? `${label.toUpperCase()} LEFT` : null
+  if (!label) return null
+  // Under 48h the shared helper returns an HH:MM:SS counter — leave it bare
+  // (no "LEFT" suffix) so it reads as a timer rather than a static tag.
+  if (seconds < 48 * 60 * 60) return label
+  return `${label.toUpperCase()} LEFT`
 }
 
 /** Derive the Progress card's lifecycle status pill from the contract phase
@@ -238,24 +242,29 @@ function deriveLifecycleStage(
   return 'commit-invite'
 }
 
-/** Resolve the initial page from the URL. A dedicated path (`/observe`) wins,
- *  then the `?view=` query param — which drives deep links like the post-invite
- *  "View your position" button (`/?view=myposition`). */
+/** Resolve the initial page from the URL. `/observe` and `?view=observe` open
+ *  the Details modal over the crowdfund hero (handled separately via
+ *  `detailsOpenFromUrl`); they no longer select a dedicated page. */
 function pageFromUrl(): Page | null {
   if (typeof window === 'undefined') return null
-  if (window.location.pathname === '/observe') return 'observe'
+  if (window.location.pathname === '/observe') return 'network'
   switch (new URLSearchParams(window.location.search).get('view')) {
     case 'myposition':
       return 'my-position'
     case 'claim':
       return 'claim'
     case 'network':
-      return 'network'
     case 'observe':
-      return 'observe'
+      return 'network'
     default:
       return null
   }
+}
+
+function detailsOpenFromUrl(): boolean {
+  if (typeof window === 'undefined') return false
+  if (window.location.pathname === '/observe') return true
+  return new URLSearchParams(window.location.search).get('view') === 'observe'
 }
 
 export function App() {
@@ -273,6 +282,7 @@ export function App() {
     const onPopState = () => {
       const next = pageFromUrl()
       if (next) setPage(next)
+      setDetailsOpen(detailsOpenFromUrl())
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
@@ -281,6 +291,8 @@ export function App() {
   // uses the dedicated `?page=participate` page. `openParticipate()` routes
   // based on the active design flag.
   const [participateOpen, setParticipateOpen] = useState(false)
+  // Crowdfund Progress "Details" — observe cards in a blurred modal overlay.
+  const [detailsOpen, setDetailsOpen] = useState(() => detailsOpenFromUrl())
   // True while the participate pipeline is in flight — gates modal close confirm.
   const [participateRunning, setParticipateRunning] = useState(false)
   // Warn before a refresh/tab-close drops the user while a commit is broadcasting.
@@ -378,6 +390,7 @@ export function App() {
       dashRows,
       totalCommitted,
       daysLeftLabel,
+      ...(windowEnd > 0 && liveWindowOpen ? { windowEndUnix: windowEnd } : {}),
       daysLeftTooltip,
       saleStatusLabel: saleStatus.label,
       saleStatusDot: saleStatus.dot,
@@ -681,7 +694,7 @@ export function App() {
 
   // Observe is a placeholder spike (no live data yet), so it renders without
   // waiting on the deployment / contract-state load gate below.
-  if ((!deployment || contractState.loading) && !isHeroPage && page !== 'observe') {
+  if ((!deployment || contractState.loading) && !isHeroPage) {
     const backfillPct =
       backfill && backfill.toBlock > backfill.fromBlock
         ? Math.min(
@@ -711,20 +724,9 @@ export function App() {
     )
   }
 
-  // Right-side action buttons, matching the designer's Hero header. Invite,
-  // My position, and Claim are ghost buttons grouped before the wallet pill;
-  // Participate is a gradient CTA on the far right. Claim swaps in when the
-  // claim phase is open, mirroring the mockup's `claimAvailable` toggle.
+  // Right-side chrome: wallet + Participate CTA. Crowdfund / My position /
+  // Claim live in the left PageNav strip; Claim is disabled until claim opens.
   const claimReady = claimAvailability.state === 'available'
-  const myPositionActive = page === 'my-position'
-  // Mirrors @armada/ui Header.module.css `.myPositionActive`: highlight the
-  // My position pill when active using the same navitem-active tokens.
-  const myPositionActiveStyle: React.CSSProperties | undefined = myPositionActive
-    ? {
-        background: 'var(--semantic-component-navitem-active-bg)',
-        color: 'var(--semantic-component-navitem-active-text)',
-      }
-    : undefined
 
   // Phase 6 — open/close helpers for the modal Participate flow. In v2 mode
   // the flow runs as a modal overlay (mounted alongside whichever page the
@@ -745,23 +747,6 @@ export function App() {
 
   const headerRightChrome = (
     <div className="flex items-center gap-3">
-      <ArmadaButton
-        variant="ghost"
-        size="md"
-        label="My position"
-        showIcon={false}
-        onClick={() => setPage('my-position')}
-        style={myPositionActiveStyle}
-      />
-      {claimReady && (
-        <ArmadaButton
-          variant="ghost"
-          size="md"
-          label="Claim"
-          showIcon={false}
-          onClick={() => setPage('claim')}
-        />
-      )}
       <LastTxChip override={lastTxChip} />
       <HeaderWalletButton usdcBalance={allowance.balance} />
       {!claimReady && windowOpen && (
@@ -783,14 +768,15 @@ export function App() {
       current={page}
       onNavigate={setPage}
       onParticipate={openParticipate}
-      onClaim={() => setPage('claim')}
       claimAvailable={claimReady}
       participationEnabled={windowOpen}
       usdcBalance={allowance.balance}
     />
   )
 
-  const headerNav = <PageNav current={page} onChange={setPage} />
+  const headerNav = (
+    <PageNav current={page} onChange={setPage} claimEnabled={claimReady} />
+  )
 
   const participateModal = (
     <ParticipateFlowModal
@@ -835,6 +821,17 @@ export function App() {
     </ParticipateFlowModal>
   )
 
+  const detailsModal = (
+    <ObserveDetailsModal
+      open={detailsOpen}
+      onClose={() => setDetailsOpen(false)}
+      state={contractState}
+      events={events}
+      eventsLoading={eventsLoading}
+      provider={provider}
+    />
+  )
+
   // Hero shell — AppShell renders the single chrome header (via AppHeader);
   // CrowdfundExperience renders the full-bleed body with its own header slot
   // suppressed. Controlled `view` syncs to the committer's `page` state;
@@ -862,7 +859,7 @@ export function App() {
             connectedAddress={wallet.address ?? undefined}
             onConnectWallet={openConnectModal}
             onParticipate={openParticipate}
-            onDetails={() => setPage('observe')}
+            onDetails={() => setDetailsOpen(true)}
             // Hide the Participate CTA (and the My Position invite card) once
             // the sale's outcome is fixed — finalized, cancelled by the
             // security council, or window-closed-pending-finalize all collapse
@@ -875,31 +872,7 @@ export function App() {
           />
         </AppShell>
         {participateModal}
-      </>
-    )
-  }
-
-  // Observe (spike) — cards + tables, no CrowdfundExperience/NodeSphere. Bare
-  // full-bleed shell so ObserveView can paint its own splash page background.
-  if (page === 'observe') {
-    return (
-      <>
-        <AppShell
-          appName="Committer"
-          network={getNetworkMode()}
-          headerNav={headerNav}
-          headerRight={headerRightChrome}
-          mobileMenu={mobileMenu}
-          bare
-        >
-          <ObserveView
-            state={contractState}
-            events={events}
-            eventsLoading={eventsLoading}
-            provider={provider}
-          />
-        </AppShell>
-        {participateModal}
+        {detailsModal}
       </>
     )
   }

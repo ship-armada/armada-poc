@@ -1,5 +1,5 @@
 /* ABOUTME: Empty-state styling for the not-eligible wallet screen rendered inside the Participate modal. */
-/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup (ParticipateFlow/screens/Step1WalletNotWhitelisted.module.css). */
+/* ABOUTME: Ported from the armada-crowdfund mockup — content + CTA centered as a group; button hugs label. */
 
 .shell {
   width: 480px;
@@ -12,7 +12,8 @@
   padding: var(--primitives-spacing-8);
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  align-items: center;
+  justify-content: center;
   gap: var(--primitives-spacing-8);
   box-sizing: border-box;
   animation: feedbackIn 200ms ease;
@@ -57,11 +58,14 @@
 }
 
 .buttonRow {
-  width: 100%;
+  display: flex;
+  justify-content: center;
+  width: auto;
 }
 
 .buttonRow > * {
-  width: 100%;
+  width: auto;
+  flex: none;
 }
 
 @keyframes feedbackIn {

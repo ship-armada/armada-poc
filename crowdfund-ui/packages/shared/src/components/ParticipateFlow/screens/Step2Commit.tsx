@@ -124,7 +124,7 @@ export function MaxOutBanner({ maxOut }: { maxOut: Step2MaxOutOption }) {
  *  for that case (cleaner visual). */
 export interface Step2CommitHopRow {
   hop: 0 | 1 | 2
-  /** Display label — e.g. 'SEED', 'HOP-1', 'HOP-2'. */
+  /** Display label — e.g. 'HOP-0', 'HOP-1', 'HOP-2'. */
   hopLabel: string
   /** Dot color from the canonical hop palette (`graphHopColors.ts`). */
   hopColor: string
@@ -147,7 +147,7 @@ interface Step2CommitProps extends ParticipateStepBarProps {
   maxArm?: number
   /** Already committed USDC — bar shows this before new input. */
   existingCommittedUsdc?: number
-  /** Single-hop only: label of the hop being committed to (e.g. 'SEED',
+  /** Single-hop only: label of the hop being committed to (e.g. 'HOP-0',
    *  'HOP-1', 'HOP-2'). When provided, renders a hop badge above the title.
    *  Ignored in the multi-hop variant (each row already shows its own hop). */
   hopLabel?: string

@@ -75,8 +75,28 @@ export function ParticipateFlowModal({
   useEffect(() => {
     if (!mounted || exiting) return
 
-    const prevOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    // Lock page scroll while the modal is open. `overflow: hidden` alone is not
+    // enough on iOS / when the hero page scrolls the document — pin the body
+    // and restore scroll position on close.
+    const html = document.documentElement
+    const body = document.body
+    const scrollY = window.scrollY
+    const prev = {
+      htmlOverflow: html.style.overflow,
+      bodyOverflow: body.style.overflow,
+      bodyPosition: body.style.position,
+      bodyTop: body.style.top,
+      bodyLeft: body.style.left,
+      bodyRight: body.style.right,
+      bodyWidth: body.style.width,
+    }
+    html.style.overflow = 'hidden'
+    body.style.overflow = 'hidden'
+    body.style.position = 'fixed'
+    body.style.top = `-${scrollY}px`
+    body.style.left = '0'
+    body.style.right = '0'
+    body.style.width = '100%'
     closeRef.current?.focus()
 
     const onKeyDown = (e: KeyboardEvent) => {
@@ -88,7 +108,14 @@ export function ParticipateFlowModal({
     window.addEventListener('keydown', onKeyDown)
 
     return () => {
-      document.body.style.overflow = prevOverflow
+      html.style.overflow = prev.htmlOverflow
+      body.style.overflow = prev.bodyOverflow
+      body.style.position = prev.bodyPosition
+      body.style.top = prev.bodyTop
+      body.style.left = prev.bodyLeft
+      body.style.right = prev.bodyRight
+      body.style.width = prev.bodyWidth
+      window.scrollTo(0, scrollY)
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [mounted, exiting])

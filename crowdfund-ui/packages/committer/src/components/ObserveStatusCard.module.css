@@ -101,8 +101,8 @@
   background: linear-gradient(
     to right,
     var(--semantic-color-brand-lavender) 0%,
-    var(--semantic-color-brand-amber) 55%,
-    var(--semantic-color-brand-amber-dark) 100%
+    var(--semantic-color-brand-gradient-rose) 52%,
+    var(--semantic-color-brand-amber) 100%
   );
   pointer-events: none;
 }
@@ -168,7 +168,7 @@
   align-items: baseline;
 }
 
-.labelMinRaise {
+.labelMinFund {
   position: absolute;
   white-space: nowrap;
 }

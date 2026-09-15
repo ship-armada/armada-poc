@@ -1,0 +1,79 @@
+/* ABOUTME: Crossfade frames for invite list ↔ action screen. */
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  box-sizing: border-box;
+}
+
+.frame {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.frameEnter {
+  animation: inviteEnter 320ms ease;
+}
+
+.frameExit {
+  animation: inviteExit 240ms ease forwards;
+}
+
+@keyframes inviteEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes inviteExit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frameEnter,
+  .frameExit {
+    animation: inviteFade 200ms ease;
+  }
+
+  @keyframes inviteFade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .frameExit {
+    animation-name: inviteFadeOut;
+  }
+
+  @keyframes inviteFadeOut {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+}

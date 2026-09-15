@@ -6,13 +6,18 @@ import { useAtomValue } from 'jotai'
 import { InformationCircleIcon } from '@heroicons/react/24/solid'
 import { ChevronDownIcon } from '@heroicons/react/24/outline'
 import { ensMapAtom } from '../../hooks/useENS'
-import { Header } from '@armada/ui'
-import { Progress } from '@armada/ui'
+import { Button, Header, Progress, Tag, Tooltip } from '@armada/ui'
 import { Participate } from '../Participate/Participate'
-import { HeroParticipantsPanel, HeroParticipantsMobileStack, type HeroParticipant } from '../HeroParticipantsPanel'
-import { Tag } from '@armada/ui'
-import { Tooltip } from '@armada/ui'
+import { CrowdfundLeftColumn } from '../CrowdfundLeftColumn'
+import {
+  HeroParticipantControls,
+  HeroParticipantList,
+  HeroParticipantsMobileStack,
+  type HeroParticipant,
+} from '../HeroParticipantsPanel'
 import SlotCard from '../InviteFlow/screens/SlotCard'
+import { InviteFocusChrome, useInviteSlotFocus } from '../InviteFlow/useInviteSlotFocus'
+import { INVITE_METHOD_PICKER_UX } from '../../lib/inviteUx'
 import {
   ARM_ALLOCATION,
   CAP,
@@ -27,7 +32,10 @@ import {
 import { NodeSphere, isWebglForcedOff } from '../NodeSphere/NodeSphere'
 import { hopPillDotColor } from '../../lib/graphHopColors'
 import { CROWDFUND_CONSTANTS } from '../../lib/constants'
-import { MOBILE_LAYOUT_MAX_WIDTH_PX } from '../../lib/viewportBreakpoints'
+import {
+  LAPTOP_LAYOUT_MAX_WIDTH_PX,
+  MOBILE_LAYOUT_MAX_WIDTH_PX,
+} from '../../lib/viewportBreakpoints'
 import {
   generateCrowdfund,
   toDashboardParticipants,
@@ -85,7 +93,7 @@ export interface CrowdfundInviteSlotConfig {
 export interface CrowdfundInviteSlotSection {
   /** Source hop the invites come from (slot generates an invite at `hop + 1`). */
   hop: 0 | 1 | 2
-  /** Display label — 'SEED' / 'HOP-1' / 'HOP-2'. */
+  /** Display label — 'HOP-0' / 'HOP-1' / 'HOP-2'. */
   hopLabel: string
   /** Dot color from the canonical hop palette (`graphHopColors.ts`). */
   hopColor: string
@@ -115,11 +123,14 @@ export type CrowdfundExperienceLiveData =
       /** Countdown label shown on the Progress card (e.g. "6 DAYS LEFT").
        *  Pass `null` to suppress the tag once the window has ended — the
        *  Progress primitive hides it rather than rendering a stale countdown.
-       *  Omit entirely to fall back to the primitive's mockup default. */
+       *  Omit entirely to fall back to the primitive's mockup default.
+       *  Prefer `endsAt` when available so Progress can live-tick under 48h. */
       daysLeftLabel?: string | null
+      /** Absolute commit-window end (unix seconds). When set, Progress owns a
+       *  live HH:MM:SS counter for remaining &lt; 48h. */
+      windowEndUnix?: number
       /** Exact-time detail for the Progress countdown tag's hover tooltip
-       *  (e.g. "2d 14h 22m left · ends Jun 14, 2026, 2:42 PM"). Omit for no
-       *  tooltip. */
+       *  (e.g. "Ends Jun 14, 2:42 PM"). Omit for no tooltip. */
       daysLeftTooltip?: string
       /** Lifecycle status pill label (e.g. 'ACTIVE', 'CLOSED', 'FINALIZED').
        *  Omit to fall back to the primitive's 'ACTIVE' default. */
@@ -175,7 +186,7 @@ export type CrowdfundExperienceMyPositionData =
       /** Truncated display form — drives the wallet `<Tag>` label. */
       walletDisplay: string
       /** Primary hop = lowest hop the user is eligible at. Drives the
-       *  `HOP-N` / `SEED` tag label and the legacy single-hop stat block
+       *  `HOP-N` tag label and the legacy single-hop stat block
        *  (until per-hop rendering lands in step 2). New multi-hop UI
        *  should iterate `positions` instead of reading these scalar
        *  fields. */
@@ -223,7 +234,7 @@ export type CrowdfundExperienceMyPositionData =
       cancelled?: boolean
     }
 
-const HOP_TAG_LABELS = ['SEED', 'HOP-1', 'HOP-2'] as const
+const HOP_TAG_LABELS = ['HOP-0', 'HOP-1', 'HOP-2'] as const
 
 function usdcBigintToUsdNumber(value: bigint): number {
   return Number(value / 1_000_000n)
@@ -311,7 +322,8 @@ export interface CrowdfundExperienceProps {
   /**
    * When `false`, hides every surface whose underlying contract call requires
    * an open commit window: the Crowdfund hero's `<Participate>` card,
-   * the default header's "Participate" gradient button, and the MyPosition
+   * the default header's "Participate" gradient button, the My Position
+   * card header CTA ("Participate" / "Commit again"), and the MyPosition
    * view's "Your invites" card. Set this to the consumer's `windowOpen`
    * signal so the UI mirrors the chain's post-window-close gating. Defaults
    * to `true` — preserves showcase / preview behavior.
@@ -338,6 +350,12 @@ const PANEL_ENTER_MS = 240
 function isMobileLayout() {
   if (typeof window === 'undefined') return false
   return window.matchMedia(`(max-width: ${MOBILE_LAYOUT_MAX_WIDTH_PX}px)`).matches
+}
+
+/** Open by default at ≥1440px; collapsed below — InvitesCard.tsx. */
+function invitesExpandedByDefault(): boolean {
+  if (typeof window === 'undefined') return true
+  return window.matchMedia(`(min-width: ${LAPTOP_LAYOUT_MAX_WIDTH_PX}px)`).matches
 }
 
 type PanelPhase = 'idle' | 'exit' | 'enter'
@@ -475,7 +493,7 @@ export function CrowdfundExperience({
         : DEMO_WALLET_DISPLAY)
   // Per-hop chips rendered in the meta row. Multi-hop wallets get one chip
   // per distinct hop, with an `xN` suffix when they were invited to the same
-  // hop multiple times (e.g. two seed inviters → "SEED x2"). Single-hop
+  // hop multiple times (e.g. two hop-0 inviters → "HOP-0 x2"). Single-hop
   // wallets still get just one chip.
   const myPositionHopChips = useMemo(() => {
     const colorFor = (hop: 0 | 1 | 2) =>
@@ -504,7 +522,7 @@ export function CrowdfundExperience({
     })
   }, [myPositionReady])
   // Cross-hop totals — `committed` / `cap` collapse the user's full footprint
-  // into one stat block + one fill bar. A wallet with `SEED ($1k cap)` plus a
+  // into one stat block + one fill bar. A wallet with `HOP-0 ($1k cap)` plus a
   // `HOP-1 x2 ($2k cap)` position shows $3k cap and the sum of commitments.
   const myPositionCommittedUsd = myPositionReady
     ? usdcBigintToUsdNumber(
@@ -540,18 +558,45 @@ export function CrowdfundExperience({
   const [selectedAddress, setSelectedAddress] = useState<string | undefined>(undefined)
   const [filter, setFilter] = useState<'all' | 'seed' | 'hop1' | 'hop2' | 'multi'>('all')
   const [participantsListOpen, setParticipantsListOpen] = useState(false)
-  const [holdColumnExpanded, setHoldColumnExpanded] = useState(false)
   const [copiedId, setCopiedId] = useState<number | null>(null)
   const [loadingId, setLoadingId] = useState<number | null>(null)
-  // My Position invites card — open by default; user toggles collapse/expand.
-  const [invitesExpanded, setInvitesExpanded] = useState<boolean>(true)
+  const inviteFocusApi = useInviteSlotFocus()
+  const [activeInviteSection, setActiveInviteSection] =
+    useState<CrowdfundInviteSlotSection | null>(null)
+  // My Position invites — open ≥1440px / always open on mobile (InvitesCard hero).
+  const [invitesExpanded, setInvitesExpanded] = useState<boolean>(() => {
+    if (isMobileLayout()) return true
+    return invitesExpandedByDefault()
+  })
   const invitesListId = useId()
+  const invitesPanelOpen =
+    invitesExpanded || (INVITE_METHOD_PICKER_UX && inviteFocusApi.view === 'action')
 
-  const participantsPanelRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    const mobileMq = window.matchMedia(`(max-width: ${MOBILE_LAYOUT_MAX_WIDTH_PX}px)`)
+    const desktopMq = window.matchMedia(`(min-width: ${LAPTOP_LAYOUT_MAX_WIDTH_PX}px)`)
+    const sync = () => {
+      if (mobileMq.matches) {
+        setInvitesExpanded(true)
+      } else {
+        setInvitesExpanded(desktopMq.matches)
+      }
+    }
+    sync()
+    mobileMq.addEventListener('change', sync)
+    desktopMq.addEventListener('change', sync)
+    return () => {
+      mobileMq.removeEventListener('change', sync)
+      desktopMq.removeEventListener('change', sync)
+    }
+  }, [])
+
+  const participantsListRef = useRef<HTMLDivElement | null>(null)
+  const participantsControlsRef = useRef<HTMLDivElement | null>(null)
   const mobileParticipantsRef = useRef<HTMLDivElement | null>(null)
-  const leftStackRef = useRef<HTMLDivElement | null>(null)
+  const leftColumnRef = useRef<HTMLDivElement | null>(null)
+  const graphHostRef = useRef<HTMLDivElement | null>(null)
 
-  const HERO_EXPAND_MS = 380
   const isCrowdfund = view === 'crowdfund'
   const isMyPosition = view === 'myposition'
   const isGraphCrowdfund = graphMode === 'crowdfund'
@@ -561,7 +606,6 @@ export function CrowdfundExperience({
   // renders pinnedNodes directly and drops scenarioParticipants), pass 800 so
   // there's a dense node field underneath our overlaid pinnedNodes.
   const graphParticipants = 800 as const
-  const columnExpanded = participantsListOpen || holdColumnExpanded
 
   useEffect(() => {
     if (isMobileLayout()) {
@@ -614,12 +658,21 @@ export function CrowdfundExperience({
     }
   }
 
-  const startPanelTransition = (next: CrowdfundView) => {
-    if (view === next || panelPhase !== 'idle') return
+  const startPanelTransition = (
+    next: CrowdfundView,
+    options?: { selectAddress?: string },
+  ) => {
+    if (view === next || panelPhase !== 'idle') {
+      if (view === next && next === 'crowdfund' && options?.selectAddress) {
+        setSelectedAddress(options.selectAddress)
+        setGraphMode('crowdfund')
+      }
+      return
+    }
 
     if (next === 'crowdfund') {
       setGraphMode('crowdfund')
-      setSelectedAddress(undefined)
+      setSelectedAddress(options?.selectAddress)
     } else if (next === 'myposition') {
       setSelectedAddress(undefined)
     }
@@ -667,21 +720,18 @@ export function CrowdfundExperience({
   // Sync the MyPosition card's `min-height` to whatever the Crowdfund-view
   // Progress card actually renders to, via the `--hero-progress-card-height`
   // CSS variable. Re-runs when the live data flips out of `loading` (the
-  // skeleton's first-child differs from Progress's first-child, so we need
-  // to re-measure once the real card mounts). Re-queries `firstElementChild`
-  // on each retry so we never measure a detached node from a prior render.
+  // skeleton differs from Progress, so we re-measure once the real card mounts).
   useLayoutEffect(() => {
     if (isLiveLoading) return
-    const stack = leftStackRef.current
-    if (!stack) return
+    const column = leftColumnRef.current
+    const progressCard = column?.querySelector<HTMLElement>('[data-crowdfund-progress] > *')
+    if (!progressCard) return
 
     const applyProgressCardHeight = () => {
-      const progressCard = stack.firstElementChild as HTMLElement | null
-      if (!progressCard) return false
       const h = Math.ceil(progressCard.getBoundingClientRect().height)
       if (h < 1) return false
-      stack
-        .closest<HTMLElement>('[class*="leftCorner"]')
+      column
+        ?.closest<HTMLElement>('[class*="leftCorner"]')
         ?.style.setProperty('--hero-progress-card-height', `${h}px`)
       return true
     }
@@ -694,52 +744,18 @@ export function CrowdfundExperience({
     return () => cancelAnimationFrame(raf)
   }, [isLiveLoading])
 
-  useLayoutEffect(() => {
-    const el = leftStackRef.current
-    if (!el || !isCrowdfund) return
-
-    const applyCollapsedHeight = () => {
-      el.style.minHeight = '0'
-      el.style.maxHeight = 'none'
-      const h = Math.ceil(el.getBoundingClientRect().height)
-      el.style.minHeight = ''
-      el.style.maxHeight = ''
-      if (h < 1) return false
-      const px = `${h}px`
-      el.style.setProperty('--hero-stack-collapsed-height', px)
-      el.closest<HTMLElement>('[class*="leftCorner"]')?.style.setProperty('--hero-stack-collapsed-height', px)
-      return true
-    }
-
-    if (applyCollapsedHeight()) return
-
-    const raf = requestAnimationFrame(() => {
-      if (!applyCollapsedHeight()) requestAnimationFrame(applyCollapsedHeight)
-    })
-    return () => cancelAnimationFrame(raf)
-  }, [isCrowdfund])
-
-  useLayoutEffect(() => {
-    if (!isCrowdfund) {
-      setHoldColumnExpanded(false)
-      return
-    }
-    if (participantsListOpen) {
-      setHoldColumnExpanded(true)
-      return
-    }
-    const id = window.setTimeout(() => setHoldColumnExpanded(false), HERO_EXPAND_MS)
-    return () => window.clearTimeout(id)
-  }, [participantsListOpen, isCrowdfund])
-
   useEffect(() => {
     if (!isCrowdfund || !selectedAddress) return
 
+    // Deselect when clicking outside the graph + participants chrome.
+    // The graph is excluded so pointerdown that starts a drag does not clear
+    // selection — NodeSphere owns click-vs-drag (empty click → deselect).
     const onPointerDown = (e: PointerEvent) => {
-      const desktop = participantsPanelRef.current
-      const mobile = mobileParticipantsRef.current
-      if (desktop?.contains(e.target as Node)) return
-      if (mobile?.contains(e.target as Node)) return
+      const t = e.target as Node
+      if (graphHostRef.current?.contains(t)) return
+      if (participantsListRef.current?.contains(t)) return
+      if (participantsControlsRef.current?.contains(t)) return
+      if (mobileParticipantsRef.current?.contains(t)) return
       setSelectedAddress(undefined)
     }
 
@@ -783,7 +799,7 @@ export function CrowdfundExperience({
   }
 
   const handleRevoke = async () => {}
-  const handleInviteOnchain = async (slotId: number) => {
+  const handleInviteOnchain = async (slotId: number, _address: string, _ensName?: string) => {
     setLoadingId(slotId)
     await new Promise((r) => setTimeout(r, 800))
     setLoadingId(null)
@@ -811,7 +827,6 @@ export function CrowdfundExperience({
 
   return (
     <div className={[mpStyles.page, shellStyles.page].join(' ')}>
-      <div className={shellStyles.mobileHeaderBackdrop} aria-hidden />
       {header === undefined ? (
         // Default header — used by the showcase / standalone mockup preview.
         // Consuming apps pass their own `header` slot (or `null`) to avoid
@@ -837,6 +852,7 @@ export function CrowdfundExperience({
           .join(' ')}
       >
         <div
+          ref={graphHostRef}
           className={[
             shellStyles.graphHost,
             graphUnavailable && shellStyles.graphHostHiddenMobile,
@@ -901,67 +917,74 @@ export function CrowdfundExperience({
           className={layerClass(crowdfundPanelVisible, motionReady, crowdfundPanelAnimates)}
           aria-hidden={!crowdfundPanelVisible}
         >
-          <div
-            ref={leftStackRef}
-            className={[heroStyles.leftStack, heroStyles.enter, heroStyles.enterProgress].join(' ')}
-          >
+          <div ref={leftColumnRef}>
             {isLiveLoading ? (
-              <HeroLoadingSkeleton />
+              <div className={[heroStyles.enter, heroStyles.enterProgress].join(' ')}>
+                <HeroLoadingSkeleton />
+              </div>
             ) : (
-              <>
-                <div className={shellStyles.progressWrap}>
-                  <Progress
-                    participants={`${dashRows.length} PARTICIPANTS`}
-                    committedAmount={committedAmount}
-                    minRaiseAmount={Number(CROWDFUND_CONSTANTS.MIN_SALE / 1_000_000n)}
-                    maxAmount={Number(CROWDFUND_CONSTANTS.MAX_SALE / 1_000_000n)}
-                    {...(liveReady?.daysLeftLabel !== undefined
-                      ? { daysLeft: liveReady.daysLeftLabel }
-                      : {})}
-                    {...(liveReady?.daysLeftTooltip
-                      ? { daysLeftTooltip: liveReady.daysLeftTooltip }
-                      : {})}
-                    {...(liveReady?.saleStatusLabel
-                      ? { status: liveReady.saleStatusLabel }
-                      : {})}
-                    {...(liveReady?.saleStatusDot
-                      ? { statusDot: liveReady.saleStatusDot }
-                      : {})}
-                  />
-                  {onDetails && (
-                    // Overlaid on the @armada/ui Progress card's top-right corner
-                    // (level with the card title) — we don't modify that primitive,
-                    // so the "Details" affordance is positioned over it from here.
-                    <button
-                      type="button"
-                      className={shellStyles.detailsBtn}
-                      onClick={onDetails}
-                    >
-                      Details
-                    </button>
-                  )}
-                </div>
-                <div
-                  ref={participantsPanelRef}
-                  className={[heroStyles.participantsWrap, shellStyles.hideOnMobileStack].join(' ')}
-                >
-                  <HeroParticipantsPanel
-                    participants={participants}
-                    selectedAddress={selectedAddress}
-                    onSelectAddress={setSelectedAddress}
-                    collapsedMaxRows={3}
-                    filter={filter}
-                    onFilterChange={setFilter}
-                    layoutExpanded={columnExpanded}
-                    showList={participantsListOpen}
-                    onShowListChange={(open) => {
-                      setParticipantsListOpen(open)
-                      if (!open) setSelectedAddress(undefined)
-                    }}
-                    onParticipate={onParticipate}
-                  />
-                </div>
-              </>
+              <CrowdfundLeftColumn
+                className={[heroStyles.enter, heroStyles.enterProgress, shellStyles.mobileCrowdfundColumn]
+                  .filter(Boolean)
+                  .join(' ')}
+                listOpen={participantsListOpen}
+                onListOpenChange={(open) => {
+                  setParticipantsListOpen(open)
+                  if (!open) setSelectedAddress(undefined)
+                }}
+                progress={
+                  <div className={shellStyles.progressWrap}>
+                    <Progress
+                      participants={`${dashRows.length} PARTICIPANTS`}
+                      committedAmount={committedAmount}
+                      minFundAmount={Number(CROWDFUND_CONSTANTS.MIN_SALE / 1_000_000n)}
+                      maxAmount={Number(CROWDFUND_CONSTANTS.MAX_SALE / 1_000_000n)}
+                      {...(liveReady?.windowEndUnix != null && liveReady.windowEndUnix > 0
+                        ? { endsAt: liveReady.windowEndUnix * 1000 }
+                        : liveReady?.daysLeftLabel !== undefined
+                          ? { daysLeft: liveReady.daysLeftLabel }
+                          : {})}
+                      {...(liveReady?.daysLeftTooltip
+                        ? { daysLeftTooltip: liveReady.daysLeftTooltip }
+                        : {})}
+                      {...(liveReady?.saleStatusLabel
+                        ? { status: liveReady.saleStatusLabel }
+                        : {})}
+                      {...(liveReady?.saleStatusDot
+                        ? { statusDot: liveReady.saleStatusDot }
+                        : {})}
+                    />
+                    {onDetails && (
+                      // Overlaid on the @armada/ui Progress card's top-right corner
+                      // (level with the card title) — we don't modify that primitive,
+                      // so the "Details" affordance is positioned over it from here.
+                      <button
+                        type="button"
+                        className={shellStyles.detailsBtn}
+                        onClick={onDetails}
+                      >
+                        Details
+                      </button>
+                    )}
+                  </div>
+                }
+                list={
+                  <div ref={participantsListRef} className={shellStyles.participantsListHitArea}>
+                    <HeroParticipantList
+                      participants={participants}
+                      selectedAddress={selectedAddress}
+                      onSelectAddress={setSelectedAddress}
+                      filter={filter}
+                      onParticipate={onParticipate}
+                    />
+                  </div>
+                }
+                controls={
+                  <div ref={participantsControlsRef}>
+                    <HeroParticipantControls filter={filter} onFilterChange={setFilter} />
+                  </div>
+                }
+              />
             )}
           </div>
         </div>
@@ -972,7 +995,20 @@ export function CrowdfundExperience({
         >
           <section className={mpStyles.positionCard} aria-label="Your position">
             <div className={mpStyles.cardHeader}>
-              <h1 className={mpStyles.pageTitle}>My Position</h1>
+              <div className={mpStyles.titleRow}>
+                <h1 className={mpStyles.pageTitle}>My Position</h1>
+                {participationEnabled && onParticipate && (
+                  <Button
+                    className={mpStyles.headerCta}
+                    variant="gradient"
+                    size="sm"
+                    label={myPositionEmptyKind === null ? 'Commit again' : 'Participate'}
+                    showIcon
+                    icon="arrow-right-micro"
+                    onClick={onParticipate}
+                  />
+                )}
+              </div>
               <div className={mpStyles.metaTags}>
                 {myPositionWalletDisplay && (
                   <Tag label={myPositionWalletDisplay} dot="lavender" />
@@ -1004,7 +1040,7 @@ export function CrowdfundExperience({
                 </div>
 
                 {myPositionRefundMode ? (
-                  // Sale didn't meet the minimum raise (or was cancelled) —
+                  // Sale didn't meet the minimum fund (or was cancelled) —
                   // the user's outcome is a USDC refund, not an ARM
                   // allocation. Swap the stat block accordingly.
                   <div className={mpStyles.statBlock}>
@@ -1019,7 +1055,7 @@ export function CrowdfundExperience({
                               ? 'Available for claim. The sale was cancelled by the security council — your committed USDC will be returned to your wallet.'
                               : myPositionFinalized
                                 ? 'Available for claim. Your committed USDC will be returned to your wallet.'
-                                : 'Pending finalization. The sale fell below the minimum raise — your committed USDC will be returned to your wallet.'
+                                : 'Pending finalization. The sale fell below the minimum fund — your committed USDC will be returned to your wallet.'
                         }
                       >
                         <button
@@ -1121,19 +1157,34 @@ export function CrowdfundExperience({
               : DEMO_SLOTS
             const inviteAvailableCount = allSlots.filter((s) => s.status === 'empty').length
             const inviteTotalCount = allSlots.length
+            const isInviteAction =
+              INVITE_METHOD_PICKER_UX && inviteFocusApi.view === 'action'
             return (
-          <section className={mpStyles.inviteCard} aria-label="Your invites">
-            <button
-              type="button"
-              className={mpStyles.inviteHeader}
-              onClick={() => setInvitesExpanded((open) => !open)}
-              aria-expanded={invitesExpanded}
-              aria-controls={invitesListId}
-              aria-label={`${invitesExpanded ? 'Collapse' : 'Expand'} invites, ${inviteAvailableCount} of ${inviteTotalCount} available`}
-            >
-              <span className={mpStyles.inviteTitle} role="heading" aria-level={2}>
-                Your Invites
-              </span>
+          <section
+            className={[
+              mpStyles.inviteCard,
+              isInviteAction && mpStyles.inviteCardAction,
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            aria-label="Whitelist a friend"
+            data-invite-surface=""
+          >
+            {!isInviteAction && (
+              <button
+                type="button"
+                className={mpStyles.inviteHeader}
+                onClick={() => {
+                  if (isMobileLayout()) return
+                  setInvitesExpanded((open) => !open)
+                }}
+                aria-expanded={invitesPanelOpen}
+                aria-controls={invitesListId}
+                aria-label={`${invitesPanelOpen ? 'Collapse' : 'Expand'} whitelist a friend, ${inviteAvailableCount} of ${inviteTotalCount} available`}
+              >
+                <span className={mpStyles.inviteTitle} role="heading" aria-level={2}>
+                  Whitelist a friend
+                </span>
               <span className={mpStyles.inviteHeaderActions}>
                 <span className={mpStyles.inviteHeaderCount} aria-hidden>
                   {inviteAvailableCount} of {inviteTotalCount}
@@ -1141,7 +1192,7 @@ export function CrowdfundExperience({
                 <ChevronDownIcon
                   className={[
                     mpStyles.inviteHeaderChevron,
-                    !invitesExpanded && mpStyles.inviteHeaderChevronCollapsed,
+                    !invitesPanelOpen && mpStyles.inviteHeaderChevronCollapsed,
                   ]
                     .filter(Boolean)
                     .join(' ')}
@@ -1149,9 +1200,13 @@ export function CrowdfundExperience({
                 />
               </span>
             </button>
+            )}
             <div
               id={invitesListId}
-              className={[!invitesExpanded && mpStyles.inviteBodyCollapsed]
+              className={[
+                !invitesPanelOpen && mpStyles.inviteBodyCollapsed,
+                isInviteAction && mpStyles.inviteBodyAction,
+              ]
                 .filter(Boolean)
                 .join(' ')}
             >
@@ -1175,7 +1230,7 @@ export function CrowdfundExperience({
                   )
                 }
                 const showHeaders = inviteSlotSections.length > 1
-                return (
+                const sectionsList = (
                   <div className={mpStyles.slotList}>
                     {inviteSlotSections.map((section) => (
                       <div key={section.hop} className={mpStyles.inviteSection}>
@@ -1208,15 +1263,44 @@ export function CrowdfundExperience({
                             resolveEns={section.config.resolveEns}
                             isWrongNetwork={section.config.isWrongNetwork}
                             onSwitchNetwork={section.config.onSwitchNetwork}
+                            onInviteClick={
+                              INVITE_METHOD_PICKER_UX
+                                ? (slotId, anchor) => {
+                                    setActiveInviteSection(section)
+                                    inviteFocusApi.openPicker(slotId, anchor)
+                                  }
+                                : undefined
+                            }
+                            onInviteButtonRef={
+                              INVITE_METHOD_PICKER_UX
+                                ? inviteFocusApi.registerInviteButton
+                                : undefined
+                            }
+                            invitePickerOpen={inviteFocusApi.pickerSlotId === slot.id}
+                            onViewRedeemed={(address) =>
+                              startPanelTransition('crowdfund', { selectAddress: address })
+                            }
                           />
                         ))}
                       </div>
                     ))}
                   </div>
                 )
+                if (!INVITE_METHOD_PICKER_UX) return sectionsList
+                const actionCfg = activeInviteSection?.config
+                return (
+                  <InviteFocusChrome
+                    focusApi={inviteFocusApi}
+                    loadingSlotId={actionCfg?.loadingId ?? null}
+                    onGenerateLink={actionCfg?.onGenerateLink ?? (async () => {})}
+                    onInviteOnchain={actionCfg?.onInviteOnchain ?? (async () => {})}
+                    resolveEns={actionCfg?.resolveEns}
+                    list={sectionsList}
+                  />
+                )
               }
               // Showcase / mock path (no live sections).
-              return (
+              const demoList = (
                 <div className={mpStyles.slotList}>
                   {DEMO_SLOTS.map((slot) => (
                     <SlotCard
@@ -1228,9 +1312,31 @@ export function CrowdfundExperience({
                       onInviteOnchain={handleInviteOnchain}
                       copied={copiedId === slot.id}
                       loading={loadingId === slot.id}
+                      onInviteClick={
+                        INVITE_METHOD_PICKER_UX ? inviteFocusApi.openPicker : undefined
+                      }
+                      onInviteButtonRef={
+                        INVITE_METHOD_PICKER_UX
+                          ? inviteFocusApi.registerInviteButton
+                          : undefined
+                      }
+                      invitePickerOpen={inviteFocusApi.pickerSlotId === slot.id}
+                      onViewRedeemed={(address) =>
+                        startPanelTransition('crowdfund', { selectAddress: address })
+                      }
                     />
                   ))}
                 </div>
+              )
+              if (!INVITE_METHOD_PICKER_UX) return demoList
+              return (
+                <InviteFocusChrome
+                  focusApi={inviteFocusApi}
+                  loadingSlotId={loadingId}
+                  onGenerateLink={handleGenerateLink}
+                  onInviteOnchain={handleInviteOnchain}
+                  list={demoList}
+                />
               )
             })()}
             </div>

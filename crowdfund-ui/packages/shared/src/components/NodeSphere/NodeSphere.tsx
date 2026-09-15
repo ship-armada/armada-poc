@@ -735,13 +735,18 @@ export function NodeSphere({
 
     const raycaster = new THREE.Raycaster()
     const pointer = new THREE.Vector2()
+    const _dragUp = new THREE.Vector3(0, 1, 0)
+    const _dragRight = new THREE.Vector3(1, 0, 0)
     let hovered: THREE.Mesh | null = null
     let dragLastX = 0
     let dragLastY = 0
     let pointerDownX = 0
     let pointerDownY = 0
     // Squared distance threshold (px²) used to tell a click from a drag.
-    const CLICK_DRAG_THRESHOLD_SQ = 25
+    // ~8px matches the designer NodeSphere so light press-jitter stays a click.
+    const CLICK_DRAG_THRESHOLD_SQ = 64
+    let pointerDidDrag = false
+    let isPointerDown = false
 
     let raf = 0
     const resize = () => {
@@ -753,15 +758,24 @@ export function NodeSphere({
     }
 
     const onPointerMove = (e: PointerEvent) => {
+      if (isPointerDown) {
+        const totalDx = e.clientX - pointerDownX
+        const totalDy = e.clientY - pointerDownY
+        if (totalDx * totalDx + totalDy * totalDy > CLICK_DRAG_THRESHOLD_SQ) {
+          pointerDidDrag = true
+          isDraggingRef.current = true
+        }
+      }
+
       if (isDraggingRef.current) {
         const dx = e.clientX - dragLastX
         const dy = e.clientY - dragLastY
         dragLastX = e.clientX
         dragLastY = e.clientY
 
-        // Drag rotation: right-drag rotates around Y, up/down rotates around X.
-        root.rotation.y += dx * 0.006
-        root.rotation.x += dy * 0.004
+        // Screen-space spin on world axes (stable after tilt).
+        root.rotateOnWorldAxis(_dragUp, dx * 0.006)
+        root.rotateOnWorldAxis(_dragRight, dy * 0.004)
         return
       }
 
@@ -802,7 +816,9 @@ export function NodeSphere({
     }
 
     const onPointerDown = (e: PointerEvent) => {
-      isDraggingRef.current = true
+      isPointerDown = true
+      pointerDidDrag = false
+      isDraggingRef.current = false
       dragLastX = e.clientX
       dragLastY = e.clientY
       pointerDownX = e.clientX
@@ -813,7 +829,10 @@ export function NodeSphere({
     }
 
     const onPointerUp = (e: PointerEvent) => {
+      isPointerDown = false
+      const wasDrag = pointerDidDrag
       isDraggingRef.current = false
+      pointerDidDrag = false
       try {
         renderer.domElement.releasePointerCapture(e.pointerId)
       } catch {
@@ -821,15 +840,10 @@ export function NodeSphere({
       }
 
       const onSelect = onSelectAddressRef.current
-      if (!onSelect) return
+      // Drag rotates the sphere — keep the current selection.
+      if (!onSelect || wasDrag) return
 
-      // If the pointer moved more than the click/drag threshold between down
-      // and up, treat the gesture as a drag and leave selection unchanged.
-      const dx = e.clientX - pointerDownX
-      const dy = e.clientY - pointerDownY
-      if (dx * dx + dy * dy > CLICK_DRAG_THRESHOLD_SQ) return
-
-      // Click-to-select: raycast on pointer up.
+      // Click-to-select / empty-click-to-deselect: raycast on pointer up.
       const rect = renderer.domElement.getBoundingClientRect()
       const x = e.clientX - rect.left
       const y = e.clientY - rect.top

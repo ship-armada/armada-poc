@@ -635,7 +635,7 @@ export function CreateProposalForm({ contracts, wallet, govData, onCreated }: Cr
               type="text"
               value={outflowAbsolute}
               onChange={(e) => setOutflowAbsolute(e.target.value)}
-              placeholder="Absolute cap (human-readable)"
+              placeholder="Absolute minimum (human-readable)"
               className="rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
             />
             <input
@@ -648,8 +648,10 @@ export function CreateProposalForm({ contracts, wallet, govData, onCreated }: Cr
           </div>
           <p className="text-xs text-neutral-500">
             One-time initialization of outflow rate limits for a token. Required before any
-            treasury distributions or steward spending. Limit = min(bps% of balance, absolute cap),
-            but never below the floor. Floor is immutable after initialization.
+            treasury distributions or steward spending. Limit = max(bps% of balance, absolute minimum),
+            and never below the floor. The absolute value is a floor on the limit, not a ceiling —
+            it guarantees at least that much can move per window even when the balance is small.
+            Floor is immutable after initialization.
           </p>
         </div>
       )}
@@ -725,7 +727,7 @@ export function CreateProposalForm({ contracts, wallet, govData, onCreated }: Cr
                     type="text"
                     value={outflowUpdateAbsolute}
                     onChange={(e) => setOutflowUpdateAbsolute(e.target.value)}
-                    placeholder="New absolute cap (must be ≥ floor)"
+                    placeholder="New absolute minimum (must be ≥ floor)"
                     className="w-full rounded bg-neutral-800 px-3 py-2 text-sm text-neutral-200 placeholder-neutral-600"
                   />
                 )}
@@ -735,7 +737,7 @@ export function CreateProposalForm({ contracts, wallet, govData, onCreated }: Cr
 
           <p className="text-xs text-neutral-500">
             Updates an already-initialized outflow config. The floor is immutable —
-            absolute cap cannot be lowered below it. Window must be ≥ 1 day.
+            the absolute minimum cannot be lowered below it. Window must be ≥ 1 day.
             Read current values via Etherscan: treasury.getOutflowConfig(token).
           </p>
         </div>

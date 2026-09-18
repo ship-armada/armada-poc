@@ -231,13 +231,15 @@ and ArmadaRedemption. Only governor/pause shutdown callbacks and a settled crowd
 are stubbed. Multisig signatures/owner management are outside this contract's tests;
 allocator-address authorization is tested by impersonation. The pre-funding tests
 exercise incomplete initialization, blocked delegation, missing permissions, wrong
-allocator/cap, quorum omissions, and mismatched wind-down wiring.
+allocator/cap, quorum omissions, and mismatched wind-down wiring. The deployment
+fixture derives its deadline from the current block timestamp; a regression test
+advances the clock beyond the former fixed deadline to catch suite-order dependence.
 
 Validation against base revision `532bc0641443879e30c07b98970f6e11d5d9400c`:
 
 - Focused suite above: **34 passed**, including the three stateful invariants.
 - Repository `npm run test:forge`: **798 passed**, with its default 0.8.17/London configuration.
-- Hardhat governance integration, adversarial and veto suites plus reserve deployment guards: **124 passed**.
+- Hardhat governance integration, adversarial and veto suites plus reserve deployment guards: **125 passed**.
 - Network configuration tests: **9 passed** using
   `node --no-experimental-strip-types node_modules/mocha/bin/_mocha --require ts-node/register 'config/*.test.ts'`.
   The plain npm command encounters this runtime's native TypeScript/ESM loader mismatch.

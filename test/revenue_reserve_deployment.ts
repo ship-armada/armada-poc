@@ -2,7 +2,7 @@
 // ABOUTME: Misconfiguration cases fail while the RevenueLock still has no funds to strand.
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+import { loadFixture, takeSnapshot, time } from "@nomicfoundation/hardhat-network-helpers";
 import { deployGovernorProxy } from "./helpers/deploy-governor";
 import { assertAllocatorMultisig, assertReservePreFunding, validateReservePlan } from "../scripts/revenue-reserve";
 
@@ -33,9 +33,11 @@ describe("Reserve deployment funding gate", function () {
     await distributor.bindRevenueLock(lockAddress);
     const redemption = await (await ethers.getContractFactory("ArmadaRedemption"))
       .deploy(tokenAddress, treasury.address, lockAddress, crowdfund.address);
+    // The full suite shares a clock; earlier tests may have advanced it by years.
+    const windDownDeadline = (await time.latest()) + 365 * 24 * 60 * 60;
     const windDown = await (await ethers.getContractFactory("ArmadaWindDown")).deploy(tokenAddress,
       treasury.address, governorAddress, await redemption.getAddress(), pause.address,
-      await counter.getAddress(), lockAddress, deployer.address, ethers.parseEther("10000"), 2_000_000_000);
+      await counter.getAddress(), lockAddress, deployer.address, ethers.parseEther("10000"), windDownDeadline);
     const windDownAddress = await windDown.getAddress();
     await lock.setWindDownContract(windDownAddress);
     await counter.setWindDownContract(windDownAddress);
@@ -58,6 +60,20 @@ describe("Reserve deployment funding gate", function () {
     await assertReservePreFunding(plan);
     expect(await token.balanceOf(plan.revenueLockAddress)).to.equal(0);
     expect(await lock.activated()).to.equal(false);
+  });
+
+  // WHY: Other suites advance the shared chain clock beyond the old fixed deadline.
+  // Recreate the fixture at that future time, then restore the clock for later tests.
+  it("passes after earlier suites advance beyond the former fixed deadline", async function () {
+    const snapshot = await takeSnapshot();
+    try {
+      await time.increaseTo(Math.max(await time.latest(), 2_000_000_000) + 365 * 24 * 60 * 60);
+      const { plan, exclude } = await fixture();
+      await exclude();
+      await assertReservePreFunding(plan);
+    } finally {
+      await snapshot.restore();
+    }
   });
 
   // WHY: A token-only view cannot detect omission from the governor's quorum exclusions.

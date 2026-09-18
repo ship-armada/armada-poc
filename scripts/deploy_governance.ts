@@ -37,6 +37,7 @@ import {
   getGovernanceDeploymentFile,
 } from "../config/networks";
 import { createNonceManager, rejectAnvilAddresses, saveDeployment } from "./deploy-utils";
+import { assertAllocatorMultisig, validateReservePlan } from "./revenue-reserve";
 
 interface GovernanceDeployment {
   chainId: number;
@@ -53,6 +54,7 @@ interface GovernanceDeployment {
     revenueCounter: string;
     revenueCounterImpl: string;
     revenueLock: string;
+    revenueReserveDistributor?: string;
     shieldPauseController: string;
     redemption: string;
     windDown: string;
@@ -71,6 +73,13 @@ async function main() {
   const chainId = Number(network.chainId);
   const config = getNetworkConfig();
   const nm = await createNonceManager(deployer);
+  // Fail before any deployment transactions if reserve + direct grants exceed the 20% budget.
+  const reserveCap = validateReservePlan(config.revenueLockBeneficiaries,
+    ethers.parseUnits(config.armDistribution.revenueLock, 18), config.revenueReserve);
+  if (config.revenueReserve) {
+    rejectAnvilAddresses([config.revenueReserve.allocator], "Reserve allocator");
+    await assertAllocatorMultisig(config.revenueReserve.allocator);
+  }
 
   const role = getChainRole(chainId);
   if (!role) {
@@ -197,6 +206,18 @@ async function main() {
   const revenueLockBeneficiaries = beneficiaryConfig.map(b => b.address);
   const revenueLockAmounts = beneficiaryConfig.map(b => ethers.parseUnits(b.amount, 18));
 
+  // The reserve is one fixed beneficiary of the existing RevenueLock, within its total.
+  let revenueReserveDistributor: string | undefined;
+  if (config.revenueReserve) {
+    const Distributor = await ethers.getContractFactory("RevenueReserveDistributor");
+    const reserve = await Distributor.deploy(armTokenAddress, config.revenueReserve.allocator, reserveCap, nm.override());
+    await reserve.waitForDeployment();
+    revenueReserveDistributor = await reserve.getAddress();
+    revenueLockBeneficiaries.push(revenueReserveDistributor);
+    revenueLockAmounts.push(reserveCap);
+    console.log(`   Reserve distributor: ${revenueReserveDistributor} — ${config.revenueReserve.amount} ARM`);
+  }
+
   // Max advance per elapsed day for the observed-revenue ratchet — 18-decimal USD.
   // $10k/day per PARAMETER_MANIFEST.md (ship-armada/crowdfund) and issue #225:
   // forces a malicious RevenueCounter upgrade to take ≥100 days to accelerate
@@ -221,6 +242,14 @@ async function main() {
   await revenueLockContract.deploymentTransaction()!.wait();
   const revenueLockAddress = await revenueLockContract.getAddress();
   console.log(`   RevenueLock: ${revenueLockAddress}`);
+  if (revenueReserveDistributor) {
+    const reserve = await ethers.getContractAt("RevenueReserveDistributor", revenueReserveDistributor);
+    await (await reserve.bindRevenueLock(revenueLockAddress, nm.override())).wait();
+    if (await reserve.revenueLock() !== revenueLockAddress ||
+        await revenueLockContract.allocation(revenueReserveDistributor) !== reserveCap) {
+      throw new Error("Reserve binding/allocation read-back mismatch; do not fund this lock");
+    }
+  }
 
   // Post-deploy read-back verification: confirm on-chain state matches intent
   console.log("   Verifying RevenueLock beneficiary allocations...");
@@ -239,7 +268,7 @@ async function main() {
   }
   const onChainTotal = await revenueLockContract.totalAllocation();
   const expectedTotal = revenueLockAmounts.reduce((sum, a) => sum + a, 0n);
-  if (onChainTotal !== expectedTotal) {
+  if (onChainTotal !== expectedTotal || onChainTotal !== revenueLockAllocation) {
     throw new Error(
       `RevenueLock total allocation MISMATCH:\n` +
       `  Expected: ${ethers.formatUnits(expectedTotal, 18)} ARM\n` +
@@ -356,6 +385,7 @@ async function main() {
       revenueCounter: revenueCounterAddress,
       revenueCounterImpl: revenueCounterImplAddress,
       revenueLock: revenueLockAddress,
+      ...(revenueReserveDistributor ? { revenueReserveDistributor } : {}),
       shieldPauseController: shieldPauseAddress,
       redemption: redemptionAddress,
       windDown: windDownAddress,

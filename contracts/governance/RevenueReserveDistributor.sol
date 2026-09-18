@@ -20,6 +20,12 @@ interface IRevenueLockReserveDistributor {
 
 interface IArmadaReserveDelegation {
     function delegate(address delegatee) external;
+    function whitelistInitialized() external view returns (bool);
+    function noDelegationSet() external view returns (bool);
+    function authorizedDelegatorsInitialized() external view returns (bool);
+    function transferWhitelist(address account) external view returns (bool);
+    function noDelegation(address account) external view returns (bool);
+    function authorizedDelegator(address account) external view returns (bool);
 }
 
 /// @title RevenueReserveDistributor
@@ -28,7 +34,7 @@ interface IArmadaReserveDelegation {
 /// lifetime cap. Claims and collection never restore assignment capacity.
 /// At wind-down the unassigned allocation belongs to that same allocator, subject
 /// to the original lock's frozen milestone. Assignments then permanently stop.
-/// @dev claim() collects and pays everyone. claimCollected(), claimRange() and
+/// @dev distribute() collects and pays everyone. claimCollected(), claimRange() and
 /// claimSelf() use only tokens already collected, without reading RevenueCounter.
 /// Batch calls intentionally let third parties cause ARM to enter circulation.
 /// Recipient delegation is preserved; undelegated recipients must delegate themselves.
@@ -71,6 +77,8 @@ contract RevenueReserveDistributor is ReentrancyGuard {
     error TooManyBeneficiaries();
     error InvalidRange();
     error InvalidCollection();
+    error IncompleteTokenSetup();
+    error InvalidIntegration();
 
     event RevenueLockBound(address indexed revenueLock);
     event Assigned(address indexed beneficiary, uint256 amount, uint256 cumulativeAssigned);
@@ -109,6 +117,27 @@ contract RevenueReserveDistributor is ReentrancyGuard {
         emit RevenueLockBound(lockAddress);
     }
 
+    /// @notice Returns true or reverts if the bound lock/token permissions are unsafe.
+    /// Deployment MUST call this after token initialization and before funding the lock.
+    /// @dev A current-state check, not an ongoing permission gate. Does not authenticate
+    /// contract code or verify the allocator, governor exclusions, or wind-down wiring.
+    /// Keeping it out of payout paths preserves access to already-collected entitlements.
+    function verifyIntegration() external view returns (bool) {
+        _requireBound();
+        IArmadaReserveDelegation token = IArmadaReserveDelegation(address(armToken));
+        if (!token.whitelistInitialized() || !token.noDelegationSet() || !token.authorizedDelegatorsInitialized()) {
+            revert IncompleteTokenSetup();
+        }
+        address lockAddress = address(revenueLock);
+        if (
+            revenueLock.armToken() != address(armToken) || revenueLock.allocation(address(this)) != reserveCap
+                || token.noDelegation(address(this)) || !token.transferWhitelist(address(this))
+                || token.authorizedDelegator(address(this)) || !token.transferWhitelist(lockAddress)
+                || !token.authorizedDelegator(lockAddress)
+        ) revert InvalidIntegration();
+        return true;
+    }
+
     /// @notice Add an irrevocable grant. Self-assignment by the allocator is allowed.
     function assign(address beneficiary, uint256 amount) external {
         if (msg.sender != allocator) revert NotAllocator();
@@ -139,7 +168,7 @@ contract RevenueReserveDistributor is ReentrancyGuard {
     /// @notice Anyone pays gas once to collect and pay all registered beneficiaries.
     /// Nothing due is a successful no-op. A failed transfer reverts the whole batch.
     /// If RevenueCounter is unavailable, use claimCollected/claimRange/claimSelf.
-    function claim() external nonReentrant returns (uint256 amount) {
+    function distribute() external nonReentrant returns (uint256 amount) {
         _requireBound();
         _collect();
         return _claimRange(0, beneficiaries.length);
@@ -185,7 +214,7 @@ contract RevenueReserveDistributor is ReentrancyGuard {
     }
 
     /// @notice Payable from collected funds now. Does not preview a future collection.
-    /// A zero value can become positive after collect() or claim() collects another tier.
+    /// A zero value can become positive after collect() or distribute() collects another tier.
     function claimable(address beneficiary) external view returns (uint256) {
         return Math.mulDiv(effectiveAllocation(beneficiary), collectedBps, BPS) - claimed[beneficiary];
     }

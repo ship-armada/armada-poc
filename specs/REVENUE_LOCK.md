@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-A single shared contract that holds all early network ARM (2,400,000 total) and releases it to beneficiaries as cumulative protocol revenue milestones are reached. This is the enforcement mechanism for revenue-gated token unlocks described in GOVERNANCE.md and ARM_TOKEN.md.
+A single shared contract that holds all early network ARM (2,400,000 total: team, advisors, airdrop and the later-assigned reserve) and releases it to beneficiaries as cumulative protocol revenue milestones are reached. This is the enforcement mechanism for revenue-gated token unlocks described in GOVERNANCE.md and ARM_TOKEN.md.
 
 **This is a contract behavior spec.** It defines what the contract does, what it reads, and what it guarantees.
 
@@ -21,11 +21,11 @@ RevenueLock (immutable, non-upgradeable)
   ├── immutable: MAX_REVENUE_INCREASE_PER_DAY
   ├── holds: 2,400,000 ARM (early network)
   ├── tracks: per-beneficiary allocations and released amounts
-  └── releases: ARM to beneficiary wallet + delegates atomically via delegateOnBehalf()
+  └── releases: ARM to beneficiary wallet + delegates atomically via transferAndDelegate()
 
 ARM Token
-  ├── whitelist includes RevenueLock address (constructor-set)
-  └── delegateOnBehalf() callable by RevenueLock (constructor-set)
+  ├── whitelist includes RevenueLock address (one-time init)
+  └── transferAndDelegate() callable by RevenueLock (one-time delegator init)
 ```
 
 RevenueLock never reads `RevenueCounter.recognizedRevenueUsd()` directly for entitlement calculations. All reads go through `_updateMaxObservedRevenue()`, which enforces the monotonic ratchet and rate cap before updating `maxObservedRevenue`. Entitlement is always computed from `maxObservedRevenue`, not the raw counter value.
@@ -52,9 +52,13 @@ ARM is distributed to this contract as part of the bootstrap-holder distribution
 
 ### Deployment order
 
-There are circular dependencies across the contract set. The ARM token constructor needs immutable references to: revenue-lock (whitelist + `delegateOnBehalf`), crowdfund (whitelist + `delegateOnBehalf`), treasury (whitelist + delegation revert), governor executor / timelock (`setTransferable` caller), wind-down contract (`setTransferable` caller), and bootstrap holder (whitelist). The revenue-lock constructor needs the ARM token address and the RevenueCounter address.
-
-**Recommended: CREATE2 precomputed addresses.** Compute all contract addresses before deploying any of them. The full set that may need precomputation: ARM token, RevenueLock, RevenueCounter proxy, Governor/Timelock, WindDown contract, and CrowdfundContract. Deploy in any order — all constructors use the precomputed addresses.
+The current deployment uses one-time initialization and binding calls rather than
+requiring precomputed addresses. Deploy ARM and RevenueCounter first. For the reserve,
+deploy its distributor before RevenueLock, include its address and exact allocation
+in the lock's constructor, then bind the distributor immediately. Finish token
+permissions, governor exclusions and wind-down wiring, then pass the reserve's
+pre-funding checks **before** transferring ARM into the lock. See the reserve spec's
+deployment sequence. Funding cannot be undone, even before `activate()`.
 
 ---
 
@@ -67,12 +71,22 @@ Set at deployment. Cannot be modified after deployment.
 | Recipient 1 | `[amount]` | |
 | Recipient 2 | `[amount]` | |
 | ... | ... | ... |
-| Knowable Safe | `[amount]` | Reserve for future contributors. Released ARM distributed off-chain via token agreements after global transfer unlock. |
+| RevenueReserveDistributor | `[reserve amount]` | Approximately 3% of total ARM supply, within this lock's 20%; fixed allocator multisig assigns irrevocable grants on-chain. |
 | ... | ... | ... |
 
-**Total must equal exactly 2,400,000 ARM.** The contract should verify this at deployment.
+**Total must equal exactly 2,400,000 ARM.** The deployment script enforces this allocation budget; the contract stores the constructor allocation sum.
 
-**No post-deployment modifications.** There is no function to add, remove, or change beneficiaries. There is no admin role. The Knowable Safe handles future contributor allocation off-chain after its ARM is released and global transfers are enabled — the lock contract doesn't need to know about this.
+**No post-deployment modifications to RevenueLock.** Its beneficiary list and amounts remain immutable.
+For the launch reserve, the list includes `RevenueReserveDistributor` as one beneficiary;
+that separate contract tracks later irrevocable grants and permits sponsored payouts.
+See [REVENUE_RESERVE_DISTRIBUTOR.md](REVENUE_RESERVE_DISTRIBUTOR.md) for the integration.
+An exactly 3% reserve is 360,000 ARM; other direct beneficiaries collectively receive
+2,040,000 ARM. This replaces the earlier off-chain Knowable Safe distribution mechanism
+for the reserve. It does not assume the reserve is exclusively a team allocation.
+The approximately 17%/3% split is of **total supply**, and both portions sit within
+this lock's combined 20% allocation. Direct recipients retain their own release path.
+The reserve multisig's unassigned fallback at wind-down must be disclosed alongside
+its actual controlling parties.
 
 ---
 
@@ -174,10 +188,10 @@ ObservedRevenueUpdated(uint256 oldMax, uint256 newMax, uint256 reportedByCounter
 |---|---|
 | No admin role | Beneficiary list and milestone table are immutable |
 | No `addBeneficiary()` or `removeBeneficiary()` | List is set at deployment and cannot change |
-| No `reassign()` | Future contributor allocation is handled off-chain by Knowable after release |
+| No `reassign()` | Future contributor grants are tracked in the separate reserve distributor; this lock's beneficiary allocation stays fixed |
 | No `delegate()` on behalf of unreleased tokens | Unreleased ARM sits in this contract; this contract has no delegation code path for its own balance — unreleased ARM is structurally vote-inert |
 | No upgradeability | No proxy, no UUPS. Deployed bytecode is final. |
-| No wind-down interaction | If wind-down triggers, this contract is unaffected. Unreleased ARM stays locked. Beneficiaries can still call `release()` if milestones have been reached. If the protocol never earned enough revenue, the tokens simply stay here. |
+| No wind-down sweep or extra unlock | Wind-down freezes the ratchet after a final update. Entitled-but-unreleased ARM remains claimable; the still-locked portion remains permanently locked. |
 | No `withdrawAll()` or sweep function | ARM can only leave via `release()` to the entitled beneficiary. No backdoor. |
 
 ---
@@ -191,7 +205,7 @@ ObservedRevenueUpdated(uint256 oldMax, uint256 newMax, uint256 reportedByCounter
 | **Milestone table is immutable** | No code path modifies the unlock schedule after deployment |
 | **Beneficiary list is immutable** | No code path adds, removes, or modifies beneficiaries after deployment |
 | **Unreleased ARM is vote-inert** | This contract has no `delegate()` call path for its own balance. ARM sitting here has zero voting power. |
-| **Released ARM is always delegated** | Every `release()` call atomically delegates via `delegateOnBehalf()`. No ARM enters circulation undelegated. |
+| **Release atomically delegates** | `release()` uses `transferAndDelegate`. The reserve distributor immediately undelegates its own holdings in the same transaction and preserves recipients' existing delegation on payout. |
 | **No over-release** | `alreadyReleased[beneficiary] <= allocation[beneficiary]` at all times |
 | **`maxObservedRevenue` is monotonic** | `maxObservedRevenue` never decreases. RevenueCounter downgrades are invisible to this contract. |
 | **`maxObservedRevenue` is rate-limited** | `maxObservedRevenue` can increase by at most `MAX_REVENUE_INCREASE_PER_DAY × elapsed_days` per call to `_updateMaxObservedRevenue()`. |
@@ -204,8 +218,9 @@ ObservedRevenueUpdated(uint256 oldMax, uint256 newMax, uint256 reportedByCounter
 
 If `triggerWindDown()` is called on the wind-down contract:
 
-- This contract is **unaffected**. It has no wind-down awareness.
-- Unreleased ARM stays locked. If revenue milestones haven't been reached, the tokens remain here permanently.
+- The authorized wind-down contract freezes the ratchet after one final update against the frozen RevenueCounter.
+- ARM entitled under that frozen milestone remains claimable, including amounts not yet released. Only the unvested portion remains locked permanently.
+- The separate reserve distributor permanently stops assignments. Its unassigned entitlement belongs to the allocator multisig, subject to the same frozen unlock percentage.
 - Already-released ARM is in beneficiaries' wallets and is part of the "circulating" supply eligible for pro-rata treasury distribution.
 - Wind-down automatically enables global ARM transfers (`setTransferable(true)`), so beneficiaries who have released ARM can move it to claim their treasury share.
 
@@ -242,24 +257,25 @@ Step 4 is load-bearing: cohort ARM is held in escrow against future revenue and 
 
 | Check | Status |
 |---|---|
-| CREATE2 addresses precomputed for all contracts with circular dependencies (ARM, RevenueLock, RevenueCounter, Governor/Timelock, WindDown, Crowdfund) | ☐ |
+| Expected contract addresses recorded and constructor/one-time bindings verified | ☐ |
 | Beneficiary list finalized and published | ☐ |
 | Total allocations sum to exactly 2,400,000 ARM | ☐ |
 | Milestone table matches GOVERNANCE.md | ☐ |
-| RevenueCounter proxy deployed at precomputed address | ☐ |
-| RevenueLock deployed at precomputed address with correct constructor parameters (including `MAX_REVENUE_INCREASE_PER_DAY`) | ☐ |
+| RevenueCounter proxy deployed at expected address | ☐ |
+| RevenueLock deployed at expected address with correct constructor parameters (including `MAX_REVENUE_INCREASE_PER_DAY`) | ☐ |
 | `RevenueLock.lastSyncTimestamp` correctly initialized to deploy `block.timestamp` (NOT 0) | ☐ |
 | `RevenueLock.maxObservedRevenue` initialized to 0 (NOT seeded from RevenueCounter) | ☐ |
 | ARM token deployed — constructor mints entire 12M supply to bootstrap holder (deployment multisig) | ☐ |
-| ARM token constructor includes RevenueLock address in whitelist | ☐ |
-| ARM token constructor includes RevenueLock address in `delegateOnBehalf` caller list | ☐ |
+| Token whitelist initialized with RevenueLock and reserve distributor | ☐ |
+| Token delegators initialized with RevenueLock; reserve is not an authorized delegator or in `noDelegation` | ☐ |
+| Reserve bound; token initialization complete; quorum exclusions and wind-down wiring verified; pre-funding gate passes | ☐ |
 | Distribution transaction executed: 2.4M ARM to RevenueLock, 1.8M ARM to Crowdfund, 7.8M ARM to Treasury | ☐ |
 | Post-distribution: `RevenueLock` balance == 2,400,000 ARM exactly | ☐ |
 | Post-distribution: `Crowdfund` balance == 1,800,000 ARM exactly | ☐ |
 | Post-distribution: `Treasury` balance == 7,800,000 ARM exactly | ☐ |
 | Post-distribution: bootstrap holder balance == 0 ARM exactly | ☐ |
 | Post-distribution: bootstrap holder has no remaining ARM allowances in any protocol contract | ☐ |
-| Post-distribution: bootstrap holder whitelist entry in ARM token is noted as permanently inert (add-only whitelist; entry cannot be removed — security property is zero-balance, not zero-whitelist-entry) | ☐ |
+| Post-distribution: bootstrap holder removed from the whitelist using its one-time removal function | ☐ |
 | `ARM.totalSupply()` == 12,000,000 × 10^18 (independent supply check) | ☐ |
 | `release()` tested on testnet with mocked revenue counter | ☐ |
 | `syncObservedRevenue()` tested on testnet — confirmed `lastSyncTimestamp` advances on every call regardless of whether `maxObservedRevenue` changed | ☐ |

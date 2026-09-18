@@ -145,12 +145,12 @@ abstract contract RevenueReserveDistributorFixture is Test {
 
 contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
     // WHY: One sponsor must pay all grantees without their signatures or delegation authority.
-    function test_claimPaysEveryoneWithoutPayingCaller() public {
+    function test_distributePaysEveryoneWithoutPayingCaller() public {
         _assign(alice, 3_000e18);
         _assign(bob, 9_000e18);
         _revenue(10_000e18);
         vm.prank(outsider);
-        assertEq(distributor.claim(), 1_200e18);
+        assertEq(distributor.distribute(), 1_200e18);
         assertEq(token.balanceOf(alice), 300e18);
         assertEq(token.balanceOf(bob), 900e18);
         assertEq(token.balanceOf(outsider), 0);
@@ -170,7 +170,7 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
         assertEq(distributor.claimRange(1, 2), 300e18);
         assertEq(distributor.claimRange(0, 3), 900e18);
         assertEq(distributor.claimRange(3, 3), 0);
-        assertEq(distributor.claim(), 0);
+        assertEq(distributor.distribute(), 0);
         assertEq(distributor.claimCollected(), 0);
         vm.prank(alice);
         assertEq(distributor.claimSelf(), 0);
@@ -182,7 +182,7 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
     function test_topUpsAndLateGrantsInheritMilestones() public {
         _assign(alice, 3_000e18);
         _revenue(50_000e18);
-        distributor.claim();
+        distributor.distribute();
         _assign(alice, 1_000e18);
         _assign(bob, 2_000e18);
         assertEq(distributor.claimable(alice), 250e18);
@@ -192,7 +192,7 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
         assertEq(token.balanceOf(bob), 500e18);
         assertEq(distributor.beneficiaryCount(), 3);
         _revenue(100_000e18);
-        distributor.claim();
+        distributor.distribute();
         assertEq(token.balanceOf(alice), 1_600e18);
         assertEq(token.balanceOf(bob), 800e18);
     }
@@ -203,7 +203,7 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
         distributor.assign(alice, 1e18);
         _assign(alice, RESERVE);
         _revenue(1_000_000e18);
-        distributor.claim();
+        distributor.distribute();
         vm.prank(allocator);
         vm.expectRevert(RevenueReserveDistributor.ReserveExceeded.selector);
         distributor.assign(bob, 1e18);
@@ -246,7 +246,7 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
         assertEq(distributor.beneficiaryCount(), 51);
         _revenue(10_000e18);
         windDown.governanceTriggerWindDown();
-        distributor.claim();
+        distributor.distribute();
         assertEq(distributor.totalClaimed(), RESERVE / 10);
     }
 
@@ -257,7 +257,7 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
         vm.prank(alice);
         token.delegate(outsider);
         _revenue(10_000e18);
-        distributor.claim();
+        distributor.distribute();
         assertEq(token.delegates(address(distributor)), address(0));
         assertEq(token.getVotes(address(distributor)), 0);
         assertEq(token.getVotes(allocator), 0);
@@ -274,7 +274,7 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
         _assign(address(rejecting), 3_000e18);
         _assign(alice, 3_000e18);
         _revenue(10_000e18);
-        distributor.claim();
+        distributor.distribute();
         assertEq(token.balanceOf(address(rejecting)), 300e18);
         assertEq(token.balanceOf(alice), 300e18);
     }
@@ -287,7 +287,7 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
         distributor.collect();
         _failCounter();
         vm.expectRevert();
-        distributor.claim();
+        distributor.distribute();
         assertEq(distributor.claimable(alice), 300e18);
         vm.prank(alice);
         assertEq(distributor.claimSelf(), 300e18);
@@ -303,7 +303,7 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
         _failCounter();
         _assign(alice, 3_000e18);
         assertEq(distributor.collect(), 0);
-        assertEq(distributor.claim(), 3_000e18);
+        assertEq(distributor.distribute(), 3_000e18);
     }
 
     // WHY: Donated ARM must neither inflate entitlement nor restore spent assignment capacity.
@@ -312,14 +312,14 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
         vm.prank(treasury);
         token.transfer(address(distributor), 1_000e18);
         _assign(alice, 3_000e18);
-        distributor.claim();
+        distributor.distribute();
         assertEq(distributor.collectedBps(), 0);
         assertEq(distributor.claimable(alice), 0);
         assertEq(distributor.totalClaimed(), 0);
         assertEq(distributor.remainingAssignable(), RESERVE - 3_000e18);
         _revenue(1_000_000e18);
         windDown.governanceTriggerWindDown();
-        distributor.claim();
+        distributor.distribute();
         assertEq(token.balanceOf(address(distributor)), 1_000e18);
         assertEq(distributor.totalClaimed(), RESERVE);
     }
@@ -331,7 +331,7 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
         _revenue(10_000e18);
         vm.mockCallRevert(address(token), abi.encodeCall(IERC20.transfer, (bob, 900e18)), "blocked in test");
         vm.expectRevert();
-        distributor.claim();
+        distributor.distribute();
         assertEq(token.balanceOf(alice), 0);
         assertEq(distributor.claimed(alice), 0);
         assertEq(distributor.totalCollected(), 0);
@@ -358,7 +358,7 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
         _assign(alice, 100_000e18);
         _assign(allocator, 20_000e18);
         _revenue(10_000e18);
-        distributor.claim();
+        distributor.distribute();
         assertEq(token.balanceOf(allocator), 2_000e18);
         _revenue(100_000e18);
         windDown.governanceTriggerWindDown();
@@ -367,13 +367,13 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
         vm.prank(allocator);
         vm.expectRevert(RevenueReserveDistributor.AssignmentsClosed.selector);
         distributor.assign(bob, 1e18);
-        distributor.claim();
+        distributor.distribute();
         assertEq(token.balanceOf(alice), 40_000e18);
         assertEq(token.balanceOf(allocator), 104_000e18);
         assertEq(distributor.totalClaimed(), 144_000e18);
         assertEq(distributor.totalAssigned(), 120_000e18);
         assertEq(lock.lockedAtWindDown(), LOCK_TOTAL * 6000 / 10_000);
-        assertEq(distributor.claim(), 0);
+        assertEq(distributor.distribute(), 0);
     }
 
     // WHY: freezeAtWindDown performs a final ratchet update which may cross a previously uncollected tier.
@@ -386,7 +386,7 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
         vm.warp(block.timestamp + 1 days);
         windDown.governanceTriggerWindDown();
         _failCounter();
-        distributor.claim();
+        distributor.distribute();
         assertEq(distributor.collectedBps(), 1000);
         assertEq(token.balanceOf(alice), 300e18);
         assertEq(token.balanceOf(allocator), (RESERVE - 3_000e18) / 10);
@@ -398,7 +398,7 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
         vm.prank(outsider);
         windDown.triggerWindDown();
         assertEq(distributor.effectiveAllocation(allocator), RESERVE);
-        assertEq(distributor.claim(), 0);
+        assertEq(distributor.distribute(), 0);
         assertEq(token.balanceOf(allocator), 0);
     }
 
@@ -407,7 +407,7 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
         _assign(alice, RESERVE);
         _revenue(1_000_000e18);
         windDown.governanceTriggerWindDown();
-        distributor.claim();
+        distributor.distribute();
         assertEq(distributor.effectiveAllocation(allocator), 0);
         assertEq(token.balanceOf(alice), RESERVE);
         assertEq(token.balanceOf(address(distributor)), 0);
@@ -418,7 +418,7 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
         _assign(alice, 3_000e18);
         counter.attestRevenue(1_000_000e18);
         vm.warp(block.timestamp + 1 days);
-        distributor.claim();
+        distributor.distribute();
         assertEq(lock.maxObservedRevenue(), 10_000e18);
         assertEq(distributor.collectedBps(), 1000);
         assertEq(token.balanceOf(alice), 300e18);
@@ -445,7 +445,7 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
         usdc.mint(address(redemption), circulating / 1e12);
         if (directFirst) _redeemDirect();
         uint256 beforeClaims = redemption.circulatingSupply();
-        distributor.claim();
+        distributor.distribute();
         assertEq(redemption.circulatingSupply(), beforeClaims);
         _redeem(alice);
         _redeem(bob);
@@ -486,7 +486,7 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
         vm.expectRevert(RevenueReserveDistributor.AlreadyBound.selector);
         distributor.bindRevenueLock(address(lock));
         vm.expectRevert(RevenueReserveDistributor.NotBound.selector);
-        fresh.claim();
+        fresh.distribute();
         vm.prank(allocator);
         vm.expectRevert(RevenueReserveDistributor.NotBound.selector);
         fresh.assign(alice, 1e18);
@@ -524,11 +524,11 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
         if (a > 0) _assign(alice, a * quantum);
         if (b > 0) _assign(allocator, b * quantum);
         _revenue(50_000e18);
-        distributor.claim();
+        distributor.distribute();
         if (c > 0) _assign(alice, c * quantum);
         _revenue(250_000e18);
         windDown.governanceTriggerWindDown();
-        distributor.claim();
+        distributor.distribute();
         assertEq(distributor.totalClaimed(), RESERVE * 6000 / 10_000);
         assertEq(token.balanceOf(address(distributor)), 0);
         assertEq(token.balanceOf(alice) + token.balanceOf(allocator), distributor.totalClaimed());
@@ -546,11 +546,11 @@ contract RevenueReserveDistributorGasTest is RevenueReserveDistributorFixture {
     }
 
     // WHY: The proposed one-sponsor batch must fit comfortably in an L1 transaction for all 50 grantees.
-    function testGas_claim50Undelegated() public {
+    function testGas_distribute50Undelegated() public {
         _revenue(10_000e18);
         _cool();
         uint256 beforeGas = gasleft();
-        distributor.claim();
+        distributor.distribute();
         uint256 used = beforeGas - gasleft();
         emit log_named_uint("50 grantees, initial collection and payout (execution gas)", used);
         assertLt(used, 8_000_000);
@@ -558,7 +558,7 @@ contract RevenueReserveDistributorGasTest is RevenueReserveDistributorFixture {
     }
 
     // WHY: Distinct delegate checkpoints plus an allocator payout are the heavier 51-recipient wind-down case.
-    function testGas_claim51DelegatedAtWindDown() public {
+    function testGas_distribute51DelegatedAtWindDown() public {
         for (uint256 i; i < 50; ++i) {
             address who = address(uint160(0x1000 + i));
             vm.prank(who);
@@ -571,7 +571,7 @@ contract RevenueReserveDistributorGasTest is RevenueReserveDistributorFixture {
         vm.roll(block.number + 1);
         _cool();
         uint256 beforeGas = gasleft();
-        distributor.claim();
+        distributor.distribute();
         uint256 used = beforeGas - gasleft();
         emit log_named_uint("50 delegated grantees + allocator fallback (execution gas)", used);
         assertLt(used, 8_000_000);

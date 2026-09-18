@@ -58,7 +58,7 @@ contract ReserveDistributorHandler is Test {
     function claim(uint256 mode, uint256 actor) external {
         mode %= 4;
         if (mode == 0) {
-            distributor.claim();
+            distributor.distribute();
         } else if (mode == 1) {
             distributor.claimCollected();
         } else if (mode == 2) {
@@ -146,7 +146,7 @@ contract RevenueReserveDistributorInvariantTest is RevenueReserveDistributorFixt
             vm.warp(block.timestamp + 1000 days);
             windDown.governanceTriggerWindDown();
         }
-        distributor.claim();
+        distributor.distribute();
         assertEq(token.balanceOf(address(distributor)), 0);
         assertEq(distributor.totalClaimed(), RESERVE * lock.unlockPercentage() / 10_000);
     }

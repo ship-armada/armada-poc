@@ -108,7 +108,7 @@ export interface NetworkConfig {
    * All values are whole-token counts (no decimals). The deployer retains the remainder.
    *   Treasury:    7.8M — protocol treasury (65%)
    *   Crowdfund:   1.8M — backs MAX_SALE at $1/ARM
-   *   RevenueLock: 2.4M — team (15%) + airdrop (5%), revenue-gated release
+   *   RevenueLock: 2.4M — team, advisors, airdrop and optional reserve (20% combined)
    *   Deployer remainder: 0
    */
   armDistribution: {
@@ -122,6 +122,10 @@ export interface NetworkConfig {
    * For local dev, Anvil default accounts are used as placeholders.
    */
   revenueLockBeneficiaries: RevenueLockBeneficiary[];
+  /** Optional reserve within the RevenueLock total. With a reserve enabled, the
+   * beneficiary list above contains only direct recipients (total minus reserve).
+   * Both fields must be explicitly set; neither a Safe nor an amount is invented. */
+  revenueReserve?: { allocator: string; amount: string };
   /** Security council address for crowdfund cancel authority. Required for non-local. */
   securityCouncilAddress: string;
   /** Launch team address — issues crowdfund seeds and direct invites during the
@@ -297,6 +301,12 @@ let _cachedConfig: NetworkConfig | null = null;
 export function getNetworkConfig(): NetworkConfig {
   if (_cachedConfig) return _cachedConfig;
 
+  const reserveAllocator = process.env.REVENUE_RESERVE_ALLOCATOR?.trim();
+  const reserveAmount = process.env.REVENUE_RESERVE_AMOUNT?.trim();
+  if (Boolean(reserveAllocator) !== Boolean(reserveAmount)) {
+    throw new Error("Set both REVENUE_RESERVE_ALLOCATOR and REVENUE_RESERVE_AMOUNT, or neither");
+  }
+
   const env = (optionalEnv("DEPLOY_ENV", "local")) as DeployEnv;
   const cctpMode = (optionalEnv("CCTP_MODE", "mock")) as CCTPMode;
 
@@ -371,6 +381,9 @@ export function getNetworkConfig(): NetworkConfig {
       revenueLock: optionalEnv("ARM_REVENUE_LOCK_ALLOCATION", "2400000"),
     },
     revenueLockBeneficiaries,
+    revenueReserve: reserveAllocator && reserveAmount
+      ? { allocator: reserveAllocator, amount: reserveAmount }
+      : undefined,
     securityCouncilAddress: optionalEnv("SECURITY_COUNCIL_ADDRESS", ""),
     launchTeamAddress: optionalEnv("LAUNCH_TEAM_ADDRESS", ""),
     crowdfundOpenDelay: numEnv("CROWDFUND_OPEN_DELAY", 600),

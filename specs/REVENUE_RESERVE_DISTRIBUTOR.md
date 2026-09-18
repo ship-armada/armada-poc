@@ -14,7 +14,7 @@ existing RevenueLock audit does not cover this distributor or its integration.
   reduce, redirect, or reclaim them. Self-assignment is allowed.
 - The lifetime assignment cap is fixed at deployment. Claims never replenish it.
 - New grants inherit milestones already achieved. There is no separate vesting clock.
-- Anyone can call `claim()` to collect newly unlocked ARM and pay **every recipient
+- Anyone can call `distribute()` to collect newly unlocked ARM and pay **every recipient
   registered in the distributor**, including the allocator's entitlement, if any.
 - The caller pays gas; payments always go to the recorded addresses. No signatures
   from recipients, server approval, or allocator action are needed to claim.
@@ -27,34 +27,50 @@ existing RevenueLock audit does not cover this distributor or its integration.
   claimable; the still-locked portion stays in the original lock permanently.
 
 The multisig enforces its own signing policy. The distributor authenticates its
-address; it does not deploy a multisig or enforce a particular implementation's
-threshold/owner ABI. Verify three intended owners and threshold two before launch.
-Signer rotation can occur inside that multisig; its distributor role address is fixed.
+address and does not implement multisig signatures. The launch scripts require a
+deployed Safe-compatible wallet reporting three distinct owners and threshold two;
+these getters are consistency checks, not authentication of wallet code. Verify the
+intended implementation, owner identities, modules and guards before launch. Signer
+rotation can occur inside that multisig; its distributor role address is fixed.
 
-## Which tokens receive batch payouts?
+## Allocation and payout scope
 
-The wrapper cannot force claims for addresses registered directly in RevenueLock:
-its existing `release()` pays only `msg.sender`.
+RevenueLock holds the combined **20% of total ARM supply** allocated to team members,
+advisors, airdrop recipients and the reserve. At deployment, it registers the new
+distributor as one beneficiary for approximately **3% of total supply**, with the
+remaining approximately **17%** registered directly to the initial beneficiaries.
+The reserve is included in the 20%; it does not increase the lock's total allocation.
+No separate team-only source for the reserve is assumed.
 
-| Deployment arrangement | Result |
-|---|---|
-| Known 17% registered directly in RevenueLock; remaining 3% allocated to distributor | Batch payouts cover only grants made from the 3% reserve. Direct beneficiaries keep their existing release path. |
-| Entire 20% allocated to distributor; known 17% assigned internally before launch | Batch payouts cover both initial and later recipients; 3% remains initially assignable. All recipients must fit within the distributor's cap. |
+At 12M total supply and an exactly 3% reserve, this means:
 
-Percentages are of total ARM supply. At the current 12M supply, the examples are
-2.4M ARM total, 2.04M known allocations, and 360,000 ARM initially unassigned.
-Choose one arrangement before deploying RevenueLock; its beneficiary list is fixed.
-This implementation does not modify the existing production deployment scripts or
-UI. The wiring below must be incorporated into the chosen launch deployment.
+| RevenueLock beneficiary | ARM allocation | Share of total supply |
+|---|---:|---:|
+| Direct initial beneficiaries, combined | 2,040,000 | 17% |
+| RevenueReserveDistributor | 360,000 | 3% |
+| **Total in RevenueLock** | **2,400,000** | **20%** |
+
+The final reserve amount is an explicit deployment parameter, fixed as an exact token
+amount before deploying RevenueLock. The deployment validates that direct allocations
+plus the reserve equal the configured lock total. These percentages describe custody
+and assignment timing, not a replacement breakdown among team, advisors and airdrop;
+published category allocations must reconcile with the final recipient schedule.
+
+**Sponsored batches cover only the reserve's assignees.** Direct RevenueLock
+beneficiaries retain their existing `release()` path, which only pays its caller.
+The full-20% wrapper alternative is outside this launch design: the reserve's 50
+non-allocator slots must not impose a limit on the separate airdrop recipient list.
+The allocator occupies its own reserved slot. There is no UI integration in this PR.
 
 ## Entry points
 
 | Function | Caller | Effect |
 |---|---|---|
 | `bindRevenueLock(lock)` | Deployer, once | Permanently bind the original lock after it has been deployed with this distributor as beneficiary. |
+| `verifyIntegration()` | Anyone, view | Return true or revert on incomplete token initialization, wrong lock allocation/token, or unsafe source/distributor permissions. Required before funding. |
 | `assign(beneficiary, amount)` | Allocator, before wind-down | Add an irrevocable grant; emit `Assigned`. |
 | `collect()` | Anyone | Pull all newly releasable reserve ARM; emit `Collected` when nonzero. No recipient payments. |
-| `claim()` | Anyone | Collect if anything is newly releasable, then pay the entire list. Normal sponsored-payout operation. |
+| `distribute()` | Anyone | Collect if anything is newly releasable, then pay the entire list. Normal sponsored-payout operation. |
 | `claimCollected()` | Anyone | Pay the entire list from already-collected entitlements without consulting RevenueCounter. |
 | `claimRange(start, end)` | Anyone | Pay indexes `[start, end)` from already-collected funds. Smaller-transaction fallback. |
 | `claimSelf()` | Anyone | Pay only the caller from already-collected funds. Individual fallback. |
@@ -72,7 +88,7 @@ collection, even if someone directly donates tokens to the distributor.
 
 There is no persistent batch cursor: repeat or overlapping ranges cannot double-pay.
 `claimSelf()` is not a collection operation. A beneficiary needing the latest tier
-can call `collect()` permissionlessly and then claim, or use the normal `claim()`.
+can call `collect()` permissionlessly and then claim, or use the normal `distribute()`.
 
 ## Accounting
 
@@ -132,10 +148,10 @@ batch atomically. The caller can use smaller ranges or an individual payout. Fai
 transactions do not consume entitlements. Caller-supplied payout addresses,
 configurable delegate targets, sweep functions and token approvals are not exposed.
 
-Normal `claim()` and `collect()` can fail if the upgradeable RevenueCounter fails
+Normal `distribute()` and `collect()` can fail if the upgradeable RevenueCounter fails
 before wind-down. Already-collected entitlements remain available through the
 cached-only payout paths, which read the original immutable lock's freeze flag but
-never consult RevenueCounter. After complete collection, even normal `claim()`
+never consult RevenueCounter. After complete collection, even normal `distribute()`
 skips upstream collection. After wind-down, the original lock's frozen release path
 also avoids counter reads. Failed upstream wind-down itself is an inherited risk.
 
@@ -146,51 +162,94 @@ ETH donations are unsupported and have no rescue mechanism.
 
 ## Deployment order and verification
 
-1. Deploy/verify the intended 2-of-3 multisig and existing ARM token.
-2. Deploy the distributor with `(armToken, allocatorMultisig, reserveCap)`.
-3. Deploy RevenueLock with that distributor as a beneficiary for exactly `reserveCap`.
-4. Bind the distributor once, from its deployer. The binding checks token, allocation,
-   zero prior release and unfrozen status; verify the exact deployed code/address too.
-5. In token setup, include RevenueLock and distributor in the transfer whitelist.
-   Authorize **RevenueLock only** as a delegator for this integration. Do not put the
-   distributor in `noDelegation`: that would make upstream collection revert.
-6. Include the distributor in the governor's quorum exclusions exactly once. Confirm
-   the allocator is a usable wallet and not a protocol custody/excluded address.
-7. Wire RevenueLock and the revenue counter to the intended wind-down contract;
-   wire token/redemption as in the existing deployment. Fully fund and activate the lock.
-8. Have the multisig assign initial grants, if using the full-20% arrangement. Publish
-   recipients, amounts, cap, remaining reserve and the allocator/fallback policy.
-9. Verify all settings and run the focused integration tests before launch. The
-   binding deployer's remaining address field confers no further control.
+1. Verify the intended ARM token, allocator wallet code and three owners with threshold two.
+2. Configure both `REVENUE_RESERVE_ALLOCATOR` and `REVENUE_RESERVE_AMOUNT` (ARM token units,
+   e.g. `360000`). The reserve is optional in the generic scripts; both variables are
+   required for this launch design. Neither is defaulted or inferred.
+3. Supply `REVENUE_LOCK_BENEFICIARIES_FILE` or `REVENUE_LOCK_BENEFICIARIES_JSON` with the
+   **direct** beneficiaries only (2,040,000 ARM for the example). Do not include another
+   entry for the reserve. Direct amounts plus the reserve must equal
+   `ARM_REVENUE_LOCK_ALLOCATION` (2,400,000 ARM). A full 2.4M direct list plus a 360k
+   reserve fails before any deployment transactions.
+4. `deploy_governance.ts` deploys the distributor, appends its address and exact cap to
+   the lock's constructor arrays, deploys RevenueLock, and immediately binds the two.
+   The manifest records `contracts.revenueReserveDistributor`. The binding caller must
+   be the distributor's constructor `msg.sender`: a factory/CREATE2 helper deployment
+   requires that helper to expose/execute the binding call. Funding an unbound lock
+   strands its reserve if that caller becomes unavailable.
+5. `deploy_crowdfund.ts` requires agreement between reserve config and manifest. Token
+   initialization finishes before funding: source and distributor are whitelisted,
+   RevenueLock is an authorized delegator, and the distributor is neither an authorized
+   delegator nor in `noDelegation`. All three token initialization flags must be set.
+6. Include crowdfund, RevenueLock and distributor in governor quorum exclusions exactly
+   once. Keep the allocator outside the treasury and excluded custody addresses.
+7. Deploy and wire wind-down/redemption, including the immutable lock's one-shot
+   wind-down binding and RevenueCounter's binding, **before funding RevenueLock**.
+8. Immediately before the ARM transfer into RevenueLock, the script runs
+   `assertReservePreFunding()` in `scripts/revenue-reserve.ts`. It checks:
+   - intended token, lock, allocator and cap, plus `verifyIntegration()`;
+   - an unfunded, inactive, unfrozen lock with no prior reserve releases;
+   - lock/distributor quorum exclusions and the allocator's eligibility;
+   - token/governor/lock/counter wind-down bindings and the wind-down contract's
+     reciprocal token/governor/lock/counter references;
+   - the allocator's 2-of-3 owner/threshold getters again.
+9. Fund and activate RevenueLock, run the existing exact-balance/supply and redemption
+   denominator checks, and finish deployment verification before announcing launch.
+   Publish direct allocations, reserve cap, allocator address, subsequent assignments
+   and the wind-down fallback policy.
 
-Existing governance contracts are unchanged. The only existing file changed by
-this implementation is a Hardhat compiler override for the new contract, matching
-the current governance configuration (Solidity 0.8.20, Shanghai, optimizer 200).
-The source pragma remains compatible with the repository's Solidity 0.8.17 baseline.
+**Funding is the irreversible boundary, including before activation.** A failed
+pre-funding check aborts the script while the reserve ARM remains outside the lock.
+Correct or redeploy an unsafe setup before funding; `activate()` is not a recovery path.
+These read checks do not authenticate bytecode or atomically constrain another privileged
+transaction between the checks and funding. Coordinate bootstrap keys and independently
+verify code/addresses. Token governance can later add privileges; `verifyIntegration()`
+reports current state and is deliberately not enforced inside payout functions.
+
+The wind-down remainder is a conditional allocation to the allocator multisig. If
+that wallet is team-controlled, disclose that control and fallback in the cap table
+and crowdfund materials. The fallback includes only the unassigned entitlement; its
+unlocked portion is payable and its locked portion stays permanently locked.
+
+Existing governance contract sources remain unchanged. Scripts and documentation are
+updated for integration; the new contract's Hardhat override follows current governance
+settings (Solidity 0.8.20, Shanghai, optimizer 200). The source remains compatible with
+the repository's Solidity 0.8.17 baseline. Review decisions are recorded in
+[STRATEGY_LOG.md](STRATEGY_LOG.md).
 
 ## Verification
 
 Focused Foundry command, with the repository's locked OpenZeppelin **4.9.6** installed:
 
 ```sh
-forge test --match-path 'test-foundry/RevenueReserveDistributor*.t.sol' \
+forge test --match-path 'test-foundry/RevenueReserve*.t.sol' \
   --use 0.8.20 --evm-version shanghai --optimize --optimizer-runs 200 -vv
 ```
 
 The tests use real ArmadaToken, RevenueLock, RevenueCounter (proxy), ArmadaWindDown
 and ArmadaRedemption. Only governor/pause shutdown callbacks and a settled crowdfund
 are stubbed. Multisig signatures/owner management are outside this contract's tests;
-allocator-address authorization is tested by impersonation.
+allocator-address authorization is tested by impersonation. The pre-funding tests
+exercise incomplete initialization, blocked delegation, missing permissions, wrong
+allocator/cap, quorum omissions, and mismatched wind-down wiring.
 
 Validation against base revision `532bc0641443879e30c07b98970f6e11d5d9400c`:
 
-- Focused suite above: **29 passed**, including the three stateful invariants.
-- Repository `npm run test:forge`: **793 passed**, with its default 0.8.17/London configuration.
-- Hardhat governance integration, adversarial and veto suites: **116 passed**.
-- Hardhat compilation succeeded. `npm run test` (privacy pool integration) stopped
+- Focused suite above: **34 passed**, including the three stateful invariants.
+- Repository `npm run test:forge`: **798 passed**, with its default 0.8.17/London configuration.
+- Hardhat governance integration, adversarial and veto suites plus reserve deployment guards: **124 passed**.
+- Network configuration tests: **9 passed** using
+  `node --no-experimental-strip-types node_modules/mocha/bin/_mocha --require ts-node/register 'config/*.test.ts'`.
+  The plain npm command encounters this runtime's native TypeScript/ESM loader mismatch.
+- Actual CCTP/governance/crowdfund deployment scripts completed on local Anvil both
+  with the 360,000 ARM reserve enabled and with the legacy no-reserve configuration.
+  The local wallet fixture only implements Safe owner/threshold introspection; actual
+  multisig signature execution is outside this test scope.
+- Hardhat compilation succeeded. Repository-wide TypeScript checking still reports
+  errors outside the changed files. `npm run test` (privacy pool integration) stopped
   in its setup because the pinned Armada circuit artifacts were absent, before
   executing its test cases. No claim is made that this ZK integration suite passed.
-- Distributor deployed bytecode: **6,610 bytes** with the Hardhat configuration.
+- Distributor deployed bytecode: **7,931 bytes** with the Hardhat configuration.
 
 Coverage includes cap exhaustion, irrevocable top-ups, inherited tiers, duplicate
 claims, 50 grantees plus fallback, donation isolation, rejecting recipients, failure
@@ -202,8 +261,8 @@ Gas measurements use cold contract/storage access and the compiler settings abov
 
 | Scenario | Measured execution gas |
 |---|---:|
-| Collect and pay 50 undelegated grantees at first milestone | 3,224,696 |
-| Collect and pay 50 separately delegated grantees plus allocator at wind-down | 5,625,923 |
+| Collect and pay 50 undelegated grantees at first milestone | 3,224,650 |
+| Collect and pay 50 separately delegated grantees plus allocator at wind-down | 5,625,877 |
 
 These are measured call execution costs, not a live transaction fee quote. They
 exclude transaction intrinsic gas and do not subtract transaction-level refunds.

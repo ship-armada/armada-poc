@@ -24,8 +24,10 @@ export function isWrongChainError(err: unknown): boolean {
  * We read the live chain via a direct `eth_chainId` request rather than
  * `provider.getNetwork()`: the wagmi→ethers `BrowserProvider` is built with a
  * STATIC network (see `wagmiAdapter`), so `getNetwork()` returns the
- * construction-time chain and would miss a live switch. A provider that can't be
- * queried is left un-asserted (non-blocking) so we never wedge a legitimate send.
+ * construction-time chain and would miss a live switch. A provider with no
+ * `send` method can't be asked, so the send proceeds un-asserted; if the
+ * `eth_chainId` request itself fails, that error propagates and the send is
+ * blocked (fail-closed) rather than broadcasting to an unknown chain.
  */
 export async function assertHubChain(signer: Signer): Promise<void> {
   const provider = signer.provider as

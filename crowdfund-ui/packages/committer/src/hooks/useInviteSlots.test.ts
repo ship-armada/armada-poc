@@ -25,6 +25,7 @@ vi.mock('ethers', async (importOriginal) => {
 
 vi.mock('sonner', () => ({ toast: mockToast }))
 
+import { getHubChainId } from '@/config/network'
 import { useInviteSlots } from './useInviteSlots'
 import type { HopPosition } from './useEligibility'
 import type { UseInviteLinksResult } from './useInviteLinks'
@@ -54,10 +55,16 @@ function makeInviteLinks(): UseInviteLinksResult {
   }
 }
 
+/** A signer whose wallet reports `chainId` live via `eth_chainId`. */
+function signerOnChain(chainId: number): Signer {
+  return { provider: { send: vi.fn().mockResolvedValue('0x' + chainId.toString(16)) } } as unknown as Signer
+}
+
 function renderSection({
   isWrongNetwork = false,
   events = [],
-}: { isWrongNetwork?: boolean; events?: CrowdfundEvent[] } = {}) {
+  signer = {} as Signer,
+}: { isWrongNetwork?: boolean; events?: CrowdfundEvent[]; signer?: Signer } = {}) {
   const switchNetwork = vi.fn()
   // useENS reads via react-query — fresh client per render so caches don't leak.
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -69,7 +76,7 @@ function renderSection({
         [hop0Position],
         makeInviteLinks(),
         null,
-        {} as Signer,
+        signer,
         CROWDFUND,
         WALLET,
         events,
@@ -121,6 +128,15 @@ describe('useInviteSlots onInviteOnchain', () => {
     const { section } = renderSection()
     expect(await sendInvite(section)).toBe(false)
     expect(mockToast.success).not.toHaveBeenCalled()
+  })
+
+  it('resolves false without sending when the wallet switched chains after the network check', async () => {
+    // The wallet state still says hub (isWrongNetwork false), but the live chain differs.
+    const { section } = renderSection({ signer: signerOnChain(getHubChainId() + 1) })
+    expect(await sendInvite(section)).toBe(false)
+    expect(mockInvite).not.toHaveBeenCalled()
+    expect(mockToast.success).not.toHaveBeenCalled()
+    expect(mockToast.error).toHaveBeenCalledWith('Invite failed', expect.anything())
   })
 
   it('resolves false without sending on the wrong network', async () => {

@@ -60,11 +60,23 @@ describe('submitWrite (desktop)', () => {
     expect(method).not.toHaveBeenCalled()
   })
 
-  it('proceeds (non-blocking) when the live chain cannot be queried', async () => {
+  it('proceeds un-asserted when the provider has no way to query the chain', async () => {
     const method = vi.fn().mockResolvedValue({ hash: '0xok' })
     const signer = signerOnChain(null) // provider has no `send`
     await submitWrite(contractWith(method), 'commit', [1], signer)
     expect(method).toHaveBeenCalled()
+  })
+})
+
+describe('submitWrite (desktop, chain query fails)', () => {
+  it('blocks the send when the eth_chainId request fails', async () => {
+    const method = vi.fn()
+    const send = vi.fn().mockRejectedValue(new Error('provider disconnected'))
+    const signer = { provider: { send } } as unknown as Signer
+    await expect(submitWrite(contractWith(method), 'commit', [1], signer)).rejects.toThrow(
+      'provider disconnected',
+    )
+    expect(method).not.toHaveBeenCalled()
   })
 })
 

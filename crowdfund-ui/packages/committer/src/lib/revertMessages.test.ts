@@ -9,6 +9,12 @@ describe('mapRevertToMessage', () => {
     expect(mapRevertToMessage(new Error('user rejected transaction'))).toBe('Transaction rejected by user')
   })
 
+  it('maps the submitWrite wrong-network guard error', () => {
+    expect(mapRevertToMessage(new Error('Wrong network — switch to Ethereum and retry.'))).toBe(
+      'Wrong network — switch to the hub chain in your wallet and retry.',
+    )
+  })
+
   it('maps deadline passed', () => {
     expect(mapRevertToMessage(new Error('deadline passed'))).toBe('The commitment deadline has passed.')
   })

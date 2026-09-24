@@ -39,32 +39,37 @@ rotation can occur inside that multisig; its distributor role address is fixed.
 
 ## Allocation and payout scope
 
-RevenueLock holds the combined **20% of total ARM supply** allocated to team members,
-advisors, airdrop recipients and the reserve. At deployment, it registers the new
-distributor as one beneficiary for approximately **3% of total supply**, with the
-remaining approximately **17%** registered directly to the initial beneficiaries.
-The reserve is included in the 20%; it does not increase the lock's total allocation.
-No separate team-only source for the reserve is assumed.
+RevenueLock holds the combined **20% of total ARM supply** early-network allocation.
+The reserve distributor is one of its immutable beneficiaries. Its exact cap is a
+launch parameter taken from the approved cap table, not a fixed 3% allocation.
+Other RevenueLock beneficiary entries plus the reserve must total 2,400,000 ARM.
+This PR changes reserve custody and assignment mechanics, not category ownership.
 
-At 12M total supply and an exactly 3% reserve, this means:
+**Worked example only:** at 12M total supply, a 360,000 ARM reserve would produce:
 
 | RevenueLock beneficiary | ARM allocation | Share of total supply |
 |---|---:|---:|
-| Direct initial beneficiaries, combined | 2,040,000 | 17% |
+| Other beneficiary entries, combined | 2,040,000 | 17% |
 | RevenueReserveDistributor | 360,000 | 3% |
 | **Total in RevenueLock** | **2,400,000** | **20%** |
 
-The final reserve amount is an explicit deployment parameter, fixed as an exact token
-amount before deploying RevenueLock. The deployment validates that direct allocations
-plus the reserve equal the configured lock total. These percentages describe custody
-and assignment timing, not a replacement breakdown among team, advisors and airdrop;
-published category allocations must reconcile with the final recipient schedule.
+The example and test fixtures are not approval to replace a 120,000 ARM (1%) cap-table
+reserve with 360,000 ARM. If the final cap is 120,000 ARM, other entries must total
+2,280,000 ARM (19%). Freeze the approved amount, controlling Safe, category breakdown,
+and full recipient schedule in the launch parameter manifest before deployment.
 
-**Sponsored batches cover only the reserve's assignees.** Direct RevenueLock
-beneficiaries retain their existing `release()` path, which only pays its caller.
-The full-20% wrapper alternative is outside this launch design: the reserve's 50
-non-allocator slots must not impose a limit on the separate airdrop recipient list.
-The allocator occupies its own reserved slot. There is no UI integration in this PR.
+The airdrop remains a separate Merkle-distribution path; this PR does not make every
+airdrop recipient a direct RevenueLock beneficiary or implement that distributor.
+If the airdrop budget is held within this RevenueLock, its distribution contract must
+be represented in the immutable beneficiary schedule and separately reviewed for
+release, delegation, transfer restrictions, and wind-down compatibility. Do not
+substitute individual airdrop recipients merely to make these scripts pass.
+
+**Sponsored batches cover only reserve assignees.** Other RevenueLock beneficiaries
+retain their existing `release()` path, which only pays its caller. The full-20%
+wrapper alternative is outside this design. The reserve's 50 non-allocator slots do
+not constrain the separate airdrop. The allocator occupies its own reserved slot.
+There is no UI integration in this PR.
 
 ## Entry points
 
@@ -201,20 +206,33 @@ ETH donations are unsupported and have no rescue mechanism.
    - exact equality of `RevenueLock.totalAllocation()` and the configured lock funding;
    - exact beneficiary count and every configured address/allocation, including reserve;
    - an unfunded, inactive, unfrozen lock with no prior reserve releases;
-   - lock/distributor quorum exclusions and the allocator's eligibility;
+   - lock/distributor quorum exclusions and an allocator outside the treasury, exclusions, and `noDelegation` set;
    - token/governor/lock/counter wind-down bindings and the wind-down contract's
      reciprocal token/governor/lock/counter references;
    - the allocator's 2-of-3 owner/threshold getters again.
-9. Fund and activate RevenueLock, run the existing exact-balance/supply and redemption
-   denominator checks, and finish deployment verification before announcing launch.
+9. Fund, run exact-balance/supply checks, ensure activation despite competing callers,
+   and check the redemption denominator. Initialize treasury limits, raise the production
+   timelock delay, save manifests, and renounce bootstrap roles. Complete post-deployment
+   verification before announcing launch.
    Publish direct allocations, reserve cap, allocator address, subsequent assignments
    and the wind-down fallback policy.
 
-Explorer verification uses the same constructor-array builder as deployment, appending
-the distributor after the direct recipients. It verifies both RevenueLock and the
-distributor; reserve constructor values are read from its immutable getters. Preserve
-the original direct-recipient ordering for explorer verification, which requires exact
-constructor encoding. The funding gate permits reordered lists when allocations match.
+Governance deployment persists the original `revenueLockConstructorArgs` in its
+manifest, including ordered beneficiaries and base-unit amounts. Explorer verification
+uses that original order even if current configuration is reordered, checks the
+immutable values and intended allocations, and verifies both RevenueLock and the
+reserve distributor. Old manifests missing these arguments must recover them from
+the original deployment transaction; verification fails explicitly rather than guessing
+an order from the latest environment file.
+
+Activation is permissionless. The deployment helper accepts an already activated lock,
+estimates before reserving a nonce, and tolerates a confirmed mined activation revert
+only when the lock is activated. Ambiguous send failures still abort. This prevents
+an outsider's earlier activation from skipping treasury limits, production timelock
+delay, manifest writes, and bootstrap-role renunciation. Post-deployment verification
+checks the actual `TIMELOCK_ADMIN_ROLE`; hardened mode fails on retained deployer
+admin/proposer/executor/canceller roles or an incorrect production delay, including
+when an interrupted launch has not written its final crowdfund manifest.
 
 **Funding is the irreversible boundary, including before activation.** A failed
 pre-funding check aborts the script before treasury, RevenueLock or crowdfund receives
@@ -235,8 +253,9 @@ unlocked portion is payable and its locked portion stays permanently locked.
 Existing governance contract sources remain unchanged. Scripts and documentation are
 updated for integration; the new contract's Hardhat override follows current governance
 settings (Solidity 0.8.20, Shanghai, optimizer 200). The source remains compatible with
-the repository's Solidity 0.8.17 baseline. Review decisions are recorded in
-[STRATEGY_LOG.md](STRATEGY_LOG.md).
+the repository's Solidity 0.8.17 baseline. Durable decisions belong in
+[the canonical team strategy log](https://github.com/ship-armada/team/blob/main/STRATEGY_LOG.json); migration of the earlier local entry
+is pending. The allocation example is not a converged cap-table decision.
 
 ## Verification
 
@@ -248,8 +267,11 @@ forge test --match-path 'test-foundry/RevenueReserve*.t.sol' \
 ```
 
 The tests use real ArmadaToken, RevenueLock, RevenueCounter (proxy), ArmadaWindDown
-and ArmadaRedemption. Only governor/pause shutdown callbacks and a settled crowdfund
-are stubbed. Multisig signatures/owner management are outside this contract's tests;
+and ArmadaRedemption. The Foundry integration fixture stubs governor/pause shutdown
+callbacks and a settled crowdfund. The Hardhat deployment suite additionally uses the real ArmadaGovernor to
+check payouts before and after proposal creation, unchanged existing eligible-supply
+snapshots, the full-unlock 20%/30% quorum increases, and undelegated recipient votes.
+Multisig signatures/owner management are outside this contract's tests;
 allocator-address authorization is tested by impersonation. The pre-funding tests
 exercise incomplete initialization, blocked delegation, missing permissions, wrong
 allocator/cap, quorum omissions, and mismatched wind-down wiring. The deployment
@@ -291,3 +313,22 @@ These are measured call execution costs, not a live transaction fee quote. They
 exclude transaction intrinsic gas and do not subtract transaction-level refunds.
 Each gas test enforces an 8M execution-gas ceiling. Actual cost depends on state,
 compiler settings and gas price; the sponsor pays it, not each recipient.
+
+## Mainnet acceptance evidence
+
+Before funding, attach the following to the launch review:
+
+- Approved cap table and exact constructor schedule, including the airdrop distribution
+  contract/path, reserve cap, allocator control, and unassigned wind-down fallback.
+- Independent verification that the actual allocator Safe has exactly three identified
+  owners and threshold two, with its chain/address, implementation, modules, guard,
+  and fallback handler reviewed. Do not relax the 2-of-3 check to accommodate a different
+  wallet without an explicit design decision.
+- Written scope acceptance from the Phase 1 auditor (Cyfrin/Dacian) covering
+  `RevenueReserveDistributor.sol`, its ARM/RevenueLock/governor/redemption/wind-down
+  interactions, and the revised governance/crowdfund deployment and verification
+  sequence. Record the exact reviewed commit, auditor acknowledgement, findings, and
+  disposition. Prior RevenueLock or Phase 1 coverage does not establish this coverage.
+
+These are outstanding launch evidence requirements, not confirmations obtained by
+this PR. The project audit handoff tracks the scope amendment.

@@ -37,9 +37,10 @@ import {
   getGovernanceDeploymentFile,
 } from "../config/networks";
 import { createNonceManager, rejectAnvilAddresses, saveDeployment } from "./deploy-utils";
-import { assertAllocatorMultisig, revenueLockSchedule, validateReservePlan } from "./revenue-reserve";
+import { assertAllocatorMultisig, revenueLockSchedule, validateReservePlan, type RevenueLockConstructorArgs } from "./revenue-reserve";
 
 interface GovernanceDeployment {
+  revenueLockConstructorArgs: RevenueLockConstructorArgs;
   chainId: number;
   deployer: string;
   deployBlock: number;
@@ -370,6 +371,8 @@ async function main() {
 
   // Save deployment
   const deployment: GovernanceDeployment = {
+    revenueLockConstructorArgs: [armTokenAddress, revenueCounterAddress, MAX_REVENUE_INCREASE_PER_DAY.toString(),
+      revenueLockBeneficiaries, revenueLockAmounts.map(amount => amount.toString())],
     chainId,
     deployer: deployer.address,
     deployBlock: governanceDeployBlock,

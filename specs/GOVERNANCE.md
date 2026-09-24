@@ -61,7 +61,7 @@ Delegation is free to change at any time. Redelegating takes effect for proposal
 
 **Direct crowdfund and RevenueLock releases enforce atomic delegation.** Both the crowdfund `claim(delegate)` and the revenue-lock `release(delegate)` require a `delegatee` parameter. Self-delegation is valid; it is still an explicit choice. ARM entering circulation through these paths is immediately active in the governance denominator.
 
-**Reserve distributor payouts preserve existing delegation.** The distributor is one beneficiary within RevenueLock's combined 20% allocation (approximately 3% of total supply). It immediately undelegates collected ARM and uses ordinary transfers to pay irrevocable assignees. Anyone may sponsor a batch through `distribute()`. Recipients with no delegate must delegate their wallets to vote. This is an accepted launch decision; see [STRATEGY_LOG.md](STRATEGY_LOG.md).
+**Reserve distributor payouts preserve existing delegation.** The distributor is one beneficiary within RevenueLock's combined 20% allocation (exact reserve cap set by the approved cap table). It immediately undelegates collected ARM and uses ordinary transfers to pay irrevocable assignees. Anyone may sponsor a batch through `distribute()`. Recipients with no delegate must delegate their wallets to vote. This PR implements the sponsored-payout tradeoff described below; durable decisions belong in [the canonical team strategy log](https://github.com/ship-armada/team/blob/main/STRATEGY_LOG.json).
 
 **Treasury distributions do not enforce atomic delegation.** When governance approves a treasury transfer (ARM sent from the whitelisted treasury to a recipient), the recipient receives standard undelegated ARM. They must call `delegate()` themselves. Until they do, that ARM is circulating but vote-inert. This is a known property — the treasury transfer path is a standard ERC-20 transfer, not a `delegateOnBehalf` path. The practical impact is bounded: treasury distributions require governance approval (subject to outflow limits), and recipients are expected to delegate as part of participating in the protocol.
 
@@ -109,7 +109,7 @@ denominator, including while still unclaimed.
 **Accepted sponsorship tradeoff.** A third party can distribute grants before creating a
 proposal and increase eligible supply without beneficiaries initiating a claim or
 delegating. Relative to leaving those grants in excluded custody, the increase is
-bounded by the reserve cap times the current unlock percentage. With a 3% reserve,
+bounded by the reserve cap times the current unlock percentage. For the worked example of a 3% reserve,
 the maximum increase in the percentage component of quorum is 0.6% of total supply at
 20% quorum, or 0.9% at 30% quorum, at full unlock; it is proportionately smaller at
 earlier milestones, and the absolute floor may mask it. This cannot change the stored

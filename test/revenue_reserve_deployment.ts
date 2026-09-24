@@ -2,13 +2,13 @@
 // ABOUTME: Misconfiguration cases fail while the RevenueLock still has no funds to strand.
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { loadFixture, takeSnapshot, time } from "@nomicfoundation/hardhat-network-helpers";
+import { loadFixture, takeSnapshot, time, mine, setBalance } from "@nomicfoundation/hardhat-network-helpers";
 import { deployGovernorProxy } from "./helpers/deploy-governor";
-import { assertAllocatorMultisig, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, validateReservePlan, revenueLockSchedule } from "../scripts/revenue-reserve";
+import { assertAllocatorMultisig, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, validateReservePlan, revenueLockSchedule, type RevenueLockConstructorArgs } from "../scripts/revenue-reserve";
 import { buildRevenueLockVerificationTasks } from "../scripts/verify_sepolia";
 
 describe("Reserve deployment funding gate", function () {
-  async function fixture() {
+  async function fixture(blockAllocatorDelegation = false) {
     const [deployer, a, b, c, treasury, crowdfund, pause] = await ethers.getSigners();
     const allocator = await (await ethers.getContractFactory("ReserveAllocatorIntrospectionMock"))
       .deploy([a.address, b.address, c.address], 2);
@@ -46,7 +46,7 @@ describe("Reserve deployment funding gate", function () {
     await counter.setWindDownContract(windDownAddress);
     await token.setWindDownContract(windDownAddress);
     await governor.setWindDownContract(windDownAddress);
-    await token.initNoDelegation([treasury.address]);
+    await token.initNoDelegation([treasury.address, ...(blockAllocatorDelegation ? [allocatorAddress] : [])]);
     await token.initWhitelist([deployer.address, lockAddress, distributorAddress]);
     await token.initAuthorizedDelegators([lockAddress]);
     // Exclusions are left unset so individual tests can exercise omission.
@@ -55,7 +55,9 @@ describe("Reserve deployment funding gate", function () {
       directBeneficiaries,
       armTokenAddress: tokenAddress, revenueLockAddress: lockAddress, governorAddress, windDownAddress };
     const exclude = () => governor.setExcludedAddresses([lockAddress, distributorAddress]);
-    return { plan, exclude, token, lock, governor, distributor, a, b, c };
+    const constructorArgs: RevenueLockConstructorArgs = [tokenAddress, await counter.getAddress(),
+      ethers.parseEther("10000").toString(), schedule.addresses, schedule.amounts.map(String)];
+    return { plan, exclude, token, lock, governor, distributor, a, b, c, counter, constructorArgs };
   }
 
   // WHY: Valid settings must permit the transfer while funds are still recoverable in the deployer's wallet.
@@ -186,10 +188,10 @@ describe("Reserve deployment funding gate", function () {
 
   // WHY: Explorer arguments must recreate actual deployment input for both reserve contracts.
   it("reconstructs exact lock and distributor deployment inputs", async function () {
-    const { plan, lock, distributor } = await loadFixture(fixture);
+    const { plan, lock, distributor, constructorArgs } = await loadFixture(fixture);
     const tasks = await buildRevenueLockVerificationTasks({ armToken: plan.armTokenAddress,
       revenueCounter: await lock.revenueCounter(), revenueLock: plan.revenueLockAddress,
-      revenueReserveDistributor: plan.distributorAddress }, plan.directBeneficiaries);
+      revenueReserveDistributor: plan.distributorAddress }, plan.directBeneficiaries, constructorArgs);
     expect(tasks.map(t => t.name)).to.deep.equal(["RevenueReserveDistributor", "RevenueLock"]);
     for (const task of tasks) {
       const factory = await ethers.getContractFactory(task.name);
@@ -207,7 +209,9 @@ describe("Reserve deployment funding gate", function () {
     const directLock = await factory.deploy(plan.armTokenAddress, await lock.revenueCounter(),
       ethers.parseEther("10000"), schedule.addresses, schedule.amounts);
     const tasks = await buildRevenueLockVerificationTasks({ armToken: plan.armTokenAddress,
-      revenueCounter: await lock.revenueCounter(), revenueLock: await directLock.getAddress() }, plan.directBeneficiaries);
+      revenueCounter: await lock.revenueCounter(), revenueLock: await directLock.getAddress() }, plan.directBeneficiaries,
+      [plan.armTokenAddress, await lock.revenueCounter(), ethers.parseEther("10000").toString(),
+        schedule.addresses, schedule.amounts.map(String)]);
     expect(tasks).to.have.length(1);
     const args = tasks[0].constructorArguments as [string, string, bigint, string[], bigint[]];
     expect((await factory.getDeployTransaction(...args)).data)
@@ -215,6 +219,81 @@ describe("Reserve deployment funding gate", function () {
     await expect(assertRevenueLockSchedule(await directLock.getAddress(),
       plan.directBeneficiaries.map((b, i) => i === 0 ? { ...b, address: c.address } : b)))
       .to.be.rejectedWith("beneficiary allocation mismatch");
+  });
+
+  // WHY: The allocator fallback must be able to delegate its voting-eligible ARM.
+  it("rejects a noDelegation allocator before funding", async function () {
+    const { plan, exclude, token } = await fixture(true);
+    await exclude();
+    await expect(assertReservePreFunding(plan)).to.be.rejectedWith("noDelegation address");
+    expect(await token.balanceOf(plan.revenueLockAddress)).to.equal(0);
+  });
+
+  // WHY: Set-equivalent config order must not change the original constructor encoding.
+  it("preserves constructor input after current beneficiaries are reordered", async function () {
+    const { plan, lock, constructorArgs } = await loadFixture(fixture);
+    const contracts = { armToken: plan.armTokenAddress, revenueCounter: await lock.revenueCounter(),
+      revenueLock: plan.revenueLockAddress, revenueReserveDistributor: plan.distributorAddress };
+    const tasks = await buildRevenueLockVerificationTasks(contracts,
+      [...plan.directBeneficiaries].reverse(), JSON.parse(JSON.stringify(constructorArgs)));
+    const args = tasks.find(t => t.name === "RevenueLock")!.constructorArguments as RevenueLockConstructorArgs;
+    expect((await (await ethers.getContractFactory("RevenueLock")).getDeployTransaction(...args)).data)
+      .to.equal(lock.deploymentTransaction()!.data);
+    await expect(buildRevenueLockVerificationTasks(contracts, plan.directBeneficiaries))
+      .to.be.rejectedWith("Original RevenueLock constructor arguments missing");
+    const badArgs: RevenueLockConstructorArgs = [...constructorArgs];
+    badArgs[2] = "1";
+    await expect(buildRevenueLockVerificationTasks(contracts, plan.directBeneficiaries, badArgs))
+      .to.be.rejectedWith("do not match deployed lock");
+  });
+
+  // WHY: Sponsored payouts change future eligible supply, never an existing proposal's
+  // stored denominator. Exercise the real governor at both 20% and 30% quorum.
+  it("pins sponsored-payout quorum effects with the real governor", async function () {
+    const { plan, exclude, token, lock, governor, distributor, counter, a, c } = await fixture();
+    await exclude();
+    await assertReservePreFunding(plan);
+    const circulating = ethers.parseEther("1200000");
+    await token.transfer(plan.revenueLockAddress, plan.revenueLockAllocation);
+    await token.transfer(a.address, circulating);
+    const [deployer] = await ethers.getSigners();
+    await token.transfer(await governor.treasuryAddress(), await token.balanceOf(deployer.address));
+    await token.connect(a).delegate(a.address);
+    await lock.activate();
+    await setBalance(plan.allocator, ethers.parseEther("1"));
+    const allocator = await ethers.getImpersonatedSigner(plan.allocator);
+    try {
+      await distributor.connect(allocator).assign(c.address, plan.reserveCap);
+    } finally {
+      await ethers.provider.send("hardhat_stopImpersonatingAccount", [plan.allocator]);
+    }
+    await counter.attestRevenue(ethers.parseEther("1000000"));
+    await time.increase(101 * 86400);
+    await mine();
+    const propose = async (extended: boolean) => {
+      await governor.connect(a).propose(extended ? 1 : 4,
+        extended ? [plan.armTokenAddress] : [], extended ? [0] : [],
+        extended ? [token.interface.encodeFunctionData("setTransferable", [true])] : [], "Reserve quorum regression");
+      return governor.proposalCount();
+    };
+    const oldIds = [await propose(false), await propose(true)];
+    const bps = [2000n, 3000n];
+    await distributor.distribute();
+    expect(await token.balanceOf(c.address)).to.equal(plan.reserveCap);
+    expect(await token.getVotes(c.address)).to.equal(0);
+    expect(await token.getVotes(plan.distributorAddress)).to.equal(0);
+    for (let i = 0; i < oldIds.length; i++) {
+      const old = await governor.getProposal(oldIds[i]);
+      expect(old.snapshotEligibleSupply).to.equal(circulating);
+      expect(await governor.quorum(oldIds[i])).to.equal(circulating * bps[i] / 10000n);
+      const newId = await propose(i === 1);
+      const current = await governor.getProposal(newId);
+      expect(current.snapshotEligibleSupply).to.equal(circulating + plan.reserveCap);
+      expect(await governor.quorum(newId) - await governor.quorum(oldIds[i]))
+        .to.equal(plan.reserveCap * bps[i] / 10000n);
+      expect(await token.getPastVotes(c.address, current.snapshotBlock)).to.equal(0);
+      expect(await token.getPastVotes(plan.distributorAddress, current.snapshotBlock)).to.equal(0);
+    }
   });
 
   // WHY: Running a check after funding is too late; the deployment guard must reject this sequencing.

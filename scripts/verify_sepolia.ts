@@ -41,7 +41,7 @@ import {
 } from "../config/networks";
 import { loadDeployment } from "./deploy-utils";
 import type { RevenueLockBeneficiary } from "../config/networks";
-import { assertRevenueLockSchedule, revenueLockSchedule } from "./revenue-reserve";
+import { assertRevenueLockSchedule, type RevenueLockConstructorArgs } from "./revenue-reserve";
 
 interface VerifyTask {
   name: string;
@@ -53,7 +53,7 @@ interface VerifyTask {
 /** Read immutable reserve arguments from the deployed instance, not a later env file. */
 export async function buildRevenueLockVerificationTasks(c: {
   armToken: string; revenueCounter: string; revenueLock: string; revenueReserveDistributor?: string;
-}, direct: RevenueLockBeneficiary[]): Promise<VerifyTask[]> {
+}, direct: RevenueLockBeneficiary[], originalArgs?: RevenueLockConstructorArgs): Promise<VerifyTask[]> {
   const tasks: VerifyTask[] = [];
   let reserve: { address: string; cap: bigint } | undefined;
   if (c.revenueReserveDistributor) {
@@ -63,10 +63,21 @@ export async function buildRevenueLockVerificationTasks(c: {
       constructorArguments: [await distributor.armToken(), await distributor.allocator(), reserve.cap] });
   }
   await assertRevenueLockSchedule(c.revenueLock, direct, reserve);
-  const { addresses, amounts } = revenueLockSchedule(direct, reserve);
+  if (!originalArgs) {
+    throw new Error("Original RevenueLock constructor arguments missing; recover deployment transaction input into governance manifest revenueLockConstructorArgs");
+  }
+  const [token, counter, rate, addresses, amounts] = originalArgs;
   const lock = await ethers.getContractAt("RevenueLock", c.revenueLock);
-  tasks.push({ name: "RevenueLock", address: c.revenueLock,
-    constructorArguments: [c.armToken, c.revenueCounter, await lock.MAX_REVENUE_INCREASE_PER_DAY(), addresses, amounts] });
+  if (ethers.getAddress(token) !== ethers.getAddress(c.armToken) ||
+      ethers.getAddress(token) !== ethers.getAddress(await lock.armToken()) ||
+      ethers.getAddress(counter) !== ethers.getAddress(c.revenueCounter) ||
+      ethers.getAddress(counter) !== ethers.getAddress(await lock.revenueCounter()) ||
+      BigInt(rate) !== await lock.MAX_REVENUE_INCREASE_PER_DAY() || addresses.length !== amounts.length) {
+    throw new Error("Original RevenueLock constructor arguments do not match deployed lock");
+  }
+  await assertRevenueLockSchedule(c.revenueLock, addresses.map((address, i) =>
+    ({ address, amount: ethers.formatUnits(amounts[i], 18), label: "original constructor" })));
+  tasks.push({ name: "RevenueLock", address: c.revenueLock, constructorArguments: originalArgs });
   return tasks;
 }
 
@@ -111,7 +122,7 @@ async function buildGovernanceCrowdfundTasks(): Promise<VerifyTask[]> {
   const windDownDeadline = await windDown.windDownDeadline();
   const revenueThreshold = await windDown.revenueThreshold();
 
-  const revenueLockTasks = await buildRevenueLockVerificationTasks(c, config.revenueLockBeneficiaries);
+  const revenueLockTasks = await buildRevenueLockVerificationTasks(c, config.revenueLockBeneficiaries, gov.revenueLockConstructorArgs);
 
   return [
     // --- Governance contracts ---

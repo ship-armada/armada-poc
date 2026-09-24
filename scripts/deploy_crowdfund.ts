@@ -28,7 +28,7 @@ import {
 import { createNonceManager, rejectAnvilAddresses, loadDeployment, saveDeployment, timelockCall } from "./deploy-utils";
 import { MULTICALL3_ADDRESS, MULTICALL3_RUNTIME_BYTECODE } from "./multicall3-bytecode";
 
-import { assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, validateReservePlan } from "./revenue-reserve";
+import { ensureRevenueLockActivated, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, validateReservePlan } from "./revenue-reserve";
 
 interface CrowdfundDeployment {
   chainId: number;
@@ -409,11 +409,11 @@ async function main() {
   console.log("   Gate 4 passed: no residual deployer allowances to protocol contracts");
 
   // 5e. Activate RevenueLock — required before any beneficiary can call release().
-  // Permissionless one-shot; the contract verifies its own ARM balance internally
-  // (must be >= totalAllocation). Fails fast if Gate 1 above somehow underfunded.
+  // Permissionless one-shot: another caller may activate after funding. Tolerate
+  // that race so treasury limits and timelock hardening below still finish.
   console.log("   Activating RevenueLock...");
   const revenueLock = await ethers.getContractAt("RevenueLock", revenueLockAddress);
-  await (await revenueLock.activate(nm.override())).wait();
+  await ensureRevenueLockActivated(revenueLock, nm);
   console.log(`   RevenueLock activated`);
 
   // 9b. Redemption circulating-supply invariant (deploy-time misconfiguration guard).

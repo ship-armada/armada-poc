@@ -248,3 +248,26 @@ armada-crowdfund-audit/
 **Notable inclusions** (documents auditors may not expect):
 - `PARAMETER_MANIFEST.md` — exact deployment values with decimal encodings; auditors should verify constructor args match this document
 - `AUDIT_HANDOFF.md` — this document; the reading guide and priority hierarchy for the entire package
+
+
+## PR #529 scope amendment: reserve distributor and launch scripts
+
+**Status: written auditor acceptance required before mainnet funding.** This is a
+scope request, not a representation that Cyfrin/Dacian has accepted or audited it.
+
+The Phase 1 scope must explicitly include:
+
+- `RevenueReserveDistributor.sol`: irreversible assignment, cap and rounding,
+  collection and undelegation, sponsored/cached claims, and wind-down fallback.
+- Integration with ARM permissions, RevenueLock, RevenueCounter, real-governor quorum
+  snapshots, and wind-down/redemption accounting, including counter failure.
+- `deploy_governance.ts`, `deploy_crowdfund.ts`, `revenue-reserve.ts`,
+  `verify_sepolia.ts`, `verify_deployment.ts`, and `verify-timelock.ts`: constructor
+  provenance, checks before any ARM transfer, activation races and nonce handling,
+  treasury limits, timelock delay, role renunciation, and final verification.
+- The exact launch cap table, airdrop distribution path, allocator Safe configuration,
+  and the relationship between the approved schedule and persisted constructor input.
+
+Record the auditor's written acknowledgement, exact commit SHA, review dates, findings,
+and closure evidence in the audit package. Keep this item open until that evidence
+exists. The earlier RevenueLock review and passing CI do not establish scope coverage.

@@ -1,8 +1,8 @@
-# Revenue-Lock Contract — Behavior Spec
+# Revenue-Lock Contract: Behaviour Spec
 
 ## 1. Purpose
 
-A single shared contract that holds all early network ARM (2,400,000 total: team, advisors, airdrop and the later-assigned reserve) and releases it to beneficiaries as cumulative protocol revenue milestones are reached. This is the enforcement mechanism for revenue-gated token unlocks described in GOVERNANCE.md and ARM_TOKEN.md.
+A single shared contract that holds all early network ARM (2,400,000 total across the approved beneficiary schedule, including the reserve and any distribution contracts) and releases it to beneficiaries as cumulative protocol revenue milestones are reached. This is the enforcement mechanism for revenue-gated token unlocks described in GOVERNANCE.md and ARM_TOKEN.md.
 
 **This is a contract behavior spec.** It defines what the contract does, what it reads, and what it guarantees.
 
@@ -71,7 +71,7 @@ Set at deployment. Cannot be modified after deployment.
 | Recipient 1 | `[amount]` | |
 | Recipient 2 | `[amount]` | |
 | ... | ... | ... |
-| RevenueReserveDistributor | `[reserve amount]` | Approximately 3% of total ARM supply, within this lock's 20%; fixed allocator multisig assigns irrevocable grants on-chain. |
+| RevenueReserveDistributor | `[reserve amount]` | Exact cap-table amount within this lock's 20%; fixed allocator multisig assigns irrevocable grants on-chain. |
 | ... | ... | ... |
 
 **Total must equal exactly 2,400,000 ARM.** The deployment script enforces this allocation budget; the contract stores the constructor allocation sum.
@@ -80,11 +80,12 @@ Set at deployment. Cannot be modified after deployment.
 For the launch reserve, the list includes `RevenueReserveDistributor` as one beneficiary;
 that separate contract tracks later irrevocable grants and permits sponsored payouts.
 See [REVENUE_RESERVE_DISTRIBUTOR.md](REVENUE_RESERVE_DISTRIBUTOR.md) for the integration.
-An exactly 3% reserve is 360,000 ARM; other direct beneficiaries collectively receive
-2,040,000 ARM. This replaces the earlier off-chain Knowable Safe distribution mechanism
-for the reserve. It does not assume the reserve is exclusively a team allocation.
-The approximately 17%/3% split is of **total supply**, and both portions sit within
-this lock's combined 20% allocation. Direct recipients retain their own release path.
+A 360,000 ARM reserve with 2,040,000 ARM in other entries is a worked example only,
+not a change to the approved cap table. A 120,000 ARM reserve would leave 2,280,000
+ARM in other entries. This replaces off-chain Safe distribution for the reserve;
+it does not define the source category or replace the separate Merkle airdrop path.
+Individual airdrop recipients are not assumed to be direct lock beneficiaries.
+Publish the exact schedule and any distribution-contract integration before funding.
 The reserve multisig's unassigned fallback at wind-down must be disclosed alongside
 its actual controlling parties.
 

@@ -1,6 +1,8 @@
 // ABOUTME: Validates reserve allocation plans and gates irreversible RevenueLock funding.
-// ABOUTME: Shared by deployment scripts and tests; never sends transactions.
+// ABOUTME: Shared read-only funding checks and race-safe permissionless activation.
 import { ethers } from "hardhat";
+import type { ContractTransactionResponse } from "ethers";
+import type { NonceManager } from "./deploy-utils";
 import type { RevenueLockBeneficiary } from "../config/networks";
 import { rejectAnvilAddresses } from "./deploy-utils";
 
@@ -127,6 +129,9 @@ export async function assertReservePreFunding(plan: ReservePreFunding): Promise<
       throw new Error("RevenueLock and reserve distributor must each be quorum-excluded exactly once");
     }
   }
+  if (await token.noDelegation(plan.allocator)) {
+    throw new Error("Reserve allocator must not be a noDelegation address");
+  }
   if (exclusions.some(excluded => same(excluded, plan.allocator)) ||
       same(await governor.treasuryAddress(), plan.allocator)) {
     throw new Error("Reserve allocator must not be a quorum-excluded custody address");
@@ -143,4 +148,40 @@ export async function assertReservePreFunding(plan: ReservePreFunding): Promise<
     throw new Error("Reserve wind-down wiring is incomplete, mismatched or already active");
   }
   await assertAllocatorMultisig(plan.allocator);
+}
+
+/** JSON-safe original constructor input, including beneficiary order. */
+export type RevenueLockConstructorArgs = [string, string, string, string[], string[]];
+
+type ActivatableLock = {
+  activated(): Promise<boolean>;
+  activate: {
+    (overrides: { gasLimit: bigint; nonce?: number }): Promise<ContractTransactionResponse>;
+    estimateGas(): Promise<bigint>;
+  };
+};
+
+/** Permissionless activation may race deployment. Only tolerate a proven completed
+ * activation; never swallow an ambiguous send failure and continue with a nonce gap. */
+export async function ensureRevenueLockActivated(lock: ActivatableLock, nm: NonceManager): Promise<void> {
+  if (await lock.activated()) return;
+  let estimate: bigint;
+  try {
+    // Estimate before reserving a nonce. Another caller may already have activated.
+    estimate = await lock.activate.estimateGas();
+  } catch (error) {
+    if (await lock.activated()) return;
+    throw error;
+  }
+  // Supplying gas avoids a second estimation after nm.override() consumes a nonce.
+  // A race after estimation becomes a mined revert, which also consumes that nonce.
+  const tx = await lock.activate({ ...nm.override(), gasLimit: estimate * 120n / 100n + 10_000n });
+  try {
+    const receipt = await tx.wait();
+    if (!receipt || receipt.status !== 1) throw new Error("RevenueLock activation receipt missing or failed");
+  } catch (error) {
+    const receipt = (error as { receipt?: { hash?: string; status?: number } }).receipt;
+    if (receipt?.hash !== tx.hash || receipt.status !== 0 || !await lock.activated()) throw error;
+  }
+  if (!await lock.activated()) throw new Error("RevenueLock activation not confirmed");
 }

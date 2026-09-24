@@ -17,6 +17,7 @@
 
 import { ethers } from "hardhat";
 import { loadDeployment } from "./deploy-utils";
+import { timelockBootstrapChecks } from "./verify-timelock";
 import {
   isLocal,
   isCCTPReal,
@@ -290,7 +291,6 @@ async function checkGovernanceWiring(govManifest: any) {
   const PROPOSER_ROLE = await timelock.PROPOSER_ROLE();
   const EXECUTOR_ROLE = await timelock.EXECUTOR_ROLE();
   const CANCELLER_ROLE = await timelock.CANCELLER_ROLE();
-  const TIMELOCK_ADMIN_ROLE = await timelock.DEFAULT_ADMIN_ROLE();
 
   for (const [roleName, roleHash] of [
     ["PROPOSER_ROLE", PROPOSER_ROLE],
@@ -305,14 +305,12 @@ async function checkGovernanceWiring(govManifest: any) {
     }
   }
 
-  // Deployer renounced admin
-  const deployerAddr = govManifest.deployer;
-  const deployerHasAdmin = await timelock.hasRole(TIMELOCK_ADMIN_ROLE, deployerAddr);
-  if (deployerHasAdmin) {
-    warn(GROUP, "Deployer renounced timelock admin",
-      "Deployer still has TIMELOCK_ADMIN_ROLE (expected if crowdfund not yet deployed)");
-  } else {
-    pass(GROUP, "Deployer renounced timelock admin");
+  // In hardened mode, an incomplete bootstrap is a failure even if the final
+  // crowdfund manifest was never written. Other modes support partial deployment.
+  const config = getNetworkConfig();
+  for (const check of await timelockBootstrapChecks(timelockAddr, govManifest.deployer,
+    config.hardenTimelock ? BigInt(config.timelockDelay) : undefined)) {
+    results.push({ group: GROUP, ...check });
   }
 
   // Governor → steward link

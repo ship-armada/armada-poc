@@ -6,6 +6,34 @@ import { rejectAnvilAddresses } from "./deploy-utils";
 
 export type RevenueReserveConfig = { allocator: string; amount: string };
 
+/** Constructor order is shared by deployment and explorer verification. */
+export function revenueLockSchedule(direct: RevenueLockBeneficiary[], reserve?: { address: string; cap: bigint }) {
+  const addresses = direct.map(b => ethers.getAddress(b.address));
+  const amounts = direct.map(b => ethers.parseUnits(b.amount, 18));
+  if (reserve) {
+    addresses.push(ethers.getAddress(reserve.address));
+    amounts.push(reserve.cap);
+  }
+  if (new Set(addresses).size !== addresses.length || addresses.includes(ethers.ZeroAddress) ||
+      amounts.some(amount => amount <= 0n)) throw new Error("Invalid or duplicate RevenueLock schedule");
+  return { addresses, amounts };
+}
+
+/** Count plus every unique allocation rules out extra, missing or replaced recipients. */
+export async function assertRevenueLockSchedule(address: string, direct: RevenueLockBeneficiary[],
+  reserve?: { address: string; cap: bigint }): Promise<void> {
+  const { addresses, amounts } = revenueLockSchedule(direct, reserve);
+  const lock = await ethers.getContractAt("RevenueLock", address);
+  if (await lock.beneficiaryCount() !== BigInt(addresses.length)) {
+    throw new Error("RevenueLock beneficiary count mismatch");
+  }
+  for (let i = 0; i < addresses.length; i++) {
+    if (await lock.allocation(addresses[i]) !== amounts[i]) {
+      throw new Error(`RevenueLock beneficiary allocation mismatch: ${addresses[i]}`);
+    }
+  }
+}
+
 /** Direct beneficiaries plus the optional reserve must exactly exhaust the lock's budget. */
 export function validateReservePlan(
   beneficiaries: RevenueLockBeneficiary[],
@@ -63,6 +91,7 @@ export interface ReservePreFunding {
   allocator: string;
   reserveCap: bigint;
   revenueLockAllocation: bigint;
+  directBeneficiaries: RevenueLockBeneficiary[];
   armTokenAddress: string;
   revenueLockAddress: string;
   governorAddress: string;
@@ -73,6 +102,8 @@ export interface ReservePreFunding {
  * another privileged transaction between this read and funding. */
 export async function assertReservePreFunding(plan: ReservePreFunding): Promise<void> {
   await assertRevenueLockAllocation(plan.revenueLockAddress, plan.revenueLockAllocation);
+  await assertRevenueLockSchedule(plan.revenueLockAddress, plan.directBeneficiaries,
+    { address: plan.distributorAddress, cap: plan.reserveCap });
   const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
   const distributor = await ethers.getContractAt("RevenueReserveDistributor", plan.distributorAddress);
   const token = await ethers.getContractAt("ArmadaToken", plan.armTokenAddress);

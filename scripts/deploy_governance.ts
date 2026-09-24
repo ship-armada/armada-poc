@@ -37,7 +37,7 @@ import {
   getGovernanceDeploymentFile,
 } from "../config/networks";
 import { createNonceManager, rejectAnvilAddresses, saveDeployment } from "./deploy-utils";
-import { assertAllocatorMultisig, validateReservePlan } from "./revenue-reserve";
+import { assertAllocatorMultisig, revenueLockSchedule, validateReservePlan } from "./revenue-reserve";
 
 interface GovernanceDeployment {
   chainId: number;
@@ -203,8 +203,6 @@ async function main() {
   // TODO: Set REVENUE_LOCK_BENEFICIARIES_JSON with finalized mainnet list (see issue #144)
   // Beneficiaries come from network config (Anvil placeholders for local, env var for non-local)
   const beneficiaryConfig = config.revenueLockBeneficiaries;
-  const revenueLockBeneficiaries = beneficiaryConfig.map(b => b.address);
-  const revenueLockAmounts = beneficiaryConfig.map(b => ethers.parseUnits(b.amount, 18));
 
   // The reserve is one fixed beneficiary of the existing RevenueLock, within its total.
   let revenueReserveDistributor: string | undefined;
@@ -213,10 +211,11 @@ async function main() {
     const reserve = await Distributor.deploy(armTokenAddress, config.revenueReserve.allocator, reserveCap, nm.override());
     await reserve.waitForDeployment();
     revenueReserveDistributor = await reserve.getAddress();
-    revenueLockBeneficiaries.push(revenueReserveDistributor);
-    revenueLockAmounts.push(reserveCap);
     console.log(`   Reserve distributor: ${revenueReserveDistributor} — ${config.revenueReserve.amount} ARM`);
   }
+
+  const { addresses: revenueLockBeneficiaries, amounts: revenueLockAmounts } = revenueLockSchedule(
+    beneficiaryConfig, revenueReserveDistributor ? { address: revenueReserveDistributor, cap: reserveCap } : undefined);
 
   // Max advance per elapsed day for the observed-revenue ratchet — 18-decimal USD.
   // $10k/day per PARAMETER_MANIFEST.md (ship-armada/crowdfund) and issue #225:

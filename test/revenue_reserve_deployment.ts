@@ -4,7 +4,8 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { loadFixture, takeSnapshot, time } from "@nomicfoundation/hardhat-network-helpers";
 import { deployGovernorProxy } from "./helpers/deploy-governor";
-import { assertAllocatorMultisig, assertRevenueLockAllocation, assertReservePreFunding, validateReservePlan } from "../scripts/revenue-reserve";
+import { assertAllocatorMultisig, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, validateReservePlan, revenueLockSchedule } from "../scripts/revenue-reserve";
+import { buildRevenueLockVerificationTasks } from "../scripts/verify_sepolia";
 
 describe("Reserve deployment funding gate", function () {
   async function fixture() {
@@ -26,9 +27,11 @@ describe("Reserve deployment funding gate", function () {
     const distributor = await (await ethers.getContractFactory("RevenueReserveDistributor"))
       .deploy(tokenAddress, allocatorAddress, cap);
     const distributorAddress = await distributor.getAddress();
+    const directBeneficiaries = [{ address: a.address, amount: "1040000", label: "a" },
+      { address: b.address, amount: "1000000", label: "b" }];
+    const schedule = revenueLockSchedule(directBeneficiaries, { address: distributorAddress, cap });
     const lock = await (await ethers.getContractFactory("RevenueLock")).deploy(tokenAddress,
-      await counter.getAddress(), ethers.parseEther("10000"), [distributorAddress, a.address],
-      [cap, ethers.parseEther("2040000")]);
+      await counter.getAddress(), ethers.parseEther("10000"), schedule.addresses, schedule.amounts);
     const lockAddress = await lock.getAddress();
     await distributor.bindRevenueLock(lockAddress);
     const redemption = await (await ethers.getContractFactory("ArmadaRedemption"))
@@ -49,6 +52,7 @@ describe("Reserve deployment funding gate", function () {
     // Exclusions are left unset so individual tests can exercise omission.
     const plan = { distributorAddress, allocator: allocatorAddress, reserveCap: cap,
       revenueLockAllocation: ethers.parseEther("2400000"),
+      directBeneficiaries,
       armTokenAddress: tokenAddress, revenueLockAddress: lockAddress, governorAddress, windDownAddress };
     const exclude = () => governor.setExcludedAddresses([lockAddress, distributorAddress]);
     return { plan, exclude, token, lock, governor, distributor, a, b, c };
@@ -95,7 +99,7 @@ describe("Reserve deployment funding gate", function () {
     const { plan, exclude, a } = await loadFixture(fixture);
     await exclude();
     await expect(assertReservePreFunding({ ...plan, reserveCap: plan.reserveCap + 10_000n }))
-      .to.be.rejectedWith("does not match");
+      .to.be.rejectedWith("beneficiary allocation mismatch");
     await expect(assertReservePreFunding({ ...plan, allocator: a.address })).to.be.rejectedWith("does not match");
   });
 
@@ -136,6 +140,81 @@ describe("Reserve deployment funding gate", function () {
     await assertRevenueLockAllocation(await directLock.getAddress(), plan.revenueLockAllocation);
     await expect(assertRevenueLockAllocation(await directLock.getAddress(), plan.revenueLockAllocation + 1n))
       .to.be.rejectedWith("totalAllocation mismatch");
+  });
+
+  // WHY: Equal totals do not prove the immutable schedule matches the latest beneficiary file.
+  it("rejects a substituted recipient while preserving count and total", async function () {
+    const { plan, exclude, token, c } = await loadFixture(fixture);
+    await exclude();
+    const directBeneficiaries = plan.directBeneficiaries.map((b, i) => i === 0 ? { ...b, address: c.address } : b);
+    await expect(assertReservePreFunding({ ...plan, directBeneficiaries }))
+      .to.be.rejectedWith("beneficiary allocation mismatch");
+    expect(await token.balanceOf(plan.revenueLockAddress)).to.equal(0);
+  });
+
+  // WHY: Swapping amounts between existing recipients also preserves the total and count.
+  it("rejects reassigned amounts between the same recipients", async function () {
+    const { plan, exclude } = await loadFixture(fixture);
+    await exclude();
+    const directBeneficiaries = plan.directBeneficiaries.map((b, i) =>
+      ({ ...b, amount: plan.directBeneficiaries[1 - i].amount }));
+    await expect(assertReservePreFunding({ ...plan, directBeneficiaries }))
+      .to.be.rejectedWith("beneficiary allocation mismatch");
+  });
+
+  // WHY: Count and uniqueness prevent duplicate or omitted entries masking unapproved recipients.
+  it("rejects missing, extra and duplicate schedule entries", async function () {
+    const { plan, exclude, c } = await loadFixture(fixture);
+    await exclude();
+    for (const directBeneficiaries of [plan.directBeneficiaries.slice(0, 1),
+      [...plan.directBeneficiaries, { address: c.address, amount: "1", label: "extra" }]]) {
+      await expect(assertReservePreFunding({ ...plan, directBeneficiaries }))
+        .to.be.rejectedWith("beneficiary count mismatch");
+    }
+    await expect(assertReservePreFunding({ ...plan,
+      directBeneficiaries: [plan.directBeneficiaries[0], plan.directBeneficiaries[0]] }))
+      .to.be.rejectedWith("duplicate RevenueLock schedule");
+  });
+
+  // WHY: Funding depends on address/amount membership, not JSON order or address casing.
+  it("accepts reordered unchanged allocations", async function () {
+    const { plan, exclude } = await loadFixture(fixture);
+    await exclude();
+    await assertReservePreFunding({ ...plan, directBeneficiaries:
+      [...plan.directBeneficiaries].reverse().map(b => ({ ...b, address: b.address.toLowerCase() })) });
+  });
+
+  // WHY: Explorer arguments must recreate actual deployment input for both reserve contracts.
+  it("reconstructs exact lock and distributor deployment inputs", async function () {
+    const { plan, lock, distributor } = await loadFixture(fixture);
+    const tasks = await buildRevenueLockVerificationTasks({ armToken: plan.armTokenAddress,
+      revenueCounter: await lock.revenueCounter(), revenueLock: plan.revenueLockAddress,
+      revenueReserveDistributor: plan.distributorAddress }, plan.directBeneficiaries);
+    expect(tasks.map(t => t.name)).to.deep.equal(["RevenueReserveDistributor", "RevenueLock"]);
+    for (const task of tasks) {
+      const factory = await ethers.getContractFactory(task.name);
+      const reconstructed = await factory.getDeployTransaction(...task.constructorArguments);
+      const deployed = task.name === "RevenueLock" ? lock : distributor;
+      expect(reconstructed.data).to.equal(deployed.deploymentTransaction()!.data);
+    }
+  });
+
+  // WHY: The optional reserve must not change verification or gate behavior for a direct-only lock.
+  it("verifies direct-only constructor arguments and rejects direct-only recipient drift", async function () {
+    const { plan, lock, c } = await loadFixture(fixture);
+    const factory = await ethers.getContractFactory("RevenueLock");
+    const schedule = revenueLockSchedule(plan.directBeneficiaries);
+    const directLock = await factory.deploy(plan.armTokenAddress, await lock.revenueCounter(),
+      ethers.parseEther("10000"), schedule.addresses, schedule.amounts);
+    const tasks = await buildRevenueLockVerificationTasks({ armToken: plan.armTokenAddress,
+      revenueCounter: await lock.revenueCounter(), revenueLock: await directLock.getAddress() }, plan.directBeneficiaries);
+    expect(tasks).to.have.length(1);
+    const args = tasks[0].constructorArguments as [string, string, bigint, string[], bigint[]];
+    expect((await factory.getDeployTransaction(...args)).data)
+      .to.equal(directLock.deploymentTransaction()!.data);
+    await expect(assertRevenueLockSchedule(await directLock.getAddress(),
+      plan.directBeneficiaries.map((b, i) => i === 0 ? { ...b, address: c.address } : b)))
+      .to.be.rejectedWith("beneficiary allocation mismatch");
   });
 
   // WHY: Running a check after funding is too late; the deployment guard must reject this sequencing.

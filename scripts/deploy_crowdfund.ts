@@ -28,7 +28,7 @@ import {
 import { createNonceManager, rejectAnvilAddresses, loadDeployment, saveDeployment, timelockCall } from "./deploy-utils";
 import { MULTICALL3_ADDRESS, MULTICALL3_RUNTIME_BYTECODE } from "./multicall3-bytecode";
 
-import { assertRevenueLockAllocation, assertReservePreFunding, validateReservePlan } from "./revenue-reserve";
+import { assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, validateReservePlan } from "./revenue-reserve";
 
 interface CrowdfundDeployment {
   chainId: number;
@@ -105,6 +105,8 @@ async function main() {
   // Governance and crowdfund may run days apart with different environment files.
   // Reject funding drift before consuming any crowdfund-stage one-shot initializers.
   await assertRevenueLockAllocation(revenueLockAddress, revenueLockAllocation);
+  await assertRevenueLockSchedule(revenueLockAddress, config.revenueLockBeneficiaries,
+    reserveAddress ? { address: reserveAddress, cap: reserveCap } : undefined);
   const timelockAddress = govDeployment.contracts.timelockController;
   const shieldPauseAddress = govDeployment.contracts.shieldPauseController;
   const revenueCounterAddress = govDeployment.contracts.revenueCounter;
@@ -311,9 +313,11 @@ async function main() {
     await assertReservePreFunding({
       distributorAddress: reserveAddress, allocator: config.revenueReserve.allocator,
       reserveCap, revenueLockAllocation, armTokenAddress, revenueLockAddress, governorAddress, windDownAddress,
+      directBeneficiaries: config.revenueLockBeneficiaries,
     });
   } else {
     await assertRevenueLockAllocation(revenueLockAddress, revenueLockAllocation);
+    await assertRevenueLockSchedule(revenueLockAddress, config.revenueLockBeneficiaries);
   }
   await (await armToken.transfer(treasuryAddress, treasuryAllocation, nm.override())).wait();
   console.log(`   Sent ${config.armDistribution.treasury} ARM to treasury`);

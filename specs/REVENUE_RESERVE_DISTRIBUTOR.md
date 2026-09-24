@@ -183,10 +183,12 @@ ETH donations are unsupported and have no rescue mechanism.
    strands its reserve if that caller becomes unavailable.
 5. `deploy_crowdfund.ts` requires agreement between reserve config and manifest, and
    reads back `RevenueLock.totalAllocation()` against the configured funding amount
-   before any crowdfund-stage one-shot initialization. This also applies without a
+   and compares the beneficiary count and every unique address/allocation (including
+   the distributor) with the immutable lock. Equal totals alone are insufficient.
+   These checks run before any crowdfund-stage one-shot initialization, even without a
    reserve. Changing environment files between deployment stages must not silently
-   change the funding budget. Token
-   initialization finishes before funding: source and distributor are whitelisted,
+   change the funding budget or recipients. Token initialization finishes before
+   funding: source and distributor are whitelisted,
    RevenueLock is an authorized delegator, and the distributor is neither an authorized
    delegator nor in `noDelegation`. All three token initialization flags must be set.
 6. Include crowdfund, RevenueLock and distributor in governor quorum exclusions exactly
@@ -197,6 +199,7 @@ ETH donations are unsupported and have no rescue mechanism.
    `assertReservePreFunding()` in `scripts/revenue-reserve.ts`. It checks:
    - intended token, lock, allocator and cap, plus `verifyIntegration()`;
    - exact equality of `RevenueLock.totalAllocation()` and the configured lock funding;
+   - exact beneficiary count and every configured address/allocation, including reserve;
    - an unfunded, inactive, unfrozen lock with no prior reserve releases;
    - lock/distributor quorum exclusions and the allocator's eligibility;
    - token/governor/lock/counter wind-down bindings and the wind-down contract's
@@ -206,6 +209,12 @@ ETH donations are unsupported and have no rescue mechanism.
    denominator checks, and finish deployment verification before announcing launch.
    Publish direct allocations, reserve cap, allocator address, subsequent assignments
    and the wind-down fallback policy.
+
+Explorer verification uses the same constructor-array builder as deployment, appending
+the distributor after the direct recipients. It verifies both RevenueLock and the
+distributor; reserve constructor values are read from its immutable getters. Preserve
+the original direct-recipient ordering for explorer verification, which requires exact
+constructor encoding. The funding gate permits reordered lists when allocations match.
 
 **Funding is the irreversible boundary, including before activation.** A failed
 pre-funding check aborts the script before treasury, RevenueLock or crowdfund receives

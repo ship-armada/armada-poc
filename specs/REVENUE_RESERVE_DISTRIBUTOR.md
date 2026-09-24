@@ -30,7 +30,11 @@ The multisig enforces its own signing policy. The distributor authenticates its
 address and does not implement multisig signatures. The launch scripts require a
 deployed Safe-compatible wallet reporting three distinct owners and threshold two;
 these getters are consistency checks, not authentication of wallet code. Verify the
-intended implementation, owner identities, modules and guards before launch. Signer
+intended chain and Safe address, proxy/implementation, all three owner identities,
+modules, guards and fallback handler independently before launch. A contract that
+merely returns the expected getters passes this check (as the test mock does), as
+does a genuine but unintended Safe. Record this out-of-band verification in the
+launch checklist; automated getter success is not sign-off. Signer
 rotation can occur inside that multisig; its distributor role address is fixed.
 
 ## Allocation and payout scope
@@ -177,7 +181,11 @@ ETH donations are unsupported and have no rescue mechanism.
    be the distributor's constructor `msg.sender`: a factory/CREATE2 helper deployment
    requires that helper to expose/execute the binding call. Funding an unbound lock
    strands its reserve if that caller becomes unavailable.
-5. `deploy_crowdfund.ts` requires agreement between reserve config and manifest. Token
+5. `deploy_crowdfund.ts` requires agreement between reserve config and manifest, and
+   reads back `RevenueLock.totalAllocation()` against the configured funding amount
+   before any crowdfund-stage one-shot initialization. This also applies without a
+   reserve. Changing environment files between deployment stages must not silently
+   change the funding budget. Token
    initialization finishes before funding: source and distributor are whitelisted,
    RevenueLock is an authorized delegator, and the distributor is neither an authorized
    delegator nor in `noDelegation`. All three token initialization flags must be set.
@@ -185,9 +193,10 @@ ETH donations are unsupported and have no rescue mechanism.
    once. Keep the allocator outside the treasury and excluded custody addresses.
 7. Deploy and wire wind-down/redemption, including the immutable lock's one-shot
    wind-down binding and RevenueCounter's binding, **before funding RevenueLock**.
-8. Immediately before the ARM transfer into RevenueLock, the script runs
+8. Before **any ARM distribution**, including the treasury transfer, the script runs
    `assertReservePreFunding()` in `scripts/revenue-reserve.ts`. It checks:
    - intended token, lock, allocator and cap, plus `verifyIntegration()`;
+   - exact equality of `RevenueLock.totalAllocation()` and the configured lock funding;
    - an unfunded, inactive, unfrozen lock with no prior reserve releases;
    - lock/distributor quorum exclusions and the allocator's eligibility;
    - token/governor/lock/counter wind-down bindings and the wind-down contract's
@@ -199,7 +208,10 @@ ETH donations are unsupported and have no rescue mechanism.
    and the wind-down fallback policy.
 
 **Funding is the irreversible boundary, including before activation.** A failed
-pre-funding check aborts the script while the reserve ARM remains outside the lock.
+pre-funding check aborts the script before treasury, RevenueLock or crowdfund receives
+ARM. Earlier one-shot initialization may still require redeployment; this is not a
+transactional or automatically resumable launch. `activate()` checks only that the
+lock balance is at least its allocation and will accept permanently stranded excess.
 Correct or redeploy an unsafe setup before funding; `activate()` is not a recovery path.
 These read checks do not authenticate bytecode or atomically constrain another privileged
 transaction between the checks and funding. Coordinate bootstrap keys and independently

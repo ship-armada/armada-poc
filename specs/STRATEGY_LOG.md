@@ -30,6 +30,11 @@ it does not replace unrelated project strategy records or the published cap tabl
 - **Deployment:** funding is the point of no return. Bind first, finish token
   initialization and wind-down wiring, register quorum exclusions, and run automated
   pre-funding checks. A view helper without a script assertion is insufficient.
+  Run the gate before the treasury transfer as well as lock/crowdfund funding. Read
+  back the immutable lock total against the configured funding before crowdfund-stage
+  initialization and again before distribution, including without a reserve. Safe
+  getter checks are not authentication: independently verify the intended wallet,
+  implementation, three owner identities, modules, guards and fallback handler.
 - **Scope:** only the reserve uses the distributor. The full-20% wrapper alternative
   is removed from the launch spec. Existing governance Solidity sources stay unchanged.
   The distributor and its deployment integration require their own audit.

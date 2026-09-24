@@ -28,7 +28,7 @@ import {
 import { createNonceManager, rejectAnvilAddresses, loadDeployment, saveDeployment, timelockCall } from "./deploy-utils";
 import { MULTICALL3_ADDRESS, MULTICALL3_RUNTIME_BYTECODE } from "./multicall3-bytecode";
 
-import { assertReservePreFunding, validateReservePlan } from "./revenue-reserve";
+import { assertRevenueLockAllocation, assertReservePreFunding, validateReservePlan } from "./revenue-reserve";
 
 interface CrowdfundDeployment {
   chainId: number;
@@ -101,6 +101,10 @@ async function main() {
   }
   const reserveCap = validateReservePlan(config.revenueLockBeneficiaries,
     ethers.parseUnits(config.armDistribution.revenueLock, 18), config.revenueReserve);
+  const revenueLockAllocation = ethers.parseUnits(config.armDistribution.revenueLock, 18);
+  // Governance and crowdfund may run days apart with different environment files.
+  // Reject funding drift before consuming any crowdfund-stage one-shot initializers.
+  await assertRevenueLockAllocation(revenueLockAddress, revenueLockAllocation);
   const timelockAddress = govDeployment.contracts.timelockController;
   const shieldPauseAddress = govDeployment.contracts.shieldPauseController;
   const revenueCounterAddress = govDeployment.contracts.revenueCounter;
@@ -293,7 +297,6 @@ async function main() {
   console.log(`   Deployer ARM balance: ${ethers.formatUnits(deployerArmBalance, 18)}`);
 
   const treasuryAllocation = ethers.parseUnits(config.armDistribution.treasury, 18);
-  const revenueLockAllocation = ethers.parseUnits(config.armDistribution.revenueLock, 18);
   const crowdfundAllocation = ethers.parseUnits(config.armDistribution.crowdfund, 18);
   const totalNeeded = treasuryAllocation + revenueLockAllocation + crowdfundAllocation;
   if (deployerArmBalance < totalNeeded) {
@@ -302,15 +305,18 @@ async function main() {
       `have ${ethers.formatUnits(deployerArmBalance, 18)}`
     );
   }
-  await (await armToken.transfer(treasuryAddress, treasuryAllocation, nm.override())).wait();
-  console.log(`   Sent ${config.armDistribution.treasury} ARM to treasury`);
-  // Funding is irreversible even before activate(). Run the gate immediately before transfer.
+  // Run every gate before the first ARM transfer, including the treasury transfer.
+  // A rejected launch must leave the full ARM supply in the deployer's wallet.
   if (reserveAddress && config.revenueReserve) {
     await assertReservePreFunding({
       distributorAddress: reserveAddress, allocator: config.revenueReserve.allocator,
-      reserveCap, armTokenAddress, revenueLockAddress, governorAddress, windDownAddress,
+      reserveCap, revenueLockAllocation, armTokenAddress, revenueLockAddress, governorAddress, windDownAddress,
     });
+  } else {
+    await assertRevenueLockAllocation(revenueLockAddress, revenueLockAllocation);
   }
+  await (await armToken.transfer(treasuryAddress, treasuryAllocation, nm.override())).wait();
+  console.log(`   Sent ${config.armDistribution.treasury} ARM to treasury`);
   await (await armToken.transfer(revenueLockAddress, revenueLockAllocation, nm.override())).wait();
   console.log(`   Sent ${config.armDistribution.revenueLock} ARM to RevenueLock`);
   await (await armToken.transfer(crowdfundAddress, crowdfundAllocation, nm.override())).wait();

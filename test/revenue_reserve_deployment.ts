@@ -4,7 +4,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { loadFixture, takeSnapshot, time } from "@nomicfoundation/hardhat-network-helpers";
 import { deployGovernorProxy } from "./helpers/deploy-governor";
-import { assertAllocatorMultisig, assertReservePreFunding, validateReservePlan } from "../scripts/revenue-reserve";
+import { assertAllocatorMultisig, assertRevenueLockAllocation, assertReservePreFunding, validateReservePlan } from "../scripts/revenue-reserve";
 
 describe("Reserve deployment funding gate", function () {
   async function fixture() {
@@ -48,6 +48,7 @@ describe("Reserve deployment funding gate", function () {
     await token.initAuthorizedDelegators([lockAddress]);
     // Exclusions are left unset so individual tests can exercise omission.
     const plan = { distributorAddress, allocator: allocatorAddress, reserveCap: cap,
+      revenueLockAllocation: ethers.parseEther("2400000"),
       armTokenAddress: tokenAddress, revenueLockAddress: lockAddress, governorAddress, windDownAddress };
     const exclude = () => governor.setExcludedAddresses([lockAddress, distributorAddress]);
     return { plan, exclude, token, lock, governor, distributor, a, b, c };
@@ -96,6 +97,45 @@ describe("Reserve deployment funding gate", function () {
     await expect(assertReservePreFunding({ ...plan, reserveCap: plan.reserveCap + 10_000n }))
       .to.be.rejectedWith("does not match");
     await expect(assertReservePreFunding({ ...plan, allocator: a.address })).to.be.rejectedWith("does not match");
+  });
+
+  // WHY: A later env file can describe a valid plan yet fund more or less than the
+  // immutable constructor allocations. Reserve cap validation alone cannot catch it.
+  it("rejects total funding drift even when the reserve cap and integration match", async function () {
+    const { plan, exclude, token, distributor } = await loadFixture(fixture);
+    await exclude();
+    expect(await distributor.verifyIntegration()).to.equal(true);
+    for (const delta of [1n, -1n]) {
+      await expect(assertReservePreFunding({ ...plan,
+        revenueLockAllocation: plan.revenueLockAllocation + delta }))
+        .to.be.rejectedWith("totalAllocation mismatch");
+    }
+    expect(await token.balanceOf(plan.revenueLockAddress)).to.equal(0);
+  });
+
+  // WHY: activate() only enforces a lower bound; it cannot reject or refund excess
+  // ARM. The allocation guard must reject the same overfunding before any transfer.
+  it("blocks overfunding that the lock's activation would otherwise accept", async function () {
+    const { plan, token, lock } = await loadFixture(fixture);
+    const excessFunding = plan.revenueLockAllocation + ethers.parseEther("1");
+    await expect(assertRevenueLockAllocation(plan.revenueLockAddress, excessFunding))
+      .to.be.rejectedWith("totalAllocation mismatch");
+    await token.transfer(plan.revenueLockAddress, excessFunding);
+    await lock.activate();
+    expect(await lock.activated()).to.equal(true);
+    expect(await token.balanceOf(plan.revenueLockAddress)).to.equal(excessFunding);
+    expect(await lock.totalAllocation()).to.equal(plan.revenueLockAllocation);
+  });
+
+  // WHY: Deployments without a reserve must also reject allocation drift.
+  it("checks the immutable allocation without requiring a distributor", async function () {
+    const { plan, lock, a } = await loadFixture(fixture);
+    const directLock = await (await ethers.getContractFactory("RevenueLock"))
+      .deploy(plan.armTokenAddress, await lock.revenueCounter(), ethers.parseEther("10000"),
+        [a.address], [plan.revenueLockAllocation]);
+    await assertRevenueLockAllocation(await directLock.getAddress(), plan.revenueLockAllocation);
+    await expect(assertRevenueLockAllocation(await directLock.getAddress(), plan.revenueLockAllocation + 1n))
+      .to.be.rejectedWith("totalAllocation mismatch");
   });
 
   // WHY: Running a check after funding is too late; the deployment guard must reject this sequencing.

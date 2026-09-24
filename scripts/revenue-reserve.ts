@@ -49,10 +49,20 @@ export async function assertAllocatorMultisig(address: string): Promise<void> {
   rejectAnvilAddresses([...unique], "Reserve allocator owners");
 }
 
+/** activate() accepts excess funding, but the immutable lock cannot recover it. */
+export async function assertRevenueLockAllocation(address: string, expected: bigint): Promise<void> {
+  const lock = await ethers.getContractAt("RevenueLock", address);
+  const actual = await lock.totalAllocation();
+  if (actual !== expected) {
+    throw new Error(`RevenueLock totalAllocation mismatch: on-chain ${actual}, configured funding ${expected}`);
+  }
+}
+
 export interface ReservePreFunding {
   distributorAddress: string;
   allocator: string;
   reserveCap: bigint;
+  revenueLockAllocation: bigint;
   armTokenAddress: string;
   revenueLockAddress: string;
   governorAddress: string;
@@ -62,6 +72,7 @@ export interface ReservePreFunding {
 /** Must finish before the ARM transfer. This is not an atomic guarantee against
  * another privileged transaction between this read and funding. */
 export async function assertReservePreFunding(plan: ReservePreFunding): Promise<void> {
+  await assertRevenueLockAllocation(plan.revenueLockAddress, plan.revenueLockAllocation);
   const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
   const distributor = await ethers.getContractAt("RevenueReserveDistributor", plan.distributorAddress);
   const token = await ethers.getContractAt("ArmadaToken", plan.armTokenAddress);

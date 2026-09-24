@@ -1,16 +1,18 @@
-// ABOUTME: Ported from the armada-crowdfund mockup (components/MyPosition/MyPositionSplit.tsx).
-// ABOUTME: Header rendering is exposed via a `header` slot prop (default falls back to @armada/ui's Header) so consuming apps render only one chrome instead of two.
+// ABOUTME: Ported from armada-crowdfund MyPositionSplit — hop InvitesCard demo surface.
+// ABOUTME: Header rendering exposed via a `header` slot prop for consuming apps.
 
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState } from 'react'
 import styles from './MyPositionSplit.module.css'
 import { Header } from '@armada/ui'
 import { Tag } from '@armada/ui'
 import { InformationCircleIcon } from '@heroicons/react/24/solid'
 import { Tooltip } from '@armada/ui'
-import SlotCard from '../InviteFlow/screens/SlotCard'
+import { InvitesCard } from './InvitesCard'
 import { NodeSphere } from '../NodeSphere/NodeSphere'
 import {
   buildInvitePinnedNodes,
+  COMMITTED,
+  DEMO_INVITE_ALLOWANCE,
   DEMO_SLOTS,
   DEMO_WALLET,
   DEMO_WALLET_DISPLAY,
@@ -20,65 +22,73 @@ import {
   GRAPH_PARTICIPANTS,
   GRAPH_SEED,
 } from './myPositionDemo'
+import type { InviteeHop } from './inviteModel'
+import type { ReactNode } from 'react'
 
 export interface MyPositionSplitProps {
-  /**
-   * Header slot. When provided, replaces the default @armada/ui `<Header>`.
-   * Pass `null` to render no header at all (e.g. when wrapped in an AppShell
-   * that already renders a header).
-   */
   header?: ReactNode
 }
 
 export function MyPositionSplit({ header }: MyPositionSplitProps = {}) {
   const [copiedId, setCopiedId] = useState<number | null>(null)
-  const [loadingId, setLoadingId] = useState<number | null>(null)
+  const [loadingHop, setLoadingHop] = useState<InviteeHop | null>(null)
 
-  const invitePinnedNodes = useMemo(() => buildInvitePinnedNodes(DEMO_SLOTS), [])
+  const invitePinnedNodes = useMemo(
+    () => buildInvitePinnedNodes(DEMO_SLOTS, DEMO_WALLET, COMMITTED),
+    [],
+  )
 
-  const handleGenerateLink = async (slotId: number) => {
-    setLoadingId(slotId)
+  const handleGenerateLink = async (hop: InviteeHop) => {
+    setLoadingHop(hop)
     await new Promise((r) => setTimeout(r, 800))
-    setLoadingId(null)
+    setLoadingHop(null)
+    const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000)
+    return {
+      id: Date.now(),
+      link: `https://armada.wtf/join?invite=demo&hop=hop-${hop}`,
+      expiresAt,
+    }
   }
 
   const handleCopy = (slotId: number, link: string) => {
-    navigator.clipboard.writeText(link)
+    void navigator.clipboard.writeText(link)
     setCopiedId(slotId)
-    setTimeout(() => setCopiedId(null), 2000)
+    setTimeout(() => setCopiedId(null), 1200)
   }
 
   const handleRevoke = async () => {}
-  const handleInviteOnchain = async (slotId: number) => {
-    setLoadingId(slotId)
+  const handleInviteOnchain = async (hop: InviteeHop) => {
+    setLoadingHop(hop)
     await new Promise((r) => setTimeout(r, 800))
-    setLoadingId(null)
+    setLoadingHop(null)
   }
 
   return (
     <div className={styles.page}>
-      {header === undefined ? (
-        <Header
-          activeNav="myposition"
-          walletAddress={DEMO_WALLET_DISPLAY}
-          autoHideOnScroll={false}
-        />
-      ) : (
-        header
-      )}
+      {header === null
+        ? null
+        : (header ?? (
+            <Header
+              activeNav="myposition"
+              walletAddress={DEMO_WALLET_DISPLAY}
+              walletCopyAddress={DEMO_WALLET}
+              walletProvider="metamask"
+              autoHideOnScroll={false}
+            />
+          ))}
 
       <main className={styles.layout}>
         <section className={styles.graphColumn} aria-label="Invite graph">
           <div className={styles.sphereFrame}>
             <NodeSphere
+              walletAddress={DEMO_WALLET}
+              lockOnWallet
+              inviteGraph
               highlightAddress={DEMO_WALLET}
               interactionDisabled={false}
               scenarioParticipants={GRAPH_PARTICIPANTS}
               scenarioSeed={GRAPH_SEED}
               pinnedNodes={invitePinnedNodes}
-              walletAddress={DEMO_WALLET}
-              lockOnWallet
-              inviteGraph
             />
           </div>
         </section>
@@ -136,23 +146,23 @@ export function MyPositionSplit({ header }: MyPositionSplitProps = {}) {
               </div>
             </section>
 
-            <section className={styles.inviteCard} aria-label="Your invites">
-              <h2 className={styles.inviteTitle}>Your Invites</h2>
-              <div className={styles.slotList}>
-                {DEMO_SLOTS.map((slot) => (
-                  <SlotCard
-                    key={slot.id}
-                    slot={slot}
-                    onGenerateLink={handleGenerateLink}
-                    onCopy={handleCopy}
-                    onRevoke={handleRevoke}
-                    onInviteOnchain={handleInviteOnchain}
-                    copied={copiedId === slot.id}
-                    loading={loadingId === slot.id}
-                  />
-                ))}
-              </div>
-            </section>
+            <InvitesCard
+              variant="split"
+              slots={DEMO_SLOTS}
+              allowance={DEMO_INVITE_ALLOWANCE}
+              onGenerateLink={handleGenerateLink}
+              onCopy={handleCopy}
+              onRevoke={handleRevoke}
+              onInviteOnchain={handleInviteOnchain}
+              copiedSlotId={copiedId}
+              loadingHop={loadingHop}
+              onViewRedeemed={(address) => {
+                const url = new URL('/', window.location.origin)
+                url.searchParams.set('view', 'crowdfund')
+                url.searchParams.set('select', address)
+                window.location.assign(url.toString())
+              }}
+            />
           </div>
         </aside>
       </main>

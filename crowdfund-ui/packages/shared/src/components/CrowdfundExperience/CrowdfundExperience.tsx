@@ -1,22 +1,36 @@
 // ABOUTME: Ported from the armada-crowdfund mockup (components/CrowdfundExperience/CrowdfundExperience.tsx); designer's '/fleet.png' + '/fleet.mp4' public-folder paths replaced with ESM asset imports so the assets ship with crowdfund-shared.
 // ABOUTME: Header rendering is also exposed via a slot prop (default falls back to @armada/ui's Header) so consuming apps render only one chrome instead of two; view is optionally controllable from outside to keep consumer page state in sync.
 
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useAtomValue } from 'jotai'
 import { InformationCircleIcon } from '@heroicons/react/24/solid'
-import { ChevronDownIcon } from '@heroicons/react/24/outline'
 import { ensMapAtom } from '../../hooks/useENS'
-import { Header } from '@armada/ui'
-import { Progress } from '@armada/ui'
+import { Button, Header, Progress, Tag, Tooltip } from '@armada/ui'
 import { Participate } from '../Participate/Participate'
-import { HeroParticipantsPanel, HeroParticipantsMobileStack, type HeroParticipant } from '../HeroParticipantsPanel'
-import { Tag } from '@armada/ui'
-import { Tooltip } from '@armada/ui'
-import SlotCard from '../InviteFlow/screens/SlotCard'
+import { CrowdfundLeftColumn } from '../CrowdfundLeftColumn'
+import {
+  HeroParticipantControls,
+  HeroParticipantList,
+  HeroParticipantsMobileStack,
+  type HeroParticipant,
+} from '../HeroParticipantsPanel'
+import type { SlotData } from '../InviteFlow/screens/SlotCard'
+import { InvitesCard } from '../MyPosition/InvitesCard'
+import {
+  allowanceFromInviteSections,
+  firstEmptySlotId,
+  inviteOnchainViaSections,
+  issuedSlotsFromInviteSections,
+  revokeLinkViaSections,
+  sectionForInviteeHop,
+} from '../MyPosition/inviteSectionsToCard'
+import { createDeferredInviteHides } from '../MyPosition/deferredInviteHides'
+import { nextInviteId, type InviteAllowance, type InviteeHop } from '../MyPosition/inviteModel'
 import {
   ARM_ALLOCATION,
   CAP,
   COMMITTED,
+  DEMO_INVITE_ALLOWANCE,
   DEMO_SLOTS,
   DEMO_WALLET,
   DEMO_WALLET_DISPLAY,
@@ -27,7 +41,9 @@ import {
 import { NodeSphere, isWebglForcedOff } from '../NodeSphere/NodeSphere'
 import { hopPillDotColor } from '../../lib/graphHopColors'
 import { CROWDFUND_CONSTANTS } from '../../lib/constants'
-import { MOBILE_LAYOUT_MAX_WIDTH_PX } from '../../lib/viewportBreakpoints'
+import {
+  MOBILE_LAYOUT_MAX_WIDTH_PX,
+} from '../../lib/viewportBreakpoints'
 import {
   generateCrowdfund,
   toDashboardParticipants,
@@ -54,14 +70,21 @@ export interface CrowdfundInviteSlotConfig {
   slots: import('../InviteFlow/screens/SlotCard').SlotData[]
   copiedId: number | null
   loadingId: number | null
-  onGenerateLink: (slotId: number) => Promise<void>
+  onGenerateLink: (
+    slotId: number,
+  ) => Promise<
+    | void
+    | { id: number; link: string; expiresAt: Date; nonce?: number }
+  >
   onCopy: (slotId: number, link: string) => void
   onRevoke: (slotId: number) => void
+  /** Resolves true only once the invite tx is confirmed; false when it was
+   *  not sent (wrong network, rejected, reverted, or still pending). */
   onInviteOnchain: (
     slotId: number,
     address: string,
     ensName?: string,
-  ) => Promise<void>
+  ) => Promise<boolean>
   /**
    * Real ENS resolver forwarded to each `<SlotCard resolveEns={…} />`. Omit to
    * let SlotCard use its internal mock (showcase / preview only — returns a
@@ -85,7 +108,7 @@ export interface CrowdfundInviteSlotConfig {
 export interface CrowdfundInviteSlotSection {
   /** Source hop the invites come from (slot generates an invite at `hop + 1`). */
   hop: 0 | 1 | 2
-  /** Display label — 'SEED' / 'HOP-1' / 'HOP-2'. */
+  /** Display label — 'HOP-0' / 'HOP-1' / 'HOP-2'. */
   hopLabel: string
   /** Dot color from the canonical hop palette (`graphHopColors.ts`). */
   hopColor: string
@@ -115,11 +138,16 @@ export type CrowdfundExperienceLiveData =
       /** Countdown label shown on the Progress card (e.g. "6 DAYS LEFT").
        *  Pass `null` to suppress the tag once the window has ended — the
        *  Progress primitive hides it rather than rendering a stale countdown.
-       *  Omit entirely to fall back to the primitive's mockup default. */
+       *  Omit entirely to fall back to the primitive's mockup default.
+       *  Prefer `endsAt` when available so Progress can live-tick under 48h. */
       daysLeftLabel?: string | null
+      /** Commit-window end on the device clock (unix seconds) — the chain's
+       *  remaining time anchored to local time, so a skewed device clock
+       *  doesn't desync the counter from chain-time gating. When set, Progress
+       *  owns a live HH:MM:SS counter for remaining &lt; 48h. */
+      windowEndUnix?: number
       /** Exact-time detail for the Progress countdown tag's hover tooltip
-       *  (e.g. "2d 14h 22m left · ends Jun 14, 2026, 2:42 PM"). Omit for no
-       *  tooltip. */
+       *  (e.g. "Ends Jun 14, 2:42 PM"). Omit for no tooltip. */
       daysLeftTooltip?: string
       /** Lifecycle status pill label (e.g. 'ACTIVE', 'CLOSED', 'FINALIZED').
        *  Omit to fall back to the primitive's 'ACTIVE' default. */
@@ -175,7 +203,7 @@ export type CrowdfundExperienceMyPositionData =
       /** Truncated display form — drives the wallet `<Tag>` label. */
       walletDisplay: string
       /** Primary hop = lowest hop the user is eligible at. Drives the
-       *  `HOP-N` / `SEED` tag label and the legacy single-hop stat block
+       *  `HOP-N` tag label and the legacy single-hop stat block
        *  (until per-hop rendering lands in step 2). New multi-hop UI
        *  should iterate `positions` instead of reading these scalar
        *  fields. */
@@ -223,7 +251,7 @@ export type CrowdfundExperienceMyPositionData =
       cancelled?: boolean
     }
 
-const HOP_TAG_LABELS = ['SEED', 'HOP-1', 'HOP-2'] as const
+const HOP_TAG_LABELS = ['HOP-0', 'HOP-1', 'HOP-2'] as const
 
 function usdcBigintToUsdNumber(value: bigint): number {
   return Number(value / 1_000_000n)
@@ -311,7 +339,8 @@ export interface CrowdfundExperienceProps {
   /**
    * When `false`, hides every surface whose underlying contract call requires
    * an open commit window: the Crowdfund hero's `<Participate>` card,
-   * the default header's "Participate" gradient button, and the MyPosition
+   * the default header's "Participate" gradient button, the My Position
+   * card header CTA ("Participate" / "Commit again"), and the MyPosition
    * view's "Your invites" card. Set this to the consumer's `windowOpen`
    * signal so the UI mirrors the chain's post-window-close gating. Defaults
    * to `true` — preserves showcase / preview behavior.
@@ -340,6 +369,7 @@ function isMobileLayout() {
   return window.matchMedia(`(max-width: ${MOBILE_LAYOUT_MAX_WIDTH_PX}px)`).matches
 }
 
+/** Open by default at ≥1440px; collapsed below — InvitesCard.tsx. */
 type PanelPhase = 'idle' | 'exit' | 'enter'
 
 function layerClass(visible: boolean, motionReady: boolean, animate: boolean) {
@@ -475,7 +505,7 @@ export function CrowdfundExperience({
         : DEMO_WALLET_DISPLAY)
   // Per-hop chips rendered in the meta row. Multi-hop wallets get one chip
   // per distinct hop, with an `xN` suffix when they were invited to the same
-  // hop multiple times (e.g. two seed inviters → "SEED x2"). Single-hop
+  // hop multiple times (e.g. two hop-0 inviters → "HOP-0 x2"). Single-hop
   // wallets still get just one chip.
   const myPositionHopChips = useMemo(() => {
     const colorFor = (hop: 0 | 1 | 2) =>
@@ -504,7 +534,7 @@ export function CrowdfundExperience({
     })
   }, [myPositionReady])
   // Cross-hop totals — `committed` / `cap` collapse the user's full footprint
-  // into one stat block + one fill bar. A wallet with `SEED ($1k cap)` plus a
+  // into one stat block + one fill bar. A wallet with `HOP-0 ($1k cap)` plus a
   // `HOP-1 x2 ($2k cap)` position shows $3k cap and the sum of commitments.
   const myPositionCommittedUsd = myPositionReady
     ? usdcBigintToUsdNumber(
@@ -540,18 +570,27 @@ export function CrowdfundExperience({
   const [selectedAddress, setSelectedAddress] = useState<string | undefined>(undefined)
   const [filter, setFilter] = useState<'all' | 'seed' | 'hop1' | 'hop2' | 'multi'>('all')
   const [participantsListOpen, setParticipantsListOpen] = useState(false)
-  const [holdColumnExpanded, setHoldColumnExpanded] = useState(false)
   const [copiedId, setCopiedId] = useState<number | null>(null)
-  const [loadingId, setLoadingId] = useState<number | null>(null)
-  // My Position invites card — open by default; user toggles collapse/expand.
-  const [invitesExpanded, setInvitesExpanded] = useState<boolean>(true)
-  const invitesListId = useId()
+  const [loadingHop, setLoadingHop] = useState<InviteeHop | null>(null)
+  const [inviteListOpen, setInviteListOpen] = useState(false)
+  const [demoSlots, setDemoSlots] = useState<SlotData[]>(() => DEMO_SLOTS)
+  const [demoAllowance] = useState<InviteAllowance>(DEMO_INVITE_ALLOWANCE)
+  const pendingInvitesRef = useRef<Map<number, SlotData>>(new Map())
+  // Live invites hidden from the sent list until their create confirmation is
+  // dismissed — keyed by created id, since the live row can land at another slot id.
+  const [deferredHides] = useState(createDeferredInviteHides)
+  const [deferredHideEpoch, bumpDeferredHide] = useState(0)
 
-  const participantsPanelRef = useRef<HTMLDivElement | null>(null)
+  const handleInviteListOpenChange = useCallback((open: boolean) => {
+    setInviteListOpen(open)
+  }, [])
+
+  const participantsListRef = useRef<HTMLDivElement | null>(null)
+  const participantsControlsRef = useRef<HTMLDivElement | null>(null)
   const mobileParticipantsRef = useRef<HTMLDivElement | null>(null)
-  const leftStackRef = useRef<HTMLDivElement | null>(null)
+  const leftColumnRef = useRef<HTMLDivElement | null>(null)
+  const graphHostRef = useRef<HTMLDivElement | null>(null)
 
-  const HERO_EXPAND_MS = 380
   const isCrowdfund = view === 'crowdfund'
   const isMyPosition = view === 'myposition'
   const isGraphCrowdfund = graphMode === 'crowdfund'
@@ -561,7 +600,6 @@ export function CrowdfundExperience({
   // renders pinnedNodes directly and drops scenarioParticipants), pass 800 so
   // there's a dense node field underneath our overlaid pinnedNodes.
   const graphParticipants = 800 as const
-  const columnExpanded = participantsListOpen || holdColumnExpanded
 
   useEffect(() => {
     if (isMobileLayout()) {
@@ -614,12 +652,21 @@ export function CrowdfundExperience({
     }
   }
 
-  const startPanelTransition = (next: CrowdfundView) => {
-    if (view === next || panelPhase !== 'idle') return
+  const startPanelTransition = (
+    next: CrowdfundView,
+    options?: { selectAddress?: string },
+  ) => {
+    if (view === next || panelPhase !== 'idle') {
+      if (view === next && next === 'crowdfund' && options?.selectAddress) {
+        setSelectedAddress(options.selectAddress)
+        setGraphMode('crowdfund')
+      }
+      return
+    }
 
     if (next === 'crowdfund') {
       setGraphMode('crowdfund')
-      setSelectedAddress(undefined)
+      setSelectedAddress(options?.selectAddress)
     } else if (next === 'myposition') {
       setSelectedAddress(undefined)
     }
@@ -667,21 +714,18 @@ export function CrowdfundExperience({
   // Sync the MyPosition card's `min-height` to whatever the Crowdfund-view
   // Progress card actually renders to, via the `--hero-progress-card-height`
   // CSS variable. Re-runs when the live data flips out of `loading` (the
-  // skeleton's first-child differs from Progress's first-child, so we need
-  // to re-measure once the real card mounts). Re-queries `firstElementChild`
-  // on each retry so we never measure a detached node from a prior render.
+  // skeleton differs from Progress, so we re-measure once the real card mounts).
   useLayoutEffect(() => {
     if (isLiveLoading) return
-    const stack = leftStackRef.current
-    if (!stack) return
+    const column = leftColumnRef.current
+    const progressCard = column?.querySelector<HTMLElement>('[data-crowdfund-progress] > *')
+    if (!progressCard) return
 
     const applyProgressCardHeight = () => {
-      const progressCard = stack.firstElementChild as HTMLElement | null
-      if (!progressCard) return false
       const h = Math.ceil(progressCard.getBoundingClientRect().height)
       if (h < 1) return false
-      stack
-        .closest<HTMLElement>('[class*="leftCorner"]')
+      column
+        ?.closest<HTMLElement>('[class*="leftCorner"]')
         ?.style.setProperty('--hero-progress-card-height', `${h}px`)
       return true
     }
@@ -694,52 +738,18 @@ export function CrowdfundExperience({
     return () => cancelAnimationFrame(raf)
   }, [isLiveLoading])
 
-  useLayoutEffect(() => {
-    const el = leftStackRef.current
-    if (!el || !isCrowdfund) return
-
-    const applyCollapsedHeight = () => {
-      el.style.minHeight = '0'
-      el.style.maxHeight = 'none'
-      const h = Math.ceil(el.getBoundingClientRect().height)
-      el.style.minHeight = ''
-      el.style.maxHeight = ''
-      if (h < 1) return false
-      const px = `${h}px`
-      el.style.setProperty('--hero-stack-collapsed-height', px)
-      el.closest<HTMLElement>('[class*="leftCorner"]')?.style.setProperty('--hero-stack-collapsed-height', px)
-      return true
-    }
-
-    if (applyCollapsedHeight()) return
-
-    const raf = requestAnimationFrame(() => {
-      if (!applyCollapsedHeight()) requestAnimationFrame(applyCollapsedHeight)
-    })
-    return () => cancelAnimationFrame(raf)
-  }, [isCrowdfund])
-
-  useLayoutEffect(() => {
-    if (!isCrowdfund) {
-      setHoldColumnExpanded(false)
-      return
-    }
-    if (participantsListOpen) {
-      setHoldColumnExpanded(true)
-      return
-    }
-    const id = window.setTimeout(() => setHoldColumnExpanded(false), HERO_EXPAND_MS)
-    return () => window.clearTimeout(id)
-  }, [participantsListOpen, isCrowdfund])
-
   useEffect(() => {
     if (!isCrowdfund || !selectedAddress) return
 
+    // Deselect when clicking outside the graph + participants chrome.
+    // The graph is excluded so pointerdown that starts a drag does not clear
+    // selection — NodeSphere owns click-vs-drag (empty click → deselect).
     const onPointerDown = (e: PointerEvent) => {
-      const desktop = participantsPanelRef.current
-      const mobile = mobileParticipantsRef.current
-      if (desktop?.contains(e.target as Node)) return
-      if (mobile?.contains(e.target as Node)) return
+      const t = e.target as Node
+      if (graphHostRef.current?.contains(t)) return
+      if (participantsListRef.current?.contains(t)) return
+      if (participantsControlsRef.current?.contains(t)) return
+      if (mobileParticipantsRef.current?.contains(t)) return
       setSelectedAddress(undefined)
     }
 
@@ -770,23 +780,206 @@ export function CrowdfundExperience({
   const crowdfundPanelAnimates = panelAnimates(view, 'crowdfund', panelPhase, motionReady)
   const myPositionPanelAnimates = panelAnimates(view, 'myposition', panelPhase, motionReady)
 
-  const handleGenerateLink = async (slotId: number) => {
-    setLoadingId(slotId)
-    await new Promise((r) => setTimeout(r, 800))
-    setLoadingId(null)
+  const liveSections = inviteSlotSections
+  const liveAllowance = useMemo(
+    () => (liveSections ? allowanceFromInviteSections(liveSections) : null),
+    [liveSections],
+  )
+  const liveIssuedSlots = useMemo(
+    () => (liveSections ? issuedSlotsFromInviteSections(liveSections) : []),
+    [liveSections],
+  )
+
+  const invitesSlots = useMemo(() => {
+    if (!liveSections) {
+      return [...pendingInvitesRef.current.values(), ...demoSlots]
+    }
+    return liveIssuedSlots.map((slot) => {
+      if (!deferredHides.isHidden(slot)) return slot
+      return { ...slot, hideFromList: true }
+    })
+  }, [liveSections, liveIssuedSlots, demoSlots, deferredHideEpoch])
+
+  const invitesAllowance: InviteAllowance | null = liveSections
+    ? liveAllowance
+    : demoAllowance
+
+  const selfWalletForInvites =
+    myPositionReady?.walletAddress ?? (liveSections ? undefined : DEMO_WALLET)
+
+  const allocateInviteId = useCallback(() => {
+    const pending = [...pendingInvitesRef.current.values()]
+    return nextInviteId([...demoSlots, ...pending, ...liveIssuedSlots])
+  }, [demoSlots, liveIssuedSlots])
+
+  const handleGenerateLink = async (hop: InviteeHop) => {
+    setLoadingHop(hop)
+    try {
+      if (liveSections) {
+        const section = sectionForInviteeHop(liveSections, hop)
+        if (!section) return
+        if (section.config.isWrongNetwork) {
+          section.config.onSwitchNetwork?.()
+          return
+        }
+        const emptyId = firstEmptySlotId(section)
+        if (emptyId == null) return
+        const created = await section.config.onGenerateLink(emptyId)
+        if (
+          created &&
+          typeof created === 'object' &&
+          'link' in created &&
+          'expiresAt' in created &&
+          'id' in created &&
+          typeof created.link === 'string' &&
+          created.expiresAt instanceof Date &&
+          typeof created.id === 'number'
+        ) {
+          deferredHides.hide(created.id, { link: created.link })
+          bumpDeferredHide((n) => n + 1)
+          return {
+            id: created.id,
+            link: created.link,
+            expiresAt: created.expiresAt,
+          }
+        }
+        return
+      }
+
+      await new Promise((r) => setTimeout(r, 800))
+      const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000)
+      const link = `https://fund.armada.blue/invite?demo=${Math.random().toString(36).slice(2, 10)}&hop=${hop}`
+      const createdId = allocateInviteId()
+      pendingInvitesRef.current.set(createdId, {
+        id: createdId,
+        status: 'link-active',
+        link,
+        expiresAt,
+        inviteeHop: hop,
+        invitedAt: new Date(),
+      })
+      return { id: createdId, link, expiresAt }
+    } finally {
+      setLoadingHop(null)
+    }
   }
 
   const handleCopy = (slotId: number, link: string) => {
-    navigator.clipboard.writeText(link)
+    void navigator.clipboard.writeText(link).catch(() => {})
     setCopiedId(slotId)
-    setTimeout(() => setCopiedId(null), 2000)
+    setTimeout(() => setCopiedId((cur) => (cur === slotId ? null : cur)), 2000)
   }
 
-  const handleRevoke = async () => {}
-  const handleInviteOnchain = async (slotId: number) => {
-    setLoadingId(slotId)
-    await new Promise((r) => setTimeout(r, 800))
-    setLoadingId(null)
+  const handleRevoke = async (inviteId: number, link?: string) => {
+    if (liveSections) {
+      // Live rows re-sort as on-chain invites land, so `inviteId` can point at
+      // a different pending link — only ever revoke by the link itself.
+      if (!link) return
+      revokeLinkViaSections(liveSections, link)
+      deferredHides.unhideLink(link)
+      bumpDeferredHide((n) => n + 1)
+      return
+    }
+    pendingInvitesRef.current.delete(inviteId)
+    setDemoSlots((prev) =>
+      prev.map((slot) =>
+        slot.id === inviteId
+          ? {
+              ...slot,
+              status: 'revoked' as const,
+              closedAt: new Date(),
+              hideFromList: false,
+            }
+          : slot,
+      ),
+    )
+  }
+
+  const revealInviteInList = (id: number) => {
+    const draft = pendingInvitesRef.current.get(id)
+    pendingInvitesRef.current.delete(id)
+    deferredHides.reveal(id)
+    bumpDeferredHide((n) => n + 1)
+    if (!draft) return
+    setDemoSlots((prev) => {
+      if (prev.some((slot) => slot.id === id)) {
+        return prev.map((slot) =>
+          slot.id === id ? { ...slot, hideFromList: false } : slot,
+        )
+      }
+      return [draft, ...prev]
+    })
+  }
+
+  const discardDeferredInvite = (id: number) => {
+    pendingInvitesRef.current.delete(id)
+    if (liveSections) {
+      const link = deferredHides.keyFor(id)?.link
+      if (link) void handleRevoke(id, link)
+      deferredHides.reveal(id)
+    } else {
+      setDemoSlots((prev) => prev.filter((slot) => slot.id !== id))
+    }
+    bumpDeferredHide((n) => n + 1)
+  }
+
+  const flushPendingInvites = () => {
+    const drafts = [...pendingInvitesRef.current.values()]
+    pendingInvitesRef.current.clear()
+    deferredHides.clear()
+    bumpDeferredHide((n) => n + 1)
+    if (drafts.length === 0) return
+    setDemoSlots((prev) => {
+      const existing = new Set(prev.map((slot) => slot.id))
+      const fresh = drafts.filter((draft) => !existing.has(draft.id))
+      if (fresh.length === 0) return prev
+      return [...fresh, ...prev]
+    })
+  }
+
+  const handleInviteOnchain = async (
+    hop: InviteeHop,
+    address: string,
+    ensName?: string,
+  ) => {
+    setLoadingHop(hop)
+    try {
+      if (liveSections) {
+        // Hide before sending: the row lands (via receipt logs) before the
+        // send resolves, so hiding afterwards would flash it in the list.
+        let hiddenId: number | null = null
+        const created = await inviteOnchainViaSections(
+          liveSections,
+          hop,
+          address,
+          ensName,
+          (slotId) => {
+            hiddenId = slotId
+            deferredHides.hide(slotId, { address })
+          },
+        )
+        if (!created) {
+          if (hiddenId != null) deferredHides.reveal(hiddenId)
+          bumpDeferredHide((n) => n + 1)
+          return
+        }
+        return created
+      }
+
+      await new Promise((r) => setTimeout(r, 800))
+      const createdId = allocateInviteId()
+      pendingInvitesRef.current.set(createdId, {
+        id: createdId,
+        status: 'onchain-pending',
+        invitedAddress: address,
+        ensName,
+        inviteeHop: hop,
+        invitedAt: new Date(),
+      })
+      return { id: createdId, address, ensName }
+    } finally {
+      setLoadingHop(null)
+    }
   }
 
   // Build PinnedNode[] from the dashboard rows (one per unique wallet). Each
@@ -811,7 +1004,6 @@ export function CrowdfundExperience({
 
   return (
     <div className={[mpStyles.page, shellStyles.page].join(' ')}>
-      <div className={shellStyles.mobileHeaderBackdrop} aria-hidden />
       {header === undefined ? (
         // Default header — used by the showcase / standalone mockup preview.
         // Consuming apps pass their own `header` slot (or `null`) to avoid
@@ -837,6 +1029,7 @@ export function CrowdfundExperience({
           .join(' ')}
       >
         <div
+          ref={graphHostRef}
           className={[
             shellStyles.graphHost,
             graphUnavailable && shellStyles.graphHostHiddenMobile,
@@ -871,6 +1064,7 @@ export function CrowdfundExperience({
               walletAddress={myPositionWalletAddress}
               lockOnWallet={isGraphMyPosition}
               inviteGraph={isGraphMyPosition}
+              hideNodePopover={isGraphMyPosition && inviteListOpen}
               etherscanBaseUrl={etherscanBaseUrl}
             />
           ) : null}
@@ -901,67 +1095,74 @@ export function CrowdfundExperience({
           className={layerClass(crowdfundPanelVisible, motionReady, crowdfundPanelAnimates)}
           aria-hidden={!crowdfundPanelVisible}
         >
-          <div
-            ref={leftStackRef}
-            className={[heroStyles.leftStack, heroStyles.enter, heroStyles.enterProgress].join(' ')}
-          >
+          <div ref={leftColumnRef}>
             {isLiveLoading ? (
-              <HeroLoadingSkeleton />
+              <div className={[heroStyles.enter, heroStyles.enterProgress].join(' ')}>
+                <HeroLoadingSkeleton />
+              </div>
             ) : (
-              <>
-                <div className={shellStyles.progressWrap}>
-                  <Progress
-                    participants={`${dashRows.length} PARTICIPANTS`}
-                    committedAmount={committedAmount}
-                    minRaiseAmount={Number(CROWDFUND_CONSTANTS.MIN_SALE / 1_000_000n)}
-                    maxAmount={Number(CROWDFUND_CONSTANTS.MAX_SALE / 1_000_000n)}
-                    {...(liveReady?.daysLeftLabel !== undefined
-                      ? { daysLeft: liveReady.daysLeftLabel }
-                      : {})}
-                    {...(liveReady?.daysLeftTooltip
-                      ? { daysLeftTooltip: liveReady.daysLeftTooltip }
-                      : {})}
-                    {...(liveReady?.saleStatusLabel
-                      ? { status: liveReady.saleStatusLabel }
-                      : {})}
-                    {...(liveReady?.saleStatusDot
-                      ? { statusDot: liveReady.saleStatusDot }
-                      : {})}
-                  />
-                  {onDetails && (
-                    // Overlaid on the @armada/ui Progress card's top-right corner
-                    // (level with the card title) — we don't modify that primitive,
-                    // so the "Details" affordance is positioned over it from here.
-                    <button
-                      type="button"
-                      className={shellStyles.detailsBtn}
-                      onClick={onDetails}
-                    >
-                      Details
-                    </button>
-                  )}
-                </div>
-                <div
-                  ref={participantsPanelRef}
-                  className={[heroStyles.participantsWrap, shellStyles.hideOnMobileStack].join(' ')}
-                >
-                  <HeroParticipantsPanel
-                    participants={participants}
-                    selectedAddress={selectedAddress}
-                    onSelectAddress={setSelectedAddress}
-                    collapsedMaxRows={3}
-                    filter={filter}
-                    onFilterChange={setFilter}
-                    layoutExpanded={columnExpanded}
-                    showList={participantsListOpen}
-                    onShowListChange={(open) => {
-                      setParticipantsListOpen(open)
-                      if (!open) setSelectedAddress(undefined)
-                    }}
-                    onParticipate={onParticipate}
-                  />
-                </div>
-              </>
+              <CrowdfundLeftColumn
+                className={[heroStyles.enter, heroStyles.enterProgress, shellStyles.mobileCrowdfundColumn]
+                  .filter(Boolean)
+                  .join(' ')}
+                listOpen={participantsListOpen}
+                onListOpenChange={(open) => {
+                  setParticipantsListOpen(open)
+                  if (!open) setSelectedAddress(undefined)
+                }}
+                progress={
+                  <div className={shellStyles.progressWrap}>
+                    <Progress
+                      participants={`${dashRows.length} PARTICIPANTS`}
+                      committedAmount={committedAmount}
+                      minFundAmount={Number(CROWDFUND_CONSTANTS.MIN_SALE / 1_000_000n)}
+                      maxAmount={Number(CROWDFUND_CONSTANTS.MAX_SALE / 1_000_000n)}
+                      {...(liveReady?.windowEndUnix != null && liveReady.windowEndUnix > 0
+                        ? { endsAt: liveReady.windowEndUnix * 1000 }
+                        : liveReady?.daysLeftLabel !== undefined
+                          ? { daysLeft: liveReady.daysLeftLabel }
+                          : {})}
+                      {...(liveReady?.daysLeftTooltip
+                        ? { daysLeftTooltip: liveReady.daysLeftTooltip }
+                        : {})}
+                      {...(liveReady?.saleStatusLabel
+                        ? { status: liveReady.saleStatusLabel }
+                        : {})}
+                      {...(liveReady?.saleStatusDot
+                        ? { statusDot: liveReady.saleStatusDot }
+                        : {})}
+                    />
+                    {onDetails && (
+                      // Overlaid on the @armada/ui Progress card's top-right corner
+                      // (level with the card title) — we don't modify that primitive,
+                      // so the "Details" affordance is positioned over it from here.
+                      <button
+                        type="button"
+                        className={shellStyles.detailsBtn}
+                        onClick={onDetails}
+                      >
+                        Details
+                      </button>
+                    )}
+                  </div>
+                }
+                list={
+                  <div ref={participantsListRef} className={shellStyles.participantsListHitArea}>
+                    <HeroParticipantList
+                      participants={participants}
+                      selectedAddress={selectedAddress}
+                      onSelectAddress={setSelectedAddress}
+                      filter={filter}
+                      onParticipate={onParticipate}
+                    />
+                  </div>
+                }
+                controls={
+                  <div ref={participantsControlsRef}>
+                    <HeroParticipantControls filter={filter} onFilterChange={setFilter} />
+                  </div>
+                }
+              />
             )}
           </div>
         </div>
@@ -972,7 +1173,26 @@ export function CrowdfundExperience({
         >
           <section className={mpStyles.positionCard} aria-label="Your position">
             <div className={mpStyles.cardHeader}>
-              <h1 className={mpStyles.pageTitle}>My Position</h1>
+              <div className={mpStyles.titleRow}>
+                <h1 className={mpStyles.pageTitle}>My Position</h1>
+                {participationEnabled && onParticipate && (
+                  <Button
+                    className={mpStyles.headerCta}
+                    variant="gradient"
+                    size="sm"
+                    // Invited-but-uncommitted wallets are 'ready' with zero
+                    // committed — they haven't participated yet.
+                    label={
+                      myPositionEmptyKind === null && myPositionCommittedUsd > 0
+                        ? 'Commit again'
+                        : 'Participate'
+                    }
+                    showIcon
+                    icon="arrow-right-micro"
+                    onClick={onParticipate}
+                  />
+                )}
+              </div>
               <div className={mpStyles.metaTags}>
                 {myPositionWalletDisplay && (
                   <Tag label={myPositionWalletDisplay} dot="lavender" />
@@ -1004,7 +1224,7 @@ export function CrowdfundExperience({
                 </div>
 
                 {myPositionRefundMode ? (
-                  // Sale didn't meet the minimum raise (or was cancelled) —
+                  // Sale didn't meet the minimum fund (or was cancelled) —
                   // the user's outcome is a USDC refund, not an ARM
                   // allocation. Swap the stat block accordingly.
                   <div className={mpStyles.statBlock}>
@@ -1019,7 +1239,7 @@ export function CrowdfundExperience({
                               ? 'Available for claim. The sale was cancelled by the security council — your committed USDC will be returned to your wallet.'
                               : myPositionFinalized
                                 ? 'Available for claim. Your committed USDC will be returned to your wallet.'
-                                : 'Pending finalization. The sale fell below the minimum raise — your committed USDC will be returned to your wallet.'
+                                : 'Pending finalization. The sale fell below the minimum fund — your committed USDC will be returned to your wallet.'
                         }
                       >
                         <button
@@ -1112,131 +1332,39 @@ export function CrowdfundExperience({
           className={layerClass(myPositionPanelVisible, motionReady, myPositionPanelAnimates)}
           aria-hidden={!myPositionPanelVisible}
         >
-          {(() => {
-            // Available / total counts shown in the collapsible header. Counts the
-            // raw SlotData arrays across all live sections (or DEMO_SLOTS in the
-            // showcase path) — "available" === `status === 'empty'`.
-            const allSlots = inviteSlotSections
-              ? inviteSlotSections.flatMap((s) => s.config.slots)
-              : DEMO_SLOTS
-            const inviteAvailableCount = allSlots.filter((s) => s.status === 'empty').length
-            const inviteTotalCount = allSlots.length
-            return (
-          <section className={mpStyles.inviteCard} aria-label="Your invites">
-            <button
-              type="button"
-              className={mpStyles.inviteHeader}
-              onClick={() => setInvitesExpanded((open) => !open)}
-              aria-expanded={invitesExpanded}
-              aria-controls={invitesListId}
-              aria-label={`${invitesExpanded ? 'Collapse' : 'Expand'} invites, ${inviteAvailableCount} of ${inviteTotalCount} available`}
-            >
-              <span className={mpStyles.inviteTitle} role="heading" aria-level={2}>
-                Your Invites
-              </span>
-              <span className={mpStyles.inviteHeaderActions}>
-                <span className={mpStyles.inviteHeaderCount} aria-hidden>
-                  {inviteAvailableCount} of {inviteTotalCount}
-                </span>
-                <ChevronDownIcon
-                  className={[
-                    mpStyles.inviteHeaderChevron,
-                    !invitesExpanded && mpStyles.inviteHeaderChevronCollapsed,
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                  aria-hidden
-                />
-              </span>
-            </button>
-            <div
-              id={invitesListId}
-              className={[!invitesExpanded && mpStyles.inviteBodyCollapsed]
-                .filter(Boolean)
-                .join(' ')}
-            >
-            {(() => {
-              // Three render modes:
-              //   1. live sections supplied AND non-empty → render per-hop sections (hop header
-              //      hidden when there's only one section so single-hop UX is unchanged)
-              //   2. live sections supplied but all empty → "no invite slots" message
-              //   3. no live sections (showcase / mock preview) → DEMO_SLOTS with mock handlers
-              if (inviteSlotSections) {
-                const isEmpty =
-                  inviteSlotSections.length === 0 ||
-                  inviteSlotSections.every((s) => s.config.slots.length === 0)
-                if (isEmpty) {
-                  return (
-                    <div className={mpStyles.inviteEmpty} role="status">
-                      <p className={mpStyles.inviteEmptyText}>
-                        You have no invite slots available at this hop.
-                      </p>
-                    </div>
-                  )
-                }
-                const showHeaders = inviteSlotSections.length > 1
-                return (
-                  <div className={mpStyles.slotList}>
-                    {inviteSlotSections.map((section) => (
-                      <div key={section.hop} className={mpStyles.inviteSection}>
-                        {showHeaders && (
-                          <div className={mpStyles.inviteSectionHeader}>
-                            <span
-                              className={mpStyles.inviteSectionDot}
-                              style={{ background: section.hopColor }}
-                              aria-hidden
-                            />
-                            <span className={mpStyles.inviteSectionLabel}>
-                              {section.hopLabel}
-                            </span>
-                            <span className={mpStyles.inviteSectionCount}>
-                              ({section.totalSlots}{' '}
-                              {section.totalSlots === 1 ? 'slot' : 'slots'})
-                            </span>
-                          </div>
-                        )}
-                        {section.config.slots.map((slot) => (
-                          <SlotCard
-                            key={slot.id}
-                            slot={slot}
-                            onGenerateLink={section.config.onGenerateLink}
-                            onCopy={section.config.onCopy}
-                            onRevoke={section.config.onRevoke}
-                            onInviteOnchain={section.config.onInviteOnchain}
-                            copied={section.config.copiedId === slot.id}
-                            loading={section.config.loadingId === slot.id}
-                            resolveEns={section.config.resolveEns}
-                            isWrongNetwork={section.config.isWrongNetwork}
-                            onSwitchNetwork={section.config.onSwitchNetwork}
-                          />
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                )
+          {liveSections &&
+          (liveSections.length === 0 ||
+            liveSections.every((s) => s.config.slots.length === 0)) ? (
+            <section className={mpStyles.inviteCard} aria-label="Whitelist a friend">
+              <div className={mpStyles.inviteEmpty} role="status">
+                <p className={mpStyles.inviteEmptyText}>
+                  You have no invite slots available at this hop.
+                </p>
+              </div>
+            </section>
+          ) : (
+            <InvitesCard
+              variant="hero"
+              slots={invitesSlots}
+              allowance={invitesAllowance}
+              selfWalletAddress={selfWalletForInvites}
+              resolveEns={liveSections?.[0]?.config.resolveEns}
+              onGenerateLink={handleGenerateLink}
+              onCopy={handleCopy}
+              onRevoke={handleRevoke}
+              onConfirmCreated={revealInviteInList}
+              onDiscardCreated={discardDeferredInvite}
+              onFlushPending={flushPendingInvites}
+              onInviteOnchain={handleInviteOnchain}
+              copiedSlotId={copiedId}
+              loadingHop={loadingHop}
+              onInviteListOpenChange={handleInviteListOpenChange}
+              panelActive={isMyPosition}
+              onViewRedeemed={(address) =>
+                startPanelTransition('crowdfund', { selectAddress: address })
               }
-              // Showcase / mock path (no live sections).
-              return (
-                <div className={mpStyles.slotList}>
-                  {DEMO_SLOTS.map((slot) => (
-                    <SlotCard
-                      key={slot.id}
-                      slot={slot}
-                      onGenerateLink={handleGenerateLink}
-                      onCopy={handleCopy}
-                      onRevoke={handleRevoke}
-                      onInviteOnchain={handleInviteOnchain}
-                      copied={copiedId === slot.id}
-                      loading={loadingId === slot.id}
-                    />
-                  ))}
-                </div>
-              )
-            })()}
-            </div>
-          </section>
-            )
-          })()}
+            />
+          )}
         </div>
         )}
       </div>

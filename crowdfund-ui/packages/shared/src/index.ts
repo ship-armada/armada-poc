@@ -226,13 +226,27 @@ export type {
   ParticipantRow,
 } from './components/ParticipantsTable/index.js'
 
-export { HeroParticipantsPanel, HeroParticipantsMobileStack } from './components/HeroParticipantsPanel/index.js'
+export {
+  HeroParticipantList,
+  HeroParticipantControls,
+  HeroParticipantsMobileStack,
+} from './components/HeroParticipantsPanel/index.js'
 export type {
-  HeroParticipantsPanelProps,
+  HeroParticipantListProps,
+  HeroParticipantControlsProps,
   HeroParticipantsMobileStackProps,
   HeroHopFilter,
   HeroParticipant,
 } from './components/HeroParticipantsPanel/index.js'
+
+export {
+  CrowdfundLeftColumn,
+  useCrowdfundListAnimation,
+} from './components/CrowdfundLeftColumn/index.js'
+export type {
+  CrowdfundLeftColumnProps,
+  CrowdfundListAnimationContextValue,
+} from './components/CrowdfundLeftColumn/index.js'
 
 export { NodeSphere } from './components/NodeSphere/index.js'
 export type { NodeSphereProps, PinnedNode } from './components/NodeSphere/index.js'
@@ -260,6 +274,7 @@ export {
   MyPosition,
   MyPositionHero,
   MyPositionSplit,
+  InvitesCard,
   COMMITTED as MY_POSITION_COMMITTED,
   CAP as MY_POSITION_CAP,
   ARM_ALLOCATION as MY_POSITION_ARM_ALLOCATION,
@@ -271,9 +286,17 @@ export {
   DEMO_WALLET as MY_POSITION_DEMO_WALLET,
   DEMO_WALLET_DISPLAY as MY_POSITION_DEMO_WALLET_DISPLAY,
   DEMO_SLOTS as MY_POSITION_DEMO_SLOTS,
+  DEMO_INVITE_ALLOWANCE as MY_POSITION_DEMO_INVITE_ALLOWANCE,
   buildInvitePinnedNodes,
 } from './components/MyPosition/index.js'
-export type { MyPositionProps, MyPositionSplitProps } from './components/MyPosition/index.js'
+export type {
+  MyPositionProps,
+  MyPositionSplitProps,
+  InvitesCardProps,
+  InvitesCardVariant,
+  InviteAllowance,
+  InviteeHop,
+} from './components/MyPosition/index.js'
 
 export {
   generateCrowdfund,

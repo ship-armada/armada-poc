@@ -1,5 +1,5 @@
 // ABOUTME: Regression tests for Step2Commit's MIN_COMMIT gating.
-// ABOUTME: A non-zero amount below the per-commit minimum must block Review.
+// ABOUTME: A non-zero amount below the per-commit minimum must block Review (aria-disabled, primary look).
 // @vitest-environment jsdom
 
 import { render, screen, fireEvent } from '@testing-library/react'
@@ -20,27 +20,38 @@ function renderSingle() {
   )
   return {
     input: screen.getByRole('textbox'),
-    review: () => screen.getByRole('button', { name: 'Review' }) as HTMLButtonElement,
+    primary: () =>
+      (screen.queryByRole('button', { name: 'Review' }) ??
+        screen.getByRole('button', { name: 'Input amount' })) as HTMLButtonElement,
   }
 }
 
 describe('Step2Commit MIN_COMMIT gate (single hop)', () => {
-  it('disables Review for a non-zero amount below the minimum', () => {
-    const { input, review } = renderSingle()
+  it('blocks Review for a non-zero amount below the minimum without muted disabled styles', () => {
+    const { input, primary } = renderSingle()
     fireEvent.change(input, { target: { value: String(MIN - 5) } })
-    expect(review().disabled).toBe(true)
+    const btn = primary()
+    expect(btn.disabled).toBe(false)
+    expect(btn.getAttribute('aria-disabled')).toBe('true')
+    expect(btn.textContent).toContain('Review')
     expect(screen.getByText(/Minimum .* USDC per commit/)).toBeTruthy()
   })
 
-  it('enables Review at the minimum', () => {
-    const { input, review } = renderSingle()
+  it('allows Review at the minimum', () => {
+    const { input, primary } = renderSingle()
     fireEvent.change(input, { target: { value: String(MIN) } })
-    expect(review().disabled).toBe(false)
+    const btn = primary()
+    expect(btn.disabled).toBe(false)
+    expect(btn.getAttribute('aria-disabled')).toBeNull()
+    expect(btn.textContent).toContain('Review')
   })
 
-  it('disables Review at zero', () => {
-    const { review } = renderSingle()
-    expect(review().disabled).toBe(true)
+  it('shows Input amount at zero with aria-disabled', () => {
+    const { primary } = renderSingle()
+    const btn = primary()
+    expect(btn.textContent).toContain('Input amount')
+    expect(btn.disabled).toBe(false)
+    expect(btn.getAttribute('aria-disabled')).toBe('true')
   })
 })
 
@@ -74,5 +85,23 @@ describe('Step2Commit fully-committed state (single hop)', () => {
     )
     expect(screen.getByRole('textbox')).toBeTruthy()
     expect(screen.queryByText(/fully committed/i)).toBeNull()
+  })
+})
+
+describe('Step2Commit empty-amount CTA (multi hop)', () => {
+  it('shows Input amount until an amount is entered', () => {
+    render(
+      <Step2Commit
+        onNext={vi.fn()}
+        onBack={vi.fn()}
+        availableBalance={1000}
+        hopRows={[
+          { hop: 0, hopLabel: 'HOP-0', hopColor: '#fff', maxAmount: 4000, existingCommittedUsdc: 0 },
+          { hop: 1, hopLabel: 'HOP-1', hopColor: '#fff', maxAmount: 1000, existingCommittedUsdc: 0 },
+        ]}
+      />,
+    )
+    const btn = screen.getByRole('button', { name: 'Input amount' })
+    expect(btn.getAttribute('aria-disabled')).toBe('true')
   })
 })

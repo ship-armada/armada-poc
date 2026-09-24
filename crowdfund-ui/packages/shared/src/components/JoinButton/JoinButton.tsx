@@ -1,30 +1,25 @@
-// ABOUTME: Circular gradient "Join now" CTA that expands to a pill on hover/expanded state.
-// ABOUTME: Ported byte-identical from the armada-crowdfund mockup; props interface promoted to `export`.
+// ABOUTME: Gradient "Join now" CTA — always shows the expanded label + arrow.
+// ABOUTME: Ported from the armada-crowdfund mockup; `expanded` kept for callers.
 
 import { ArrowRightIcon } from '@heroicons/react/24/solid'
 import styles from './JoinButton.module.css'
 
 export interface JoinButtonProps {
   onClick: () => void
-  /** When true, shows the expanded "Join now" state (e.g. parent card hover). */
+  /** @deprecated Always shows “Join now”; kept for callers. */
   expanded?: boolean
   size?: 'md' | 'lg'
 }
 
-export default function JoinButton({ onClick, expanded = false, size = 'md' }: JoinButtonProps) {
+export default function JoinButton({ onClick, size = 'md' }: JoinButtonProps) {
   return (
     <button
-      className={[
-        styles.button,
-        size === 'lg' && styles.lg,
-        expanded && styles.expanded,
-      ]
-        .filter(Boolean)
-        .join(' ')}
+      type="button"
+      className={[styles.button, size === 'lg' && styles.lg].filter(Boolean).join(' ')}
       onClick={onClick}
     >
       <span className={styles.label}>Join now</span>
-      <ArrowRightIcon className={styles.icon} />
+      <ArrowRightIcon className={styles.icon} aria-hidden />
     </button>
   )
 }

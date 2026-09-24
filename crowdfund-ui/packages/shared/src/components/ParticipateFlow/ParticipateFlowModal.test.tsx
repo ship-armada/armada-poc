@@ -41,4 +41,10 @@ describe('ParticipateFlowModal close', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close participate flow' }))
     expect(onClose).toHaveBeenCalledOnce()
   })
+
+  it('hides the close control when showClose is false', () => {
+    renderModal({ showClose: false, footer: <button type="button">Do it later</button> })
+    expect(screen.queryByRole('button', { name: 'Close participate flow' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Do it later' })).toBeTruthy()
+  })
 })

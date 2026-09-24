@@ -1,0 +1,110 @@
+/* ABOUTME: What happens next carousel inside Step 5 confirmation. */
+
+.root {
+  background: var(--semantic-color-surface-raised);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  padding: var(--primitives-spacing-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
+  flex-shrink: 0;
+}
+
+.eyebrow {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: var(--primitives-letterSpacing-widest);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-muted);
+}
+
+.chevronGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-1);
+  flex-shrink: 0;
+}
+
+.chevronBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--primitives-spacing-6);
+  height: var(--primitives-spacing-6);
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-button) * 1px);
+  background: transparent;
+  color: var(--semantic-color-text-secondary);
+  cursor: pointer;
+}
+
+.chevronBtn:hover {
+  color: var(--semantic-color-text-primary);
+  border-color: var(--semantic-color-border-lavender);
+}
+
+.chevronBtn:focus-visible {
+  outline: 2px solid var(--semantic-color-brand-lavender);
+  outline-offset: 2px;
+}
+
+.chevronIcon {
+  width: var(--primitives-spacing-4);
+  height: var(--primitives-spacing-4);
+}
+
+.slide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+  min-height: calc(var(--primitives-spacing-16) + var(--primitives-spacing-8));
+  animation: slideIn 280ms ease;
+}
+
+.slideTitle {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  line-height: 1.4;
+}
+
+.slideBody {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-secondary);
+  line-height: 1.6;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slide {
+    animation: none;
+  }
+}

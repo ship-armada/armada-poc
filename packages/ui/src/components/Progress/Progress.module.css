@@ -45,6 +45,15 @@
   z-index: 2;
 }
 
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  min-width: 0;
+}
+
 .title {
   font-family: "Geist", sans-serif;
   font-size: calc(var(--primitives-fontSize-xl) * 1px);
@@ -53,10 +62,21 @@
   margin: 0;
 }
 
+.headerAction {
+  flex-shrink: 0;
+}
+
 .tags {
   display: flex;
   gap: 12px;
   align-items: center;
+}
+
+/* Live HH:MM:SS under 48h — tabular figures so the tag width doesn't jump. */
+.timeCounter {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  letter-spacing: 0.02em;
 }
 
 .amountBlock {
@@ -127,8 +147,8 @@
   background: linear-gradient(
     to right,
     var(--semantic-color-brand-lavender) 0%,
-    var(--semantic-color-brand-amber) 55%,
-    var(--semantic-color-brand-amber-dark) 100%
+    var(--semantic-color-brand-gradient-rose) 52%,
+    var(--semantic-color-brand-amber) 100%
   );
   pointer-events: none;
   will-change: width;
@@ -199,7 +219,7 @@
 }
 
 /* Pinned under the threshold line — $ value aligns with vertical marker above */
-.labelMinRaise {
+.labelMinFund {
   position: absolute;
   transform: translateX(0);
   white-space: nowrap;
@@ -228,8 +248,8 @@
 }
 
 /* Laptop / narrow-column responsive — caps the Progress card at 480px and
- * tightens the labels row so the left labels (RAISED %, LEFT $X) don't
- * overlap the MIN-RAISE marker when the host column is below ~1366px wide.
+ * tightens the labels row so the left labels (FUNDED %, LEFT $X) don't
+ * overlap the MIN-FUND marker when the host column is below ~1366px wide.
  * Ported from the armada-crowdfund mockup (commit 214b972). */
 @media (max-width: 1440px) {
   .card {

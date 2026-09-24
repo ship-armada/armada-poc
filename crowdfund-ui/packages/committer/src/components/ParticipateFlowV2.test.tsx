@@ -8,6 +8,7 @@ import { getDefaultStore } from 'jotai'
 import { ParticipateFlowV2, type ParticipateFlowV2Props } from './ParticipateFlowV2'
 import { clearAllPipelines, pipelinesAtom, getPipelineState } from '@/hooks/useTxPipeline'
 import type { HopPosition } from '@/hooks/useEligibility'
+import type { CrowdfundInviteSlotSection } from '@armada/crowdfund-shared'
 
 // The wallet step renders RainbowKit's ConnectButton.Custom — stub the wallet
 // libs so the flow (which starts connected and auto-advances past that step)
@@ -61,6 +62,29 @@ const position: HopPosition = {
   invitedBy: [],
 }
 
+/** Hop-0 invite section; `emptySlots` controls whether any invite slot is still free. */
+function makeInviteSection(emptySlots: number): CrowdfundInviteSlotSection {
+  const slots = [1, 2, 3].map((id) => ({
+    id,
+    status: id <= 3 - emptySlots ? ('redeemed' as const) : ('empty' as const),
+  }))
+  return {
+    hop: 0,
+    hopLabel: 'HOP-0',
+    hopColor: '#ffffff',
+    totalSlots: 3,
+    config: {
+      slots,
+      copiedId: null,
+      loadingId: null,
+      onGenerateLink: vi.fn().mockResolvedValue(undefined),
+      onCopy: vi.fn(),
+      onRevoke: vi.fn(),
+      onInviteOnchain: vi.fn().mockResolvedValue(false),
+    },
+  }
+}
+
 let refreshAllowance: ReturnType<typeof vi.fn>
 let onRunningChange: ReturnType<typeof vi.fn>
 
@@ -89,6 +113,7 @@ function makeProps(): ParticipateFlowV2Props {
     onGoToNetwork: vi.fn(),
     onReceiptLogs: vi.fn(),
     onRunningChange: onRunningChange as unknown as (running: boolean) => void,
+    inviteSlotSections: [makeInviteSection(3)],
   }
 }
 
@@ -201,7 +226,7 @@ describe('ParticipateFlowV2 fully-committed shortcut', () => {
     rerender(<ParticipateFlowV2 {...makeProps()} eventsLoading={false} positions={[fullPosition]} />)
 
     expect(await screen.findByText("You're fully committed.")).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Invite participants' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Whitelist a friend' })).toBeTruthy()
     // No amount input — we skipped the commit/input step entirely.
     expect(screen.queryByRole('textbox')).toBeNull()
   })
@@ -249,10 +274,44 @@ describe('ParticipateFlowV2 finished-pipeline cleanup', () => {
 
     const { unmount } = render(<ParticipateFlowV2 {...makeProps()} />)
     // Re-attaches to the confirmation screen on open.
-    expect(screen.getByRole('button', { name: 'Invite participants' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Whitelist a friend' })).toBeTruthy()
 
     // Closing clears the finished pipeline → a reopen starts fresh (can commit more).
     unmount()
     expect(getPipelineState(store, ADDR).phase).toBe('idle')
+  })
+})
+
+describe('ParticipateFlowV2 confirmation invite gate', () => {
+  function renderConfirmation(sections: CrowdfundInviteSlotSection[]) {
+    getDefaultStore().set(pipelinesAtom, {
+      [ADDR]: { rows: [{ label: 'Commit participation', status: 'done' }], phase: 'success' },
+    })
+    render(<ParticipateFlowV2 {...makeProps()} inviteSlotSections={sections} />)
+  }
+
+  it('offers Whitelist a friend while an invite slot is free', () => {
+    renderConfirmation([makeInviteSection(1)])
+    expect(screen.getByRole('button', { name: 'Whitelist a friend' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Back to crowdfund' })).toBeNull()
+  })
+
+  it('hides Whitelist a friend when every invite slot is used', () => {
+    renderConfirmation([makeInviteSection(0)])
+    expect(screen.queryByRole('button', { name: 'Whitelist a friend' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Back to crowdfund' })).toBeTruthy()
+  })
+
+  it('hides Whitelist a friend for a Hop-2 wallet, which cannot invite', () => {
+    const hop2Section: CrowdfundInviteSlotSection = {
+      ...makeInviteSection(0),
+      hop: 2,
+      hopLabel: 'HOP-2',
+      totalSlots: 0,
+    }
+    hop2Section.config = { ...hop2Section.config, slots: [] }
+    renderConfirmation([hop2Section])
+    expect(screen.queryByRole('button', { name: 'Whitelist a friend' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Back to crowdfund' })).toBeTruthy()
   })
 })

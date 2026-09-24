@@ -9,3 +9,16 @@
 export function hasNoInviteSlots(remaining: bigint): boolean {
   return remaining === 0n
 }
+
+/**
+ * Whether any invite section still has a free (empty) slot — the same
+ * condition the invite send path needs. Hop-2 sections carry no slots, so a
+ * Hop-2-only wallet (or one that has used every slot) has nothing to invite.
+ */
+export function hasFreeInviteSlot(
+  sections: ReadonlyArray<{ config: { slots: ReadonlyArray<{ status: string }> } }> | undefined,
+): boolean {
+  return Boolean(
+    sections?.some((section) => section.config.slots.some((slot) => slot.status === 'empty')),
+  )
+}

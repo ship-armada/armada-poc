@@ -1,5 +1,5 @@
 /* ABOUTME: CSS Module for ClaimFlowV2 — mirrors the commit modal shell (Step3Review / Step5Confirmation) so the claim flow reads as the same aesthetic family. */
-/* ABOUTME: 480px lavender-bordered card centered on the page panel; surface-raised summary card with dividers between rows; lavender-tinted warning block; gradient lg buttons. */
+/* ABOUTME: 480px lavender-bordered card centered on the page panel; surface-raised summary card with dividers between rows; lavender-tinted warning block; primary (violet) CTAs. */
 
 /* ── Gate-state shells (loading / not-open / nothing-to-claim) ──
  * Same compact centered column as before — these short-circuit panels don't
@@ -61,11 +61,13 @@
   color: var(--semantic-color-text-primary);
 }
 
-/* ── Card shell — 480px lavender-bordered modal card ──
- * Mirrors Step3Review / Step5Confirmation `.shell`. `min-height` rather than
- * a fixed height so the delegate-input row can grow without clipping. */
+/* ── Card shell — mirrors participate Step3Review / Step5Confirmation `.shell`.
+ * Fixed 500px height: steps top, content centered in the middle zone, CTAs
+ * pinned to the bottom via `space-between`. Overflow scrolls inside `.cardContent`
+ * when the ARM delegate block is tall. */
 .cardShell {
   width: 480px;
+  height: 500px;
   min-height: 500px;
   background: var(--semantic-color-surface-default);
   border: 1px solid var(--semantic-color-border-lavender);
@@ -75,7 +77,7 @@
   flex-direction: column;
   justify-content: space-between;
   box-sizing: border-box;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .cardContent {
@@ -83,11 +85,13 @@
   flex-direction: column;
   gap: var(--primitives-spacing-5);
   flex: 1;
-  padding-top: var(--primitives-spacing-8);
-  /* Symmetric vertical breathing room — when the warning block (or delegate
-   * block in ARM mode) is the last child, this keeps it from sitting flush
-   * against the button row below. */
-  padding-bottom: var(--primitives-spacing-6);
+  min-height: 0;
+  /* `safe center` centers when there's room but top-aligns when content
+   * overflows, so the top stays scrollable instead of clipping. Browsers
+   * without `safe` support ignore it and keep the top-aligned fallback. */
+  justify-content: flex-start;
+  justify-content: safe center;
+  overflow-y: auto;
 }
 
 .cardTitle {
@@ -366,6 +370,7 @@
   .cardShell {
     width: 100%;
     max-width: none;
+    height: auto;
     min-height: 0;
   }
 }

@@ -20,9 +20,15 @@
   white-space: nowrap;
   outline: none;
 }
-.navItem:hover:not(.active) { background: var(--semantic-component-navitem-default-bg-hover); color: var(--semantic-component-navitem-default-text-hover); }
+.navItem:hover:not(.active):not(:disabled) { background: var(--semantic-component-navitem-default-bg-hover); color: var(--semantic-component-navitem-default-text-hover); }
 .navItem:focus-visible { box-shadow: 0 0 0 2px var(--semantic-color-border-focus); }
 .active { background: var(--semantic-component-navitem-active-bg); color: var(--semantic-component-navitem-active-text); }
+.navItem:disabled,
+.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
 
 /* Light theme — muted default text, lavender active pill with dark text. The
    mockup applied these to the base rule; we scope to light so dark stays
@@ -30,7 +36,7 @@
 :global([data-theme='light']) .navItem {
   color: var(--semantic-color-text-muted);
 }
-:global([data-theme='light']) .navItem:hover:not(.active) {
+:global([data-theme='light']) .navItem:hover:not(.active):not(:disabled) {
   background: transparent;
   color: var(--semantic-color-text-secondary);
 }

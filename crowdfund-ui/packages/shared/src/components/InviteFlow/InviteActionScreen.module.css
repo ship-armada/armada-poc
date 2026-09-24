@@ -1,0 +1,397 @@
+/* ABOUTME: Full-surface invite action screen (link / onchain) with hop tag + Cancel/primary CTAs. */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-5);
+  width: 100%;
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.topRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
+  flex-shrink: 0;
+}
+
+.methodPick {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--primitives-spacing-3);
+}
+
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+  min-width: 0;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+}
+
+.hopLabelRow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  min-width: 0;
+}
+
+.hopDot {
+  width: var(--semantic-component-tag-dot-size);
+  height: var(--semantic-component-tag-dot-size);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.hopLabel {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-muted);
+  line-height: var(--primitives-lineHeight-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slotLabel {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.hint {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.hintStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+}
+
+.ctaRow {
+  display: flex;
+  align-items: stretch;
+  gap: var(--primitives-spacing-3);
+  flex-shrink: 0;
+  margin-top: auto;
+}
+
+.ctaRow > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.ctaColumn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+  flex-shrink: 0;
+  margin-top: auto;
+}
+
+.createdLinkBox {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--primitives-spacing-3);
+  padding: var(--primitives-spacing-4);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  border: 1px solid var(--semantic-color-border-default);
+  background: color-mix(in srgb, var(--primitives-color-neutral-50) 40%, transparent);
+  min-width: 0;
+}
+
+.createdLinkMain {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.createdLinkMenu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.moreBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--primitives-spacing-8);
+  height: var(--primitives-spacing-8);
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: calc(var(--semantic-borderRadius-button) * 1px);
+  background: transparent;
+  color: var(--semantic-color-text-secondary);
+  cursor: pointer;
+}
+
+.moreBtn:hover {
+  color: var(--semantic-color-text-primary);
+  background: var(--semantic-component-navitem-default-bg-hover);
+}
+
+.moreBtn:focus-visible {
+  outline: 2px solid var(--semantic-color-brand-lavender);
+  outline-offset: 2px;
+}
+
+.moreIcon {
+  width: calc(var(--primitives-fontSize-md) * 1px);
+  height: calc(var(--primitives-fontSize-md) * 1px);
+}
+
+.moreMenu {
+  position: absolute;
+  top: calc(100% + var(--primitives-spacing-1));
+  right: 0;
+  z-index: 20;
+  margin: 0;
+  padding: var(--primitives-spacing-1);
+  list-style: none;
+  min-width: calc(var(--primitives-spacing-11) * 2);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  border: 1px solid var(--semantic-color-border-default);
+  background: var(--semantic-color-surface-raised);
+  box-shadow: 0 var(--primitives-spacing-1) var(--primitives-spacing-4)
+    color-mix(in srgb, var(--primitives-color-neutral-0) 45%, transparent);
+}
+
+.moreMenuItem {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: var(--primitives-spacing-2) var(--primitives-spacing-3);
+  border: none;
+  border-radius: calc(var(--semantic-borderRadius-button) * 1px);
+  background: transparent;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.moreMenuItem:hover,
+.moreMenuItem:focus-visible {
+  background: var(--semantic-component-navitem-default-bg-hover);
+  outline: none;
+}
+
+.moreMenuItemDanger {
+  color: var(--semantic-color-status-error);
+}
+
+.createdLinkPath {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-mono), monospace;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.createdLinkMeta {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+.revokeBtn {
+  color: var(--semantic-color-status-error);
+}
+
+.ctaBlocked {
+  cursor: not-allowed;
+}
+
+.inputWrapper {
+  position: relative;
+  width: 100%;
+}
+
+/* Address field: label, input (with trailing Paste), then resolving /
+ * resolved / error text. */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-2);
+}
+
+/* Visible field label — not in the mockup (it uses an aria-label only); kept
+ * for clarity and accessibility, styled like the hop label. */
+.fieldLabel {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-muted);
+}
+
+.input {
+  width: 100%;
+  height: var(--primitives-spacing-11);
+  background: var(--semantic-color-surface-raised);
+  border: 1px solid color-mix(in srgb, var(--semantic-color-text-primary) 18%, transparent);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  padding: 0 var(--primitives-spacing-4);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-primary);
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.inputWithPaste {
+  padding-right: calc(var(--primitives-spacing-11) + var(--primitives-spacing-6));
+}
+
+.input::placeholder {
+  color: var(--semantic-color-text-secondary);
+}
+
+.input:focus {
+  border-color: var(--semantic-color-border-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--semantic-color-border-focus) 28%, transparent);
+}
+
+.inputError {
+  border-color: var(--semantic-color-status-error) !important;
+  box-shadow: none;
+}
+
+.inputResolved {
+  border-color: var(--semantic-color-status-success);
+}
+
+.inputTrailing {
+  position: absolute;
+  right: var(--primitives-spacing-2);
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  max-width: 55%;
+  min-width: 0;
+}
+
+.pasteBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin: 0;
+  padding: var(--primitives-spacing-1) var(--primitives-spacing-3);
+  min-height: var(--primitives-spacing-6);
+  border: none;
+  border-radius: calc(var(--semantic-borderRadius-button) * 1px);
+  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 18%, transparent);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  line-height: var(--primitives-lineHeight-normal);
+  color: var(--semantic-color-brand-lavender);
+  cursor: pointer;
+}
+
+.pasteBtn:hover {
+  color: var(--semantic-color-text-primary);
+  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 28%, transparent);
+}
+
+.pasteBtn:focus-visible {
+  outline: 2px solid var(--semantic-color-brand-lavender);
+  outline-offset: 2px;
+}
+
+.spinner {
+  width: var(--primitives-spacing-4);
+  height: var(--primitives-spacing-4);
+  border-radius: 9999px;
+  border: 1.5px solid var(--semantic-color-border-lavender);
+  border-top-color: var(--semantic-color-brand-lavender);
+  animation: spin 700ms linear infinite;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.inlineResolved {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-status-success);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.createdAddressMono {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-mono), monospace;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.errorMsg {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-status-error);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+    border-top-color: var(--semantic-color-brand-lavender);
+    opacity: 0.6;
+  }
+
+  .input {
+    transition: none;
+  }
+}

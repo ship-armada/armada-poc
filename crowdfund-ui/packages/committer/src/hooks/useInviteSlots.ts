@@ -35,7 +35,7 @@ export interface UseInviteSlotsResult {
   empty: boolean
 }
 
-const HOP_LABELS = ['SEED', 'HOP-1', 'HOP-2'] as const
+const HOP_LABELS = ['HOP-0', 'HOP-1', 'HOP-2'] as const
 const HOP_DOT_KEYS = ['seed', 'hop-1', 'hop-2'] as const
 
 /** Map an `HopPosition` plus its slot UI to one `CrowdfundInviteSlotSection`.
@@ -120,13 +120,19 @@ function useHopSection(args: {
   // `Invited(inviter, invitee, hop, nonce)` covers both signed-link
   // redemptions (nonce = the link's nonce) and direct `invite()` calls
   // (nonce = 0). Split per-hop so each section drives its own slot state.
-  const { directInvitedAddresses, linkRedemptions } = useMemo<{
+  // `Committed` at the invitee hop marks a direct invitee as joined (link
+  // redemptions commit atomically, so they're joined by construction).
+  const { directInvitedAddresses, linkRedemptions, committedInvitees } = useMemo<{
     directInvitedAddresses: string[]
     linkRedemptions: Map<number, string>
+    committedInvitees: Set<string>
   }>(() => {
     const directs: string[] = []
     const redemptions = new Map<number, string>()
-    if (!address) return { directInvitedAddresses: directs, linkRedemptions: redemptions }
+    const committed = new Set<string>()
+    if (!address) {
+      return { directInvitedAddresses: directs, linkRedemptions: redemptions, committedInvitees: committed }
+    }
     const lowerAddr = address.toLowerCase()
     const targetHop = hop + 1
     const matched = events
@@ -148,7 +154,12 @@ function useHopSection(args: {
         redemptions.set(nonceNum, invitee)
       }
     }
-    return { directInvitedAddresses: directs, linkRedemptions: redemptions }
+    for (const e of events) {
+      if (e.type !== 'Committed') continue
+      if (Number(e.args.hop) !== targetHop) continue
+      committed.add(String(e.args.participant).toLowerCase())
+    }
+    return { directInvitedAddresses: directs, linkRedemptions: redemptions, committedInvitees: committed }
   }, [events, address, hop])
 
   // Build visible slot rows. On-chain consumption (redemptions + direct
@@ -164,9 +175,11 @@ function useHopSection(args: {
         activeLinks,
         linkRedemptions,
         directInvitedAddresses,
+        committedInvitees,
         selfAddress: address,
+        inviteeHop: (hop + 1 <= 2 ? hop + 1 : 2) as 0 | 1 | 2,
       }),
-    [totalSlots, activeLinks, directInvitedAddresses, linkRedemptions, startId, address],
+    [totalSlots, activeLinks, directInvitedAddresses, linkRedemptions, committedInvitees, startId, address, hop],
   )
 
   const onGenerateLink = useCallback(
@@ -174,7 +187,14 @@ function useHopSection(args: {
       if (!guardNetwork()) return
       setLoadingId(slotId)
       try {
-        await inviteLinks.createLink(hop)
+        const created = await inviteLinks.createLink(hop)
+        if (!created) return
+        return {
+          id: slotId,
+          link: created.url,
+          expiresAt: new Date(created.deadline * 1000),
+          nonce: created.nonce,
+        }
       } finally {
         setLoadingId((cur) => (cur === slotId ? null : cur))
       }
@@ -206,10 +226,12 @@ function useHopSection(args: {
     [linkBySlotId, inviteLinks, setLoadingId, guardNetwork],
   )
 
+  // Resolves true only once the invite tx is confirmed. Failures are surfaced
+  // here via toast and resolve false so callers never show a success state.
   const onInviteOnchain = useCallback(
-    async (slotId: number, invitee: string, ensName?: string) => {
-      if (!guardNetwork()) return
-      if (!signer || !crowdfundAddress) return
+    async (slotId: number, invitee: string, ensName?: string): Promise<boolean> => {
+      if (!guardNetwork()) return false
+      if (!signer || !crowdfundAddress) return false
       setLoadingId(slotId)
       try {
         const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, signer)
@@ -223,6 +245,7 @@ function useHopSection(args: {
         }
         await inviteLinks.refreshLinks()
         toast.success(`Invite sent to ${ensName ?? truncateAddress(invitee)}`)
+        return true
       } catch (err) {
         if (isTxTimeoutError(err)) {
           // The invite tx may still confirm — don't claim failure.
@@ -232,6 +255,7 @@ function useHopSection(args: {
           // message, not raw calldata/internal error text.
           toast.error('Invite failed', { description: mapRevertToMessage(err), duration: 10_000 })
         }
+        return false
       } finally {
         setLoadingId((cur) => (cur === slotId ? null : cur))
       }

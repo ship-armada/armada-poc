@@ -36,6 +36,7 @@ import { getHubNetworkLabel } from '@/config/network'
 import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
 import { isMobileBrowser } from '@/lib/isMobileBrowser'
 import { submitTxViaWagmi } from '@/lib/mobileTxSubmit'
+import { hasFreeInviteSlot } from '@/lib/inviteSlots'
 import { useTxPipeline, type TxStep } from '@/hooks/useTxPipeline'
 import { useSelfFill } from '@/hooks/useSelfFill'
 import { useResetPipelineOnClose } from '@/hooks/useResetPipelineOnClose'
@@ -76,6 +77,9 @@ export interface ParticipateFlowV2Props {
   /** Notifies the parent when the approve/commit pipeline starts/stops, so the
    *  enclosing modal can confirm before closing mid-transaction. */
   onRunningChange?: (running: boolean) => void
+  /** True while the splash (invite) step is showing — parent hides the modal X
+   *  and shows a “Do it later” footer instead. */
+  onSplashActiveChange?: (active: boolean) => void
   /** True while contract events are still hydrating. Avoids flashing the
    *  "not whitelisted" screen at an eligible user before their positions load. */
   eventsLoading?: boolean
@@ -104,7 +108,7 @@ function armToNumber(amount: bigint): number {
   return Number(whole) + Number(frac) / 1e18
 }
 
-const HOP_LABELS = ['SEED', 'HOP-1', 'HOP-2'] as const
+const HOP_LABELS = ['HOP-0', 'HOP-1', 'HOP-2'] as const
 const HOP_DOT_KEYS = ['seed', 'hop-1', 'hop-2'] as const
 
 type AmountsByHop = Record<0 | 1 | 2, number>
@@ -130,6 +134,7 @@ export function ParticipateFlowV2({
   inviteSlotSections,
   onReceiptLogs,
   onRunningChange,
+  onSplashActiveChange,
   eventsLoading,
   secondsLeft,
 }: ParticipateFlowV2Props) {
@@ -152,6 +157,10 @@ export function ParticipateFlowV2({
   const { disconnect } = useDisconnect()
   const { openConnectModal } = useConnectModal()
 
+  useEffect(() => {
+    onSplashActiveChange?.(step === 'splash')
+    return () => onSplashActiveChange?.(false)
+  }, [step, onSplashActiveChange])
   // Surface in-flight status so the modal can confirm before closing. The
   // cleanup resets the parent's flag on unmount — the pipeline keeps running in
   // the store, and reopening the modal re-derives the flag from its phase.
@@ -368,6 +377,8 @@ export function ParticipateFlowV2({
         {maxOutOption && <MaxOutBanner maxOut={maxOutOption} />}
         <Step5Confirmation
           onViewPosition={onGoToMyPosition}
+          onBackToCrowdfund={onGoToNetwork}
+          canInvite={hasFreeInviteSlot(inviteSlotSections)}
           onInvite={() => {
             if (inviteSlotSections && inviteSlotSections.length > 0) {
               setStep('invites')

@@ -21,7 +21,7 @@ describe('Step5Confirmation', () => {
     expect(screen.getByText("You're fully committed.")).toBeTruthy()
     expect(screen.getByText(/committed the maximum/i)).toBeTruthy()
     expect(screen.getByText(/\$4,000/)).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Invite participants' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Whitelist a friend' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'View your position' })).toBeTruthy()
   })
 
@@ -29,5 +29,20 @@ describe('Step5Confirmation', () => {
     render(<Step5Confirmation onInvite={vi.fn()} amount={1000} estimatedArm={1000} />)
     expect(screen.getByText("You're in.")).toBeTruthy()
     expect(screen.queryByText(/committed the maximum/i)).toBeNull()
+  })
+
+  it('promotes View your position and shows Back to crowdfund when canInvite is false', () => {
+    render(
+      <Step5Confirmation
+        canInvite={false}
+        onViewPosition={vi.fn()}
+        onBackToCrowdfund={vi.fn()}
+        amount={1000}
+        estimatedArm={1000}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: 'Whitelist a friend' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Back to crowdfund' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'View your position' })).toBeTruthy()
   })
 })

@@ -29,10 +29,10 @@
  * short viewports still get a scrollable card. Single-hop reviews keep
  * the unmodified 500px shell. */
 .shellMultiHop {
+  /* Grow with content — scrolling happens on the modal backdrop, not here. */
   height: auto;
   min-height: 500px;
-  max-height: 80vh;
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .content {

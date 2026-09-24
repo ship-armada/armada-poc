@@ -13,11 +13,18 @@ import {
   sanitizeAddressInput,
   tryGetChecksumAddress,
 } from '../../../lib/addressInput'
+import { INVITE_METHOD_PICKER_UX } from '../../../lib/inviteUx'
 import { MOBILE_LAYOUT_MAX_WIDTH_PX } from '../../../lib/viewportBreakpoints'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-export type SlotStatus = 'empty' | 'link-active' | 'onchain-pending' | 'redeemed'
+export type SlotStatus =
+  | 'empty'
+  | 'link-active'
+  | 'onchain-pending'
+  | 'redeemed'
+  | 'expired'
+  | 'revoked'
 type ExpandedAction = 'link' | 'onchain' | null
 type EnsState = 'idle' | 'resolving' | 'resolved' | 'error'
 
@@ -39,6 +46,22 @@ export interface SlotData {
   /** True when the invitee is the connected wallet itself (a self-invite to the
    *  next hop) — the row reads "Self-invited" instead of "Invited". */
   isSelf?: boolean
+  /** When the invitee joined / redeemed (shown as “Joined on …”). */
+  joinedAt?: Date
+  /** When an onchain address invite was issued. */
+  invitedAt?: Date
+  /** When a link expired or was revoked. */
+  closedAt?: Date
+  /**
+   * Hop the invitee joins at (1 = Hop-1, 2 = Hop-2).
+   * Prefer 1 | 2 for new invites; 0 kept for legacy showcase fixtures.
+   */
+  inviteeHop?: 0 | 1 | 2
+  /**
+   * When true, invite counts toward allowance but stays off the sent list
+   * until the create confirmation is dismissed (Done / close).
+   */
+  hideFromList?: boolean
 }
 
 /**
@@ -52,13 +75,16 @@ export type SlotCardEnsResult =
 
 interface SlotCardProps {
   slot: SlotData
-  onGenerateLink: (slotId: number) => Promise<void>
+  onGenerateLink: (slotId: number) => Promise<
+    | void
+    | { id: number; link: string; expiresAt: Date; nonce?: number }
+  >
   onCopy: (slotId: number, link: string) => void
   onRevoke: (slotId: number) => void
   onInviteOnchain: (slotId: number, address: string, ensName?: string) => Promise<void>
   copied?: boolean
   loading?: boolean
-  /** Showcase / static demos — start with link or onchain panel open */
+  /** Showcase / static demos — start with link or onchain panel open (legacy UX only). */
   defaultExpandedAction?: Exclude<ExpandedAction, null>
   /**
    * Controlled ENS resolver. Called when the user types an ENS-looking input.
@@ -72,6 +98,15 @@ interface SlotCardProps {
   isWrongNetwork?: boolean
   /** Open the chain-switch affordance (RainbowKit chain modal). */
   onSwitchNetwork?: () => void
+  /**
+   * Method-picker UX: empty slots show a single Invite button. Called with the
+   * slot id and the button element (anchor for the desktop menu).
+   */
+  onInviteClick?: (slotId: number, anchor: HTMLElement) => void
+  invitePickerOpen?: boolean
+  onInviteButtonRef?: (slotId: number, el: HTMLButtonElement | null) => void
+  /** Redeemed slots: open crowdfund with this invitee selected. */
+  onViewRedeemed?: (address: string) => void
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -81,6 +116,20 @@ function formatExpiry(date: Date): string {
   if (diffDays <= 0) return 'Expired'
   if (diffDays === 1) return 'Expires tomorrow'
   return `Expires in ${diffDays} days`
+}
+
+function formatJoinedOn(date: Date): string {
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+const INVITEE_HOP_META: Record<0 | 1 | 2, string> = {
+  0: 'Hop-0',
+  1: 'Hop-1',
+  2: 'Hop-2',
 }
 
 export function truncateAddress(addr: string): string {
@@ -110,15 +159,28 @@ export default function SlotCard({
   resolveEns,
   isWrongNetwork = false,
   onSwitchNetwork,
+  onInviteClick,
+  invitePickerOpen = false,
+  onInviteButtonRef,
+  onViewRedeemed,
 }: SlotCardProps) {
+  const useMethodPicker = INVITE_METHOD_PICKER_UX && Boolean(onInviteClick) && !isWrongNetwork
+  const inviteBtnRef = useRef<HTMLButtonElement>(null)
   const [expandedAction, setExpandedAction] = useState<ExpandedAction>(
-    slot.status === 'empty' ? (defaultExpandedAction ?? null) : null
+    slot.status === 'empty' && !useMethodPicker ? (defaultExpandedAction ?? null) : null
   )
   const [addressInput, setAddressInput] = useState('')
   // Mirror of `addressInput` in a ref so async ENS resolution can race-guard
   // against the user typing more characters while a lookup is in flight.
   const addressInputRef = useRef(addressInput)
   addressInputRef.current = addressInput
+
+  useEffect(() => {
+    if (!useMethodPicker || !onInviteButtonRef) return
+    onInviteButtonRef(slot.id, inviteBtnRef.current)
+    return () => onInviteButtonRef(slot.id, null)
+  }, [useMethodPicker, onInviteButtonRef, slot.id])
+
   const [ensState, setEnsState] = useState<EnsState>('idle')
   const [resolvedAddress, setResolvedAddress] = useState('')
   const [revokeConfirmOpen, setRevokeConfirmOpen] = useState(false)
@@ -344,6 +406,21 @@ export default function SlotCard({
                   onClick={() => onSwitchNetwork?.()}
                 />
               </div>
+            ) : useMethodPicker ? (
+              <div className={styles.actions}>
+                <Button
+                  ref={inviteBtnRef}
+                  variant="secondary"
+                  size="sm"
+                  label="Invite"
+                  showIcon={false}
+                  aria-haspopup="menu"
+                  aria-expanded={invitePickerOpen}
+                  onClick={(e) => {
+                    if (onInviteClick) onInviteClick(slot.id, e.currentTarget)
+                  }}
+                />
+              </div>
             ) : (
               <div className={styles.actions}>
                 <Button
@@ -428,7 +505,7 @@ export default function SlotCard({
           {slot.status === 'redeemed' && (
             <div className={styles.statusRow}>
               <div className={styles.addressStack}>
-                <span className={styles.addressPrimary}>
+                <span className={styles.addressPrimaryBright}>
                   {slot.redeemedEnsName ??
                     (slot.redeemedBy ? truncateAddress(slot.redeemedBy) : 'Link redeemed')}
                 </span>
@@ -437,8 +514,26 @@ export default function SlotCard({
                     {truncateAddress(slot.redeemedBy)}
                   </span>
                 )}
+                {(slot.inviteeHop != null || slot.joinedAt) && (
+                  <span className={styles.addressSecondary}>
+                    {[
+                      slot.inviteeHop != null ? INVITEE_HOP_META[slot.inviteeHop] : null,
+                      slot.joinedAt ? `Joined on ${formatJoinedOn(slot.joinedAt)}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' • ')}
+                  </span>
+                )}
               </div>
-              <Tag label="Joined" dot="active" />
+              {slot.redeemedBy && onViewRedeemed ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  label="View"
+                  showIcon={false}
+                  onClick={() => onViewRedeemed(slot.redeemedBy!)}
+                />
+              ) : null}
             </div>
           )}
 
@@ -446,7 +541,7 @@ export default function SlotCard({
       </div>
 
       {/* ── Expanded: create link ── */}
-      {slot.status === 'empty' && expandedAction === 'link' && (
+      {!useMethodPicker && slot.status === 'empty' && expandedAction === 'link' && (
         <div className={styles.expandedSection}>
           <p className={styles.hint}>
             Your wallet will sign a message to generate the link. No gas required.
@@ -465,7 +560,7 @@ export default function SlotCard({
       )}
 
       {/* ── Expanded: invite onchain ── */}
-      {slot.status === 'empty' && expandedAction === 'onchain' && (
+      {!useMethodPicker && slot.status === 'empty' && expandedAction === 'onchain' && (
         <div className={styles.expandedSection}>
           <div className={styles.inputWrapper}>
             <input

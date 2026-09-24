@@ -169,28 +169,25 @@ describe('formatTimeLeft', () => {
     expect(formatTimeLeft(Number.NaN)).toBe('')
   })
 
-  it('shows whole days only while at least one day remains (floors)', () => {
+  it('shows whole days while at least 48 hours remain (floors)', () => {
     // 2d16h floors to "2 days" — no rounding up to 3.
     expect(formatTimeLeft(2 * 86400 + 16 * 3600)).toBe('2 days')
     expect(formatTimeLeft(2 * 86400)).toBe('2 days')
   })
 
-  it('uses the singular for exactly one day', () => {
-    expect(formatTimeLeft(86400)).toBe('1 day')
-    expect(formatTimeLeft(86400 + 23 * 3600)).toBe('1 day')
+  it('switches to an HH:MM:SS counter under 48 hours', () => {
+    // Exactly 1 day is under the 48h threshold → counter, not "1 day".
+    expect(formatTimeLeft(86400)).toBe('24:00:00')
+    expect(formatTimeLeft(86400 + 23 * 3600)).toBe('47:00:00')
+    expect(formatTimeLeft(13 * 3600 + 24 * 60 + 5)).toBe('13:24:05')
+    expect(formatTimeLeft(3600)).toBe('01:00:00')
+    expect(formatTimeLeft(9 * 60)).toBe('00:09:00')
+    expect(formatTimeLeft(30)).toBe('00:00:30')
   })
 
-  it('drops to hours and minutes under one day', () => {
-    expect(formatTimeLeft(13 * 3600 + 24 * 60)).toBe('13h 24m')
-    expect(formatTimeLeft(3600)).toBe('1h 0m')
-  })
-
-  it('shows minutes only under one hour', () => {
-    expect(formatTimeLeft(9 * 60)).toBe('9m')
-  })
-
-  it('rounds a sub-minute sliver up to 1m so it never reads 0m', () => {
-    expect(formatTimeLeft(30)).toBe('1m')
+  it('uses the counter at just under 48 hours and days at exactly 48 hours', () => {
+    expect(formatTimeLeft(48 * 3600 - 1)).toBe('47:59:59')
+    expect(formatTimeLeft(48 * 3600)).toBe('2 days')
   })
 })
 
@@ -215,8 +212,8 @@ describe('formatTimeLeftDetail', () => {
 })
 
 describe('hopLabel', () => {
-  it('labels hop 0 as Seed', () => {
-    expect(hopLabel(0)).toBe('Seed (hop-0)')
+  it('labels hop 0 as Hop-0', () => {
+    expect(hopLabel(0)).toBe('Hop-0')
   })
 
   it('labels hop 1', () => {

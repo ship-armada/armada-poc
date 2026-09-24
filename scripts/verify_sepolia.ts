@@ -122,7 +122,14 @@ async function buildGovernanceCrowdfundTasks(): Promise<VerifyTask[]> {
   const windDownDeadline = await windDown.windDownDeadline();
   const revenueThreshold = await windDown.revenueThreshold();
 
-  const revenueLockTasks = await buildRevenueLockVerificationTasks(c, config.revenueLockBeneficiaries, gov.revenueLockConstructorArgs);
+  // The archived 200 ARM lock predates the corrected 2.4M Sepolia schedule.
+  // Verify its actual constructor schedule, not a later testnet deployment file.
+  const direct = gov.legacyRevenueLockSchedule
+    ? gov.revenueLockConstructorArgs[3].map((address: string, i: number) => ({
+      address, amount: ethers.formatUnits(gov.revenueLockConstructorArgs[4][i], 18), label: "legacy constructor",
+    }))
+    : config.revenueLockBeneficiaries;
+  const revenueLockTasks = await buildRevenueLockVerificationTasks(c, direct, gov.revenueLockConstructorArgs);
 
   return [
     // --- Governance contracts ---

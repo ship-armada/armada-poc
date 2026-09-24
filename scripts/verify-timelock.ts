@@ -23,3 +23,35 @@ export async function timelockBootstrapChecks(address: string, deployer: string,
   }
   return checks;
 }
+
+/** Enumerate historical role holders, then verify their current membership. The
+ * timelock's AccessControl implementation has no enumerable role membership. */
+export async function timelockUnexpectedRoleHolders(address: string, fromBlock: number,
+  expectedGovernor: string): Promise<string[]> {
+  if (!Number.isSafeInteger(fromBlock) || fromBlock < 0) throw new Error("Invalid timelock deployment block");
+  const timelock = await ethers.getContractAt("TimelockController", address);
+  const topics = [timelock.interface.getEvent("RoleGranted")!.topicHash,
+    timelock.interface.getEvent("RoleRevoked")!.topicHash];
+  const accounts = new Map<string, string>();
+  const latest = await ethers.provider.getBlockNumber();
+  for (let start = fromBlock; start <= latest; start += 5000) {
+    const logs = await ethers.provider.getLogs({ address, fromBlock: start,
+      toBlock: Math.min(start + 4999, latest), topics: [topics] });
+    for (const log of logs) {
+      const parsed = timelock.interface.parseLog(log);
+      if (parsed) accounts.set(ethers.getAddress(parsed.args.account), parsed.args.account);
+    }
+  }
+  const roles = [await timelock.TIMELOCK_ADMIN_ROLE(), await timelock.PROPOSER_ROLE(),
+    await timelock.EXECUTOR_ROLE(), await timelock.CANCELLER_ROLE()];
+  const unexpected: string[] = [];
+  for (const account of accounts.values()) {
+    for (const role of roles) {
+      const permitted = role === roles[0]
+        ? ethers.getAddress(account) === ethers.getAddress(address)
+        : ethers.getAddress(account) === ethers.getAddress(expectedGovernor);
+      if (await timelock.hasRole(role, account) && !permitted) unexpected.push(`${account}: ${role}`);
+    }
+  }
+  return unexpected;
+}

@@ -3,7 +3,7 @@
 import { expect } from "chai";
 import { ethers, network } from "hardhat";
 import { ensureRevenueLockActivated } from "../scripts/revenue-reserve";
-import { timelockBootstrapChecks } from "../scripts/verify-timelock";
+import { timelockBootstrapChecks, timelockUnexpectedRoleHolders } from "../scripts/verify-timelock";
 
 describe("Reserve launch safety", function () {
   async function fixture(funded = true) {
@@ -104,5 +104,19 @@ describe("Reserve launch safety", function () {
     expect(strict.every(check => check.status === "FAIL")).to.equal(true);
     const partial = await timelockBootstrapChecks(await timelock.getAddress(), deployer.address);
     expect(partial.every(check => check.status === "WARN")).to.equal(true);
+  });
+
+  // WHY: A clean deployer role check cannot detect a second address with proposer power.
+  it("detects additional live timelock role holders from grants and revocations", async function () {
+    const { timelock, deployer, outsider } = await fixture();
+    const block = (await timelock.deploymentTransaction()!.wait())!.blockNumber;
+    const address = await timelock.getAddress();
+    const role = await timelock.PROPOSER_ROLE();
+    await timelock.grantRole(role, outsider.address);
+    expect(await timelockUnexpectedRoleHolders(address, block, deployer.address))
+      .to.include(`${outsider.address}: ${role}`);
+    await timelock.revokeRole(role, outsider.address);
+    expect(await timelockUnexpectedRoleHolders(address, block, deployer.address))
+      .not.to.include(`${outsider.address}: ${role}`);
   });
 });

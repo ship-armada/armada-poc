@@ -2,6 +2,8 @@
 // ABOUTME: scheme, client ordering, role/domain/chainId lookups, and CCTP address merging.
 
 import { expect } from "chai";
+import * as fs from "fs";
+import * as path from "path";
 
 // Env keys the config reads that a test might set — cleared between tests so one case
 // can't leak chain topology into the next (getNetworkConfig caches, so we also re-require).
@@ -153,5 +155,14 @@ describe("reserve configuration", () => {
       REVENUE_RESERVE_AMOUNT: "360000" }).getNetworkConfig();
     expect(configured.revenueReserve).to.deep.equal({ allocator, amount: "360000" });
     expect(freshConfig({ DEPLOY_ENV: "local" }).getNetworkConfig().revenueReserve).to.equal(undefined);
+  });
+
+  // WHY: The committed Sepolia schedule must exhaust the lock budget in either
+  // mode; the previous 200 ARM file would strand 2,399,800 ARM on activation.
+  it("pins fresh Sepolia beneficiary totals for direct and reserve rehearsals", () => {
+    const total = (file: string) => (JSON.parse(fs.readFileSync(path.join(__dirname, file), "utf8")) as
+      { amount: string }[]).reduce((sum, row) => sum + BigInt(row.amount), 0n);
+    expect(total("revenue-lock-beneficiaries-sepolia.json")).to.equal(2_400_000n);
+    expect(total("revenue-lock-beneficiaries-sepolia-reserve.json") + 360_000n).to.equal(2_400_000n);
   });
 });

@@ -36,5 +36,6 @@
       "100000000000000000000"
     ]
   ],
-  "revenueLockDeploymentTransaction": "0x681abad1026db36d1b7b336323cf3f0243d35b15b4d8589802dcfd7bc812e8ac"
+  "revenueLockDeploymentTransaction": "0x681abad1026db36d1b7b336323cf3f0243d35b15b4d8589802dcfd7bc812e8ac",
+  "legacyRevenueLockSchedule": true
 }

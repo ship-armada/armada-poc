@@ -4,7 +4,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { loadFixture, takeSnapshot, time, mine, setBalance } from "@nomicfoundation/hardhat-network-helpers";
 import { deployGovernorProxy } from "./helpers/deploy-governor";
-import { assertAllocatorMultisig, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, validateReservePlan, revenueLockSchedule, type RevenueLockConstructorArgs } from "../scripts/revenue-reserve";
+import { assertAllocatorMultisig, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, assertReservePostFunding, assertCreationProvenance, validateReservePlan, revenueLockSchedule, type RevenueLockConstructorArgs } from "../scripts/revenue-reserve";
 import { buildRevenueLockVerificationTasks } from "../scripts/verify_sepolia";
 
 describe("Reserve deployment funding gate", function () {
@@ -42,6 +42,7 @@ describe("Reserve deployment funding gate", function () {
       treasury.address, governorAddress, await redemption.getAddress(), pause.address,
       await counter.getAddress(), lockAddress, deployer.address, ethers.parseEther("10000"), windDownDeadline);
     const windDownAddress = await windDown.getAddress();
+    await redemption.setWindDown(windDownAddress);
     await lock.setWindDownContract(windDownAddress);
     await counter.setWindDownContract(windDownAddress);
     await token.setWindDownContract(windDownAddress);
@@ -57,8 +58,39 @@ describe("Reserve deployment funding gate", function () {
     const exclude = () => governor.setExcludedAddresses([lockAddress, distributorAddress]);
     const constructorArgs: RevenueLockConstructorArgs = [tokenAddress, await counter.getAddress(),
       ethers.parseEther("10000").toString(), schedule.addresses, schedule.amounts.map(String)];
-    return { plan, exclude, token, lock, governor, distributor, a, b, c, counter, constructorArgs };
+    return { plan, exclude, token, lock, governor, distributor, a, b, c, counter, constructorArgs,
+      redemptionAddress: await redemption.getAddress() };
   }
+
+  // WHY: Lookalike getter state cannot substitute for the reviewed creation bytecode.
+  it("authenticates both creation transactions and rejects a substituted transaction or changed input", async function () {
+    const { plan, lock, distributor, constructorArgs } = await loadFixture(fixture);
+    const [deployer] = await ethers.getSigners();
+    const lockTx = lock.deploymentTransaction()!.hash;
+    const distributorTx = distributor.deploymentTransaction()!.hash;
+    await assertCreationProvenance("RevenueLock", plan.revenueLockAddress, lockTx, constructorArgs, deployer.address);
+    await assertCreationProvenance("RevenueReserveDistributor", plan.distributorAddress, distributorTx,
+      [plan.armTokenAddress, plan.allocator, plan.reserveCap], deployer.address);
+    await expect(assertCreationProvenance("RevenueLock", plan.revenueLockAddress, distributorTx,
+      constructorArgs, deployer.address)).to.be.rejectedWith("does not match manifest");
+    const altered: RevenueLockConstructorArgs = [...constructorArgs.slice(0, 4),
+      ["1", ...constructorArgs[4].slice(1)]] as RevenueLockConstructorArgs;
+    await expect(assertCreationProvenance("RevenueLock", plan.revenueLockAddress, lockTx,
+      altered, deployer.address)).to.be.rejectedWith("does not match reviewed artifact");
+  });
+
+  // WHY: The pre-funding check becomes unusable after activation; the final verifier
+  // must still detect broken redemption/wind-down wiring while grants can be paid.
+  it("rechecks the funded reserve and redemption binding", async function () {
+    const { plan, exclude, token, lock, redemptionAddress, a } = await loadFixture(fixture);
+    await exclude();
+    await token.transfer(plan.revenueLockAddress, plan.revenueLockAllocation);
+    await lock.activate();
+    const postPlan = { ...plan, redemptionAddress };
+    await assertReservePostFunding(postPlan);
+    await expect(assertReservePostFunding({ ...postPlan, redemptionAddress: a.address }))
+      .to.be.rejected;
+  });
 
   // WHY: Valid settings must permit the transfer while funds are still recoverable in the deployer's wallet.
   it("passes with the lock unfunded and inactive", async function () {
@@ -341,7 +373,8 @@ describe("Legacy Sepolia RevenueLock provenance", function () {
   it("reconstructs the recorded creation transaction input", async function () {
     const manifest = require("../deployments/governance-hub-sepolia.json");
     const factory = await ethers.getContractFactory("RevenueLock");
-    const input = (await factory.getDeployTransaction(...manifest.revenueLockConstructorArgs)).data;
+    const args = manifest.revenueLockConstructorArgs as RevenueLockConstructorArgs;
+    const input = (await factory.getDeployTransaction(...args)).data;
     // Independently recovered from Sepolia transaction 0x681abad1026db36d1b7b336323cf3f0243d35b15b4d8589802dcfd7bc812e8ac.
     expect(ethers.keccak256(input)).to.equal("0x1687427a8a14e34a735e1e282b0cbcf793aa9e20f8ab7faa1e282f2602bb5b5b");
     expect(ethers.getCreateAddress({ from: manifest.deployer, nonce: 1264 }))

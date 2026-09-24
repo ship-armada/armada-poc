@@ -28,7 +28,7 @@ import {
 import { createNonceManager, rejectAnvilAddresses, loadDeployment, saveDeployment, timelockCall } from "./deploy-utils";
 import { MULTICALL3_ADDRESS, MULTICALL3_RUNTIME_BYTECODE } from "./multicall3-bytecode";
 
-import { ensureRevenueLockActivated, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, validateReservePlan } from "./revenue-reserve";
+import { ensureRevenueLockActivated, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, assertCreationProvenance, validateReservePlan } from "./revenue-reserve";
 
 interface CrowdfundDeployment {
   chainId: number;
@@ -107,6 +107,16 @@ async function main() {
   await assertRevenueLockAllocation(revenueLockAddress, revenueLockAllocation);
   await assertRevenueLockSchedule(revenueLockAddress, config.revenueLockBeneficiaries,
     reserveAddress ? { address: reserveAddress, cap: reserveCap } : undefined);
+  // Authenticate both custody contracts against the creation transactions before
+  // consuming one-shot initializers or transferring any ARM.
+  if (!govDeployment.revenueLockConstructorArgs) throw new Error("RevenueLock constructor provenance missing");
+  await assertCreationProvenance("RevenueLock", revenueLockAddress,
+    govDeployment.revenueLockDeploymentTransaction, govDeployment.revenueLockConstructorArgs, govDeployment.deployer);
+  if (reserveAddress && config.revenueReserve) {
+    await assertCreationProvenance("RevenueReserveDistributor", reserveAddress,
+      govDeployment.revenueReserveDistributorDeploymentTransaction,
+      [armTokenAddress, config.revenueReserve.allocator, reserveCap], govDeployment.deployer);
+  }
   const timelockAddress = govDeployment.contracts.timelockController;
   const shieldPauseAddress = govDeployment.contracts.shieldPauseController;
   const revenueCounterAddress = govDeployment.contracts.revenueCounter;
@@ -223,6 +233,8 @@ async function main() {
   );
   await redemption.deploymentTransaction()!.wait();
   const redemptionAddress = await redemption.getAddress();
+  govDeployment.contracts.redemption = redemptionAddress;
+  saveDeployment(govFilename, govDeployment);
   console.log(`   ArmadaRedemption: ${redemptionAddress}`);
 
   // 10. Deploy ArmadaWindDown (requires redemption address)
@@ -237,6 +249,8 @@ async function main() {
   );
   await windDownContract.deploymentTransaction()!.wait();
   const windDownAddress = await windDownContract.getAddress();
+  govDeployment.contracts.windDown = windDownAddress;
+  saveDeployment(govFilename, govDeployment);
   console.log(`   ArmadaWindDown: ${windDownAddress}`);
 
   // 11. Wire wind-down to ARM token (deployer-gated one-time setter — direct call)
@@ -477,12 +491,9 @@ async function main() {
     await timelockCall(timelockAddress, timelockAddress, updateDelayCalldata, "timelock.updateDelay(production)", nm);
   }
 
-  // 13. Update governance manifest with redemption/windDown addresses
-  console.log("13. Updating governance manifest...");
-  govDeployment.contracts.redemption = redemptionAddress;
-  govDeployment.contracts.windDown = windDownAddress;
+  // Addresses were persisted immediately after each deployment. Save again here
+  // after funding so an interrupted run retains the original constructor inputs.
   saveDeployment(govFilename, govDeployment);
-  console.log(`   Updated ${govFilename} with redemption + windDown addresses`);
 
   // 14. Renounce deployer timelock roles (final action — all wiring complete).
   console.log("14. Renouncing timelock roles...");

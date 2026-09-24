@@ -21,6 +21,23 @@ buildRevenueLockVerificationTasks helper validated the recovered arguments again
 the live lock and reconstructed the entire original deployment input exactly.
 This restores verification input; no explorer submission or verification success is claimed.
 
+The historical lock is **not** a rehearsal deployment for the corrected schedule.
+At Sepolia block 11772844, ARM `balanceOf(RevenueLock)` was 2,400,000 ARM,
+while the two immutable beneficiary allocations sum to 200 ARM. The remaining
+2,399,800 ARM cannot be released under this lock's schedule. The corrected
+`revenue-lock-beneficiaries-sepolia.json` totals 2.4M for *fresh deployments*;
+the archived manifest is marked `legacyRevenueLockSchedule` so explorer
+verification continues to use its original 200 ARM constructor arguments.
+Any resolution of the historical excess requires a separate authorized
+on-chain recovery analysis; a config edit cannot change its immutable schedule.
+
+For a reserve-enabled dry run, explicitly set
+`REVENUE_LOCK_BENEFICIARIES_FILE=config/revenue-lock-beneficiaries-sepolia-reserve.json`,
+`REVENUE_RESERVE_AMOUNT=360000`, and `REVENUE_RESERVE_ALLOCATOR` to the vetted
+testnet 2-of-3 Safe. That fixture has 2.04M direct plus 360k reserve. It is a
+rehearsal amount, not approved mainnet tokenomics. Deploy a *new* governance
+instance and run the hardened crowdfund stage; do not point it at the archived lock.
+
 ## Timelock read-back
 
 At block 11772557 (hash

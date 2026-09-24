@@ -17,6 +17,8 @@
 
 import { ethers } from "hardhat";
 import { loadDeployment } from "./deploy-utils";
+import { timelockBootstrapChecks, timelockUnexpectedRoleHolders } from "./verify-timelock";
+import { assertReservePostFunding, assertCreationProvenance } from "./revenue-reserve";
 import {
   isLocal,
   isCCTPReal,
@@ -290,7 +292,6 @@ async function checkGovernanceWiring(govManifest: any) {
   const PROPOSER_ROLE = await timelock.PROPOSER_ROLE();
   const EXECUTOR_ROLE = await timelock.EXECUTOR_ROLE();
   const CANCELLER_ROLE = await timelock.CANCELLER_ROLE();
-  const TIMELOCK_ADMIN_ROLE = await timelock.DEFAULT_ADMIN_ROLE();
 
   for (const [roleName, roleHash] of [
     ["PROPOSER_ROLE", PROPOSER_ROLE],
@@ -305,14 +306,12 @@ async function checkGovernanceWiring(govManifest: any) {
     }
   }
 
-  // Deployer renounced admin
-  const deployerAddr = govManifest.deployer;
-  const deployerHasAdmin = await timelock.hasRole(TIMELOCK_ADMIN_ROLE, deployerAddr);
-  if (deployerHasAdmin) {
-    warn(GROUP, "Deployer renounced timelock admin",
-      "Deployer still has TIMELOCK_ADMIN_ROLE (expected if crowdfund not yet deployed)");
-  } else {
-    pass(GROUP, "Deployer renounced timelock admin");
+  // In hardened mode, an incomplete bootstrap is a failure even if the final
+  // crowdfund manifest was never written. Other modes support partial deployment.
+  const config = getNetworkConfig();
+  for (const check of await timelockBootstrapChecks(timelockAddr, govManifest.deployer,
+    config.hardenTimelock ? BigInt(config.timelockDelay) : undefined)) {
+    results.push({ group: GROUP, ...check });
   }
 
   // Governor → steward link
@@ -701,6 +700,41 @@ async function checkTreasuryConfig(govManifest: any, hubCCTP: any | null) {
   }
 }
 
+async function checkRevenueReserve(govManifest: any, crowdfundManifest: any | null,
+  config: ReturnType<typeof getNetworkConfig>) {
+  const GROUP = "Revenue Reserve";
+  const c = govManifest.contracts;
+  if (!c.revenueReserveDistributor) return;
+  if (!crowdfundManifest || !c.redemption || !c.windDown ||
+      c.redemption === ethers.ZeroAddress || c.windDown === ethers.ZeroAddress) {
+    warn(GROUP, "Post-funding integration", "Crowdfund or redemption/wind-down deployment incomplete");
+    return;
+  }
+  if (!config.revenueReserve || !govManifest.revenueLockConstructorArgs) {
+    fail(GROUP, "Post-funding integration", "Reserve configuration or lock constructor provenance missing");
+    return;
+  }
+  try {
+    const cap = ethers.parseUnits(config.revenueReserve.amount, 18);
+    await assertCreationProvenance("RevenueLock", c.revenueLock,
+      govManifest.revenueLockDeploymentTransaction, govManifest.revenueLockConstructorArgs, govManifest.deployer);
+    await assertCreationProvenance("RevenueReserveDistributor", c.revenueReserveDistributor,
+      govManifest.revenueReserveDistributorDeploymentTransaction,
+      [c.armToken, config.revenueReserve.allocator, cap], govManifest.deployer);
+    pass(GROUP, "Creation provenance");
+    await assertReservePostFunding({
+      distributorAddress: c.revenueReserveDistributor, allocator: config.revenueReserve.allocator,
+      reserveCap: cap, revenueLockAllocation: ethers.parseUnits(config.armDistribution.revenueLock, 18),
+      directBeneficiaries: config.revenueLockBeneficiaries, armTokenAddress: c.armToken,
+      revenueLockAddress: c.revenueLock, governorAddress: c.governor,
+      windDownAddress: c.windDown, redemptionAddress: c.redemption,
+    });
+    pass(GROUP, "Post-funding integration and redemption/wind-down binding");
+  } catch (error) {
+    fail(GROUP, "Post-funding reserve verification", String(error));
+  }
+}
+
 // ============================================================================
 // Main
 // ============================================================================
@@ -743,8 +777,19 @@ async function main() {
 
   if (govManifest) {
     await checkGovernanceWiring(govManifest);
+    if (config.hardenTimelock && crowdfundManifest) {
+      try {
+        const unexpected = await timelockUnexpectedRoleHolders(govManifest.contracts.timelockController,
+          govManifest.deployBlock, govManifest.contracts.governor);
+        if (unexpected.length) fail("Governance Wiring", "No unexpected timelock role holders", unexpected.join(", "));
+        else pass("Governance Wiring", "No unexpected timelock role holders");
+      } catch (error) {
+        fail("Governance Wiring", "Timelock role event scan complete", String(error));
+      }
+    }
     await checkWindDownWiring(govManifest);
     await checkTreasuryConfig(govManifest, hubCCTP);
+    await checkRevenueReserve(govManifest, crowdfundManifest, config);
   }
 
   if (yieldManifest) {

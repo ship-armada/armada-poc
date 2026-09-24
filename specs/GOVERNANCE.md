@@ -59,7 +59,9 @@ Delegation is free to change at any time. Redelegating takes effect for proposal
 
 ### Delegation-at-circulation requirement
 
-**Launch circulation paths enforce atomic delegation.** Both the crowdfund `claim(delegate)` and the revenue-lock `release(delegate)` require a `delegatee` parameter. Self-delegation is valid; it is still an explicit choice. ARM entering circulation through these paths is immediately active in the governance denominator.
+**Direct crowdfund and RevenueLock releases enforce atomic delegation.** Both the crowdfund `claim(delegate)` and the revenue-lock `release(delegate)` require a `delegatee` parameter. Self-delegation is valid; it is still an explicit choice. ARM entering circulation through these paths is immediately active in the governance denominator.
+
+**Reserve distributor payouts preserve existing delegation.** The distributor is one beneficiary within RevenueLock's combined 20% allocation (exact reserve cap set by the approved cap table). It immediately undelegates collected ARM and uses ordinary transfers to pay irrevocable assignees. Anyone may sponsor a batch through `distribute()`. Recipients with no delegate must delegate their wallets to vote. This PR implements the sponsored-payout tradeoff described below; durable decisions belong in [the canonical team strategy log](https://github.com/ship-armada/team/blob/main/STRATEGY_LOG.json).
 
 **Treasury distributions do not enforce atomic delegation.** When governance approves a treasury transfer (ARM sent from the whitelisted treasury to a recipient), the recipient receives standard undelegated ARM. They must call `delegate()` themselves. Until they do, that ARM is circulating but vote-inert. This is a known property — the treasury transfer path is a standard ERC-20 transfer, not a `delegateOnBehalf` path. The practical impact is bounded: treasury distributions require governance approval (subject to outflow limits), and recipients are expected to delegate as part of participating in the protocol.
 
@@ -81,23 +83,45 @@ upgrade (see §Future governance upgrades).
 
 ### Quorum denominator
 
-Quorum is measured as a percentage of **circulating voting power at the snapshot block**.
-
-In plain terms: quorum denominator = `totalSupply - treasury - excludedAddresses` at the snapshot block. This is all circulating ARM regardless of delegation status.
-
-The ARM token's architectural enforcement (delegation-at-circulation for all primary paths) means nearly all circulating ARM is delegated in practice: crowdfund claims and revenue-lock releases both force delegation atomically via `delegateOnBehalf`. The only undelegated circulating ARM comes from treasury distributions where recipients haven't yet self-delegated — a small fraction that makes quorum slightly harder to reach (conservative deviation, not a risk).
+Quorum is `max(eligibleSupply × proposalQuorumBps / 10,000, absoluteFloor)`.
+At proposal creation, the governor stores eligible supply using
+`getPastTotalSupply(block.number - 1)` minus **current** treasury and excluded balances.
+The percentage threshold and eligible supply stay fixed for that proposal. This differs
+from voting power, which uses the preceding block's `getPastVotes` checkpoints.
 
 **Included:**
-- All claimed crowdfund tokens (delegated atomically at claim)
-- Early network tokens that have cleared their revenue milestone and been released (delegated atomically at release)
-- Any ARM distributed from treasury (regardless of whether the recipient has delegated — treasury transfers do not enforce atomic delegation)
 
-**Not included:**
-- Treasury ARM (excluded from denominator; `delegate()` reverts for treasury address)
-- Revenue-locked early network tokens not yet unlocked
-- Allocated-but-unclaimed crowdfund tokens (vote-inert until claimed)
+- Claimed crowdfund ARM and direct RevenueLock releases.
+- Reserve grants paid to ordinary beneficiary wallets, regardless of delegation status.
+- Treasury distributions to ordinary beneficiary wallets, regardless of delegation status.
 
-The numerator (votes cast) is snapshotted at proposal creation via `getPastVotes`. The denominator combines `getPastTotalSupply(snapshotBlock)` with **live** balances of the treasury and excluded addresses — these are read at vote-close time, not snapshotted. In practice the values are stable: `ArmadaToken` mints once in the constructor (totalSupply is fixed) and excluded balances change only via governance-routed paths, so a batch of revenue-milestone unlocks mid-vote cannot move the goalposts.
+**Excluded:**
+
+- Treasury ARM.
+- All ARM still held in the quorum-excluded RevenueLock, including unlocked-but-unclaimed ARM.
+- ARM held by the quorum-excluded reserve distributor, including collected-but-unpaid ARM.
+- ARM still held by the quorum-excluded crowdfund contract.
+
+The distributor must be added to the launch exclusion list. This quorum treatment is
+separate from wind-down redemption: unlocked reserve ARM is already in the redemption
+denominator, including while still unclaimed.
+
+**Accepted sponsorship tradeoff.** A third party can distribute grants before creating a
+proposal and increase eligible supply without beneficiaries initiating a claim or
+delegating. Relative to leaving those grants in excluded custody, the increase is
+bounded by the reserve cap times the current unlock percentage. For the worked example of a 3% reserve,
+the maximum increase in the percentage component of quorum is 0.6% of total supply at
+20% quorum, or 0.9% at 30% quorum, at full unlock; it is proportionately smaller at
+earlier milestones, and the absolute floor may mask it. This cannot change the stored
+denominator of an existing proposal.
+
+Excluded balances can move permissionlessly. There is a one-block discrepancy between
+current excluded balances and historical voting checkpoints at proposal creation;
+a payout in the creation block can raise eligible supply before the transferred votes
+appear in that proposal's snapshot. The source comment suggesting excluded balances
+move only through governance must not be relied on. No governor code change is made
+for this integration. Undelegated recipients raise quorum without adding voting power
+until they delegate; sponsored batches retain this consequence by explicit design.
 
 ### Attack surface
 

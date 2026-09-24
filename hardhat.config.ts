@@ -106,6 +106,7 @@ const config: HardhatUserConfig = {
       "contracts/governance/ProxyImports.sol":         { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
       "contracts/governance/RevenueCounter.sol":       { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
       "contracts/governance/RevenueLock.sol":          { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
+      "contracts/governance/RevenueReserveDistributor.sol": { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
       "contracts/governance/ShieldPauseController.sol": { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
       "contracts/governance/TreasurySteward.sol":      { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
       "contracts/crowdfund/ArmadaCrowdfund.sol":       { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },

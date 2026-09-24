@@ -22,5 +22,20 @@
     "totalSupply": "12000000",
     "treasuryAllocation": "7800000"
   },
-  "timestamp": "2026-08-28T23:23:49.619Z"
+  "timestamp": "2026-08-28T23:23:49.619Z",
+  "revenueLockConstructorArgs": [
+    "0x30eBb523CC15282D36330261D6C003BC7b434d52",
+    "0xdFEadd95A3a7FbDF3917E3ac755c4Bde6d66FbA6",
+    "10000000000000000000000",
+    [
+      "0x199b4b499275eab763Be408668513418DE38d24C",
+      "0x418e7F5225A1E61F2Bd8dB68f37e1D2d5E58702e"
+    ],
+    [
+      "100000000000000000000",
+      "100000000000000000000"
+    ]
+  ],
+  "revenueLockDeploymentTransaction": "0x681abad1026db36d1b7b336323cf3f0243d35b15b4d8589802dcfd7bc812e8ac",
+  "legacyRevenueLockSchedule": true
 }

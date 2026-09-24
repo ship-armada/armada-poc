@@ -37,8 +37,12 @@ import {
   getGovernanceDeploymentFile,
 } from "../config/networks";
 import { createNonceManager, rejectAnvilAddresses, saveDeployment } from "./deploy-utils";
+import { assertAllocatorMultisig, revenueLockSchedule, validateReservePlan, type RevenueLockConstructorArgs } from "./revenue-reserve";
 
 interface GovernanceDeployment {
+  revenueLockConstructorArgs: RevenueLockConstructorArgs;
+  revenueLockDeploymentTransaction: string;
+  revenueReserveDistributorDeploymentTransaction?: string;
   chainId: number;
   deployer: string;
   deployBlock: number;
@@ -53,6 +57,7 @@ interface GovernanceDeployment {
     revenueCounter: string;
     revenueCounterImpl: string;
     revenueLock: string;
+    revenueReserveDistributor?: string;
     shieldPauseController: string;
     redemption: string;
     windDown: string;
@@ -71,6 +76,13 @@ async function main() {
   const chainId = Number(network.chainId);
   const config = getNetworkConfig();
   const nm = await createNonceManager(deployer);
+  // Fail before any deployment transactions if reserve + direct grants exceed the 20% budget.
+  const reserveCap = validateReservePlan(config.revenueLockBeneficiaries,
+    ethers.parseUnits(config.armDistribution.revenueLock, 18), config.revenueReserve);
+  if (config.revenueReserve) {
+    rejectAnvilAddresses([config.revenueReserve.allocator], "Reserve allocator");
+    await assertAllocatorMultisig(config.revenueReserve.allocator);
+  }
 
   const role = getChainRole(chainId);
   if (!role) {
@@ -194,8 +206,21 @@ async function main() {
   // TODO: Set REVENUE_LOCK_BENEFICIARIES_JSON with finalized mainnet list (see issue #144)
   // Beneficiaries come from network config (Anvil placeholders for local, env var for non-local)
   const beneficiaryConfig = config.revenueLockBeneficiaries;
-  const revenueLockBeneficiaries = beneficiaryConfig.map(b => b.address);
-  const revenueLockAmounts = beneficiaryConfig.map(b => ethers.parseUnits(b.amount, 18));
+
+  // The reserve is one fixed beneficiary of the existing RevenueLock, within its total.
+  let revenueReserveDistributor: string | undefined;
+  let reserveDeploymentTransaction: string | undefined;
+  if (config.revenueReserve) {
+    const Distributor = await ethers.getContractFactory("RevenueReserveDistributor");
+    const reserve = await Distributor.deploy(armTokenAddress, config.revenueReserve.allocator, reserveCap, nm.override());
+    await reserve.waitForDeployment();
+    revenueReserveDistributor = await reserve.getAddress();
+    reserveDeploymentTransaction = reserve.deploymentTransaction()!.hash;
+    console.log(`   Reserve distributor: ${revenueReserveDistributor} — ${config.revenueReserve.amount} ARM`);
+  }
+
+  const { addresses: revenueLockBeneficiaries, amounts: revenueLockAmounts } = revenueLockSchedule(
+    beneficiaryConfig, revenueReserveDistributor ? { address: revenueReserveDistributor, cap: reserveCap } : undefined);
 
   // Max advance per elapsed day for the observed-revenue ratchet — 18-decimal USD.
   // $10k/day per PARAMETER_MANIFEST.md (ship-armada/crowdfund) and issue #225:
@@ -221,6 +246,14 @@ async function main() {
   await revenueLockContract.deploymentTransaction()!.wait();
   const revenueLockAddress = await revenueLockContract.getAddress();
   console.log(`   RevenueLock: ${revenueLockAddress}`);
+  if (revenueReserveDistributor) {
+    const reserve = await ethers.getContractAt("RevenueReserveDistributor", revenueReserveDistributor);
+    await (await reserve.bindRevenueLock(revenueLockAddress, nm.override())).wait();
+    if (await reserve.revenueLock() !== revenueLockAddress ||
+        await revenueLockContract.allocation(revenueReserveDistributor) !== reserveCap) {
+      throw new Error("Reserve binding/allocation read-back mismatch; do not fund this lock");
+    }
+  }
 
   // Post-deploy read-back verification: confirm on-chain state matches intent
   console.log("   Verifying RevenueLock beneficiary allocations...");
@@ -239,7 +272,7 @@ async function main() {
   }
   const onChainTotal = await revenueLockContract.totalAllocation();
   const expectedTotal = revenueLockAmounts.reduce((sum, a) => sum + a, 0n);
-  if (onChainTotal !== expectedTotal) {
+  if (onChainTotal !== expectedTotal || onChainTotal !== revenueLockAllocation) {
     throw new Error(
       `RevenueLock total allocation MISMATCH:\n` +
       `  Expected: ${ethers.formatUnits(expectedTotal, 18)} ARM\n` +
@@ -342,6 +375,10 @@ async function main() {
 
   // Save deployment
   const deployment: GovernanceDeployment = {
+    revenueLockConstructorArgs: [armTokenAddress, revenueCounterAddress, MAX_REVENUE_INCREASE_PER_DAY.toString(),
+      revenueLockBeneficiaries, revenueLockAmounts.map(amount => amount.toString())],
+    revenueLockDeploymentTransaction: revenueLockContract.deploymentTransaction()!.hash,
+    ...(reserveDeploymentTransaction ? { revenueReserveDistributorDeploymentTransaction: reserveDeploymentTransaction } : {}),
     chainId,
     deployer: deployer.address,
     deployBlock: governanceDeployBlock,
@@ -356,6 +393,7 @@ async function main() {
       revenueCounter: revenueCounterAddress,
       revenueCounterImpl: revenueCounterImplAddress,
       revenueLock: revenueLockAddress,
+      ...(revenueReserveDistributor ? { revenueReserveDistributor } : {}),
       shieldPauseController: shieldPauseAddress,
       redemption: redemptionAddress,
       windDown: windDownAddress,

@@ -335,3 +335,17 @@ describe("Reserve deployment funding gate", function () {
       .to.throw("duplicate");
   });
 });
+
+// WHY: Legacy Sepolia verification must retain the original ordered constructor input, not rebuild it from mutable configuration.
+describe("Legacy Sepolia RevenueLock provenance", function () {
+  it("reconstructs the recorded creation transaction input", async function () {
+    const manifest = require("../deployments/governance-hub-sepolia.json");
+    const factory = await ethers.getContractFactory("RevenueLock");
+    const input = (await factory.getDeployTransaction(...manifest.revenueLockConstructorArgs)).data;
+    // Independently recovered from Sepolia transaction 0x681abad1026db36d1b7b336323cf3f0243d35b15b4d8589802dcfd7bc812e8ac.
+    expect(ethers.keccak256(input)).to.equal("0x1687427a8a14e34a735e1e282b0cbcf793aa9e20f8ab7faa1e282f2602bb5b5b");
+    expect(ethers.getCreateAddress({ from: manifest.deployer, nonce: 1264 }))
+      .to.equal(manifest.contracts.revenueLock);
+    expect(manifest.revenueLockDeploymentTransaction).to.equal("0x681abad1026db36d1b7b336323cf3f0243d35b15b4d8589802dcfd7bc812e8ac");
+  });
+});

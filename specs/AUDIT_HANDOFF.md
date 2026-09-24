@@ -271,3 +271,18 @@ The Phase 1 scope must explicitly include:
 Record the auditor's written acknowledgement, exact commit SHA, review dates, findings,
 and closure evidence in the audit package. Keep this item open until that evidence
 exists. The earlier RevenueLock review and passing CI do not establish scope coverage.
+
+### Airdrop integration prerequisite
+
+If the approved airdrop allocation is held in RevenueLock, its distributor address
+and amount must be fixed before constructing RevenueLock: the beneficiary schedule
+cannot be amended later. Normally deploy the airdrop contract first; a reviewed
+deterministic deployment may instead precompute its address. Registering permissions
+or quorum exclusions later through the timelock cannot repair a missing lock entry.
+
+Before funding, extend the schedule and pre-funding checks to cover the chosen airdrop
+contract, its allocation, wiring, ARM permissions and quorum policy. RevenueLock.release
+requires a nonzero delegatee. If airdrop custody is intended to remain vote-inert, the
+contract must release and undelegate atomically, as the reserve distributor does, and
+test its eventual recipient delegation and quorum effects. The reserve distributor
+does not itself implement this separate airdrop path.

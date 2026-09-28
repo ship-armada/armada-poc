@@ -2,6 +2,8 @@
 // ABOUTME: Checks launch continuation and real timelock admin/delay verification.
 import { expect } from "chai";
 import { ethers, network } from "hardhat";
+import { mine } from "@nomicfoundation/hardhat-network-helpers";
+import type { Filter } from "ethers";
 import { ensureRevenueLockActivated } from "../scripts/revenue-reserve";
 import { timelockBootstrapChecks, timelockUnexpectedRoleHolders } from "../scripts/verify-timelock";
 
@@ -118,5 +120,48 @@ describe("Reserve launch safety", function () {
     await timelock.revokeRole(role, outsider.address);
     expect(await timelockUnexpectedRoleHolders(address, block, deployer.address))
       .not.to.include(`${outsider.address}: ${role}`);
+  });
+
+  // WHY: Public RPC plans often cap eth_getLogs ranges below the scan's starting chunk.
+  // A correctly scanned timelock must not fail verification because of the provider's range limit.
+  it("narrows the role event scan when the RPC rejects wide log ranges", async function () {
+    const { timelock, deployer, outsider } = await fixture();
+    const block = (await timelock.deploymentTransaction()!.wait())!.blockNumber;
+    const address = await timelock.getAddress();
+    const role = await timelock.PROPOSER_ROLE();
+    await mine(6000);
+    await timelock.grantRole(role, outsider.address);
+    const provider = ethers.provider as unknown as { getLogs: (filter: Filter) => Promise<unknown[]> };
+    const original = provider.getLogs;
+    let rejected = 0;
+    provider.getLogs = async (filter: Filter) => {
+      if (Number(filter.toBlock) - Number(filter.fromBlock) + 1 > 100) {
+        rejected++;
+        throw new Error("block range too large");
+      }
+      return original.call(ethers.provider, filter);
+    };
+    try {
+      expect(await timelockUnexpectedRoleHolders(address, block, deployer.address))
+        .to.include(`${outsider.address}: ${role}`);
+    } finally {
+      provider.getLogs = original;
+    }
+    expect(rejected).to.be.greaterThan(0);
+  });
+
+  // WHY: Narrowing must not turn a persistent RPC failure into an empty, passing scan.
+  it("propagates a log query failure that persists at the minimum range", async function () {
+    const { timelock, deployer } = await fixture();
+    const block = (await timelock.deploymentTransaction()!.wait())!.blockNumber;
+    const provider = ethers.provider as unknown as { getLogs: (filter: Filter) => Promise<unknown[]> };
+    const original = provider.getLogs;
+    provider.getLogs = async () => { throw new Error("RPC unavailable"); };
+    try {
+      await expect(timelockUnexpectedRoleHolders(await timelock.getAddress(), block, deployer.address))
+        .to.be.rejectedWith("RPC unavailable");
+    } finally {
+      provider.getLogs = original;
+    }
   });
 });

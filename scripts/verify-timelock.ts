@@ -24,6 +24,9 @@ export async function timelockBootstrapChecks(address: string, deployer: string,
   return checks;
 }
 
+const LOG_CHUNK_START = 5000;
+const LOG_CHUNK_MIN = 10;
+
 /** Enumerate historical role holders, then verify their current membership. The
  * timelock's AccessControl implementation has no enumerable role membership. */
 export async function timelockUnexpectedRoleHolders(address: string, fromBlock: number,
@@ -34,13 +37,24 @@ export async function timelockUnexpectedRoleHolders(address: string, fromBlock: 
     timelock.interface.getEvent("RoleRevoked")!.topicHash];
   const accounts = new Map<string, string>();
   const latest = await ethers.provider.getBlockNumber();
-  for (let start = fromBlock; start <= latest; start += 5000) {
-    const logs = await ethers.provider.getLogs({ address, fromBlock: start,
-      toBlock: Math.min(start + 4999, latest), topics: [topics] });
+  // Public RPCs cap eth_getLogs ranges at differing sizes. Halve the chunk on error and
+  // keep the narrower size; an error at the minimum chunk is a real failure.
+  let chunk = LOG_CHUNK_START;
+  for (let start = fromBlock; start <= latest;) {
+    const toBlock = Math.min(start + chunk - 1, latest);
+    let logs;
+    try {
+      logs = await ethers.provider.getLogs({ address, fromBlock: start, toBlock, topics: [topics] });
+    } catch (error) {
+      if (chunk <= LOG_CHUNK_MIN) throw error;
+      chunk = Math.max(LOG_CHUNK_MIN, Math.floor(chunk / 2));
+      continue;
+    }
     for (const log of logs) {
       const parsed = timelock.interface.parseLog(log);
       if (parsed) accounts.set(ethers.getAddress(parsed.args.account), parsed.args.account);
     }
+    start = toBlock + 1;
   }
   const roles = [await timelock.TIMELOCK_ADMIN_ROLE(), await timelock.PROPOSER_ROLE(),
     await timelock.EXECUTOR_ROLE(), await timelock.CANCELLER_ROLE()];

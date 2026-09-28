@@ -36,7 +36,7 @@ import {
   getChainRole,
   getGovernanceDeploymentFile,
 } from "../config/networks";
-import { createNonceManager, rejectAnvilAddresses, saveDeployment } from "./deploy-utils";
+import { createNonceManager, rejectAnvilAddresses, retryReadOnLag, saveDeployment } from "./deploy-utils";
 import { assertAllocatorMultisig, revenueLockSchedule, validateReservePlan, type RevenueLockConstructorArgs } from "./revenue-reserve";
 
 interface GovernanceDeployment {
@@ -249,10 +249,12 @@ async function main() {
   if (revenueReserveDistributor) {
     const reserve = await ethers.getContractAt("RevenueReserveDistributor", revenueReserveDistributor);
     await (await reserve.bindRevenueLock(revenueLockAddress, nm.override())).wait();
-    if (await reserve.revenueLock() !== revenueLockAddress ||
-        await revenueLockContract.allocation(revenueReserveDistributor) !== reserveCap) {
-      throw new Error("Reserve binding/allocation read-back mismatch; do not fund this lock");
-    }
+    await retryReadOnLag("Reserve binding read-back", async () => {
+      if (await reserve.revenueLock() !== revenueLockAddress ||
+          await revenueLockContract.allocation(revenueReserveDistributor) !== reserveCap) {
+        throw new Error("Reserve binding/allocation read-back mismatch; do not fund this lock");
+      }
+    });
   }
 
   // Post-deploy read-back verification: confirm on-chain state matches intent

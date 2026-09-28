@@ -6,6 +6,7 @@ import { mine } from "@nomicfoundation/hardhat-network-helpers";
 import type { Filter } from "ethers";
 import { ensureRevenueLockActivated } from "../scripts/revenue-reserve";
 import { timelockBootstrapChecks, timelockUnexpectedRoleHolders } from "../scripts/verify-timelock";
+import { retryReadOnLag } from "../scripts/deploy-utils";
 
 describe("Reserve launch safety", function () {
   async function fixture(funded = true) {
@@ -163,5 +164,44 @@ describe("Reserve launch safety", function () {
     } finally {
       provider.getLogs = original;
     }
+  });
+
+  // WHY: Load-balanced public RPCs can serve a read-back from a node that has not seen the
+  // write it verifies. A lagging read must not abort a launch whose write already landed.
+  it("retries a read-back that fails until the RPC catches up", async function () {
+    let calls = 0;
+    const logged: string[] = [];
+    const log = console.log;
+    console.log = (line: string) => { logged.push(line); };
+    let value: string;
+    try {
+      value = await retryReadOnLag("lagging read", async () => {
+        calls++;
+        if (calls < 3) throw new Error("stale read");
+        return "bound";
+      }, 3, 0);
+    } finally {
+      console.log = log;
+    }
+    expect(value).to.equal("bound");
+    expect(calls).to.equal(3);
+    expect(logged).to.have.length(2);
+    expect(logged[0]).to.contain("lagging read: read-back failed (possible RPC lag) — retry 1/2");
+  });
+
+  // WHY: Retrying must not turn a real mismatch into success; the check still fails closed.
+  it("rethrows a read-back mismatch that persists through every attempt", async function () {
+    let calls = 0;
+    const log = console.log;
+    console.log = () => {};
+    try {
+      await expect(retryReadOnLag("persistent mismatch", async () => {
+        calls++;
+        throw new Error(`mismatch ${calls}`);
+      }, 3, 0)).to.be.rejectedWith("mismatch 3");
+    } finally {
+      console.log = log;
+    }
+    expect(calls).to.equal(3);
   });
 });

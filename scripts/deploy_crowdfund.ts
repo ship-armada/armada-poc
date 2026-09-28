@@ -25,7 +25,7 @@ import {
   getGovernanceDeploymentFile,
   isLocal,
 } from "../config/networks";
-import { createNonceManager, rejectAnvilAddresses, loadDeployment, saveDeployment, timelockCall } from "./deploy-utils";
+import { createNonceManager, rejectAnvilAddresses, loadDeployment, saveDeployment, timelockCall, retryReadOnLag } from "./deploy-utils";
 import { MULTICALL3_ADDRESS, MULTICALL3_RUNTIME_BYTECODE } from "./multicall3-bytecode";
 
 import { ensureRevenueLockActivated, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, assertCreationProvenance, validateReservePlan } from "./revenue-reserve";
@@ -102,21 +102,25 @@ async function main() {
   const reserveCap = validateReservePlan(config.revenueLockBeneficiaries,
     ethers.parseUnits(config.armDistribution.revenueLock, 18), config.revenueReserve);
   const revenueLockAllocation = ethers.parseUnits(config.armDistribution.revenueLock, 18);
-  // Governance and crowdfund may run days apart with different environment files.
-  // Reject funding drift before consuming any crowdfund-stage one-shot initializers.
-  await assertRevenueLockAllocation(revenueLockAddress, revenueLockAllocation);
-  await assertRevenueLockSchedule(revenueLockAddress, config.revenueLockBeneficiaries,
-    reserveAddress ? { address: reserveAddress, cap: reserveCap } : undefined);
-  // Authenticate both custody contracts against the creation transactions before
-  // consuming one-shot initializers or transferring any ARM.
   if (!govDeployment.revenueLockConstructorArgs) throw new Error("RevenueLock constructor provenance missing");
-  await assertCreationProvenance("RevenueLock", revenueLockAddress,
-    govDeployment.revenueLockDeploymentTransaction, govDeployment.revenueLockConstructorArgs, govDeployment.deployer);
-  if (reserveAddress && config.revenueReserve) {
-    await assertCreationProvenance("RevenueReserveDistributor", reserveAddress,
-      govDeployment.revenueReserveDistributorDeploymentTransaction,
-      [armTokenAddress, config.revenueReserve.allocator, reserveCap], govDeployment.deployer);
-  }
+  // The orchestrator runs this stage seconds after governance, so these reads may reach
+  // an RPC node that has not yet seen the governance transactions.
+  await retryReadOnLag("RevenueLock schedule and provenance", async () => {
+    // Governance and crowdfund may run days apart with different environment files.
+    // Reject funding drift before consuming any crowdfund-stage one-shot initializers.
+    await assertRevenueLockAllocation(revenueLockAddress, revenueLockAllocation);
+    await assertRevenueLockSchedule(revenueLockAddress, config.revenueLockBeneficiaries,
+      reserveAddress ? { address: reserveAddress, cap: reserveCap } : undefined);
+    // Authenticate both custody contracts against the creation transactions before
+    // consuming one-shot initializers or transferring any ARM.
+    await assertCreationProvenance("RevenueLock", revenueLockAddress,
+      govDeployment.revenueLockDeploymentTransaction, govDeployment.revenueLockConstructorArgs, govDeployment.deployer);
+    if (reserveAddress && config.revenueReserve) {
+      await assertCreationProvenance("RevenueReserveDistributor", reserveAddress,
+        govDeployment.revenueReserveDistributorDeploymentTransaction,
+        [armTokenAddress, config.revenueReserve.allocator, reserveCap], govDeployment.deployer);
+    }
+  });
   const timelockAddress = govDeployment.contracts.timelockController;
   const shieldPauseAddress = govDeployment.contracts.shieldPauseController;
   const revenueCounterAddress = govDeployment.contracts.revenueCounter;
@@ -324,16 +328,19 @@ async function main() {
   }
   // Run every gate before the first ARM transfer, including the treasury transfer.
   // A rejected launch must leave the full ARM supply in the deployer's wallet.
-  if (reserveAddress && config.revenueReserve) {
-    await assertReservePreFunding({
-      distributorAddress: reserveAddress, allocator: config.revenueReserve.allocator,
-      reserveCap, revenueLockAllocation, armTokenAddress, revenueLockAddress, governorAddress, windDownAddress,
-      directBeneficiaries: config.revenueLockBeneficiaries,
-    });
-  } else {
-    await assertRevenueLockAllocation(revenueLockAddress, revenueLockAllocation);
-    await assertRevenueLockSchedule(revenueLockAddress, config.revenueLockBeneficiaries);
-  }
+  // The gate reads wiring written moments ago, so tolerate a lagging RPC node.
+  await retryReadOnLag("Pre-funding gate", async () => {
+    if (reserveAddress && config.revenueReserve) {
+      await assertReservePreFunding({
+        distributorAddress: reserveAddress, allocator: config.revenueReserve.allocator,
+        reserveCap, revenueLockAllocation, armTokenAddress, revenueLockAddress, governorAddress, windDownAddress,
+        directBeneficiaries: config.revenueLockBeneficiaries,
+      });
+    } else {
+      await assertRevenueLockAllocation(revenueLockAddress, revenueLockAllocation);
+      await assertRevenueLockSchedule(revenueLockAddress, config.revenueLockBeneficiaries);
+    }
+  });
   await (await armToken.transfer(treasuryAddress, treasuryAllocation, nm.override())).wait();
   console.log(`   Sent ${config.armDistribution.treasury} ARM to treasury`);
   await (await armToken.transfer(revenueLockAddress, revenueLockAllocation, nm.override())).wait();

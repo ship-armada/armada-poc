@@ -61,6 +61,29 @@ export function rejectAnvilAddresses(addresses: string[], label: string): void {
   }
 }
 
+/**
+ * Re-run a read-only check that verifies recent writes. Load-balanced public RPCs can
+ * route the read to a node that has not yet seen the write's block, so a correct state
+ * reads as a mismatch. A real mismatch persists and the last error is rethrown.
+ * Local chains have no lag, so they check once.
+ */
+export async function retryReadOnLag<T>(
+  description: string,
+  check: () => Promise<T>,
+  attempts = isLocal() ? 1 : 8,
+  delayMs = 5000,
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await check();
+    } catch (err) {
+      if (attempt >= attempts) throw err;
+      console.log(`   ${description}: read-back failed (possible RPC lag) — retry ${attempt}/${attempts - 1} in ${delayMs / 1000}s...`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 export interface NonceManager {
   /** Returns a transaction override object with the next nonce (testnet) or empty (local) */
   override(): { nonce: number } | Record<string, never>;

@@ -27,7 +27,6 @@
 
 import { ethers, run } from "hardhat";
 import {
-  getNetworkConfig,
   getChainRole,
   getChainByRole,
   getGovernanceDeploymentFile,
@@ -40,7 +39,6 @@ import {
   type ChainRole,
 } from "../config/networks";
 import { loadDeployment } from "./deploy-utils";
-import type { RevenueLockBeneficiary } from "../config/networks";
 import { assertRevenueLockSchedule, type RevenueLockConstructorArgs } from "./revenue-reserve";
 
 interface VerifyTask {
@@ -50,10 +48,12 @@ interface VerifyTask {
   contract?: string; // Fully qualified name for disambiguation
 }
 
-/** Read immutable reserve arguments from the deployed instance, not a later env file. */
+/** Read immutable reserve arguments from the deployed instance, not a later env file.
+ * RevenueLock arguments come from the manifest's recorded constructor input, checked
+ * against the deployed lock; the current beneficiary file is not consulted. */
 export async function buildRevenueLockVerificationTasks(c: {
   armToken: string; revenueCounter: string; revenueLock: string; revenueReserveDistributor?: string;
-}, direct: RevenueLockBeneficiary[], originalArgs?: RevenueLockConstructorArgs): Promise<VerifyTask[]> {
+}, originalArgs?: RevenueLockConstructorArgs): Promise<VerifyTask[]> {
   const tasks: VerifyTask[] = [];
   let reserve: { address: string; cap: bigint } | undefined;
   if (c.revenueReserveDistributor) {
@@ -62,7 +62,6 @@ export async function buildRevenueLockVerificationTasks(c: {
     tasks.push({ name: "RevenueReserveDistributor", address: reserve.address,
       constructorArguments: [await distributor.armToken(), await distributor.allocator(), reserve.cap] });
   }
-  await assertRevenueLockSchedule(c.revenueLock, direct, reserve);
   if (!originalArgs) {
     throw new Error("Original RevenueLock constructor arguments missing; recover deployment transaction input into governance manifest revenueLockConstructorArgs");
   }
@@ -74,6 +73,12 @@ export async function buildRevenueLockVerificationTasks(c: {
       ethers.getAddress(counter) !== ethers.getAddress(await lock.revenueCounter()) ||
       BigInt(rate) !== await lock.MAX_REVENUE_INCREASE_PER_DAY() || addresses.length !== amounts.length) {
     throw new Error("Original RevenueLock constructor arguments do not match deployed lock");
+  }
+  if (reserve) {
+    const index = addresses.findIndex(address => ethers.getAddress(address) === ethers.getAddress(reserve!.address));
+    if (index < 0 || BigInt(amounts[index]) !== reserve.cap) {
+      throw new Error("Original RevenueLock constructor arguments do not fund the reserve distributor at its cap");
+    }
   }
   await assertRevenueLockSchedule(c.revenueLock, addresses.map((address, i) =>
     ({ address, amount: ethers.formatUnits(amounts[i], 18), label: "original constructor" })));
@@ -105,7 +110,6 @@ async function verify(task: VerifyTask): Promise<boolean> {
  * Build governance + crowdfund tasks. Hub-only — clients don't deploy these.
  */
 async function buildGovernanceCrowdfundTasks(): Promise<VerifyTask[]> {
-  const config = getNetworkConfig();
   const gov = loadDeployment(getGovernanceDeploymentFile());
   const cf = loadDeployment(getCrowdfundDeploymentFile());
   if (!gov) throw new Error(`Governance manifest not found: ${getGovernanceDeploymentFile()}`);
@@ -122,14 +126,9 @@ async function buildGovernanceCrowdfundTasks(): Promise<VerifyTask[]> {
   const windDownDeadline = await windDown.windDownDeadline();
   const revenueThreshold = await windDown.revenueThreshold();
 
-  // The archived 200 ARM lock predates the corrected 2.4M Sepolia schedule.
-  // Verify its actual constructor schedule, not a later testnet deployment file.
-  const direct = gov.legacyRevenueLockSchedule
-    ? gov.revenueLockConstructorArgs[3].map((address: string, i: number) => ({
-      address, amount: ethers.formatUnits(gov.revenueLockConstructorArgs[4][i], 18), label: "legacy constructor",
-    }))
-    : config.revenueLockBeneficiaries;
-  const revenueLockTasks = await buildRevenueLockVerificationTasks(c, direct, gov.revenueLockConstructorArgs);
+  // Verify the lock's recorded constructor schedule rather than whichever beneficiary
+  // file the current env selects.
+  const revenueLockTasks = await buildRevenueLockVerificationTasks(c, gov.revenueLockConstructorArgs);
 
   return [
     // --- Governance contracts ---

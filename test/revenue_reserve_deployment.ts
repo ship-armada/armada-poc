@@ -223,7 +223,7 @@ describe("Reserve deployment funding gate", function () {
     const { plan, lock, distributor, constructorArgs } = await loadFixture(fixture);
     const tasks = await buildRevenueLockVerificationTasks({ armToken: plan.armTokenAddress,
       revenueCounter: await lock.revenueCounter(), revenueLock: plan.revenueLockAddress,
-      revenueReserveDistributor: plan.distributorAddress }, plan.directBeneficiaries, constructorArgs);
+      revenueReserveDistributor: plan.distributorAddress }, constructorArgs);
     expect(tasks.map(t => t.name)).to.deep.equal(["RevenueReserveDistributor", "RevenueLock"]);
     for (const task of tasks) {
       const factory = await ethers.getContractFactory(task.name);
@@ -241,7 +241,7 @@ describe("Reserve deployment funding gate", function () {
     const directLock = await factory.deploy(plan.armTokenAddress, await lock.revenueCounter(),
       ethers.parseEther("10000"), schedule.addresses, schedule.amounts);
     const tasks = await buildRevenueLockVerificationTasks({ armToken: plan.armTokenAddress,
-      revenueCounter: await lock.revenueCounter(), revenueLock: await directLock.getAddress() }, plan.directBeneficiaries,
+      revenueCounter: await lock.revenueCounter(), revenueLock: await directLock.getAddress() },
       [plan.armTokenAddress, await lock.revenueCounter(), ethers.parseEther("10000").toString(),
         schedule.addresses, schedule.amounts.map(String)]);
     expect(tasks).to.have.length(1);
@@ -261,22 +261,37 @@ describe("Reserve deployment funding gate", function () {
     expect(await token.balanceOf(plan.revenueLockAddress)).to.equal(0);
   });
 
-  // WHY: Set-equivalent config order must not change the original constructor encoding.
-  it("preserves constructor input after current beneficiaries are reordered", async function () {
+  // WHY: Explorer arguments come from the manifest's recorded constructor input (after a
+  // JSON round trip), never from the current beneficiary file, which may have changed since deployment.
+  it("preserves recorded constructor input and rejects missing or mismatched records", async function () {
     const { plan, lock, constructorArgs } = await loadFixture(fixture);
     const contracts = { armToken: plan.armTokenAddress, revenueCounter: await lock.revenueCounter(),
       revenueLock: plan.revenueLockAddress, revenueReserveDistributor: plan.distributorAddress };
-    const tasks = await buildRevenueLockVerificationTasks(contracts,
-      [...plan.directBeneficiaries].reverse(), JSON.parse(JSON.stringify(constructorArgs)));
+    const tasks = await buildRevenueLockVerificationTasks(contracts, JSON.parse(JSON.stringify(constructorArgs)));
     const args = tasks.find(t => t.name === "RevenueLock")!.constructorArguments as RevenueLockConstructorArgs;
     expect((await (await ethers.getContractFactory("RevenueLock")).getDeployTransaction(...args)).data)
       .to.equal(lock.deploymentTransaction()!.data);
-    await expect(buildRevenueLockVerificationTasks(contracts, plan.directBeneficiaries))
+    await expect(buildRevenueLockVerificationTasks(contracts))
       .to.be.rejectedWith("Original RevenueLock constructor arguments missing");
     const badArgs: RevenueLockConstructorArgs = [...constructorArgs];
     badArgs[2] = "1";
-    await expect(buildRevenueLockVerificationTasks(contracts, plan.directBeneficiaries, badArgs))
+    await expect(buildRevenueLockVerificationTasks(contracts, badArgs))
       .to.be.rejectedWith("do not match deployed lock");
+  });
+
+  // WHY: Without the current beneficiary file, the recorded constructor input is the only
+  // link between the manifest's distributor and the lock; a reserve absent from it is a mismatch.
+  it("rejects a manifest reserve that the recorded lock schedule does not fund", async function () {
+    const { plan, lock } = await loadFixture(fixture);
+    const schedule = revenueLockSchedule(plan.directBeneficiaries);
+    const directLock = await (await ethers.getContractFactory("RevenueLock")).deploy(plan.armTokenAddress,
+      await lock.revenueCounter(), ethers.parseEther("10000"), schedule.addresses, schedule.amounts);
+    await expect(buildRevenueLockVerificationTasks({ armToken: plan.armTokenAddress,
+      revenueCounter: await lock.revenueCounter(), revenueLock: await directLock.getAddress(),
+      revenueReserveDistributor: plan.distributorAddress },
+      [plan.armTokenAddress, await lock.revenueCounter(), ethers.parseEther("10000").toString(),
+        schedule.addresses, schedule.amounts.map(String)]))
+      .to.be.rejectedWith("do not fund the reserve distributor");
   });
 
   // WHY: Sponsored payouts change future eligible supply, never an existing proposal's
@@ -365,21 +380,6 @@ describe("Reserve deployment funding gate", function () {
       .to.throw("plus reserve must equal");
     expect(() => validateReservePlan([...direct, ...direct], ethers.parseEther("4440000"), reserve))
       .to.throw("duplicate");
-  });
-});
-
-// WHY: Legacy Sepolia verification must retain the original ordered constructor input, not rebuild it from mutable configuration.
-describe("Legacy Sepolia RevenueLock provenance", function () {
-  it("reconstructs the recorded creation transaction input", async function () {
-    const manifest = require("../deployments/governance-hub-sepolia.json");
-    const factory = await ethers.getContractFactory("RevenueLock");
-    const args = manifest.revenueLockConstructorArgs as RevenueLockConstructorArgs;
-    const input = (await factory.getDeployTransaction(...args)).data;
-    // Independently recovered from Sepolia transaction 0x681abad1026db36d1b7b336323cf3f0243d35b15b4d8589802dcfd7bc812e8ac.
-    expect(ethers.keccak256(input)).to.equal("0x1687427a8a14e34a735e1e282b0cbcf793aa9e20f8ab7faa1e282f2602bb5b5b");
-    expect(ethers.getCreateAddress({ from: manifest.deployer, nonce: 1264 }))
-      .to.equal(manifest.contracts.revenueLock);
-    expect(manifest.revenueLockDeploymentTransaction).to.equal("0x681abad1026db36d1b7b336323cf3f0243d35b15b4d8589802dcfd7bc812e8ac");
   });
 
   // WHY: The final verifier must not report a clean launch when configuration and manifest

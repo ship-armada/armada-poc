@@ -219,11 +219,12 @@ ETH donations are unsupported and have no rescue mechanism.
 
 Governance deployment persists the original `revenueLockConstructorArgs` in its
 manifest, including ordered beneficiaries and base-unit amounts. Explorer verification
-uses that original order even if current configuration is reordered, checks the
-immutable values and intended allocations, and verifies both RevenueLock and the
-reserve distributor. Old manifests missing these arguments must recover them from
-the original deployment transaction; verification fails explicitly rather than guessing
-an order from the latest environment file.
+uses those recorded arguments rather than the current beneficiary file, checks them
+against the deployed lock's immutable values and allocations (including the reserve
+distributor's entry at its cap), and verifies both RevenueLock and the reserve
+distributor. Old manifests missing these arguments must recover them from the original
+deployment transaction; verification fails explicitly rather than guessing an order
+from the latest environment file.
 
 Activation is permissionless. The deployment helper accepts an already activated lock,
 estimates before reserving a nonce, and tolerates a confirmed mined activation revert

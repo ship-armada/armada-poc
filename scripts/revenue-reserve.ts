@@ -109,54 +109,65 @@ export interface ReservePreFunding {
   windDownAddress: string;
 }
 
-/** Must finish before the ARM transfer. This is not an atomic guarantee against
- * another privileged transaction between this read and funding. */
-export async function assertReservePreFunding(plan: ReservePreFunding): Promise<void> {
-  await assertRevenueLockAllocation(plan.revenueLockAddress, plan.revenueLockAllocation);
-  await assertRevenueLockSchedule(plan.revenueLockAddress, plan.directBeneficiaries,
-    { address: plan.distributorAddress, cap: plan.reserveCap });
-  const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+const sameAddress = (a: string, b: string) => ethers.getAddress(a) === ethers.getAddress(b);
+
+/** Wiring checked both before and after funding: distributor identity and integration,
+ * quorum and delegation treatment of the reserve and its allocator, and wind-down bindings. */
+async function assertReserveWiring(plan: ReservePreFunding): Promise<void> {
   const distributor = await ethers.getContractAt("RevenueReserveDistributor", plan.distributorAddress);
   const token = await ethers.getContractAt("ArmadaToken", plan.armTokenAddress);
   const lock = await ethers.getContractAt("RevenueLock", plan.revenueLockAddress);
   const governor = await ethers.getContractAt("ArmadaGovernor", plan.governorAddress);
   const windDown = await ethers.getContractAt("ArmadaWindDown", plan.windDownAddress);
-  if (!same(await distributor.armToken(), plan.armTokenAddress) ||
-      !same(await distributor.revenueLock(), plan.revenueLockAddress) ||
-      !same(await distributor.allocator(), plan.allocator) ||
+  if (!sameAddress(await distributor.armToken(), plan.armTokenAddress) ||
+      !sameAddress(await distributor.revenueLock(), plan.revenueLockAddress) ||
+      !sameAddress(await distributor.allocator(), plan.allocator) ||
       await distributor.reserveCap() !== plan.reserveCap) {
     throw new Error("Reserve deployment does not match the intended token, lock, allocator or cap");
   }
   if (!await distributor.verifyIntegration()) throw new Error("Reserve integration check failed");
-  if (await token.balanceOf(plan.revenueLockAddress) !== 0n || await lock.activated() ||
-      await lock.frozenAtWindDown() || await lock.released(plan.distributorAddress) !== 0n) {
-    throw new Error("Reserve pre-funding check requires an unfunded, inactive, unfrozen lock");
-  }
   const exclusions: string[] = await governor.getExcludedFromQuorum();
   for (const address of [plan.distributorAddress, plan.revenueLockAddress]) {
-    if (exclusions.filter(excluded => same(excluded, address)).length !== 1) {
+    if (exclusions.filter(excluded => sameAddress(excluded, address)).length !== 1) {
       throw new Error("RevenueLock and reserve distributor must each be quorum-excluded exactly once");
     }
   }
   if (await token.noDelegation(plan.allocator)) {
     throw new Error("Reserve allocator must not be a noDelegation address");
   }
-  if (exclusions.some(excluded => same(excluded, plan.allocator)) ||
-      same(await governor.treasuryAddress(), plan.allocator)) {
+  if (exclusions.some(excluded => sameAddress(excluded, plan.allocator)) ||
+      sameAddress(await governor.treasuryAddress(), plan.allocator)) {
     throw new Error("Reserve allocator must not be a quorum-excluded custody address");
   }
   const counter = await ethers.getContractAt("RevenueCounter", await lock.revenueCounter());
-  if (!same(await lock.windDownContract(), plan.windDownAddress) ||
-      !same(await counter.windDownContract(), plan.windDownAddress) ||
-      !same(await token.windDownContract(), plan.windDownAddress) ||
-      !same(await governor.windDownContract(), plan.windDownAddress) ||
-      !same(await windDown.revenueLock(), plan.revenueLockAddress) ||
-      !same(await windDown.revenueCounter(), await lock.revenueCounter()) ||
-      !same(await windDown.armToken(), plan.armTokenAddress) ||
-      !same(await windDown.governor(), plan.governorAddress) || await windDown.triggered()) {
-    throw new Error("Reserve wind-down wiring is incomplete, mismatched or already active");
+  if (!sameAddress(await lock.windDownContract(), plan.windDownAddress) ||
+      !sameAddress(await counter.windDownContract(), plan.windDownAddress) ||
+      !sameAddress(await token.windDownContract(), plan.windDownAddress) ||
+      !sameAddress(await governor.windDownContract(), plan.windDownAddress) ||
+      !sameAddress(await windDown.revenueLock(), plan.revenueLockAddress) ||
+      !sameAddress(await windDown.revenueCounter(), await lock.revenueCounter()) ||
+      !sameAddress(await windDown.armToken(), plan.armTokenAddress) ||
+      !sameAddress(await windDown.governor(), plan.governorAddress)) {
+    throw new Error("Reserve wind-down wiring is incomplete or mismatched");
   }
   await assertAllocatorMultisig(plan.allocator);
+}
+
+/** Must finish before the ARM transfer. This is not an atomic guarantee against
+ * another privileged transaction between this read and funding. */
+export async function assertReservePreFunding(plan: ReservePreFunding): Promise<void> {
+  await assertRevenueLockAllocation(plan.revenueLockAddress, plan.revenueLockAllocation);
+  await assertRevenueLockSchedule(plan.revenueLockAddress, plan.directBeneficiaries,
+    { address: plan.distributorAddress, cap: plan.reserveCap });
+  const token = await ethers.getContractAt("ArmadaToken", plan.armTokenAddress);
+  const lock = await ethers.getContractAt("RevenueLock", plan.revenueLockAddress);
+  if (await token.balanceOf(plan.revenueLockAddress) !== 0n || await lock.activated() ||
+      await lock.frozenAtWindDown() || await lock.released(plan.distributorAddress) !== 0n) {
+    throw new Error("Reserve pre-funding check requires an unfunded, inactive, unfrozen lock");
+  }
+  await assertReserveWiring(plan);
+  const windDown = await ethers.getContractAt("ArmadaWindDown", plan.windDownAddress);
+  if (await windDown.triggered()) throw new Error("Reserve wind-down wiring is already active");
 }
 
 /** JSON-safe original constructor input, including beneficiary order. */
@@ -185,43 +196,19 @@ export async function assertCreationProvenance(name: "RevenueLock" | "RevenueRes
 
 /** Safe to repeat after funding: recheck live wiring without requiring an empty lock. */
 export async function assertReservePostFunding(plan: ReservePreFunding & { redemptionAddress: string }): Promise<void> {
-  const same = (a: string, b: string) => ethers.getAddress(a) === ethers.getAddress(b);
   await assertRevenueLockAllocation(plan.revenueLockAddress, plan.revenueLockAllocation);
   await assertRevenueLockSchedule(plan.revenueLockAddress, plan.directBeneficiaries,
     { address: plan.distributorAddress, cap: plan.reserveCap });
-  const token = await ethers.getContractAt("ArmadaToken", plan.armTokenAddress);
-  const distributor = await ethers.getContractAt("RevenueReserveDistributor", plan.distributorAddress);
   const lock = await ethers.getContractAt("RevenueLock", plan.revenueLockAddress);
-  const governor = await ethers.getContractAt("ArmadaGovernor", plan.governorAddress);
+  if (!await lock.activated()) throw new Error("Reserve post-funding check requires an activated lock");
+  await assertReserveWiring(plan);
   const windDown = await ethers.getContractAt("ArmadaWindDown", plan.windDownAddress);
   const redemption = await ethers.getContractAt("ArmadaRedemption", plan.redemptionAddress);
-  const counter = await ethers.getContractAt("RevenueCounter", await lock.revenueCounter());
-  const exclusions: string[] = await governor.getExcludedFromQuorum();
-  if (!same(await distributor.armToken(), plan.armTokenAddress) ||
-      !same(await distributor.revenueLock(), plan.revenueLockAddress) ||
-      !same(await distributor.allocator(), plan.allocator) ||
-      await distributor.reserveCap() !== plan.reserveCap ||
-      !await distributor.verifyIntegration() ||
-      !await lock.activated() ||
-      [plan.revenueLockAddress, plan.distributorAddress].some(address =>
-        exclusions.filter(excluded => same(address, excluded)).length !== 1) ||
-      exclusions.some(excluded => same(excluded, plan.allocator)) ||
-      await token.noDelegation(plan.allocator) ||
-      same(await governor.treasuryAddress(), plan.allocator) ||
-      !same(await lock.windDownContract(), plan.windDownAddress) ||
-      !same(await counter.windDownContract(), plan.windDownAddress) ||
-      !same(await token.windDownContract(), plan.windDownAddress) ||
-      !same(await governor.windDownContract(), plan.windDownAddress) ||
-      !same(await windDown.revenueLock(), plan.revenueLockAddress) ||
-      !same(await windDown.revenueCounter(), await lock.revenueCounter()) ||
-      !same(await windDown.armToken(), plan.armTokenAddress) ||
-      !same(await windDown.governor(), plan.governorAddress) ||
-      !same(await windDown.redemptionContract(), plan.redemptionAddress) ||
-      !same(await redemption.revenueLock(), plan.revenueLockAddress) ||
-      !same(await redemption.windDown(), plan.windDownAddress)) {
-    throw new Error("Reserve post-funding integration or redemption/wind-down binding mismatch");
+  if (!sameAddress(await windDown.redemptionContract(), plan.redemptionAddress) ||
+      !sameAddress(await redemption.revenueLock(), plan.revenueLockAddress) ||
+      !sameAddress(await redemption.windDown(), plan.windDownAddress)) {
+    throw new Error("Reserve redemption/wind-down binding mismatch");
   }
-  await assertAllocatorMultisig(plan.allocator);
 }
 
 type ActivatableLock = {

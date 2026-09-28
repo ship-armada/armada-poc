@@ -720,7 +720,7 @@ revenueLock.lockedAtWindDown() + max(0, ARM.balanceOf(crowdfund) − crowdfund.a
     ≤ ARM.circulatingSupplyOf([treasury, redemptionContract])
 ```
 
-`≤` (not `<`) because circulating is legitimately ~0 at deploy — all ARM sits in the excluded contracts — so the check is boundary-exact at go-live and only loosens as the sale settles and vesting proceeds. Enforced in `scripts/deploy_crowdfund.ts` (step 9b). A runtime clamp on these subtractions is deferred to a future contract revision.
+`≤` (not `<`) because circulating is legitimately ~0 at deploy — all ARM sits in the excluded contracts — so the check is boundary-exact at go-live and only loosens as the sale settles and vesting proceeds. Enforced in `scripts/deploy_crowdfund.ts` (step 13). A runtime clamp on these subtractions is deferred to a future contract revision.
 
 The treasury, redemption contract, RevenueLock, and Crowdfund addresses are **hardcoded** in the redemption contract — no registry, no governance-managed list. The revenue-gated lock mechanism is a one-time launch construct (see REVENUE_LOCK.md §11), so no future lock contracts need to be accounted for. Custom grants post-transfer-unlock are standard treasury transfers, not lock contracts.
 

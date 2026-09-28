@@ -213,7 +213,7 @@ async function main() {
   if (config.revenueReserve) {
     const Distributor = await ethers.getContractFactory("RevenueReserveDistributor");
     const reserve = await Distributor.deploy(armTokenAddress, config.revenueReserve.allocator, reserveCap, nm.override());
-    await reserve.waitForDeployment();
+    await reserve.deploymentTransaction()!.wait();
     revenueReserveDistributor = await reserve.getAddress();
     reserveDeploymentTransaction = reserve.deploymentTransaction()!.hash;
     console.log(`   Reserve distributor: ${revenueReserveDistributor} — ${config.revenueReserve.amount} ARM`);

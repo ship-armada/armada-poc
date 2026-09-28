@@ -4,7 +4,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { loadFixture, takeSnapshot, time, mine, setBalance } from "@nomicfoundation/hardhat-network-helpers";
 import { deployGovernorProxy } from "./helpers/deploy-governor";
-import { assertAllocatorMultisig, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, assertReservePostFunding, assertCreationProvenance, validateReservePlan, revenueLockSchedule, type RevenueLockConstructorArgs } from "../scripts/revenue-reserve";
+import { assertAllocatorMultisig, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, assertReservePostFunding, assertCreationProvenance, validateReservePlan, revenueLockSchedule, reserveConfigMismatch, type RevenueLockConstructorArgs } from "../scripts/revenue-reserve";
 import { buildRevenueLockVerificationTasks } from "../scripts/verify_sepolia";
 
 describe("Reserve deployment funding gate", function () {
@@ -380,5 +380,16 @@ describe("Legacy Sepolia RevenueLock provenance", function () {
     expect(ethers.getCreateAddress({ from: manifest.deployer, nonce: 1264 }))
       .to.equal(manifest.contracts.revenueLock);
     expect(manifest.revenueLockDeploymentTransaction).to.equal("0x681abad1026db36d1b7b336323cf3f0243d35b15b4d8589802dcfd7bc812e8ac");
+  });
+
+  // WHY: The final verifier must not report a clean launch when configuration and manifest
+  // disagree about the reserve in either direction; an undeployed reserve is not "no reserve".
+  it("reports reserve config/manifest disagreement in both directions", async function () {
+    const { plan } = await loadFixture(fixture);
+    const reserve = { allocator: plan.allocator, amount: "360000" };
+    expect(reserveConfigMismatch(undefined, undefined)).to.equal(undefined);
+    expect(reserveConfigMismatch(plan.distributorAddress, reserve)).to.equal(undefined);
+    expect(reserveConfigMismatch(undefined, reserve)).to.contain("no reserve distributor");
+    expect(reserveConfigMismatch(plan.distributorAddress, undefined)).to.contain("REVENUE_RESERVE_* is unset");
   });
 });

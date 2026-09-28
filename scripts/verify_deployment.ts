@@ -18,7 +18,7 @@
 import { ethers } from "hardhat";
 import { loadDeployment } from "./deploy-utils";
 import { timelockBootstrapChecks, timelockUnexpectedRoleHolders } from "./verify-timelock";
-import { assertReservePostFunding, assertCreationProvenance } from "./revenue-reserve";
+import { assertReservePostFunding, assertCreationProvenance, reserveConfigMismatch } from "./revenue-reserve";
 import {
   isLocal,
   isCCTPReal,
@@ -704,14 +704,19 @@ async function checkRevenueReserve(govManifest: any, crowdfundManifest: any | nu
   config: ReturnType<typeof getNetworkConfig>) {
   const GROUP = "Revenue Reserve";
   const c = govManifest.contracts;
-  if (!c.revenueReserveDistributor) return;
+  const mismatch = reserveConfigMismatch(c.revenueReserveDistributor, config.revenueReserve);
+  if (mismatch) {
+    fail(GROUP, "Reserve configuration matches deployment", mismatch);
+    return;
+  }
+  if (!c.revenueReserveDistributor || !config.revenueReserve) return;
   if (!crowdfundManifest || !c.redemption || !c.windDown ||
       c.redemption === ethers.ZeroAddress || c.windDown === ethers.ZeroAddress) {
     warn(GROUP, "Post-funding integration", "Crowdfund or redemption/wind-down deployment incomplete");
     return;
   }
-  if (!config.revenueReserve || !govManifest.revenueLockConstructorArgs) {
-    fail(GROUP, "Post-funding integration", "Reserve configuration or lock constructor provenance missing");
+  if (!govManifest.revenueLockConstructorArgs) {
+    fail(GROUP, "Post-funding integration", "RevenueLock constructor provenance missing");
     return;
   }
   try {

@@ -63,6 +63,15 @@ export function validateReservePlan(
   return cap;
 }
 
+/** Describes a reserve configured without a deployed distributor, or the reverse.
+ * Returns undefined when both are present or both are absent. */
+export function reserveConfigMismatch(distributor: string | undefined,
+  reserve: RevenueReserveConfig | undefined): string | undefined {
+  if (distributor && !reserve) return "Manifest has a reserve distributor but REVENUE_RESERVE_* is unset";
+  if (!distributor && reserve) return "REVENUE_RESERVE_* is set but the manifest has no reserve distributor";
+  return undefined;
+}
+
 /** Launch scripts support Safe-compatible introspection. Getters do not authenticate
  * wallet code: verify the intended Safe implementation, owners and modules separately. */
 export async function assertAllocatorMultisig(address: string): Promise<void> {

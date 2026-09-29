@@ -33,7 +33,7 @@ Armada bootstraps governance through a word-of-mouth whitelist crowdfund. The al
 
 Before the crowdfund opens, the following revenue-locked allocations are distributed and published:
 
-**Early Network Allocation (2,400,000 ARM):** Covers launch team, ecosystem contributors, and a reserve for future contributors. All held in a single shared revenue-lock contract with per-beneficiary allocations. Every recipient, wallet address, and amount is published before the crowdfund opens. See REVENUE_LOCK.md for the full contract spec.
+**Early Network Allocation (2,400,000 ARM):** Covers launch team, ecosystem contributors, and a reserve for future contributors. All held in a single shared revenue-lock contract with per-beneficiary allocations. Publish every initial beneficiary/distribution-contract address and amount, the reserve cap, allocator Safe, and wind-down fallback before the crowdfund opens. Later reserve grants are irrevocable on-chain assignments and must be disclosed as they occur. See REVENUE_LOCK.md for the full contract spec.
 
 **Transparency:**
 
@@ -41,7 +41,7 @@ Crowdfund participants can evaluate the full distribution (ie. who holds what an
 
 ### Early Network Allocation
 
-The early network allocation (2,400,000 ARM, 20%) is held in a single shared revenue-lock contract with per-beneficiary allocations. Each recipient has their own entry in the beneficiary list and governs independently. The Knowable Safe appears in the beneficiary list like any other recipient, with a reserve allocation earmarked for future contributors. Future contributor distributions are handled off-chain (token agreements between Knowable and contributors); once ARM is released to the Safe's wallet per the milestone schedule and global transfers are enabled, Knowable distributes via standard transfers. See REVENUE_LOCK.md for the full contract spec.
+The early network allocation (2,400,000 ARM, 20%) is held in a shared RevenueLock with immutable beneficiary allocations. The reserve is held for `RevenueReserveDistributor`, whose fixed 2-of-3 allocator Safe assigns irrevocable grants on-chain. Grants inherit completed milestones and anyone can sponsor their payout. Exact category amounts follow the approved cap table; 360,000 ARM is only a worked example. The separate Merkle airdrop path is not replaced by individual RevenueLock entries and its integration must be reconciled in the launch schedule. See REVENUE_LOCK.md and REVENUE_RESERVE_DISTRIBUTOR.md.
 
 **Properties:**
 - Revenue-locked transferability (same schedule as all early network tokens)
@@ -51,7 +51,7 @@ The early network allocation (2,400,000 ARM, 20%) is held in a single shared rev
 **Constraints:**
 - Cannot change the revenue-lock schedule
 - Cannot pull from treasury or other allocations
-- Knowable Safe's own ARM release follows the same revenue-lock milestone schedule. Future contributor distributions from the Safe are off-chain standard transfers after release and global transfer unlock — they are not on-chain revenue-lock-enforced. See REVENUE_LOCK.md §4.
+- Reserve grants remain bounded by the original revenue milestones and lifetime cap. The whitelisted distributor pays recipients directly, including before global transfer unlock. Assignment ends at wind-down; the unassigned remainder becomes the allocator's entitlement, payable only at the frozen unlocked percentage. Disclose the allocator's controlling parties and this conditional entitlement.
 
 ### Revenue-Gated Unlocks (Early Network)
 
@@ -580,7 +580,7 @@ Those who paid have priority over those who received tokens at zero cost basis. 
 | Invite graph | Fully public throughout the crowdfund | No post-finalization reveal step. Participants are joining a trust network — its shape should be legible from the start. Simplifies implementation; reinforces governance bootstrapping framing over token allocation framing |
 | Enactment delay | 48 hours standard; 7 days extended | Short delay is honest — without locking, market prices outcomes during voting anyway. Extended delay gives Security Council a meaningful veto window on high-impact proposals. |
 | Elastic expansion | Binary to 1.8M ARM | Accommodates demand without distorting any future fundraising |
-| Team allocation control | Single shared revenue-lock contract with per-beneficiary allocations; Knowable Safe is a beneficiary like any other team member | Each team member governs independently; Knowable Safe handles future contributors off-chain after release and global transfer unlock |
+| Early network allocation control | Shared RevenueLock with immutable initial entries and a capped reserve distributor; fixed 2-of-3 Safe assigns irrevocable reserve grants | Recipients govern independently; sponsored reserve payouts preserve delegation and may increase future quorum without changing existing proposals. Unassigned wind-down entitlement belongs to the allocator. |
 | Pre-crowdfund distribution | Early network allocation distributed before the crowdfund opens | Full transparency for funders |
 | Recurring payments | Not supported in v1 | Steward submits monthly batches instead |
 | Hop allocation model | Demand-driven ceilings, not fixed reserves | Capacity follows actual demand; no hop is guaranteed allocation it didn't earn; unused capacity rolls forward |

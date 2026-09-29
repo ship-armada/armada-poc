@@ -2,11 +2,13 @@
 // ABOUTME: scheme, client ordering, role/domain/chainId lookups, and CCTP address merging.
 
 import { expect } from "chai";
+import * as fs from "fs";
+import * as path from "path";
 
 // Env keys the config reads that a test might set — cleared between tests so one case
 // can't leak chain topology into the next (getNetworkConfig caches, so we also re-require).
 const MANAGED_PREFIXES = ["CLIENT_", "HUB_", "CCTP_", "DEPLOY_ENV", "DEPLOYER_PRIVATE_KEY",
-  "REVENUE_LOCK_", "TREASURY_ADDRESS", "SECURITY_COUNCIL_ADDRESS", "LAUNCH_TEAM_ADDRESS"];
+  "REVENUE_LOCK_", "REVENUE_RESERVE_", "TREASURY_ADDRESS", "SECURITY_COUNCIL_ADDRESS", "LAUNCH_TEAM_ADDRESS"];
 
 function clearManagedEnv(): void {
   for (const key of Object.keys(process.env)) {
@@ -130,5 +132,37 @@ describe("networks config — N clients", () => {
       // CLIENT_1_RPC intentionally omitted
       CLIENT_1_CHAIN_ID: "11155420", CLIENT_1_CCTP_DOMAIN: "2",
     }).getNetworkConfig()).to.throw(/CLIENT_1_RPC/);
+  });
+});
+
+
+describe("reserve configuration", () => {
+  afterEach(clearManagedEnv);
+
+  // WHY: An omitted half of the reserve configuration must not silently disable its deployment.
+  it("requires allocator and amount together", () => {
+    for (const env of [{ REVENUE_RESERVE_ALLOCATOR: "0x0000000000000000000000000000000000000001" },
+      { REVENUE_RESERVE_AMOUNT: "360000" }] as Record<string, string>[]) {
+      const { getNetworkConfig } = freshConfig({ DEPLOY_ENV: "local", ...env });
+      expect(() => getNetworkConfig()).to.throw("Set both REVENUE_RESERVE");
+    }
+  });
+
+  // WHY: The scripts must receive exactly the configured cap without changing any direct allocations.
+  it("retains an explicit reserve and defaults to none", () => {
+    const allocator = "0x0000000000000000000000000000000000000001";
+    const configured = freshConfig({ DEPLOY_ENV: "local", REVENUE_RESERVE_ALLOCATOR: allocator,
+      REVENUE_RESERVE_AMOUNT: "360000" }).getNetworkConfig();
+    expect(configured.revenueReserve).to.deep.equal({ allocator, amount: "360000" });
+    expect(freshConfig({ DEPLOY_ENV: "local" }).getNetworkConfig().revenueReserve).to.equal(undefined);
+  });
+
+  // WHY: The committed Sepolia schedule must exhaust the lock budget in either
+  // mode; the previous 200 ARM file would strand 2,399,800 ARM on activation.
+  it("pins fresh Sepolia beneficiary totals for direct and reserve rehearsals", () => {
+    const total = (file: string) => (JSON.parse(fs.readFileSync(path.join(__dirname, file), "utf8")) as
+      { amount: string }[]).reduce((sum, row) => sum + BigInt(row.amount), 0n);
+    expect(total("revenue-lock-beneficiaries-sepolia.json")).to.equal(2_400_000n);
+    expect(total("revenue-lock-beneficiaries-sepolia-reserve.json") + 360_000n).to.equal(2_400_000n);
   });
 });

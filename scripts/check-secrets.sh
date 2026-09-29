@@ -22,10 +22,12 @@ ALLOWED_FILES=(
   "scripts/capture/spike-claim-as-transfer.ts"  # Phase 0 spike — publicly-known Anvil + BIP-39 test mnemonics only
 )
 
-# Directories whose entire contents are captured differential test vectors derived from FIXED TEST
-# SEEDS (not real secrets). The values (keys, commitments, proofs) are reproducible from known inputs.
+# Directories whose entire contents are known non-secret data: captured differential test vectors
+# derived from FIXED TEST SEEDS (not real secrets; the values — keys, commitments, proofs — are
+# reproducible from known inputs), and script-generated deployment manifests.
 ALLOWED_DIRS=(
   "scripts/capture/vectors/"  # Phase 0 SDK vectors (keyset, commitment, nullifier, EdDSA, merkle, ...)
+  "deployments/"              # Script-generated manifests: public addresses and creation tx hashes (32-byte hex, not keys)
 )
 
 # Patterns that indicate secrets. Each entry: "LABEL:::REGEX"

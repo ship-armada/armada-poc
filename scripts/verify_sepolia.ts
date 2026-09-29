@@ -27,7 +27,6 @@
 
 import { ethers, run } from "hardhat";
 import {
-  getNetworkConfig,
   getChainRole,
   getChainByRole,
   getGovernanceDeploymentFile,
@@ -40,12 +39,51 @@ import {
   type ChainRole,
 } from "../config/networks";
 import { loadDeployment } from "./deploy-utils";
+import { assertRevenueLockSchedule, type RevenueLockConstructorArgs } from "./revenue-reserve";
 
 interface VerifyTask {
   name: string;
   address: string;
   constructorArguments: any[];
   contract?: string; // Fully qualified name for disambiguation
+}
+
+/** Read immutable reserve arguments from the deployed instance, not a later env file.
+ * RevenueLock arguments come from the manifest's recorded constructor input, checked
+ * against the deployed lock; the current beneficiary file is not consulted. */
+export async function buildRevenueLockVerificationTasks(c: {
+  armToken: string; revenueCounter: string; revenueLock: string; revenueReserveDistributor?: string;
+}, originalArgs?: RevenueLockConstructorArgs): Promise<VerifyTask[]> {
+  const tasks: VerifyTask[] = [];
+  let reserve: { address: string; cap: bigint } | undefined;
+  if (c.revenueReserveDistributor) {
+    const distributor = await ethers.getContractAt("RevenueReserveDistributor", c.revenueReserveDistributor);
+    reserve = { address: c.revenueReserveDistributor, cap: await distributor.reserveCap() };
+    tasks.push({ name: "RevenueReserveDistributor", address: reserve.address,
+      constructorArguments: [await distributor.armToken(), await distributor.allocator(), reserve.cap] });
+  }
+  if (!originalArgs) {
+    throw new Error("Original RevenueLock constructor arguments missing; recover deployment transaction input into governance manifest revenueLockConstructorArgs");
+  }
+  const [token, counter, rate, addresses, amounts] = originalArgs;
+  const lock = await ethers.getContractAt("RevenueLock", c.revenueLock);
+  if (ethers.getAddress(token) !== ethers.getAddress(c.armToken) ||
+      ethers.getAddress(token) !== ethers.getAddress(await lock.armToken()) ||
+      ethers.getAddress(counter) !== ethers.getAddress(c.revenueCounter) ||
+      ethers.getAddress(counter) !== ethers.getAddress(await lock.revenueCounter()) ||
+      BigInt(rate) !== await lock.MAX_REVENUE_INCREASE_PER_DAY() || addresses.length !== amounts.length) {
+    throw new Error("Original RevenueLock constructor arguments do not match deployed lock");
+  }
+  if (reserve) {
+    const index = addresses.findIndex(address => ethers.getAddress(address) === ethers.getAddress(reserve!.address));
+    if (index < 0 || BigInt(amounts[index]) !== reserve.cap) {
+      throw new Error("Original RevenueLock constructor arguments do not fund the reserve distributor at its cap");
+    }
+  }
+  await assertRevenueLockSchedule(c.revenueLock, addresses.map((address, i) =>
+    ({ address, amount: ethers.formatUnits(amounts[i], 18), label: "original constructor" })));
+  tasks.push({ name: "RevenueLock", address: c.revenueLock, constructorArguments: originalArgs });
+  return tasks;
 }
 
 async function verify(task: VerifyTask): Promise<boolean> {
@@ -72,7 +110,6 @@ async function verify(task: VerifyTask): Promise<boolean> {
  * Build governance + crowdfund tasks. Hub-only — clients don't deploy these.
  */
 async function buildGovernanceCrowdfundTasks(): Promise<VerifyTask[]> {
-  const config = getNetworkConfig();
   const gov = loadDeployment(getGovernanceDeploymentFile());
   const cf = loadDeployment(getCrowdfundDeploymentFile());
   if (!gov) throw new Error(`Governance manifest not found: ${getGovernanceDeploymentFile()}`);
@@ -89,10 +126,9 @@ async function buildGovernanceCrowdfundTasks(): Promise<VerifyTask[]> {
   const windDownDeadline = await windDown.windDownDeadline();
   const revenueThreshold = await windDown.revenueThreshold();
 
-  // RevenueLock beneficiaries — reconstruct from config
-  const beneficiaryConfig = config.revenueLockBeneficiaries;
-  const beneficiaryAddresses = beneficiaryConfig.map(b => b.address);
-  const beneficiaryAmounts = beneficiaryConfig.map(b => ethers.parseUnits(b.amount, 18));
+  // Verify the lock's recorded constructor schedule rather than whichever beneficiary
+  // file the current env selects.
+  const revenueLockTasks = await buildRevenueLockVerificationTasks(c, gov.revenueLockConstructorArgs);
 
   return [
     // --- Governance contracts ---
@@ -154,19 +190,7 @@ async function buildGovernanceCrowdfundTasks(): Promise<VerifyTask[]> {
       ],
       contract: "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy",
     },
-    {
-      name: "RevenueLock",
-      // $10k/day rate cap — must match the value used at deployment in deploy_governance.ts.
-      // See PARAMETER_MANIFEST.md (ship-armada/crowdfund) and issue #225.
-      address: c.revenueLock,
-      constructorArguments: [
-        c.armToken,
-        c.revenueCounter,
-        ethers.parseUnits("10000", 18),
-        beneficiaryAddresses,
-        beneficiaryAmounts,
-      ],
-    },
+    ...revenueLockTasks,
     {
       name: "ShieldPauseController",
       address: c.shieldPauseController,
@@ -376,7 +400,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

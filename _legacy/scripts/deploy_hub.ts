@@ -8,7 +8,9 @@ import * as path from "path";
  * Deploys:
  * - MockUSDC (for CCTP simulation)
  *
- * Note: Railgun contracts are deployed separately via deploy_railgun.ts
+ * Note: the legacy vendored pool deployment step (formerly deploy_railgun.ts)
+ * was removed 2026-09-28 with the M8 clean-room rewrite — the hub is deployed
+ * against contracts/privacy-pool/ via scripts/deploy_privacy_pool.ts.
  * Note: V2 contracts (HubCCTPReceiverV2) are deployed via deploy_v2.ts
  */
 
@@ -42,9 +44,9 @@ Contracts:
   MockUSDC: ${mockUSDCAddress}
 
 NEXT STEPS:
-1. Run deploy_railgun.ts to deploy Railgun contracts
+1. (REMOVED 2026-09-28, M8 rewrite) deploy the pool via scripts/deploy_privacy_pool.ts
 2. Run deploy_unshield_proxy.ts to deploy HubUnshieldProxy
-3. Run deploy_v2.ts to deploy HubCCTPReceiverV2
+3. ~~Run deploy_v2.ts to deploy HubCCTPReceiverV2~~ (removed with the vendored tree)
 4. Run link_deployments.ts to link client to hub
 `);
 

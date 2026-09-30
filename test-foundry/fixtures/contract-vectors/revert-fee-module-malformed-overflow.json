@@ -1,0 +1,138 @@
+{
+  "id": "revert-fee-module-malformed-overflow",
+  "category": "edge",
+  "description": "Fee module returning totalFee > amount: base = value - totalFee underflows → Panic(0x11) bubbled verbatim through the router (spec §7.3, §5.7). No tokens move (I-8).",
+  "specRefs": [
+    "§7.3",
+    "§5.7",
+    "I-8",
+    "§10"
+  ],
+  "proofsBypassed": false,
+  "dependsOn": [
+    "admin-set-fee-module-malformed"
+  ],
+  "setup": [
+    "MockUSDCV2.mint(ALICE, 10_000 USDC), mint(BOB, 1_000 USDC), mint(CAROL, 1_000 USDC) by DEPLOYER (minter)",
+    "USDC.approve(POOL, uint256.max) from ALICE, BOB and CAROL",
+    "MockConfigurableFeeModule.setMode(1) — totalFee = amount + 1"
+  ],
+  "requiresImpersonation": null,
+  "setupTxs": [
+    {
+      "from": "DEPLOYER",
+      "to": "MOCK_FEE_MODULE",
+      "toAddress": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f",
+      "calldata": "0xd72dd3b40000000000000000000000000000000000000000000000000000000000000001",
+      "description": "fee module mode=1 (totalFee overflow)"
+    }
+  ],
+  "tx": {
+    "from": "ALICE",
+    "fromAddress": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    "to": "POOL",
+    "toAddress": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+    "calldata": "0xcd6a3d7f000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001209749fa52785e19e63c12545c150e75412bab3a266f1bbdfed64904408ccb7400000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f424085df753a55494261faec490d058d0bfe8b17fd5945a13bc9df3ec628a433c0731d3c648dc1c228b03b82cccdb31f950e062a5da375b6c863afe5e0a86e67194a53bb51244e8690cca0094baa8788549338bfdbe5ae606e0826499b2b2f060fc361884e755ecd2cdd175374467bd016c3410f3a71bffcf0a5aca56d67c75468c9",
+    "value": "0x0",
+    "decodedCall": {
+      "function": "shield",
+      "args": {
+        "requests": [
+          {
+            "preimage": {
+              "npk": "0x209749fa52785e19e63c12545c150e75412bab3a266f1bbdfed64904408ccb74",
+              "token": {
+                "tokenType": 0,
+                "tokenAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+                "tokenSubID": 0
+              },
+              "value": "0xf4240"
+            },
+            "ciphertext": {
+              "encryptedBundle": [
+                "0x85df753a55494261faec490d058d0bfe8b17fd5945a13bc9df3ec628a433c073",
+                "0x1d3c648dc1c228b03b82cccdb31f950e062a5da375b6c863afe5e0a86e67194a",
+                "0x53bb51244e8690cca0094baa8788549338bfdbe5ae606e0826499b2b2f060fc3"
+              ],
+              "shieldKey": "0x61884e755ecd2cdd175374467bd016c3410f3a71bffcf0a5aca56d67c75468c9"
+            }
+          }
+        ],
+        "integrator": "0x0000000000000000000000000000000000000000"
+      }
+    }
+  },
+  "preState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x34",
+    "pool.merkleRoot": "0x1ecc034c5d70d7cd14ca0aecea17be30796e51e5fd76d3543eeff8ffbeb9891f",
+    "pool.lastEventBlock": "0xc0",
+    "usdc.balanceOf[POOL]": "0x6c52b747",
+    "usdc.balanceOf[ALICE]": "0x211c41d39",
+    "usdc.balanceOf[BOB]": "0x3dc01b00",
+    "usdc.balanceOf[CAROL]": "0x3b023380",
+    "usdc.balanceOf[TREASURY]": "0x931840",
+    "usdc.balanceOf[DEPLOYER]": "0xf4240",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x2dc6c0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x4c4b40"
+  },
+  "result": {
+    "status": 0,
+    "txHash": "0x481f001046dee1872b0360a70e43aa01b70f5e838f7936f177c5b7040363c09d",
+    "blockNumber": 201,
+    "gasUsed": "0xc411",
+    "returnData": null,
+    "revert": {
+      "kind": "Panic(uint256)",
+      "panicCode": "0x11",
+      "data": "0x4e487b710000000000000000000000000000000000000000000000000000000000000011"
+    },
+    "events": []
+  },
+  "postState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x34",
+    "pool.merkleRoot": "0x1ecc034c5d70d7cd14ca0aecea17be30796e51e5fd76d3543eeff8ffbeb9891f",
+    "pool.lastEventBlock": "0xc0",
+    "usdc.balanceOf[POOL]": "0x6c52b747",
+    "usdc.balanceOf[ALICE]": "0x211c41d39",
+    "usdc.balanceOf[BOB]": "0x3dc01b00",
+    "usdc.balanceOf[CAROL]": "0x3b023380",
+    "usdc.balanceOf[TREASURY]": "0x931840",
+    "usdc.balanceOf[DEPLOYER]": "0xf4240",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x2dc6c0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x4c4b40"
+  },
+  "context": {
+    "chainId": 31337,
+    "network": "local fixturenet (Anvil, hub chain only)",
+    "deployments": {
+      "privacyPool": "deployments/privacy-pool-hub.json",
+      "cctp": "deployments/hub-v3.json",
+      "feeModule": "deployments/fee-module-hub.json",
+      "governance": "deployments/governance-hub.json"
+    },
+    "addressBook": {
+      "DEPLOYER": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "ALICE": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "BOB": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "CAROL": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "TREASURY": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+      "POOL": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+      "SHIELD_MODULE": "0xc5a5C42992dECbae36851359345FE25997F5C42d",
+      "TRANSACT_MODULE": "0x67d269191c92Caf3cD7723F116c85e6E9bf55933",
+      "MERKLE_MODULE": "0x7a2088a1bFc9d81c55368AE168C2C02570cB814F",
+      "VERIFIER_MODULE": "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
+      "HOOK_ROUTER": "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
+      "GASLESS_WRAPPER": "0xCD8a1C3ba11CF5ECfa6267617243239504a98d90",
+      "TOKEN_MESSENGER": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+      "MESSAGE_TRANSMITTER": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+      "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "FEE_MODULE": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+      "CLIENT_POOL": "0x0000000000000000000000000000000000C11EA7",
+      "MOCK_PAUSE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+      "MOCK_FEE_MODULE": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f"
+    }
+  },
+  "capturedAt": "2026-09-25T17:03:09.702Z"
+}

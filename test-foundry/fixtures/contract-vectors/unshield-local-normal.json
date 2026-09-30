@@ -1,0 +1,260 @@
+{
+  "id": "unshield-local-normal",
+  "category": "unshield",
+  "description": "Local unshield of 25 USDC to BOB (1x2 shape, unshield=NORMAL): last commitment is the unshield-output note hash (not inserted); Unshield event with fee=0 (D-2).",
+  "specRefs": [
+    "§8.1",
+    "§8.5",
+    "I-6"
+  ],
+  "proofsBypassed": true,
+  "dependsOn": [
+    "transact-1x2",
+    "shield-direct-erc20"
+  ],
+  "setup": [
+    "testingMode = true (vector admin-set-testing-mode-true) — router verify() returns true without reading the proof; proof struct is zeros",
+    "Merkle root read fresh from pool before calldata construction"
+  ],
+  "requiresImpersonation": null,
+  "setupTxs": [],
+  "tx": {
+    "from": "DEPLOYER",
+    "fromAddress": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "to": "POOL",
+    "toAddress": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+    "calldata": "0xd8ae136a000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000fbb9d86b4fbb43aab114c77bed187d1428bf04ce2fbbef363e4ad41cccfbd7c0000000000000000000000000000000000000000000000000000000000000220000000000000000000000000000000000000000000000000000000000000026000000000000000000000000000000000000000000000000000000000000002c00000000000000000000000003c44cdddb6a900fa2b585dd299e03d12fa4293bc00000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000017d784000000000000000000000000000000000000000000000000000000000000000010e6d4e3c21bd00958b54994b94db4ad9c8afaf5b198aef7269a63f16528cb2c90000000000000000000000000000000000000000000000000000000000000002190c4a0bb80b2f1418efe7bb25aef7dfd2d73ed28206ffe07571e289df87463b07ad4e032161b2131e1a9f58ff04e4ebfe876de863506ce01a6ecfbd6f2c3fc50000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000007a690000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000206fb01ef3c5e9491677c0a857728bf5aa45381fc946fce31545567d365360cc2da66c4fd1a9fb6a6bc12bec1095b50cfc3015c97dd83895605dc540a1131320115d0b2c009bc182d81d62057f5b9d64edbd2fb14a660052e5e2a234c960d2440f45b2a17433f23409fe0fe2de646a972210cc84dcfe6ac964e6a97b05c4274ca636bd3fa178404aa6d4e7ff1364a9cb4b025cd90ccc3ed3d8ab52d3441ce2a69340a13210bff7ca3471a0c46b80f2eced44f528d5fad22aeb511c880e90e522970000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "value": "0x0",
+    "decodedCall": {
+      "function": "transact",
+      "args": {
+        "txs": [
+          {
+            "proof": {
+              "a": {
+                "x": 0,
+                "y": 0
+              },
+              "b": {
+                "x": [
+                  0,
+                  0
+                ],
+                "y": [
+                  0,
+                  0
+                ]
+              },
+              "c": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            "merkleRoot": "0x0fbb9d86b4fbb43aab114c77bed187d1428bf04ce2fbbef363e4ad41cccfbd7c",
+            "nullifiers": [
+              "0x0e6d4e3c21bd00958b54994b94db4ad9c8afaf5b198aef7269a63f16528cb2c9"
+            ],
+            "commitments": [
+              "0x190c4a0bb80b2f1418efe7bb25aef7dfd2d73ed28206ffe07571e289df87463b",
+              "0x07ad4e032161b2131e1a9f58ff04e4ebfe876de863506ce01a6ecfbd6f2c3fc5"
+            ],
+            "boundParams": {
+              "treeNumber": 0,
+              "minGasPrice": 0,
+              "unshield": 1,
+              "chainID": 31337,
+              "adaptContract": "0x0000000000000000000000000000000000000000",
+              "adaptParams": "0x0000000000000000000000000000000000000000000000000000000000000000",
+              "commitmentCiphertext": [
+                {
+                  "ciphertext": [
+                    "0x6fb01ef3c5e9491677c0a857728bf5aa45381fc946fce31545567d365360cc2d",
+                    "0xa66c4fd1a9fb6a6bc12bec1095b50cfc3015c97dd83895605dc540a113132011",
+                    "0x5d0b2c009bc182d81d62057f5b9d64edbd2fb14a660052e5e2a234c960d2440f",
+                    "0x45b2a17433f23409fe0fe2de646a972210cc84dcfe6ac964e6a97b05c4274ca6"
+                  ],
+                  "blindedSenderViewingKey": "0x36bd3fa178404aa6d4e7ff1364a9cb4b025cd90ccc3ed3d8ab52d3441ce2a693",
+                  "blindedReceiverViewingKey": "0x40a13210bff7ca3471a0c46b80f2eced44f528d5fad22aeb511c880e90e52297",
+                  "annotationData": "0x",
+                  "memo": "0x"
+                }
+              ]
+            },
+            "unshieldPreimage": {
+              "npk": "0x0000000000000000000000003c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+              "token": {
+                "tokenType": 0,
+                "tokenAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+                "tokenSubID": 0
+              },
+              "value": "0x17d7840"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "preState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x2d",
+    "pool.merkleRoot": "0x0fbb9d86b4fbb43aab114c77bed187d1428bf04ce2fbbef363e4ad41cccfbd7c",
+    "pool.lastEventBlock": "0xa4",
+    "usdc.balanceOf[POOL]": "0x43abfe2f",
+    "usdc.balanceOf[ALICE]": "0x211c41d39",
+    "usdc.balanceOf[BOB]": "0x3a699d00",
+    "usdc.balanceOf[CAROL]": "0x3b023380",
+    "usdc.balanceOf[TREASURY]": "0x5649d8",
+    "usdc.balanceOf[DEPLOYER]": "0xf4240",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x0",
+    "pool.rootHistory[0][0x0fbb9d86b4fbb43aab114c77bed187d1428bf04ce2fbbef363e4ad41cccfbd7c]": true,
+    "pool.nullifiers[0][0x0e6d4e3c21bd00958b54994b94db4ad9c8afaf5b198aef7269a63f16528cb2c9]": false
+  },
+  "result": {
+    "status": 1,
+    "txHash": "0x059a1708d24a080a0dfd2937f88610662bf201f4ca6c7dd0035f3f9eb44de76f",
+    "blockNumber": 169,
+    "gasUsed": "0xc418a",
+    "returnData": null,
+    "revert": null,
+    "events": [
+      {
+        "logIndex": 0,
+        "address": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+        "topics": [
+          "0x781745c57906dc2f175fec80a9c691744c91c48a34a83672c41c2604774eb11f"
+        ],
+        "data": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000010e6d4e3c21bd00958b54994b94db4ad9c8afaf5b198aef7269a63f16528cb2c9",
+        "decoded": {
+          "name": "Nullified",
+          "args": {
+            "treeNumber": "0x0",
+            "nullifier": [
+              "0x0e6d4e3c21bd00958b54994b94db4ad9c8afaf5b198aef7269a63f16528cb2c9"
+            ]
+          }
+        }
+      },
+      {
+        "logIndex": 1,
+        "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+        "topics": [
+          "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "0x000000000000000000000000e6e340d132b5f46d1e472debcd681b2abc16e57e",
+          "0x0000000000000000000000003c44cdddb6a900fa2b585dd299e03d12fa4293bc"
+        ],
+        "data": "0x00000000000000000000000000000000000000000000000000000000017d7840",
+        "decoded": {
+          "name": "Transfer",
+          "args": {
+            "from": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+            "to": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+            "value": "0x17d7840"
+          }
+        }
+      },
+      {
+        "logIndex": 2,
+        "address": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+        "topics": [
+          "0xd93cf895c7d5b2cd7dc7a098b678b3089f37d91f48d9b83a0800a91cbdf05284"
+        ],
+        "data": "0x0000000000000000000000003c44cdddb6a900fa2b585dd299e03d12fa4293bc00000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000017d78400000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": {
+          "name": "Unshield",
+          "args": {
+            "to": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+            "token": {
+              "tokenType": "0x0",
+              "tokenAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+              "tokenSubID": "0x0"
+            },
+            "amount": "0x17d7840",
+            "fee": "0x0"
+          }
+        }
+      },
+      {
+        "logIndex": 3,
+        "address": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+        "topics": [
+          "0x56a618cda1e34057b7f849a5792f6c8587a2dbe11c83d0254e72cb3daffda7d1"
+        ],
+        "data": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002d000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000001190c4a0bb80b2f1418efe7bb25aef7dfd2d73ed28206ffe07571e289df87463b000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000206fb01ef3c5e9491677c0a857728bf5aa45381fc946fce31545567d365360cc2da66c4fd1a9fb6a6bc12bec1095b50cfc3015c97dd83895605dc540a1131320115d0b2c009bc182d81d62057f5b9d64edbd2fb14a660052e5e2a234c960d2440f45b2a17433f23409fe0fe2de646a972210cc84dcfe6ac964e6a97b05c4274ca636bd3fa178404aa6d4e7ff1364a9cb4b025cd90ccc3ed3d8ab52d3441ce2a69340a13210bff7ca3471a0c46b80f2eced44f528d5fad22aeb511c880e90e522970000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": {
+          "name": "Transact",
+          "args": {
+            "treeNumber": "0x0",
+            "startPosition": "0x2d",
+            "hash": [
+              "0x190c4a0bb80b2f1418efe7bb25aef7dfd2d73ed28206ffe07571e289df87463b"
+            ],
+            "ciphertext": [
+              {
+                "ciphertext": [
+                  "0x6fb01ef3c5e9491677c0a857728bf5aa45381fc946fce31545567d365360cc2d",
+                  "0xa66c4fd1a9fb6a6bc12bec1095b50cfc3015c97dd83895605dc540a113132011",
+                  "0x5d0b2c009bc182d81d62057f5b9d64edbd2fb14a660052e5e2a234c960d2440f",
+                  "0x45b2a17433f23409fe0fe2de646a972210cc84dcfe6ac964e6a97b05c4274ca6"
+                ],
+                "blindedSenderViewingKey": "0x36bd3fa178404aa6d4e7ff1364a9cb4b025cd90ccc3ed3d8ab52d3441ce2a693",
+                "blindedReceiverViewingKey": "0x40a13210bff7ca3471a0c46b80f2eced44f528d5fad22aeb511c880e90e52297",
+                "annotationData": "0x",
+                "memo": "0x"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "postState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x2e",
+    "pool.merkleRoot": "0x044d105903d4febfd1405e6da9a362a4d0649c4d349500a1be69d05748ab8f5e",
+    "pool.lastEventBlock": "0xa9",
+    "usdc.balanceOf[POOL]": "0x422e85ef",
+    "usdc.balanceOf[ALICE]": "0x211c41d39",
+    "usdc.balanceOf[BOB]": "0x3be71540",
+    "usdc.balanceOf[CAROL]": "0x3b023380",
+    "usdc.balanceOf[TREASURY]": "0x5649d8",
+    "usdc.balanceOf[DEPLOYER]": "0xf4240",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x0",
+    "pool.rootHistory[0][0x0fbb9d86b4fbb43aab114c77bed187d1428bf04ce2fbbef363e4ad41cccfbd7c]": true,
+    "pool.nullifiers[0][0x0e6d4e3c21bd00958b54994b94db4ad9c8afaf5b198aef7269a63f16528cb2c9]": true,
+    "pool.rootHistory[postTree][postRoot]": true
+  },
+  "context": {
+    "chainId": 31337,
+    "network": "local fixturenet (Anvil, hub chain only)",
+    "deployments": {
+      "privacyPool": "deployments/privacy-pool-hub.json",
+      "cctp": "deployments/hub-v3.json",
+      "feeModule": "deployments/fee-module-hub.json",
+      "governance": "deployments/governance-hub.json"
+    },
+    "addressBook": {
+      "DEPLOYER": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "ALICE": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "BOB": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "CAROL": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "TREASURY": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+      "POOL": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+      "SHIELD_MODULE": "0xc5a5C42992dECbae36851359345FE25997F5C42d",
+      "TRANSACT_MODULE": "0x67d269191c92Caf3cD7723F116c85e6E9bf55933",
+      "MERKLE_MODULE": "0x7a2088a1bFc9d81c55368AE168C2C02570cB814F",
+      "VERIFIER_MODULE": "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
+      "HOOK_ROUTER": "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
+      "GASLESS_WRAPPER": "0xCD8a1C3ba11CF5ECfa6267617243239504a98d90",
+      "TOKEN_MESSENGER": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+      "MESSAGE_TRANSMITTER": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+      "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "FEE_MODULE": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+      "CLIENT_POOL": "0x0000000000000000000000000000000000C11EA7",
+      "MOCK_PAUSE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+      "MOCK_FEE_MODULE": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f"
+    }
+  },
+  "capturedAt": "2026-09-25T17:02:37.723Z"
+}

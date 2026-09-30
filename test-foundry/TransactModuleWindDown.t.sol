@@ -12,6 +12,7 @@ import "../contracts/privacy-pool/modules/VerifierModule.sol";
 import "../contracts/governance/ShieldPauseController.sol";
 import "../contracts/cctp/MockUSDCV2.sol";
 import "../contracts/cctp/MockCCTPV2.sol";
+import "./helpers/PoseidonLinker.sol";
 
 /// @notice Minimal mock that satisfies IArmadaGovernorSC (securityCouncil() view)
 contract MockGovernorSC {
@@ -22,7 +23,7 @@ contract MockGovernorSC {
 /// @title TransactModuleWindDownTest — Withdraw-only mode blocks private transfers
 /// @dev Tests that after wind-down activation, transact() reverts for pure transfers
 ///      but allows unshields. Covers spec §Wind-Down → Sequence step 3.
-contract TransactModuleWindDownTest is Test {
+contract TransactModuleWindDownTest is Test, PoseidonLinker {
     PrivacyPool public pool;
     ShieldModule public shieldModule;
     TransactModule public transactModule;
@@ -40,6 +41,10 @@ contract TransactModuleWindDownTest is Test {
     address public windDownContract = address(0xD0D0);
 
     function setUp() public {
+        // Install the real generated Poseidon bytecode at the pinned link addresses
+        // (foundry.toml `libraries`); the in-tree PoseidonLibs sources are stubs.
+        _linkRealPoseidon();
+
         owner = address(this);
         treasury = address(0xFEE);
 

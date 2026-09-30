@@ -241,8 +241,8 @@ describe("Governance Quiet Period (T6.1)", function () {
       // To trigger refundMode: totalCommitted >= MIN_SALE ($1M) but totalAllocUsdc < MIN_SALE.
       // Must stay below ELASTIC_TRIGGER ($1.5M) to keep saleSize at BASE_SALE ($1.2M).
       // 70 seeds × $15K = $1.05M committed (≥ $1M, < $1.5M → BASE_SALE).
-      // Hop-0 ceiling = 70% × $1.2M = $840K. Demand $1.05M > $840K → pro-rata $840K.
-      // No hop-1/2 participants → totalAllocUsdc = $840K < $1M → refundMode. ✓
+      // Hop-0 ceiling = 47% × $1.2M = $564K. Demand $1.05M > $564K → pro-rata $564K.
+      // No hop-1/2 participants → totalAllocUsdc = $564K < $1M → refundMode. ✓
       const refundSeeds = seeds.slice(0, 70);
       { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
       await crowdfund.addSeeds(refundSeeds.map(s => s.address));

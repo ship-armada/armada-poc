@@ -273,7 +273,7 @@ After commitment deadline passes (day 21+), before calling `finalize()`:
 | Projected `totalAllocatedUsdc ≥ MINIMUM_RAISE ($1M)` | Apply per-address caps, sale-size selection, hop-2 floor, hop-0 ceiling, hop-0 rollover, hop-1 remaining-pool bound, hop-1 rollover, and hop-2 demand bound. Do **not** use capped demand alone as proof of success. | Ops |
 | `cancelled == false` | Read from contract state | Ops |
 | `finalized == false` | Read from contract state | Ops |
-| Gas estimation for `finalize()` | Run `eth_estimateGas`; must be under the 16,777,216 (2^24, EIP-7825) per-tx cap. Expect ~7-12M at ~800 participants (cold); node count is capped below ~2,000 to stay submittable | Ops |
+| Gas estimation for `finalize()` | Run `eth_estimateGas`; must be under the 16,777,216 (2^24, EIP-7825) per-tx cap. Expect ~7-12M at ~800 participants (cold); node count is capped at 1,800 (`MAX_FINALIZE_NODES`) to stay submittable | Ops |
 
 **If projected `totalAllocatedUsdc < MINIMUM_RAISE`:** Call `finalize()` anyway — it is permissionless and will set `refundMode = true`, enabling refunds via `claimRefund()` and ARM recovery via `withdrawUnallocatedArm()`. Announce to participants immediately.
 
@@ -285,7 +285,7 @@ After commitment deadline passes (day 21+), before calling `finalize()`:
 
 Under lazy settlement, `finalize()` writes only aggregate state — zero per-participant storage writes. Individual allocations are computed on-the-fly by `computeAllocation(address)` and executed when each participant calls `claim(delegate)`. There is no settlement mode selection, no `emitSettlement()`, and no batched event emission. See `CROWDFUND.md` §Finalization and §Gas Considerations.
 
-**Gas estimation:** `finalize()` iterates every whitelisted node once to compute `hopDemand[]` — cold cost is ~8,200 gas/node, so ~7-12M gas at ~800 participants (scales with whitelist count, not commit count). Run `eth_estimateGas` before calling to confirm. **A single tx is capped at 16,777,216 gas (2^24, EIP-7825)** — node count is bounded below ~2,000 so `finalize()` stays under it; if the estimate approaches the cap, do NOT submit — investigate the participant count first.
+**Gas estimation:** `finalize()` iterates every whitelisted node once to compute `hopDemand[]` — cold cost is ~8,200 gas/node, so ~7-12M gas at ~800 participants (scales with whitelist count, not commit count). Run `eth_estimateGas` before calling to confirm. **A single tx is capped at 16,777,216 gas (2^24, EIP-7825)** — node count is capped at 1,800 (`MAX_FINALIZE_NODES`) so `finalize()` stays under it; if the estimate approaches the cap, do NOT submit — investigate the participant count first.
 
 ---
 
@@ -487,7 +487,7 @@ When `block.timestamp > finalization_timestamp + (3 * 365 * 24 * 3600)`:
 
 **Detection:** `eth_estimateGas` for `finalize()` exceeds the expected range (~7-12M at ~800 participants, cold), approaches the 16,777,216 (2^24) per-tx cap, or `finalize()` tx reverts with out-of-gas.
 
-Under lazy settlement, `finalize()` writes only aggregate state, but it still **iterates every whitelisted node** — cold cost ~8,200 gas/node (~7-12M at ~800 participants). The binding limit is the **16,777,216 (2^24, EIP-7825) per-tx cap**, not the block gas limit; node count is capped below ~2,000 to stay under it. If gas is unexpectedly high, investigate:
+Under lazy settlement, `finalize()` writes only aggregate state, but it still **iterates every whitelisted node** — cold cost ~8,200 gas/node (~7-12M at ~800 participants). The binding limit is the **16,777,216 (2^24, EIP-7825) per-tx cap**, not the block gas limit; node count is capped at 1,800 (`MAX_FINALIZE_NODES`) to stay under it. If gas is unexpectedly high, investigate:
 
 - **Participant count higher than expected?** More participants = more SLOADs during `hopDemand` iteration. Check actual participant count against the ~800 estimate.
 - **Storage layout issue?** Cold reads (2,100 gas) vs warm reads (100 gas) depend on storage packing. If participant data is spread across many storage slots, cold read costs accumulate.

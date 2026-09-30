@@ -251,7 +251,7 @@ export const ruleA8: AlertRule = (ctx) => {
     dedupeKey: `A8:${band}`,
     title: `Minimum raise at risk with ${band} remaining`,
     body: `projected totalAllocatedUsdc=${totalAllocatedUsdc.toString()} below MIN_SALE=${CROWDFUND_CONSTANTS.MIN_SALE.toString()} with ${band} until commitmentDeadline.`,
-    runbook: 'OPERATIONS.md §5 Weeks 2–3 cadence; §11 Checkpoint 3',
+    runbook: 'OPERATIONS.md §5 Final-Week Operating Cadence; §11 Checkpoint 3',
     context: { totalAllocatedUsdc: totalAllocatedUsdc.toString(), band },
   }]
 }

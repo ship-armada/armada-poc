@@ -237,7 +237,7 @@ off-chain alert covers that condition.
 | **Condition** | Projected `totalAllocatedUsdc < MINIMUM_RAISE` with <72h remaining; then <24h remaining |
 | **Severity** | P2 |
 | **Meaning** | RefundMode risk increasing. Note: demand often concentrates near deadline. |
-| **Runbook** | `OPERATIONS.md` §5 Weeks 2–3 cadence; §11 Checkpoint 3 |
+| **Runbook** | `OPERATIONS.md` §5 Final-Week Operating Cadence; §11 Checkpoint 3 |
 
 ---
 
@@ -488,9 +488,9 @@ Each alert must include:
 | A1, A2 | §3 Deployment sequence (Steps 4–8) |
 | A4, A5 | §4 launch-team cadence; §10 Decision log; §11 Checkpoint 2 |
 | A6 | §4/§5 Monitoring; no automatic action |
-| A7, A8 | §5 Weeks 2–3 cadence; §11 Checkpoint 3 |
+| A7, A8 | §5 Final-Week Operating Cadence; §11 Checkpoint 3 |
 | A9a | `OPERATIONS.md` §11 Checkpoint 3; §6 Finalization procedure |
-| A9b | `OPERATIONS.md` §5 Weeks 2–3 cadence (sub-minimum branch) |
+| A9b | `OPERATIONS.md` §5 Final-Week Operating Cadence (sub-minimum branch) |
 | A10 | §6 Path C (refundMode); §9.7 |
 | A11 | §7 Cancel procedure |
 | A12 | §6 post-finalization verification; §8 |

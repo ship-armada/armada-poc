@@ -610,7 +610,7 @@ contract CrowdfundMulticallTest is Test {
     /// @notice WHY: this is the "more than allotted allocation" property
     /// from the invitee side. `_registerOrStackInvite` checks
     /// `invitesReceived < maxInvitesReceived` (10 for hop-1). The
-    /// launchTeam has a 60-invite budget, so it CAN bundle 11 invites
+    /// launchTeam has a 100-invite hop-1 budget, so it CAN bundle 11 invites
     /// targeting the same victim. The 11th must revert when invitesReceived
     /// would overflow the per-hop cap. Bundle must roll back so the victim
     /// ends up with zero stacked invites.

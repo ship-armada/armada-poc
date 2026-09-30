@@ -60,11 +60,9 @@ let snarkjsInitialized = false;
  * Uses dynamic import to load snarkjs.
  */
 export async function initializeProver(): Promise<void> {
-  if (snarkjsInitialized) {
-    console.log('Prover already initialized');
-    return;
-  }
-
+  // Always wire snarkjs into the current engine's prover.
+  // The engine may have been recreated (shutdown + reinit), producing a fresh
+  // Prover instance that needs setSnarkJSGroth16() called again.
   console.log('Initializing prover with snarkjs...');
 
   // Dynamic import of snarkjs
@@ -136,9 +134,9 @@ export function addTransferOutput(
   showSenderAddress: boolean = false,
   memoText?: string
 ): void {
-  const { TransactNote, decodeAddress } = require('@railgun-community/engine');
+  const { TransactNote, RailgunEngine } = require('@railgun-community/engine');
 
-  const recipientAddressData = decodeAddress(recipient);
+  const recipientAddressData = RailgunEngine.decodeAddress(recipient);
   const tokenData = getTokenDataERC20(tokenAddress);
 
   const note = TransactNote.createTransfer(

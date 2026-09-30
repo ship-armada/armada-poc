@@ -1222,6 +1222,40 @@ describe("Privacy Pool Adversarial", function () {
           ethers.ZeroHash, ethers.ZeroAddress)
       ).to.be.revertedWith("PrivacyPoolClient: Hub not configured");
     });
+
+    // WHY (C-1): on the gasless fee-note path the recipient note (index 0) absorbs the CCTP fee on
+    // the Hub, which enforces `received > feeSum` i.e. userNote.value > feeExecuted. Since
+    // feeExecuted <= maxFee, a maxFee >= userNote.value is an undeliverable configuration: the Hub
+    // reverts after the Client burn already completed, permanently stranding the funds. Bounding
+    // maxFee only against the total (userNote + feeNote) — as the code once did — is insufficient;
+    // the Client must reject maxFee >= userNote.value up front. Here maxFee (2) is < total (4) but
+    // >= userNote.value (1), the exact gap the old bound allowed.
+    it("crossChainShieldWithFee with maxFee >= userNote.value reverts", async function () {
+      const emptyBundle: [string, string, string] = [
+        ethers.ZeroHash,
+        ethers.ZeroHash,
+        ethers.ZeroHash,
+      ];
+      const userNote = {
+        npk: validNpk(),
+        value: ethers.parseUnits("1", 6),
+        encryptedBundle: emptyBundle,
+        shieldKey: ethers.ZeroHash,
+        integrator: ethers.ZeroAddress,
+      };
+      const feeNote = {
+        npk: validNpk(),
+        value: ethers.parseUnits("3", 6),
+        encryptedBundle: emptyBundle,
+        shieldKey: ethers.ZeroHash,
+        integrator: ethers.ZeroAddress,
+      };
+      const maxFee = ethers.parseUnits("2", 6); // >= userNote.value, < total
+
+      await expect(
+        privacyPoolClient.connect(alice).crossChainShieldWithFee(maxFee, 0, userNote, feeNote)
+      ).to.be.revertedWith("PrivacyPoolClient: Fee exceeds user note");
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════════

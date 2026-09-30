@@ -14,15 +14,20 @@ ALLOWED_FILES=(
   "scripts/check-secrets.sh"        # This script (contains patterns, not secrets)
   "scripts/derive_relayer_railgun_address.ts"  # Local-dev relayer key derivation
   "relayer/config.ts"               # Anvil default key for local relayer
-  "apps/armada-interface/src/lib/crypto/boundary-vectors.test.ts"   # BN254 field-order constant + spec test vectors (publicly known math)
   "specs/TX_SIGNING.md"             # BN254 field-order, Baby Jubjub subgroup order, and boundary test vectors (publicly known math)
-  "apps/armada-interface/vite.config.ts"  # Anvil deployer key for local dev /api/fund-gas endpoint
-  "apps/armada-interface/src/lib/relayer.test.ts"  # Fake 0xdeadbeef-padded tx hash fixture for mocked /relay responses
-  "apps/armada-interface/src/lib/tx/poller.test.ts"  # Fake 0xaaaa... tx hash fixture for mocked /status polling
-  "apps/armada-interface/src/lib/railgun/cctpBinding.test.ts"  # keccak256 binding-hash fixtures (publicly-derivable, not keys)
   "config/secrets.env.template"  # Placeholder mnemonic ("word word word..."); real secret lives in gitignored secrets.env
   "relayer/test/modules/railgun-wallet.test.ts"  # Anvil's publicly-known test mnemonic — required to prove deterministic derivation
   "scripts/multicall3-bytecode.ts"  # Canonical Multicall3 public runtime bytecode (not a key) — etched onto local Anvil
+  "scripts/capture/vectors/keyset-vectors.json"  # Phase 0 keyset vectors derived from FIXED TEST SEEDS (not real secrets); the live-testnet crosscheck stores only the public 0zk address
+  "scripts/capture/spike-claim-as-transfer.ts"  # Phase 0 spike — publicly-known Anvil + BIP-39 test mnemonics only
+)
+
+# Directories whose entire contents are known non-secret data: captured differential test vectors
+# derived from FIXED TEST SEEDS (not real secrets; the values — keys, commitments, proofs — are
+# reproducible from known inputs), and script-generated deployment manifests.
+ALLOWED_DIRS=(
+  "scripts/capture/vectors/"  # Phase 0 SDK vectors (keyset, commitment, nullifier, EdDSA, merkle, ...)
+  "deployments/"              # Script-generated manifests: public addresses and creation tx hashes (32-byte hex, not keys)
 )
 
 # Patterns that indicate secrets. Each entry: "LABEL:::REGEX"
@@ -52,6 +57,14 @@ for f in "${FILES[@]}"; do
       break
     fi
   done
+  if [[ "$skip" == false ]]; then
+    for adir in "${ALLOWED_DIRS[@]}"; do
+      if [[ "$f" == "$adir"* ]]; then
+        skip=true
+        break
+      fi
+    done
+  fi
   if [[ "$skip" == false ]]; then
     SCAN_FILES+=("$f")
   fi

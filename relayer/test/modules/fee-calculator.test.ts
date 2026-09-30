@@ -66,8 +66,12 @@ describe("FeeCalculator", () => {
     expect(BigInt(fees.crossChainShield)).to.equal(transfer);
     expect(BigInt(fees.crossChainUnshield)).to.equal(transfer);
     expect(BigInt(fees.crossContract)).to.equal(transfer * 4n);
-    expect(BigInt(fees.shield)).to.equal((transfer * 3n) / 5n);
-    expect(BigInt(fees.shieldXchain)).to.equal((transfer * 4n) / 5n);
+    // The gasless shield tiers are GROSSED UP by the pool's shield-fee rate (default 50 bps) so the
+    // relayer nets its gas-reimbursement target after the fee note is shield-fee'd on-chain.
+    // gross = ceil(net × 10000 / (10000 − 50)) = ceil(net × 10000 / 9950).
+    const grossUp = (net: bigint) => (net * 10000n + 9949n) / 9950n;
+    expect(BigInt(fees.shield)).to.equal(grossUp((transfer * 3n) / 5n));
+    expect(BigInt(fees.shieldXchain)).to.equal(grossUp((transfer * 4n) / 5n));
   });
 
   it("enforces the 0.01 USDC minimum fee when gas is effectively free", async () => {
@@ -77,8 +81,12 @@ describe("FeeCalculator", () => {
     const calc = new FeeCalculator(provider, CHAIN_ID, BROADCASTER);
 
     const { fees } = await calc.generateFeeSchedule();
-    for (const fee of Object.values(fees)) {
-      expect(BigInt(fee)).to.equal(10_000n);
+    // The 0.01 USDC floor is a NET floor; the gasless shield tiers publish the grossed-up value so
+    // the relayer still nets the floor after the on-chain shield fee on the fee note.
+    const grossUp = (net: bigint) => (net * 10000n + 9949n) / 9950n;
+    for (const [key, fee] of Object.entries(fees)) {
+      const expected = key === "shield" || key === "shieldXchain" ? grossUp(10_000n) : 10_000n;
+      expect(BigInt(fee)).to.equal(expected);
     }
   });
 

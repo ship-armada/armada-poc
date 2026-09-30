@@ -10,14 +10,15 @@
  *
  * Usage:
  *   npx hardhat run scripts/deploy_cctp_v3.ts --network hub
- *   npx hardhat run scripts/deploy_cctp_v3.ts --network client
- *   npx hardhat run scripts/deploy_cctp_v3.ts --network clientB
+ *   npx hardhat run scripts/deploy_cctp_v3.ts --network client1
+ *   npx hardhat run scripts/deploy_cctp_v3.ts --network client2   # ...client<n> for CLIENT_COUNT
  */
 
 import { ethers } from "hardhat";
 import {
-  getNetworkConfig,
   getChainRole,
+  getChainByRole,
+  getAllChains,
   getCCTPDeploymentFile,
   type ChainRole,
 } from "../config/networks";
@@ -40,10 +41,7 @@ async function deployCCTP(role: ChainRole): Promise<DeploymentInfo> {
   const [deployer] = await ethers.getSigners();
   const network = await ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
-  const config = getNetworkConfig();
-  const chain = role === "hub" ? config.hub
-    : role === "clientA" ? config.clientA
-    : config.clientB;
+  const chain = getChainByRole(role);
   const domain = chain.cctpDomain;
   const nm = await createNonceManager(deployer);
 
@@ -110,12 +108,11 @@ async function deployCCTP(role: ChainRole): Promise<DeploymentInfo> {
 async function main() {
   const network = await ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
-  const config = getNetworkConfig();
 
   const role = getChainRole(chainId);
   if (!role) {
     console.error(`Unknown chain ID: ${chainId}`);
-    console.error(`Configured chains: hub=${config.hub.chainId}, clientA=${config.clientA.chainId}, clientB=${config.clientB.chainId}`);
+    console.error(`Configured chains: ${getAllChains().map((c) => `${c.role}=${c.chainId}`).join(", ")}`);
     process.exit(1);
   }
 

@@ -7,9 +7,16 @@ import { z } from "zod";
 import { getDeploymentState } from "./tools/deployment-state";
 import { getChainHealth } from "./tools/chain-health";
 import { getContractState } from "./tools/contract-state";
-import { type DeployEnv } from "../../config/networks";
+import { type DeployEnv, getClientChains } from "../../config/networks";
 
 const ENV = (process.env.DEPLOY_ENV || "local") as DeployEnv;
+
+// Valid chain roles for the configured topology: the hub plus every client chain
+// (client1, client2, ...). Derived from config so the tool accepts any number of clients.
+const ROLES = ["hub", ...getClientChains().map((c) => c.role)] as [
+  string,
+  ...string[],
+];
 
 const server = new McpServer({
   name: "armada",
@@ -41,12 +48,12 @@ server.tool(
   "Check RPC connectivity, block numbers, chain IDs, deployer balances, and whether key contracts (USDC, PrivacyPool) have code deployed. Runs checks in parallel across chains.",
   {
     chains: z
-      .array(z.enum(["hub", "clientA", "clientB"]))
+      .array(z.enum(ROLES))
       .optional()
-      .describe("Chains to check (defaults to all three)"),
+      .describe("Chains to check (defaults to all configured chains)"),
   },
   async ({ chains }) => {
-    const roles = chains ?? ["hub", "clientA", "clientB"];
+    const roles = chains ?? ROLES;
     const report = await getChainHealth(ENV, roles as any);
     return {
       content: [{ type: "text", text: JSON.stringify(report, null, 2) }],
@@ -66,7 +73,7 @@ server.tool(
       .enum(["privacy-pool", "governance", "yield", "crowdfund"])
       .describe("Which contract component to query"),
     chain: z
-      .enum(["hub", "clientA", "clientB"])
+      .enum(ROLES)
       .optional()
       .describe("Chain to query (defaults to hub, only relevant for privacy-pool)"),
   },

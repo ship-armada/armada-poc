@@ -1,0 +1,99 @@
+{
+  "primitive": "TransactionStructV2 serialization (§2)",
+  "engineVersion": "9.6.0",
+  "capturedFromMainSha": "b21d4d9b2fe0e06fa44589de164ba00c54bb2b43",
+  "note": "transact() calldata struct for the captured shape (capture-once snapshot; real Groth16 proof).",
+  "shape": {
+    "nullifiers": 2,
+    "commitments": 2
+  },
+  "vectors": [
+    {
+      "shape": {
+        "nullifiers": 2,
+        "commitments": 2
+      },
+      "merkleRoot": "0x20a4e90a114bdcffddfe1e137af1b6ba388b2bccccb7845d21431c709e279e7a",
+      "nullifiers": [
+        "0x20c16b98b3eee8c7dbe384595db7a97bb641c1fb7da5e21f4f893d9ddb6e6516",
+        "0x2e3834b6892808163002bdea9bd5c0cf8a8a8c90db885f6154fbeb3c347cc34c"
+      ],
+      "commitments": [
+        "0x0ad6b2af2508c504490daabcbaa7cb0966f8b308caa9c9465e11fec5484c85d2",
+        "0x129d68e51e5993cdcc53740b34aea736b73259d1bfedded968fdd1361d684dfc"
+      ],
+      "boundParams": {
+        "treeNumber": 0,
+        "minGasPrice": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "unshield": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "chainID": "0x0000000000007a69",
+        "adaptContract": "0x0000000000000000000000000000000000000000",
+        "adaptParams": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "commitmentCiphertext": [
+          {
+            "ciphertext": [
+              "0x701c6a68c41d275771fa052be6423e4f2042a9d7bc1ad21013d7a18a83bdfe0c",
+              "0x9b3d12b08e6eb160e9ed7e399da6b4c476ea8a0469ae551c0ff42cfdc57b8a9b",
+              "0x1c5b2cc35bdda143e4109db6bd0ce9a891a05b451c554822312cf9e0c38f5a51",
+              "0xdb1985e403fcb68fe22e8676d7c332bbb08fe4897102f558170adf0b19a52552"
+            ],
+            "blindedSenderViewingKey": "0x84254536c39f3b31b51a4b8ab85bff5deaa4169b382c5fcdd3b543e3c78a2a66",
+            "blindedReceiverViewingKey": "0x5e07b48b065441bda1fb41d8148ee3c0ed2c0a86570badf0cd620566fd39b843",
+            "memo": "0x",
+            "annotationData": "0x3e483eccf5664582bba91805600aeb2462c0bba97be1eef91490d1fecf637172849b32db42124c39c748d2809a8fb97e7d5eaabbd31d731b675582823242"
+          },
+          {
+            "ciphertext": [
+              "0x865f01588035bb027e306fe7631c3d377c1ef462d409510dcba553ae427d48db",
+              "0xcbb406d688769d739784825c6cdb5db1bd8e13fbccbfb2612892901a06809693",
+              "0x685ea45055b75419e98da70d60fba2865ce86f30eb4a7faa2f7ed7321fd62f95",
+              "0x05e84bd0b2d0ec4e477265a4d85d8196e61169e21dafca3087b20d9bdcbb84b0"
+            ],
+            "blindedSenderViewingKey": "0xeb7bba568e28e0ad2c582658d608183bff515ec1e628d736301290a1cdc1244e",
+            "blindedReceiverViewingKey": "0xeb7bba568e28e0ad2c582658d608183bff515ec1e628d736301290a1cdc1244e",
+            "memo": "0x",
+            "annotationData": "0x0012c5aebad7ede4ae86231e5c67c931b2e5ea7b63a23c56988ec0ce4aec78008752a48f8aa16e796a6c5556188e2fa13b0ff7172b2026c912ca99f9e4da"
+          }
+        ]
+      },
+      "boundParamsHash": "0x10b06a44187c4b1c0a275275ae7d03d2b9ee8cad8af98eb0851a65bc2642c3f9",
+      "unshieldPreimage": {
+        "npk": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "token": {
+          "tokenAddress": "0x0000000000000000000000000000000000000000",
+          "tokenType": 0,
+          "tokenSubID": "0x0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "value": "0x0000000000000000000000000000000000000000000000000000000000000000"
+      },
+      "proof": {
+        "a": {
+          "x": "0x059c9586d1fcc9a66795676e3d8a572e6bedd966aa77fe5d60f248b8df9b74aa",
+          "y": "0x1b961cd9ec85ba46713aad9ff64c8e80c6648d16406f89a86fbca1dfd916ca1d"
+        },
+        "b": {
+          "x": [
+            "0x04f7266863e3e689c3a31c5366dcd871df90e65725468479cc1d66e0f8bf1737",
+            "0x05377b7c480eed8ac807edca127f7c90774f8eeb15be642c30cab0c33d712fb9"
+          ],
+          "y": [
+            "0x00fa0b6e8f29e8013836a1018cc79b83920bfec201d203d6070e7e33b9d8d86b",
+            "0x0695372c604d7b6bec6c3174ee5eff4255e75175e975389c646032aff6ab75db"
+          ]
+        },
+        "c": {
+          "x": "0x15307bd75ff0df2e3ea1b999cac1609c99f55146c5ac7ccd69032c6a1f5cbdd3",
+          "y": "0x1f56bb2e057537e1c0fec7af934b1de0adaa73c98d433b3d659ad4a3a043703f"
+        }
+      },
+      "publicSignals": [
+        "0x20a4e90a114bdcffddfe1e137af1b6ba388b2bccccb7845d21431c709e279e7a",
+        "0x10b06a44187c4b1c0a275275ae7d03d2b9ee8cad8af98eb0851a65bc2642c3f9",
+        "0x20c16b98b3eee8c7dbe384595db7a97bb641c1fb7da5e21f4f893d9ddb6e6516",
+        "0x2e3834b6892808163002bdea9bd5c0cf8a8a8c90db885f6154fbeb3c347cc34c",
+        "0x0ad6b2af2508c504490daabcbaa7cb0966f8b308caa9c9465e11fec5484c85d2",
+        "0x129d68e51e5993cdcc53740b34aea736b73259d1bfedded968fdd1361d684dfc"
+      ]
+    }
+  ]
+}

@@ -6,10 +6,24 @@ import { ethers } from "ethers";
 import { RailgunWallet } from "@railgun-community/engine";
 import {
   verifyBroadcasterFee,
+  deriveBroadcasterIdentity,
   type VerifierContext,
+  type ArmadaBroadcasterIdentity,
 } from "../../modules/broadcaster-fee-verifier";
 import { TRANSACT_ABI, WRAPPER_ABIS } from "../../lib/transact-shape";
 import { RelayError } from "../../types";
+// All from @armada/sdk's root entry — the SDK explicitly re-exports the note-crypto/keyset/token
+// helpers so node10 (classic moduleResolution) consumers like this suite import them straight from the
+// package root, no subpath or facade needed.
+import {
+  buildTransactCalldata,
+  deriveKeyset,
+  createTransferNote,
+  encryptNoteToReceiver,
+  getTokenDataERC20,
+  initPoseidonPromise,
+} from "@armada/sdk";
+import type { Groth16Proof, TransactionData } from "@armada/sdk";
 
 // Fixed test addresses — no on-chain deployment, just shapes the verifier accepts.
 const USDC_ADDRESS = "0x1111111111111111111111111111111111111111";
@@ -394,3 +408,202 @@ async function expectRejectedAs(
   expect(err.code).to.equal(expectedCode);
   expect(err.message).to.match(messagePattern);
 }
+
+/**
+ * The armada backend routes fee extraction through @armada/sdk's native decode API (decodeTransact +
+ * extractFeeOutput) instead of the stock engine helper. Unlike the stubbed-wallet tests above, these
+ * build a REAL fee-bearing transact calldata with the SDK's own note-encryption + serializer, so the
+ * full path runs: ABI decode, ECIES trial-decrypt under the broadcaster viewing key, AND the
+ * commitment-binding check. Routing switches on `ctx.armadaBroadcaster` presence, so no SDK_BACKEND
+ * env juggling is needed. The stock wallet in these contexts THROWS if called — proving the armada
+ * path never silently falls back to the engine.
+ */
+describe("verifyBroadcasterFee — armada backend (SDK decode API)", () => {
+  // Anvil/Hardhat default BIP39 mnemonic — the relayer derives its 0zk from a mnemonic the same way.
+  const RELAYER_MNEMONIC =
+    "test test test test test test test test test test test junk";
+  // Plausible real ERC20 addresses (getTokenDataERC20 hashes the checksummed address).
+  const SDK_USDC = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+  const SDK_OTHER_TOKEN = "0xdac17f958d2ee523a2206206994597c13d831ec7";
+  const SDK_POOL = "0x00000000000000000000000000000000000000dd";
+  const seed = (fill: number): Uint8Array => new Uint8Array(32).fill(fill);
+
+  // Decode-path fixture: the pool never verifies this proof (the decoder only ABI-decodes it), so a
+  // zero proof is enough to exercise fee extraction + binding.
+  const ZERO_PROOF: Groth16Proof = {
+    a: ["0", "0"],
+    b: [
+      ["0", "0"],
+      ["0", "0"],
+    ],
+    c: ["0", "0"],
+  };
+
+  let broadcaster: ArmadaBroadcasterIdentity;
+
+  before(async function () {
+    this.timeout(30_000);
+    await initPoseidonPromise; // note.hash + extractFeeOutput binding both need poseidon ready
+    broadcaster = await deriveBroadcasterIdentity(RELAYER_MNEMONIC);
+  });
+
+  // A wallet whose stock helper THROWS — asserts the armada path never falls through to the engine.
+  const stockMustNotRun = stubWalletThrowing(
+    new Error(
+      "stock extractFirstNoteERC20AmountMap must not run under the armada backend",
+    ),
+  );
+
+  function armadaCtx(): VerifierContext {
+    return {
+      wallet: stockMustNotRun,
+      privacyPoolAddress: SDK_POOL,
+      hubChainId: HUB_CHAIN_ID,
+      usdcAddress: SDK_USDC,
+      armadaBroadcaster: broadcaster,
+    };
+  }
+
+  /**
+   * Build a real `transact(Transaction[])` calldata carrying one fee note encrypted to `receiver`.
+   * `bindCommitment: false` omits the note hash from the transaction's `commitments[]`, simulating a
+   * sender who attaches a fee ciphertext with no matching on-chain commitment (the binding attack).
+   */
+  async function transactWithFeeNote(params: {
+    receiver: ArmadaBroadcasterIdentity;
+    feeAmount: bigint;
+    tokenAddress?: string;
+    bindCommitment?: boolean;
+  }): Promise<`0x${string}`> {
+    const sender = await deriveKeyset(seed(0x77));
+    const tokenData = getTokenDataERC20(params.tokenAddress ?? SDK_USDC);
+    const feeNote = createTransferNote({
+      receiverAddressData: params.receiver.addressData,
+      senderAddressData: {
+        masterPublicKey: sender.masterPublicKey,
+        viewingPublicKey: sender.viewingPublicKey,
+      },
+      value: params.feeAmount,
+      tokenData,
+    });
+    const feeCiphertext = await encryptNoteToReceiver(
+      feeNote,
+      {
+        masterPublicKey: sender.masterPublicKey,
+        viewingPublicKey: sender.viewingPublicKey,
+        viewingPrivateKey: sender.viewingPrivateKey,
+      },
+      params.receiver.addressData.viewingPublicKey,
+    );
+    const commitments = params.bindCommitment === false ? [] : [feeNote.hash];
+    const tx: TransactionData = {
+      proof: ZERO_PROOF,
+      merkleRoot: 1n,
+      nullifiers: [2n],
+      commitments,
+      boundParams: {
+        treeNumber: 0,
+        minGasPrice: 0n,
+        unshield: 0,
+        chainID: BigInt(HUB_CHAIN_ID),
+        adaptContract: ethers.ZeroAddress as `0x${string}`,
+        adaptParams: ("0x" + "00".repeat(32)) as `0x${string}`,
+        commitmentCiphertext: [feeCiphertext],
+      },
+    };
+    return buildTransactCalldata([tx], SDK_POOL).data;
+  }
+
+  it("accepts a transact whose fee note pays exactly the advertised USDC", async () => {
+    // WHY: the happy path — a real ECIES-encrypted fee note to the broadcaster, bound to an on-chain
+    // commitment, must decode + extract to its exact value. This is the whole point of the backend.
+    const data = await transactWithFeeNote({
+      receiver: broadcaster,
+      feeAmount: ADVERTISED_FEE,
+    });
+    const paid = await verifyBroadcasterFee(
+      armadaCtx(),
+      { to: SDK_POOL, data },
+      ADVERTISED_FEE,
+    );
+    expect(paid).to.equal(ADVERTISED_FEE);
+  });
+
+  it("accepts an overpaying fee note and reports the true amount", async () => {
+    // WHY: the verifier returns the actual paid amount (not the advertised floor); a regression that
+    // clamped to the floor would hide broadcaster over-collection.
+    const data = await transactWithFeeNote({
+      receiver: broadcaster,
+      feeAmount: ADVERTISED_FEE * 3n,
+    });
+    const paid = await verifyBroadcasterFee(
+      armadaCtx(),
+      { to: SDK_POOL, data },
+      ADVERTISED_FEE,
+    );
+    expect(paid).to.equal(ADVERTISED_FEE * 3n);
+  });
+
+  it("rejects when the fee note pays less than advertised", async () => {
+    // WHY: the fee floor must hold on the SDK path exactly as on the stock path.
+    const data = await transactWithFeeNote({
+      receiver: broadcaster,
+      feeAmount: ADVERTISED_FEE - 1n,
+    });
+    await expectRejectedAs(
+      verifyBroadcasterFee(armadaCtx(), { to: SDK_POOL, data }, ADVERTISED_FEE),
+      "FEE_INSUFFICIENT",
+      new RegExp(`paid ${ADVERTISED_FEE - 1n} USDC raw, advertised ${ADVERTISED_FEE}`),
+    );
+  });
+
+  it("rejects when the only fee note is addressed to a different 0zk", async () => {
+    // WHY: an output the broadcaster can't decrypt must not count. A note to a stranger's viewing key
+    // fails ECDH/AES-GCM, never enters the amount map → no USDC → FEE_INSUFFICIENT.
+    const stranger = await deriveBroadcasterIdentity(
+      "legal winner thank year wave sausage worth useful legal winner thank yellow",
+    );
+    const data = await transactWithFeeNote({
+      receiver: stranger,
+      feeAmount: ADVERTISED_FEE,
+    });
+    await expectRejectedAs(
+      verifyBroadcasterFee(armadaCtx(), { to: SDK_POOL, data }, ADVERTISED_FEE),
+      "FEE_INSUFFICIENT",
+      /Broadcaster fee too low: paid 0 USDC raw/,
+    );
+  });
+
+  it("rejects a fee ciphertext with no matching on-chain commitment (binding attack)", async () => {
+    // WHY: THE core security property of extractFeeOutput. A malicious sender attaches a ciphertext
+    // that decrypts to a large fee under our key, but the transaction's commitments[] contains no
+    // note with that hash — nothing was actually paid on-chain. The binding check (decrypted
+    // note.hash ∈ commitments) must reject it; without it the relayer would eat gas for free.
+    const data = await transactWithFeeNote({
+      receiver: broadcaster,
+      feeAmount: ADVERTISED_FEE * 10n,
+      bindCommitment: false,
+    });
+    await expectRejectedAs(
+      verifyBroadcasterFee(armadaCtx(), { to: SDK_POOL, data }, ADVERTISED_FEE),
+      "FEE_INSUFFICIENT",
+      /Broadcaster fee too low: paid 0 USDC raw/,
+    );
+  });
+
+  it("ignores a fee note paid in a non-USDC token (unresolvable → skipped)", async () => {
+    // WHY: single-token (USDC) policy must hold on the SDK path. A fee note in some other ERC20 fails
+    // token-hash resolution in the getter, is swallowed as not-ours, and contributes nothing — the
+    // same outcome as the stock path ignoring non-USDC outputs.
+    const data = await transactWithFeeNote({
+      receiver: broadcaster,
+      feeAmount: ADVERTISED_FEE * 5n,
+      tokenAddress: SDK_OTHER_TOKEN,
+    });
+    await expectRejectedAs(
+      verifyBroadcasterFee(armadaCtx(), { to: SDK_POOL, data }, ADVERTISED_FEE),
+      "FEE_INSUFFICIENT",
+      /Broadcaster fee too low: paid 0 USDC raw/,
+    );
+  });
+});

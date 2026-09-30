@@ -106,6 +106,66 @@ The 2 kinds where the proof can't carry the relayer payment (no nullifier exists
 
 Between A and B, the app is in a hybrid state: gasless for unshield/transfer/yield (the bulk of repeat-user actions), still requires gas for first-time shield. That's a reasonable shipping milestone.
 
+### Phase C — Permissionless gasless shield (EIP-712 intent + shielded fee note)
+
+**Status: IMPLEMENTED (branch `iskay/gasless-shield-permissionless`), pending manual e2e validation.** Landed as commits C1 `89934da4` (hub wrapper), C2 `d5fc91d2` (cross-chain + deploy-script), C3 `d081f24e` (interface + v1 relayer), plus `b0fc39db` (batch the cross-chain multi-note mint into one Shield event) and `f1c22424` (gross up the shield-tier fees so the relayer nets its target after the fee note's shield fee). Foundry + interface + relayer unit tests green; end-to-end (real CCTP two-note mint) validated manually via the interface. Full plan: `.context/gasless-shield-permissionless-plan.md`; v2-relayer port: `.context/gasless-shield-v2-relayer-port.md`. One deliberate v1 choice remains: **gasless shields carry `integrator = address(0)`** to keep the fee-note net predictable (so the gross-up is a single known base rate); revisit only if gasless referral revenue is needed, which requires an exact `eth_call`-based net check. Supersedes Phase B's trust model. Phase B shipped the `onlyRelayer` wrappers as the POC-grade mitigation; Phase C removes that gate and brings gasless shield fully in line with the permissionless, shielded-fee model every other op already uses. This is the "typed-data binding" future-work item referenced under Phase B's PR table.
+
+**Motivation.** Two defects remain in the shipped gasless-shield path:
+
+1. **It's the only permissioned op.** `gaslessShield` / `gaslessCrossChainShield` gate on a single stored `relayer` EOA (`onlyRelayer`), because a leaked EIP-2612 permit could otherwise be replayed by a front-runner with a different recipient `npk` — the permit authorises pulling `totalAmount` but says nothing about the recipient or fee split. Every other op is permissionless.
+2. **The relayer fee is paid in public USDC on the source chain**, not as a shielded note in the pool like the broadcaster-fee model (`transact`, yield, cross-chain unshield). Gasless shield is the outlier because it *enters* the pool — at fee-payment time the user has no shielded balance and there's no proof to carry the fee. But that doesn't force a *public* fee: a shield can mint a fee note directly (see below).
+
+Phase C fixes both with two **independent, composable** changes.
+
+#### C-design-1: EIP-712 intent binding → permissionless submission
+
+The npk is signature-independent secret material the 2612 permit's fixed typehash cannot cover, so binding it needs a **second signature**. The user signs — in addition to the permit — an EIP-712 **intent** over `(user, totalAmount, maxFee, shieldRequestsHash, integrator, deadline, nonce)`, scoped to `(wrapper, chainId)` via the EIP-712 domain. The wrapper:
+
+- verifies it with `SignatureChecker.isValidSignatureNow` (EOA **and** EIP-1271, both in one call);
+- checks `keccak256(abi.encode(shieldRequests)) == shieldRequestsHash`, `actualFee <= maxFee`, and that `integrator` / `totalAmount` / `deadline` match;
+- consumes a dedicated `nonces[user]++` (own replay slot — trivial reasoning, no reliance on the permit nonce's transitive protection).
+
+Then **`onlyRelayer` is dropped entirely.** Any address can submit: a front-runner can't change the user note (hash-bound), inflate the fee (capped at `maxFee`), or redirect the integrator. Sign `maxFee` (a ceiling), let the submitter fill `fee <= maxFee`, so gas-price drift between sign and submit doesn't invalidate the signature.
+
+#### C-design-2: fee-as-shielded-note → relayer paid in-pool
+
+Instead of `transferFrom(user → relayer)` public USDC, the wrapper pulls `totalAmount` and calls `pool.shield()` with a **two-element** `ShieldRequest[]`:
+
+- `requests[0]` → user's npk, value `shieldAmount`
+- `requests[1]` → **relayer's npk**, value `fee`
+
+`ShieldModule.shield()` already loops the array and mints one fee-adjusted commitment per request to that request's own npk (`contracts/privacy-pool/modules/ShieldModule.sol:40-74`) — **no pool change needed.** The relayer receives a shielded note in the pool, bound to its npk *inside the signed intent* (so no fee sniping), and verifies it via the **existing `broadcaster-fee-verifier`** (decrypt the fee note's ciphertext to its `0zk`), unifying gasless-shield fee verification with the proof-bearing ops. This also removes the on-chain `user-EOA → relayer` fee linkage — a privacy improvement over the public transfer.
+
+#### What gets deleted from the shipped Phase B wrappers
+
+`relayer` storage, `setRelayer`, `RelayerUpdated`, `onlyRelayer`, the `_relayer` constructor arg, and the deploy-time relayer-match verification. The wrapper no longer has any privileged relayer — the fee recipient is per-transaction signed data (an npk chosen by the user's app), not protocol-level state. This is what makes it permissionless *without* reintroducing a governed whitelist.
+
+#### Build items
+
+| PR | Scope | Size | Notes |
+|---|---|---|---|
+| **C1** Hub wrapper | `GaslessShieldWrapper`: add OZ `EIP712` + `SignatureChecker`, `nonces` mapping + getter, intent verification, two-note shield (user note + relayer fee note to relayer npk). Delete `relayer`/`setRelayer`/`onlyRelayer`/`_relayer` arg. Foundry: front-run-with-different-npk reverts, fee-cap enforced, nonce replay reverts, expired deadline, EIP-1271 path, fee note minted to relayer npk. Hardhat e2e gasless shield with any submitter | M | `shield()` array support + per-note npk already present; **pool unchanged** |
+| **C2** Cross-chain wrapper + hub handler | The fee note must be minted on the **hub** (no pool on the client), so the CCTP hook payload must carry a **second (fee) note** and the hub shield-message handler must mint both commitments. `GaslessShieldWrapperClient`: EIP-712 intent, drop public-USDC fee + relayer plumbing. Touches the **sensitive CCTP message format** — extra caution | L | Relayer paid a hub shielded note **after leg-2 lands** (couples payment to delivery); no public USDC on the client at all |
+| **C3** Interface + relayer verification | Add EIP-712 intent signing to `shield` + `shield-xchain` flows (one "sign to shield" action → permit + intent, back-to-back). Build the 2-note `ShieldRequest[]` (user note + relayer fee note to the relayer's published npk). Relayer: switch gasless fee verification from plaintext-calldata (`gasless-fee-verifier`) to fee-note decryption (reuse `broadcaster-fee-verifier`) | M | Two signature prompts, both EIP-712 — inherent to the native-2612 path |
+| **C4** Deploy + manifest | Wrappers lose `_relayer` arg + the `setRelayer`-match verification; `scripts/deploy_gasless_wrapper.ts` + manifests simplify. Admin surface shrinks (one fewer post-deploy step, no relayer rotation to manage) | S | No `RELAYER_PRIVATE_KEY`-must-match-wrapper coupling anymore |
+
+**Sequencing.** C1 (hub) is the small, high-value increment that lands the model — `shield()` already takes an array, so it's mostly the EIP-712 plumbing. C2 (cross-chain) is the bulk of the work because of the CCTP message-format change; it can follow C1 rather than block it. C3/C4 ride on whichever of C1/C2 has landed. If C2 feels like too much surface for a given milestone, an acceptable interim is **C1 only** (hub gasless shield shielded + permissionless) while the client cross-chain path keeps the shipped Phase B public-USDC fee, migrating later — documented as a conscious interim, not a silent gap.
+
+#### Wrinkles / risks
+
+- **Two signature prompts** (permit + intent), both EIP-712, behind one "sign to shield" action. This is the floor for the native-2612 path; Permit2's `permitWitnessTransferFrom` would collapse it to one signature but needs a one-time on-chain `approve(Permit2)` that costs gas and breaks first-touch gaslessness — not worth it.
+- **Shield-fee-on-the-fee.** The protocol shield fee applies per note, so the relayer's fee note nets `fee − shieldFee(fee)`. The relayer must quote gross, or the fee note must be exempt via the adapter registry. Small accounting change; must be handled.
+- **Cross-chain settlement delay (C2).** The relayer fronts client-side gas and is paid a hub note only after leg-2 lands (~seconds on fast finality, ~15 min on standard). This *couples payment to successful delivery* (arguably correct) but is a relayer-economics shift worth a conscious nod for a single-operator relayer.
+- **Dust / min-note-value.** Fee notes are small — confirm the pool has no minimum-commitment-value constraint that rejects a tiny fee note.
+- **Smart-account gasless shield stays blocked.** Full EIP-1271/4337 support is gated by native USDC `permit()` being `ecrecover`-based (EOA-only). The intent side is 1271-ready for free; the *allowance* leg isn't until we move to Permit2-witness or a 4337 paymaster. Separate track.
+- **Optional future failover.** A signed `openAfter` timestamp that opens the fee to `msg.sender` once the primary relayer clearly fails would give incentivized third-party rescue of leg 1. Out of scope for C; add only if single-relayer liveness proves a real problem.
+
+#### Invariants preserved
+
+- **Atomicity.** Permit + intent-verify + two-note shield in one tx (hub); permit + intent-verify + burn-with-2-note-payload in one tx (client). No "shield without fee" or "fee without shield" path.
+- **Funds never stranded.** Leg 1 is self-relayable by the user; leg 2 (`CCTPHookRouter.relayWithHook`) is permissionless and atomic-or-revert — unchanged from the shipped design. The `destinationCaller`-pinned-to-router mechanism (`PrivacyPoolClient.sol:300-311`) still guarantees mint + hook are atomic.
+- **Fee bound to the intended relayer** (now an npk in the signed intent), yet anyone can submit — no sniping incentive, matching the `transact` broadcaster property.
+
 ---
 
 ## Considered alternatives
@@ -224,7 +284,7 @@ Can start any time after **A1 + A2** land. Doesn't have to wait for A3–A6.
 | **B3** Frontend permit + `shield` handler gasless mode | `lib/wallet/permit.ts`: viem `signTypedData` helper for EIP-2612 USDC permits — `signUsdcPermit({owner, spender, amount, deadline})` → `{v, r, s}`. `features/shield/handler.ts` becomes dual-mode: gasless if `(wrapper address present && relayer health ∈ {healthy, degraded})`, direct submit otherwise. Build-proof stage unchanged. Submit stage forks: gasless path signs permit → POST to relayer → status poll | M | First time the user can fully transact without ETH |
 | **B4** `shield-xchain` gasless | Mirror of B3 for cross-chain shield. Per-client-chain wrapper invocation routing. Sepolia validation: shield from Base/Arb Sepolia using only USDC, no ETH on the source chain | M | Closes the gasless gap for fresh-account onboarding |
 
-After B4: every kind is gasless. User can onboard + transact holding only USDC. Phase B's relayer permissioning is the `onlyRelayer` gate as documented; trust-minimization upgrades (typed-data binding, Permit2-with-witness) tracked as future work.
+After B4: every kind is gasless. User can onboard + transact holding only USDC. Phase B's relayer permissioning is the `onlyRelayer` gate as documented; trust-minimization upgrades (typed-data binding, Permit2-with-witness) are now specified as **Phase C** above (EIP-712 intent binding + shielded fee note), which removes the gate entirely and pays the relayer an in-pool note.
 
 ### Dependency graph
 

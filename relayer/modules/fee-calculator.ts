@@ -84,6 +84,7 @@ export class FeeCalculator {
   private scheduleCounter = 0;
 
   private profitMarginBps: number;
+  private shieldFeeBps: number;
   private ethUsdcPrice: number;
   private feeTtlSeconds: number;
   private feeVarianceBufferBps: number;
@@ -108,6 +109,7 @@ export class FeeCalculator {
     this.provider = provider;
     this.chainId = chainId;
     this.profitMarginBps = armadaRelayerSettings.profitMarginBps;
+    this.shieldFeeBps = armadaRelayerSettings.shieldFeeBps;
     this.ethUsdcPrice = armadaRelayerSettings.ethUsdcPrice;
     this.feeTtlSeconds = armadaRelayerSettings.feeTtlSeconds;
     this.feeVarianceBufferBps = armadaRelayerSettings.feeVarianceBufferBps;
@@ -144,6 +146,21 @@ export class FeeCalculator {
     // Enforce a minimum fee of 0.01 USDC (10000 raw) to prevent dust fees
     const minFee = 10_000n;
     return feeWithMargin > minFee ? feeWithMargin : minFee;
+  }
+
+  /**
+   * Gross up a NET gas-reimbursement fee so that after the pool's shield fee is charged on the fee
+   * NOTE, the relayer still nets the target. `gross = ceil(net × 10000 / (10000 − shieldFeeBps))`.
+   *
+   * Only the gasless shield tiers (`shield` / `shieldXchain`) are paid via a shield note, so only
+   * they are grossed up — the Phase A tiers are paid as SNARK broadcaster outputs (no shield fee).
+   */
+  private grossUpForShieldFee(net: bigint): bigint {
+    const bps = BigInt(this.shieldFeeBps);
+    if (bps <= 0n) return net;
+    const denom = 10000n - bps;
+    // Ceil division so the relayer nets >= target after the (floored) on-chain shield fee.
+    return (net * 10000n + denom - 1n) / denom;
   }
 
   /**
@@ -189,8 +206,12 @@ export class FeeCalculator {
     const crossContractFee = this.calculateFeeForGas(GAS_ESTIMATES.crossContract, gasPrice);
     const crossChainShieldFee = this.calculateFeeForGas(GAS_ESTIMATES.crossChainShield, gasPrice);
     const crossChainUnshieldFee = this.calculateFeeForGas(GAS_ESTIMATES.crossChainUnshield, gasPrice);
-    const shieldFee = this.calculateFeeForGas(GAS_ESTIMATES.shield, gasPrice);
-    const shieldXchainFee = this.calculateFeeForGas(GAS_ESTIMATES.shieldXchain, gasPrice);
+    // Gasless shield tiers are paid via a shielded fee note that the pool charges its shield fee on,
+    // so gross up the gas-reimbursement target to keep the relayer whole (see grossUpForShieldFee).
+    const shieldFee = this.grossUpForShieldFee(this.calculateFeeForGas(GAS_ESTIMATES.shield, gasPrice));
+    const shieldXchainFee = this.grossUpForShieldFee(
+      this.calculateFeeForGas(GAS_ESTIMATES.shieldXchain, gasPrice),
+    );
 
     // In fast mode, add CCTP fast transfer fee estimate to cross-chain operations.
     // The fee is proportional to transfer amount, but since we don't know the

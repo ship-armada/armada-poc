@@ -1,0 +1,18 @@
+{
+  "primitive": "note-public-key (§2)",
+  "engineVersion": "9.6.0",
+  "capturedFromMainSha": "b21d4d9b2fe0e06fa44589de164ba00c54bb2b43",
+  "note": "npk = f(masterPublicKey, random) per engine calculateNpk.",
+  "vectors": [
+    {
+      "masterPublicKey": "0x247451823dfcc889991cde89847e14fc5a902ed5dc820e52537780177cd17269",
+      "random": "0f1e2d3c4b5a69788796a5b4c3d2e1f0",
+      "npk": "0x090969a14487b4522ab6ddcbd665af257b49402e712affd4c4b6534db7965e46"
+    },
+    {
+      "masterPublicKey": "0x247451823dfcc889991cde89847e14fc5a902ed5dc820e52537780177cd17269",
+      "random": "00112233445566778899aabbccddeeff",
+      "npk": "0x00d517c8679991b85b1ba9dfbc6a23da28d579db2f5149b08c4f4219dfc642b2"
+    }
+  ]
+}

@@ -61,6 +61,29 @@ export function rejectAnvilAddresses(addresses: string[], label: string): void {
   }
 }
 
+/**
+ * Re-run a read-only check that verifies recent writes. Load-balanced public RPCs can
+ * route the read to a node that has not yet seen the write's block, so a correct state
+ * reads as a mismatch. A real mismatch persists and the last error is rethrown.
+ * Local chains have no lag, so they check once.
+ */
+export async function retryReadOnLag<T>(
+  description: string,
+  check: () => Promise<T>,
+  attempts = isLocal() ? 1 : 8,
+  delayMs = 5000,
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await check();
+    } catch (err) {
+      if (attempt >= attempts) throw err;
+      console.log(`   ${description}: read-back failed (possible RPC lag) — retry ${attempt}/${attempts - 1} in ${delayMs / 1000}s...`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 export interface NonceManager {
   /** Returns a transaction override object with the next nonce (testnet) or empty (local) */
   override(): { nonce: number } | Record<string, never>;
@@ -269,14 +292,30 @@ export async function timelockCall(
     await new Promise(resolve => setTimeout(resolve, sleepSec * 1000));
   }
 
-  console.log(`   ${description}: executing...`);
-  const executeTx = await timelock.execute(
-    targetAddr, value, calldata, ZERO_BYTES32, salt, nm.override()
-  );
-  const executeReceipt = await executeTx.wait();
-  if (!executeReceipt || executeReceipt.status === 0) {
-    throw new Error(`Timelock execute reverted: ${description}`);
+  // The execute's gas estimation can transiently revert "TimelockController: operation is not
+  // ready" when a load-balanced RPC serves the estimate from a node whose head still lags the
+  // delay we already waited out on the canonical chain. That failure is pre-send (at
+  // eth_estimateGas), so no tx is broadcast and the allocated nonce stays unused — retry with
+  // the SAME override (nonce) until a synced-enough backend accepts it.
+  const executeOverride = nm.override();
+  for (let attempt = 1; attempt <= 8; attempt++) {
+    try {
+      console.log(`   ${description}: executing...`);
+      const executeTx = await timelock.execute(
+        targetAddr, value, calldata, ZERO_BYTES32, salt, executeOverride
+      );
+      const executeReceipt = await executeTx.wait();
+      if (!executeReceipt || executeReceipt.status === 0) {
+        throw new Error(`Timelock execute reverted: ${description}`);
+      }
+      console.log(`   ${description}: done`);
+      return true;
+    } catch (err) {
+      const msg = String((err as { message?: string })?.message ?? err);
+      if (!/not ready/i.test(msg) || attempt >= 8) throw err;
+      console.log(`   ${description}: not ready on this RPC node (lag) — retry ${attempt}/8 in 15s...`);
+      await new Promise((resolve) => setTimeout(resolve, 15000));
+    }
   }
-  console.log(`   ${description}: done`);
-  return true;
+  throw new Error(`Timelock execute did not complete after retries: ${description}`);
 }

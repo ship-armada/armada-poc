@@ -41,6 +41,19 @@ jobs:
           node-version: "20"
           cache: "npm"
       - run: npm ci --legacy-peer-deps
+      # Integration tests prove/verify against real Armada circuits. The artifact set is
+      # pinned in scripts/fetch-circuits.sh; keep the cache key in sync with CIRCUITS_TAG.
+      # CIRCUITS_RELEASE_TOKEN: fine-grained PAT with contents:read on ship-armada/armada-circuits
+      # (the default GITHUB_TOKEN cannot read another private repo's releases).
+      - name: Cache Armada circuit artifacts
+        uses: actions/cache@v4
+        with:
+          path: ../armada-circuits/build
+          key: armada-circuits-v0.1.0-dev
+      - name: Fetch Armada circuit artifacts
+        run: ./scripts/fetch-circuits.sh
+        env:
+          GH_TOKEN: ${{ secrets.CIRCUITS_RELEASE_TOKEN }}
       - run: npm run compile
       - run: npm run test:all
 

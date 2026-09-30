@@ -1,0 +1,33 @@
+{
+  "primitive": "boundParams hash (§2)",
+  "engineVersion": "9.6.0",
+  "capturedFromMainSha": "b21d4d9b2fe0e06fa44589de164ba00c54bb2b43",
+  "note": "boundParamsHash = keccak256(abi.encode(boundParams)) % SNARK_SCALAR_FIELD (stock Railgun on-chain hashing).",
+  "vectors": [
+    {
+      "boundParams": {
+        "treeNumber": 0,
+        "minGasPrice": "0",
+        "unshield": 0,
+        "chainID": "31337",
+        "adaptContract": "0x0000000000000000000000000000000000000000",
+        "adaptParams": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "commitmentCiphertext": [
+          {
+            "ciphertext": [
+              "0x1111111111111111111111111111111111111111111111111111111111111111",
+              "0x2222222222222222222222222222222222222222222222222222222222222222",
+              "0x3333333333333333333333333333333333333333333333333333333333333333",
+              "0x4444444444444444444444444444444444444444444444444444444444444444"
+            ],
+            "blindedSenderViewingKey": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "blindedReceiverViewingKey": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "annotationData": "0x",
+            "memo": "0x"
+          }
+        ]
+      },
+      "boundParamsHash": "0x2310b0253dacbbd12c0b069b7e49749eef19b23744cbc5c881c41a4bf27012f5"
+    }
+  ]
+}

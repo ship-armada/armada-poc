@@ -128,7 +128,7 @@ describe("MCP Server — Unit Tests", function () {
   // ========================================================================
 
   describe("loadAllDeployments", function () {
-    it("loads hub, clientA, and clientB deployment data", function () {
+    it("loads hub and client deployment data", function () {
       const deployments = loadAllDeployments("local");
       expect(deployments.env).to.equal("local");
 
@@ -136,13 +136,16 @@ describe("MCP Server — Unit Tests", function () {
       expect(deployments.hub.cctp).to.not.be.null;
       expect(deployments.hub.privacyPool).to.not.be.null;
 
-      // Client A should have CCTP and privacy pool
-      expect(deployments.clientA.cctp).to.not.be.null;
-      expect(deployments.clientA.privacyPool).to.not.be.null;
+      // Local defaults configure two client chains: client1 and client2.
+      expect(deployments.clients).to.have.length(2);
+      expect(deployments.clients[0].role).to.equal("client1");
+      expect(deployments.clients[1].role).to.equal("client2");
 
-      // Client B should have CCTP and privacy pool
-      expect(deployments.clientB.cctp).to.not.be.null;
-      expect(deployments.clientB.privacyPool).to.not.be.null;
+      // Every client should have CCTP and privacy pool
+      for (const client of deployments.clients) {
+        expect(client.cctp).to.not.be.null;
+        expect(client.privacyPool).to.not.be.null;
+      }
     });
 
     it("hub deployment has privacyPool key in contracts", function () {
@@ -152,7 +155,7 @@ describe("MCP Server — Unit Tests", function () {
 
     it("client deployment has privacyPoolClient key in contracts", function () {
       const deployments = loadAllDeployments("local");
-      expect(deployments.clientA.privacyPool!.contracts.privacyPoolClient).to.be.a("string");
+      expect(deployments.clients[0].privacyPool!.contracts.privacyPoolClient).to.be.a("string");
     });
 
     it("getPoolAddress works correctly for loaded hub deployment", function () {
@@ -164,7 +167,7 @@ describe("MCP Server — Unit Tests", function () {
 
     it("getPoolAddress works correctly for loaded client deployment", function () {
       const deployments = loadAllDeployments("local");
-      const clientAddr = getPoolAddress(deployments.clientA.privacyPool!);
+      const clientAddr = getPoolAddress(deployments.clients[0].privacyPool!);
       expect(clientAddr).to.be.a("string");
       expect(clientAddr).to.match(/^0x[0-9a-fA-F]{40}$/);
     });
@@ -175,13 +178,16 @@ describe("MCP Server — Unit Tests", function () {
   // ========================================================================
 
   describe("getDeploymentState", function () {
-    it("returns a report with env, files, hub, clientA, clientB, and issues", function () {
+    it("returns a report with env, files, hub, clients, and issues", function () {
       const report = getDeploymentState("local");
       expect(report.env).to.equal("local");
       expect(report.files).to.be.an("array");
       expect(report.hub).to.be.an("object");
-      expect(report.clientA).to.be.an("object");
-      expect(report.clientB).to.be.an("object");
+      expect(report.clients).to.be.an("array");
+      // Local defaults configure two client chains.
+      expect(report.clients).to.have.length(2);
+      expect(report.clients[0].role).to.equal("client1");
+      expect(report.clients[0].summary).to.be.an("object");
       expect(report.issues).to.be.an("array");
     });
 
@@ -193,8 +199,8 @@ describe("MCP Server — Unit Tests", function () {
 
     it("reports client components as deployed when artifacts exist", function () {
       const report = getDeploymentState("local");
-      expect(report.clientA.cctp.deployed).to.be.true;
-      expect(report.clientA.privacyPool.deployed).to.be.true;
+      expect(report.clients[0].summary.cctp.deployed).to.be.true;
+      expect(report.clients[0].summary.privacyPool.deployed).to.be.true;
     });
 
     it("does not report USDC cross-reference errors for consistent deployments", function () {

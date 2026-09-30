@@ -1,0 +1,29 @@
+{
+  "primitive": "nullifier (§2)",
+  "engineVersion": "9.6.0",
+  "capturedFromMainSha": "b21d4d9b2fe0e06fa44589de164ba00c54bb2b43",
+  "note": "nullifier = getNullifier(nullifyingKey, leafIndex) (Poseidon-based).",
+  "nullifyingKey": "0x1fc97e2366f09719d870d2d056b606e4678d98e47018a1e13c151e7307b68a0c",
+  "vectors": [
+    {
+      "nullifyingKey": "0x1fc97e2366f09719d870d2d056b606e4678d98e47018a1e13c151e7307b68a0c",
+      "leafIndex": 0,
+      "nullifier": "0x20c16b98b3eee8c7dbe384595db7a97bb641c1fb7da5e21f4f893d9ddb6e6516"
+    },
+    {
+      "nullifyingKey": "0x1fc97e2366f09719d870d2d056b606e4678d98e47018a1e13c151e7307b68a0c",
+      "leafIndex": 1,
+      "nullifier": "0x2e3834b6892808163002bdea9bd5c0cf8a8a8c90db885f6154fbeb3c347cc34c"
+    },
+    {
+      "nullifyingKey": "0x1fc97e2366f09719d870d2d056b606e4678d98e47018a1e13c151e7307b68a0c",
+      "leafIndex": 42,
+      "nullifier": "0x1ce44dc8f637c6232d1736474c8e05f32d3be1a65b043e58a5efc46797be8921"
+    },
+    {
+      "nullifyingKey": "0x1fc97e2366f09719d870d2d056b606e4678d98e47018a1e13c151e7307b68a0c",
+      "leafIndex": 65535,
+      "nullifier": "0x201c00d12995c5483b0daf6b9e8a187d36fa76010ef3ee9b850c564579b90715"
+    }
+  ]
+}

@@ -70,10 +70,12 @@ The constructor sets name, symbol, and the timelock address. All other immutable
 
 A single shared revenue-lock contract holds all early network ARM (2,400,000 total). The contract tracks per-beneficiary allocations internally:
 
-- **Beneficiary list** is set at deployment: each recipient and the Knowable Safe (which holds the portion reserved for future contributors) are all entries in the same list with their respective amounts.
-- **Release logic** is identical for all beneficiaries: as revenue milestones are reached, each beneficiary can call `release(delegatee)` to withdraw their unlocked percentage. ARM is transferred and delegated atomically.
-- **The Knowable Safe** appears in the beneficiary list like any other team member — it simply has a larger allocation. Future contributor allocations are handled through off-chain agreements between Knowable and contributors; once ARM is released to the Safe's wallet (per the milestone schedule), Knowable distributes to contributors through standard ARM transfers (available once governance enables global transfers).
-- **One whitelist entry** in the ARM token constructor for this lock contract. No per-recipient whitelisting needed.
+- **Beneficiary list** is fixed at deployment: initial recipient/distribution-contract entries and `RevenueReserveDistributor` have immutable allocations whose sum is 2,400,000 ARM. Exact amounts follow the approved cap table; 360,000 ARM is a worked example, not a new allocation decision.
+- **Release logic** is identical for all RevenueLock beneficiaries: each calls `release(delegatee)` for its unlocked percentage. ARM is transferred and delegated atomically.
+- **Reserve custody:** the allocator Safe assigns irrevocable grants on-chain through the separate distributor. Grants inherit completed milestones. Anyone can sponsor payouts; the distributor atomically undelegates its collected ARM and preserves each recipient's existing delegation. It can pay grants before global transfer unlock because it is whitelisted.
+- **Wind-down:** assignment ends when the lock freezes. The unassigned reserve becomes the allocator's entitlement; only the frozen unlocked fraction is payable. The locked fraction stays in RevenueLock.
+- **Token permissions:** RevenueLock and the reserve distributor are whitelisted by one-time initialization. RevenueLock is an authorized delegator; the distributor is not and must remain able to undelegate itself. No per-recipient whitelisting is needed. The allocator is neither quorum-excluded nor in `noDelegation`.
+- **Airdrop:** the separate Merkle-distribution path is not replaced with individual lock entries. Its funding, release/delegation, and wind-down integration require a separately reviewed entry in the final launch schedule. See REVENUE_RESERVE_DISTRIBUTOR.md.
 
 **Post-finalization treasury growth:** The crowdfund contract always receives 1,800,000 ARM at deployment. If the sale stays at base size (1,200,000 ARM allocated), the remaining 600,000 ARM becomes unsold and sweepable to treasury via `withdrawUnallocatedArm()` after finalization. The treasury's total ARM holding post-finalization is therefore 7,800,000 + unsold amount.
 
@@ -126,13 +128,14 @@ ARM has a global transfer restriction at launch. This is the most important beha
 
 These addresses can send ARM even while transfers are globally restricted. **The initial whitelist is set in the constructor. Governance can add new addresses via extended proposal, but can never remove an existing whitelisted address.** Once whitelisted, always whitelisted.
 
-**Initial whitelist (constructor-set):**
+**Initial whitelist (one-time `initWhitelist`):**
 
 | Address | Why | Set how |
 |---|---|---|
-| Crowdfund contract | Must distribute ARM to claimants via `claim()` and `delegateOnBehalf()` | Constructor parameter |
-| Treasury | Must send ARM via governance proposals while restricted | Constructor parameter |
-| Revenue-lock contract | Must release early network ARM to beneficiaries as milestones are reached | Constructor parameter |
+| Crowdfund contract | Must distribute ARM to claimants via `claim()` and `delegateOnBehalf()` | One-time initialization |
+| Treasury | Must send ARM via governance proposals while restricted | One-time initialization |
+| Revenue-lock contract | Must release early network ARM to beneficiaries as milestones are reached | One-time initialization |
+| Reserve distributor (when enabled) | Must pay unlocked grants while restricted | One-time initialization |
 
 **Post-deployment additions (governance-gated):**
 
@@ -148,14 +151,15 @@ These addresses can send ARM even while transfers are globally restricted. **The
 - The crowdfund contract can send ARM to participants (sender = crowdfund, whitelisted)
 - Participants cannot send ARM anywhere (sender = participant, not whitelisted)
 - The treasury can send ARM via governance proposals (sender = treasury, whitelisted)
-- Revenue-lock contracts can release unlocked ARM to recipients (sender = lock contract, whitelisted)
+- Revenue-lock contracts can release unlocked ARM to beneficiaries (sender = lock contract, whitelisted)
+- The reserve distributor can pay unlocked grants to recipients (sender = distributor, whitelisted)
 
 **Not whitelisted (by design):**
 
 | Address | Why not |
 |---|---|
 | Governance contract(s) | Proposal bonds (per GOVERNANCE.md: 1,000 ARM, returned after lock period) require a holder to transfer ARM to the governance contract. During RESTRICTED state, non-whitelisted holders cannot transfer — so bonds are technically impossible. But bonds are also economically meaningless before transfer unlock: "losing access" to non-transferable ARM has zero opportunity cost. Bonds activate naturally once governance enables transfers, at which point all addresses can transfer and no whitelist is needed. **Pre-transfer-unlock governance operates on proposal threshold only (5,000 delegated ARM) — no bond required.** This avoids a chicken-and-egg problem: the proposal to enable transfers must itself be creatable without a bond. The governor contract's authority to call `setTransferable(true)` is a function access-control check, not a transfer-whitelist issue — see §8 transfer gate controller role. |
-| Knowable Safe | The Safe is a beneficiary in the revenue-lock contract — same as any other team member, just with a larger allocation. ARM is released to the Safe's wallet per the milestone schedule. Future contributor allocations are handled off-chain (token agreements between Knowable and contributors); once ARM is in the Safe's wallet and global transfers are enabled, Knowable distributes via standard transfers. No whitelist needed. |
+| Reserve allocator Safe | Authorizes irrevocable grants but does not forward the reserve to grantees. The whitelisted reserve distributor pays recipients directly. The Safe may receive its own grants and the unlocked unassigned wind-down remainder; these do not require a Safe whitelist entry. |
 
 ### What unlocks transfers
 

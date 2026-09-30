@@ -1,26 +1,39 @@
 {
   "chainId": 11155111,
   "deployer": "0x98b1CBa0908C98c95c9C87D94e4fCdddc87C933d",
-  "deployBlock": 10892674,
+  "deployBlock": 11587999,
   "contracts": {
-    "timelockController": "0xB70D1DcD7E63E0eF7b4c7B83cAb35f5863462889",
-    "armToken": "0x21EEA6EE528e966c3A54f912837CdA384BFA537d",
-    "treasury": "0x91cFA0c37Df43661DE90A3aa7CBE89ae7920871C",
-    "governor": "0x36B167ee7cd1717576f445AC7a76500899691Da5",
-    "governorImpl": "0x9524151a4f1Ad88FFE00cEc339813dC38d53E511",
-    "steward": "0xB68EE7dF8c268C0e53b3D7a67980E5e584f3a250",
-    "adapterRegistry": "0xbA5D04B538864593a0eEc2995aCE6502CC93aCb5",
-    "revenueCounter": "0x94F81936cDb66352D3Dd23dDDcB1ad1c034C692c",
-    "revenueCounterImpl": "0xF874d11F14D53597ee224F8A46BEF3A912c6b3dB",
-    "revenueLock": "0xDfee98948B27B6FD09c49042068DC83f8890ef26",
-    "shieldPauseController": "0xE1DF99eb19Af0d8c25e8EE01a519C176E3E5B35d",
-    "redemption": "0x0748bF61369f20976Fc92A8c541B3E0D197f640c",
-    "windDown": "0x7a90F7A802751ec1164B2fEE8690D33Ba60fA8E5"
+    "timelockController": "0xB1e8381702f934FbdA33D1C916eE72948a6ED406",
+    "armToken": "0x30eBb523CC15282D36330261D6C003BC7b434d52",
+    "treasury": "0x5b90C233D259Ad251531ffc8e04F6c24fc1996Af",
+    "governor": "0x5bDDA65E8cd8D9f2839EB01c3DFbf2c54b77839C",
+    "governorImpl": "0x713976732507FF8A7944D9D20f48ba20750b80dc",
+    "steward": "0x90f58b3Ce361c8350497FCa86B7ebCbf6Af0Dc5a",
+    "adapterRegistry": "0xDdeBD265fE7ebB5777C2a00708dc60165479F7d3",
+    "revenueCounter": "0xdFEadd95A3a7FbDF3917E3ac755c4Bde6d66FbA6",
+    "revenueCounterImpl": "0xb5C9220544F5BfD973272ac3409B87168559a18c",
+    "revenueLock": "0x8C0B3464E6250D6ab66e3FC3369fCe169161fc61",
+    "shieldPauseController": "0xDAC54DcC9fFFaA522e31178e8C1E03192851Da80",
+    "redemption": "0x2d2988c1CeD476449E76ee629f9aff779eD16D2A",
+    "windDown": "0x0eE724B5B1695D2340e0423C779F430704091015"
   },
   "config": {
     "timelockMinDelay": 60,
     "totalSupply": "12000000",
     "treasuryAllocation": "7800000"
   },
-  "timestamp": "2026-05-21T16:31:12.737Z"
+  "timestamp": "2026-08-28T23:23:49.619Z",
+  "revenueLockConstructorArgs": [
+    "0x30eBb523CC15282D36330261D6C003BC7b434d52",
+    "0xdFEadd95A3a7FbDF3917E3ac755c4Bde6d66FbA6",
+    "10000000000000000000000",
+    [
+      "0x199b4b499275eab763Be408668513418DE38d24C",
+      "0x418e7F5225A1E61F2Bd8dB68f37e1D2d5E58702e"
+    ],
+    [
+      "100000000000000000000",
+      "100000000000000000000"
+    ]
+  ]
 }

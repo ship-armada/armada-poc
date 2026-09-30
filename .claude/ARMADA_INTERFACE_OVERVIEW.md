@@ -4,6 +4,8 @@
 
 **Status:** Scaffold landed in PR #272 (merged or in-review at time of writing). No real wallet/contract/relayer/Railgun integration yet — every flow stubs through structured telemetry so shapes are real and side effects are deferred.
 
+> **⚠️ STALE (kept as a point-in-time review digest).** As of 2026-08 this document describes the original PR-#272 *scaffold* state, which is long superseded: all flows (shield/unshield/transfer/yield + cross-chain), the V2 signature-derived shielded wallet, `@armada/sdk` migration, chain history recovery, the full visual redesign, and pay-via-link are all wired end-to-end. For current architecture read **`.claude/PLAN_ARMADA_INTERFACE.md`** + `apps/armada-interface/CLAUDE.md`; treat the sections below as historical context only.
+
 **For detailed plan:** see `.claude/PLAN_ARMADA_INTERFACE.md` (this is a digest of that, with added protocol context).
 
 ---

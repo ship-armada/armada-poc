@@ -21,22 +21,34 @@ contract MockShieldRecorder {
     using SafeERC20 for IERC20;
 
     address public immutable usdc;
-    uint256 public lastValue;
     address public lastIntegrator;
-    bytes32 public lastNpk;
+    uint256 public lastTotal;
+    uint256 public lastNoteCount;
     uint256 public shieldCallCount;
+    uint256[] public noteValues;
+    bytes32[] public noteNpks;
 
     constructor(address _usdc) {
         usdc = _usdc;
     }
 
+    /// @notice Records a shield of one or more notes, pulling the summed value from msg.sender via
+    ///         transferFrom (matching the real pool's per-note pull, aggregated). Supports the
+    ///         two-note (user note + relayer fee note) gasless-shield shape.
     function shield(ShieldRequest[] calldata requests, address integrator) external {
-        require(requests.length == 1, "MockShieldRecorder: one request only");
-        ShieldRequest calldata r = requests[0];
-        IERC20(usdc).safeTransferFrom(msg.sender, address(this), r.preimage.value);
-        lastValue = r.preimage.value;
+        delete noteValues;
+        delete noteNpks;
+        uint256 total;
+        for (uint256 i = 0; i < requests.length; i++) {
+            ShieldRequest calldata r = requests[i];
+            total += r.preimage.value;
+            noteValues.push(r.preimage.value);
+            noteNpks.push(r.preimage.npk);
+        }
+        IERC20(usdc).safeTransferFrom(msg.sender, address(this), total);
         lastIntegrator = integrator;
-        lastNpk = r.preimage.npk;
+        lastTotal = total;
+        lastNoteCount = requests.length;
         shieldCallCount++;
     }
 }

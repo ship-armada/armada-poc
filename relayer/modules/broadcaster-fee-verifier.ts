@@ -50,6 +50,20 @@ import {
   TRANSACT_ABI,
   WRAPPER_ABIS,
 } from "../lib/transact-shape";
+// Type-only imports from @armada/sdk's root entry (main/types are node10-resolvable). Erased at
+// compile time, so importing them costs the stock path nothing — the SDK's runtime values are loaded
+// lazily inside `extractFeeArmada`/`deriveBroadcasterIdentity` so the stock path never pulls in the
+// prover/poseidon deps. The SDK root re-exports the note-crypto/keyset/token helpers explicitly, so
+// node10 consumers like this one can import them (and their types) straight from the package root.
+import type { ReceiverNoteKeys, TokenDataGetter, Chain } from "@armada/sdk";
+
+/**
+ * The relayer's `0zk` identity in @armada/sdk form — the full identity (address data + viewing
+ * private key), which is what `extractFeeOutput` needs to *bind* a decrypted fee note to an on-chain
+ * commitment (it recomputes `npk = poseidon(masterPublicKey, random)`, not just trial-decrypts).
+ * Derived from the same mnemonic as the stock `wallet`, so both backends verify against the same 0zk.
+ */
+export type ArmadaBroadcasterIdentity = ReceiverNoteKeys;
 
 export interface VerifierContext {
   /** The relayer's loaded Railgun wallet — supplies the viewing key used for decryption. */
@@ -61,6 +75,13 @@ export interface VerifierContext {
   /** USDC token address on the hub chain. The verifier matches the broadcaster output's token
    *  against the Railgun-derived hash of this address; payments in any other token are ignored. */
   usdcAddress: string;
+  /**
+   * When present, fee extraction routes through @armada/sdk's native decode API (`decodeTransact` +
+   * `extractFeeOutput`) instead of the stock engine's `extractFirstNoteERC20AmountMap`. Set at boot
+   * only under `SDK_BACKEND=armada` (see `armada-relayer.ts`). The verifier switches on this field's
+   * PRESENCE, not the env flag directly, so tests can exercise either path without env juggling.
+   */
+  armadaBroadcaster?: ArmadaBroadcasterIdentity;
 }
 
 export interface BroadcasterFeeVerifyRequest {
@@ -123,6 +144,81 @@ function normaliseRequestToVanillaTransact(
   return { to: privacyPoolAddress, data: syntheticData };
 }
 
+/**
+ * Derive the relayer's @armada/sdk broadcaster identity from its BIP39 mnemonic — the same mnemonic
+ * `railgun-wallet.ts` derives the stock `0zk` wallet from, at the same default derivation index, so
+ * both backends resolve to the identical broadcaster address (keyset parity validated in Phase 0,
+ * seed-to-wallet vectors). Kept in this module (not in the wallet setup) so tests build the identity
+ * exactly the way the relayer does. The SDK is imported lazily to keep it off the stock boot path.
+ */
+export async function deriveBroadcasterIdentity(
+  mnemonic: string,
+): Promise<ArmadaBroadcasterIdentity> {
+  const { deriveKeysetFromMnemonic } = await import("@armada/sdk");
+  const ks = await deriveKeysetFromMnemonic(mnemonic);
+  return {
+    addressData: {
+      masterPublicKey: ks.masterPublicKey,
+      viewingPublicKey: ks.viewingPublicKey,
+    },
+    viewingPrivateKey: ks.viewingPrivateKey,
+  };
+}
+
+/**
+ * Armada-backend fee extraction — the SDK's native decode API, replacing the stock engine helper.
+ * `decodeTransact` ABI-decodes the (already wrapper-normalised) `transact(Transaction[])` calldata;
+ * for each bundled transaction `extractFeeOutput` trial-decrypts the commitment ciphertexts with the
+ * broadcaster's full identity and BINDS each decrypted note to an actual on-chain commitment before
+ * trusting its claimed value. Returns the stock helper's `{ tokenAddress -> amount }` shape so the
+ * caller's USDC lookup + threshold check stay backend-agnostic.
+ *
+ * Only USDC is resolvable (mirrors the stock wallet's DB-backed token getter): the getter throws for
+ * any other token hash, `tryDecryptCommitment` swallows that as "not ours", and a fee note in a
+ * non-USDC token simply never contributes to the map — the same outcome as the stock path ignoring
+ * non-USDC outputs.
+ */
+async function extractFeeArmada(
+  calldata: string,
+  broadcaster: ArmadaBroadcasterIdentity,
+  usdcAddress: string,
+  hubChainId: number,
+): Promise<Record<string, bigint>> {
+  const {
+    decodeTransact,
+    extractFeeOutput,
+    getTokenDataERC20,
+    getTokenDataHash,
+    initPoseidonPromise,
+    ChainType: SdkChainType,
+  } = await import("@armada/sdk");
+  // extractFeeOutput recomputes npk = poseidon(masterPublicKey, random) for its binding check.
+  await initPoseidonPromise;
+
+  const usdcTokenData = getTokenDataERC20(usdcAddress);
+  const usdcHash = getTokenDataHash(usdcTokenData);
+  const strip0x = (h: string): string => (h.startsWith("0x") ? h.slice(2) : h);
+  const tokenDataGetter: TokenDataGetter = {
+    getTokenDataFromHash: async (_txidVersion, _chain, tokenHash) => {
+      if (strip0x(tokenHash) === strip0x(usdcHash)) return usdcTokenData;
+      throw new Error(
+        `broadcaster-fee-verifier: unresolvable token hash ${tokenHash} (only USDC is resolvable)`,
+      );
+    },
+  };
+  const chain: Chain = { type: SdkChainType.EVM, id: hubChainId };
+
+  const amountMap: Record<string, bigint> = {};
+  for (const tx of decodeTransact(calldata as `0x${string}`)) {
+    const fee = await extractFeeOutput(tx, broadcaster, tokenDataGetter, chain);
+    if (fee) {
+      const key = fee.tokenAddress.toLowerCase();
+      amountMap[key] = (amountMap[key] ?? 0n) + fee.value;
+    }
+  }
+  return amountMap;
+}
+
 export async function verifyBroadcasterFee(
   ctx: VerifierContext,
   request: BroadcasterFeeVerifyRequest,
@@ -145,20 +241,31 @@ export async function verifyBroadcasterFee(
 
   let amountMap: Record<string, bigint>;
   try {
-    // V2 (Poseidon Merkle) — the only TXID version Armada's PrivacyPool supports. SDK helper
-    // returns a map of `tokenAddress -> amount` for every commitment in the proof that
-    // successfully decrypts under our viewing key. Outputs to other recipients (the user's
-    // change, the unshield-target, etc.) DON'T decrypt and don't appear.
-    //
-    // `useRelayAdapt: false` — vanilla `transact(...)`, decoded with the RailgunSmartWallet ABI.
-    // Wrapper functions need useRelayAdapt routing extensions; out of scope for A2 (see header).
-    amountMap = await ctx.wallet.extractFirstNoteERC20AmountMap(
-      TXIDVersion.V2_PoseidonMerkle,
-      chain,
-      transactionRequest,
-      false, // useRelayAdapt
-      ctx.privacyPoolAddress,
-    );
+    if (ctx.armadaBroadcaster) {
+      // Armada backend (SDK_BACKEND=armada) — decode + fee extraction via @armada/sdk's native
+      // decode API. Same `{ tokenAddress -> amount }` contract as the stock helper below.
+      amountMap = await extractFeeArmada(
+        normalised.data,
+        ctx.armadaBroadcaster,
+        ctx.usdcAddress,
+        ctx.hubChainId,
+      );
+    } else {
+      // V2 (Poseidon Merkle) — the only TXID version Armada's PrivacyPool supports. SDK helper
+      // returns a map of `tokenAddress -> amount` for every commitment in the proof that
+      // successfully decrypts under our viewing key. Outputs to other recipients (the user's
+      // change, the unshield-target, etc.) DON'T decrypt and don't appear.
+      //
+      // `useRelayAdapt: false` — vanilla `transact(...)`, decoded with the RailgunSmartWallet ABI.
+      // Wrapper functions need useRelayAdapt routing extensions; out of scope for A2 (see header).
+      amountMap = await ctx.wallet.extractFirstNoteERC20AmountMap(
+        TXIDVersion.V2_PoseidonMerkle,
+        chain,
+        transactionRequest,
+        false, // useRelayAdapt
+        ctx.privacyPoolAddress,
+      );
+    }
   } catch (e: any) {
     // SDK throws on:
     //   - `to` mismatch with contractAddress  (caller bug — privacy-relay should have rejected)

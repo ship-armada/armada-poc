@@ -1,9 +1,13 @@
 #!/bin/bash
 
 # CCTP POC - Local Chain Setup
-# Starts three Anvil instances for Client A, Hub, and Client B chains
+# Starts Anvil instances for the Hub plus CLIENT_COUNT client chains (default 2).
+# Hub:      port 8545 / chain 31337 (matches Railgun SDK's Hardhat network config).
+# Client i: port 8545+i / chain 31337+i (client1 → 8546/31338, client2 → 8547/31339, ...).
 
-echo "=== Starting Local EVM Chains ==="
+CLIENT_COUNT=${CLIENT_COUNT:-2}
+
+echo "=== Starting Local EVM Chains (hub + ${CLIENT_COUNT} clients) ==="
 echo ""
 
 # Colors for output
@@ -19,11 +23,12 @@ if ! command -v anvil &> /dev/null; then
     exit 1
 fi
 
-# Kill any existing anvil instances on these ports
+# Kill any existing anvil instances on the ports we use
 echo "Cleaning up existing instances..."
 lsof -ti:8545 | xargs kill -9 2>/dev/null
-lsof -ti:8546 | xargs kill -9 2>/dev/null
-lsof -ti:8547 | xargs kill -9 2>/dev/null
+for ((i = 1; i <= CLIENT_COUNT; i++)); do
+    lsof -ti:$((8545 + i)) | xargs kill -9 2>/dev/null
+done
 sleep 1
 
 # Start Hub Chain (uses 31337 and port 8545 to match Railgun SDK's Hardhat network config)
@@ -34,42 +39,36 @@ echo "  Chain ID: 31337"
 anvil --port 8545 --chain-id 31337 --block-time 1 --accounts 200 &
 HUB_PID=$!
 
-# Start Client Chain A
-echo ""
-echo -e "${GREEN}Starting Client Chain A...${NC}"
-echo "  Port: 8546"
-echo "  Chain ID: 31338"
-anvil --port 8546 --chain-id 31338 --block-time 1 &
-CLIENT_A_PID=$!
-
-# Start Client Chain B
-echo ""
-echo -e "${GREEN}Starting Client Chain B...${NC}"
-echo "  Port: 8547"
-echo "  Chain ID: 31339"
-anvil --port 8547 --chain-id 31339 --block-time 1 &
-CLIENT_B_PID=$!
+# Start client chains
+CLIENT_PIDS=()
+for ((i = 1; i <= CLIENT_COUNT; i++)); do
+    PORT=$((8545 + i))
+    CHAIN_ID=$((31337 + i))
+    echo ""
+    echo -e "${GREEN}Starting Client Chain ${i}...${NC}"
+    echo "  Port: ${PORT}"
+    echo "  Chain ID: ${CHAIN_ID}"
+    anvil --port "$PORT" --chain-id "$CHAIN_ID" --block-time 1 &
+    CLIENT_PIDS+=($!)
+done
 
 # Wait for chains to start
 sleep 2
 
 echo ""
-echo "=== Three Chains Running ==="
+echo "=== $((CLIENT_COUNT + 1)) Chains Running ==="
 echo ""
 echo "Hub Chain (Railgun SDK compatible):"
 echo "  RPC: http://localhost:8545"
 echo "  Chain ID: 31337"
 echo "  PID: $HUB_PID"
-echo ""
-echo "Client Chain A:"
-echo "  RPC: http://localhost:8546"
-echo "  Chain ID: 31338"
-echo "  PID: $CLIENT_A_PID"
-echo ""
-echo "Client Chain B:"
-echo "  RPC: http://localhost:8547"
-echo "  Chain ID: 31339"
-echo "  PID: $CLIENT_B_PID"
+for ((i = 1; i <= CLIENT_COUNT; i++)); do
+    echo ""
+    echo "Client Chain ${i}:"
+    echo "  RPC: http://localhost:$((8545 + i))"
+    echo "  Chain ID: $((31337 + i))"
+    echo "  PID: ${CLIENT_PIDS[$((i - 1))]}"
+done
 echo ""
 echo "Default Funded Accounts (same on all chains):"
 echo "  Account 0: 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
@@ -85,9 +84,10 @@ echo ""
 cleanup() {
     echo ""
     echo "Shutting down chains..."
-    kill $CLIENT_A_PID 2>/dev/null
     kill $HUB_PID 2>/dev/null
-    kill $CLIENT_B_PID 2>/dev/null
+    for pid in "${CLIENT_PIDS[@]}"; do
+        kill "$pid" 2>/dev/null
+    done
     echo "Done."
     exit 0
 }

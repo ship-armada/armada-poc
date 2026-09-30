@@ -235,10 +235,13 @@ export class PrivacyRelay {
     const advertisedFee = advertisedFeeForSelector(selector, quotedSchedule.fees);
     try {
       if (GASLESS_SELECTORS.has(selector)) {
+        // Phase C — the gasless fee is a shielded note to the relayer's 0zk (like redeem), so the
+        // frontend-supplied feeShieldRandom is required to verify the fee destination.
         verifyGaslessFee(
           this.gaslessVerifierContext,
           { chainId, to, data },
           advertisedFee,
+          feeShieldRandom,
         );
       } else if (selector === REDEEM_AND_SHIELD_SELECTOR) {
         // Redeem's fee is shielded to the relayer contract-side (issue #312), not embedded as a

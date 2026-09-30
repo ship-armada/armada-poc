@@ -11,8 +11,8 @@
  *   source config/sepolia.env
  *   export ETHERSCAN_API_KEY=your_key_here
  *   npx hardhat run scripts/verify_sepolia.ts --network sepoliaHub
- *   npx hardhat run scripts/verify_sepolia.ts --network sepoliaClientA   # Base Sepolia
- *   npx hardhat run scripts/verify_sepolia.ts --network sepoliaClientB   # Arbitrum Sepolia
+ *   npx hardhat run scripts/verify_sepolia.ts --network sepoliaClient1   # first client chain
+ *   npx hardhat run scripts/verify_sepolia.ts --network sepoliaClient2   # ...sepoliaClient<n>
  *
  * Some contracts require values not stored in manifests (e.g. crowdfund openTimestamp).
  * These are read from the deployed contract on-chain where possible.
@@ -27,7 +27,8 @@
 
 import { ethers, run } from "hardhat";
 import {
-  getNetworkConfig,
+  getChainRole,
+  getChainByRole,
   getGovernanceDeploymentFile,
   getCrowdfundDeploymentFile,
   getPrivacyPoolDeploymentFile,
@@ -35,14 +36,54 @@ import {
   getAaveMockDeploymentFile,
   getFeeModuleDeploymentFile,
   getCCTPDeploymentFile,
+  type ChainRole,
 } from "../config/networks";
 import { loadDeployment } from "./deploy-utils";
+import { assertRevenueLockSchedule, type RevenueLockConstructorArgs } from "./revenue-reserve";
 
 interface VerifyTask {
   name: string;
   address: string;
   constructorArguments: any[];
   contract?: string; // Fully qualified name for disambiguation
+}
+
+/** Read immutable reserve arguments from the deployed instance, not a later env file.
+ * RevenueLock arguments come from the manifest's recorded constructor input, checked
+ * against the deployed lock; the current beneficiary file is not consulted. */
+export async function buildRevenueLockVerificationTasks(c: {
+  armToken: string; revenueCounter: string; revenueLock: string; revenueReserveDistributor?: string;
+}, originalArgs?: RevenueLockConstructorArgs): Promise<VerifyTask[]> {
+  const tasks: VerifyTask[] = [];
+  let reserve: { address: string; cap: bigint } | undefined;
+  if (c.revenueReserveDistributor) {
+    const distributor = await ethers.getContractAt("RevenueReserveDistributor", c.revenueReserveDistributor);
+    reserve = { address: c.revenueReserveDistributor, cap: await distributor.reserveCap() };
+    tasks.push({ name: "RevenueReserveDistributor", address: reserve.address,
+      constructorArguments: [await distributor.armToken(), await distributor.allocator(), reserve.cap] });
+  }
+  if (!originalArgs) {
+    throw new Error("Original RevenueLock constructor arguments missing; recover deployment transaction input into governance manifest revenueLockConstructorArgs");
+  }
+  const [token, counter, rate, addresses, amounts] = originalArgs;
+  const lock = await ethers.getContractAt("RevenueLock", c.revenueLock);
+  if (ethers.getAddress(token) !== ethers.getAddress(c.armToken) ||
+      ethers.getAddress(token) !== ethers.getAddress(await lock.armToken()) ||
+      ethers.getAddress(counter) !== ethers.getAddress(c.revenueCounter) ||
+      ethers.getAddress(counter) !== ethers.getAddress(await lock.revenueCounter()) ||
+      BigInt(rate) !== await lock.MAX_REVENUE_INCREASE_PER_DAY() || addresses.length !== amounts.length) {
+    throw new Error("Original RevenueLock constructor arguments do not match deployed lock");
+  }
+  if (reserve) {
+    const index = addresses.findIndex(address => ethers.getAddress(address) === ethers.getAddress(reserve!.address));
+    if (index < 0 || BigInt(amounts[index]) !== reserve.cap) {
+      throw new Error("Original RevenueLock constructor arguments do not fund the reserve distributor at its cap");
+    }
+  }
+  await assertRevenueLockSchedule(c.revenueLock, addresses.map((address, i) =>
+    ({ address, amount: ethers.formatUnits(amounts[i], 18), label: "original constructor" })));
+  tasks.push({ name: "RevenueLock", address: c.revenueLock, constructorArguments: originalArgs });
+  return tasks;
 }
 
 async function verify(task: VerifyTask): Promise<boolean> {
@@ -69,7 +110,6 @@ async function verify(task: VerifyTask): Promise<boolean> {
  * Build governance + crowdfund tasks. Hub-only — clients don't deploy these.
  */
 async function buildGovernanceCrowdfundTasks(): Promise<VerifyTask[]> {
-  const config = getNetworkConfig();
   const gov = loadDeployment(getGovernanceDeploymentFile());
   const cf = loadDeployment(getCrowdfundDeploymentFile());
   if (!gov) throw new Error(`Governance manifest not found: ${getGovernanceDeploymentFile()}`);
@@ -86,10 +126,9 @@ async function buildGovernanceCrowdfundTasks(): Promise<VerifyTask[]> {
   const windDownDeadline = await windDown.windDownDeadline();
   const revenueThreshold = await windDown.revenueThreshold();
 
-  // RevenueLock beneficiaries — reconstruct from config
-  const beneficiaryConfig = config.revenueLockBeneficiaries;
-  const beneficiaryAddresses = beneficiaryConfig.map(b => b.address);
-  const beneficiaryAmounts = beneficiaryConfig.map(b => ethers.parseUnits(b.amount, 18));
+  // Verify the lock's recorded constructor schedule rather than whichever beneficiary
+  // file the current env selects.
+  const revenueLockTasks = await buildRevenueLockVerificationTasks(c, gov.revenueLockConstructorArgs);
 
   return [
     // --- Governance contracts ---
@@ -151,19 +190,7 @@ async function buildGovernanceCrowdfundTasks(): Promise<VerifyTask[]> {
       ],
       contract: "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol:ERC1967Proxy",
     },
-    {
-      name: "RevenueLock",
-      // $10k/day rate cap — must match the value used at deployment in deploy_governance.ts.
-      // See PARAMETER_MANIFEST.md (ship-armada/crowdfund) and issue #225.
-      address: c.revenueLock,
-      constructorArguments: [
-        c.armToken,
-        c.revenueCounter,
-        ethers.parseUnits("10000", 18),
-        beneficiaryAddresses,
-        beneficiaryAmounts,
-      ],
-    },
+    ...revenueLockTasks,
     {
       name: "ShieldPauseController",
       address: c.shieldPauseController,
@@ -231,6 +258,15 @@ async function buildHubProtocolTasks(): Promise<VerifyTask[]> {
       // hookRouter constructor: (messageTransmitter)
       { name: "CCTPHookRouter (hub)", address: pc.hookRouter, constructorArguments: [pool.cctp.messageTransmitter] },
     );
+    // GaslessShieldWrapper constructor: (usdc, pool). Unlike the Poseidon-linked modules it has no
+    // library linking, so it verifies cleanly. Guarded because older manifests predate the wrapper.
+    if (pc.gaslessShieldWrapper) {
+      tasks.push({
+        name: "GaslessShieldWrapper",
+        address: pc.gaslessShieldWrapper,
+        constructorArguments: [pool.cctp.usdc, pc.privacyPool],
+      });
+    }
   }
 
   if (yieldD?.contracts && aave?.contracts && gov?.contracts && cctp?.contracts) {
@@ -291,19 +327,29 @@ async function buildHubProtocolTasks(): Promise<VerifyTask[]> {
 
 /**
  * Build PrivacyPoolClient + CCTPHookRouter tasks for a client chain.
- * Loads the per-role manifest (clientA = Base Sepolia, clientB = Arbitrum Sepolia).
+ * Loads the per-role manifest for the given client (client1, client2, ...).
  */
-async function buildClientChainTasks(role: "clientA" | "clientB"): Promise<VerifyTask[]> {
+async function buildClientChainTasks(role: ChainRole): Promise<VerifyTask[]> {
   const client = loadDeployment(getPrivacyPoolDeploymentFile(role));
   if (!client?.contracts) {
     throw new Error(`PrivacyPoolClient manifest not found for role=${role}`);
   }
   const cc = client.contracts;
-  return [
+  const tasks: VerifyTask[] = [
     { name: "PrivacyPoolClient", address: cc.privacyPoolClient, constructorArguments: [] },
     // hookRouter constructor: (messageTransmitter)
     { name: "CCTPHookRouter (client)", address: cc.hookRouter, constructorArguments: [client.cctp.messageTransmitter] },
   ];
+  // GaslessShieldWrapperClient constructor: (usdc, pool) — mirrors the hub wrapper. Guarded because
+  // older client manifests predate the permit-gasless wrapper.
+  if (cc.gaslessShieldWrapperClient) {
+    tasks.push({
+      name: "GaslessShieldWrapperClient",
+      address: cc.gaslessShieldWrapperClient,
+      constructorArguments: [client.cctp.usdc, cc.privacyPoolClient],
+    });
+  }
+  return tasks;
 }
 
 async function main() {
@@ -316,31 +362,26 @@ async function main() {
   const tasks: VerifyTask[] = [];
   let label: string;
 
-  // Dispatch by chain id. Hub gets the full protocol stack; clients only their
+  // Dispatch by role. Hub gets the full protocol stack; clients only their
   // PrivacyPoolClient + CCTPHookRouter.
-  switch (chainId) {
-    case 11155111: // Ethereum Sepolia (hub)
-      label = "Sepolia (hub)";
-      tasks.push(...(await buildGovernanceCrowdfundTasks()));
-      tasks.push(...(await buildHubProtocolTasks()));
-      console.log(
-        "\nNote: MerkleModule, ShieldModule, TransactModule are skipped — they link to Poseidon\n" +
-        "libraries whose addresses aren't in the deployment manifest. The PrivacyPool router itself\n" +
-        "is verified, which is the user-facing explorer surface.",
-      );
-      break;
-    case 84532: // Base Sepolia (clientA)
-      label = "Base Sepolia (clientA)";
-      tasks.push(...(await buildClientChainTasks("clientA")));
-      break;
-    case 421614: // Arbitrum Sepolia (clientB)
-      label = "Arbitrum Sepolia (clientB)";
-      tasks.push(...(await buildClientChainTasks("clientB")));
-      break;
-    default:
-      throw new Error(
-        `Unsupported chain id ${chainId}. Run with --network sepoliaHub | sepoliaClientA | sepoliaClientB.`,
-      );
+  const role = getChainRole(chainId);
+  if (role === "hub") {
+    label = "Sepolia (hub)";
+    tasks.push(...(await buildGovernanceCrowdfundTasks()));
+    tasks.push(...(await buildHubProtocolTasks()));
+    console.log(
+      "\nNote: MerkleModule, ShieldModule, TransactModule are skipped — they link to Poseidon\n" +
+      "libraries whose addresses aren't in the deployment manifest. The PrivacyPool router itself\n" +
+      "is verified, which is the user-facing explorer surface.",
+    );
+  } else if (role) {
+    const chain = getChainByRole(role);
+    label = `${chain.name} (${role})`;
+    tasks.push(...(await buildClientChainTasks(role)));
+  } else {
+    throw new Error(
+      `Unsupported chain id ${chainId}. Run with --network sepoliaHub or a sepoliaClient<n> network.`,
+    );
   }
 
   console.log(`\n=== Verifying ${tasks.length} contracts on ${label} Etherscan ===\n`);
@@ -359,7 +400,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}

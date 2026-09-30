@@ -1,11 +1,16 @@
 // ABOUTME: MCP tool that checks RPC connectivity, block numbers, balances, and contract deployment status.
 // ABOUTME: Read-only — queries each chain's RPC endpoint and reports health status.
 
-import { type ChainRole, getChainByRole } from "../../../config/networks";
+import {
+  type ChainRole,
+  getChainByRole,
+  getClientChains,
+} from "../../../config/networks";
 import { checkRpc, getBalance, hasCode } from "../lib/providers";
 import {
   loadAllDeployments,
   getPoolAddress,
+  getChainDeploymentsByRole,
   type AllDeployments,
 } from "../lib/deployments";
 import { type DeployEnv } from "../../../config/networks";
@@ -30,7 +35,7 @@ interface ChainHealthReport {
 
 export async function getChainHealth(
   env: DeployEnv,
-  chains: ChainRole[] = ["hub", "clientA", "clientB"]
+  chains: ChainRole[] = ["hub", ...getClientChains().map((c) => c.role)]
 ): Promise<ChainHealthReport[]> {
   const deployments = loadAllDeployments(env);
 
@@ -68,16 +73,11 @@ async function checkSingleChain(
   const reachable = rpcResult !== null;
 
   // Get addresses from deployment artifacts
-  const chainDeploy =
-    role === "hub"
-      ? deployments.hub
-      : role === "clientA"
-        ? deployments.clientA
-        : deployments.clientB;
+  const chainDeploy = getChainDeploymentsByRole(deployments, role);
 
-  const usdcAddress = chainDeploy.cctp?.contracts.usdc ?? null;
-  const poolAddress = chainDeploy.privacyPool ? getPoolAddress(chainDeploy.privacyPool) : null;
-  const deployerAddress = chainDeploy.cctp?.deployer ?? chainDeploy.privacyPool?.deployer ?? null;
+  const usdcAddress = chainDeploy?.cctp?.contracts.usdc ?? null;
+  const poolAddress = chainDeploy?.privacyPool ? getPoolAddress(chainDeploy.privacyPool) : null;
+  const deployerAddress = chainDeploy?.cctp?.deployer ?? chainDeploy?.privacyPool?.deployer ?? null;
 
   // Only query on-chain state if RPC is reachable
   let deployerBalance: string | null = null;

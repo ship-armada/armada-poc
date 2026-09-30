@@ -1,0 +1,35 @@
+{
+  "primitive": "spend-authorization EdDSA (§2)",
+  "engineVersion": "9.6.0",
+  "capturedFromMainSha": "b21d4d9b2fe0e06fa44589de164ba00c54bb2b43",
+  "note": "message = poseidon([merkleRoot, boundParamsHash, ...nullifiers, ...commitmentsOut]); BabyJubjub EdDSA sign over it.",
+  "deterministic": true,
+  "vectors": [
+    {
+      "publicInputs": {
+        "merkleRoot": "0x000000000000000000000008727f6369aaf83ca15026747af8c7f196ce3f0ad2",
+        "boundParamsHash": "0x00000000000000000000004393fb25a23480e82908ce2957cfb667d751c67eea",
+        "nullifiers": [
+          "0x20c16b98b3eee8c7dbe384595db7a97bb641c1fb7da5e21f4f893d9ddb6e6516",
+          "0x2e3834b6892808163002bdea9bd5c0cf8a8a8c90db885f6154fbeb3c347cc34c"
+        ],
+        "commitmentsOut": [
+          "0x28d850af4c165f8b88da462501ac42a4fc6fa73468704059c1a6d7533c892fac",
+          "0x0a7304e777dc2fe88b82ebd981b185fada56303d64473ba8401da97a2750c199"
+        ]
+      },
+      "message": "0x1736e3c71f4360b388fe63e8f4c068753fd7cde4332538b135275cc3092cc3b2",
+      "spendingPublicKey": [
+        "0x1503e3c396df1e30bf3fc89d97a7bf2cd2b5e5b39e1a099a5c0862dbaa5988c2",
+        "0x0e83fbda9a2887993d4fd9368463eb8c3d9e01df47418a5214ebe57e0c9dc30d"
+      ],
+      "signature": {
+        "R8": [
+          "0x19ea4d5e6a413fcd2479153014bc97d0c57019c5361f3905a8e5350ed1c6e58f",
+          "0x0146a9e4dc5374ca363157f4ec052534f625de514f2dffbcc733424531ae02f1"
+        ],
+        "S": "0x01fb95b20f8a6362854b8fcb0604e924661d5a68c4a373aadc73fc604d854c1d"
+      }
+    }
+  ]
+}

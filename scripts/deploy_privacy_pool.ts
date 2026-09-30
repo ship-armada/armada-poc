@@ -14,13 +14,13 @@
  *
  * Usage (local):
  *   npx hardhat run scripts/deploy_privacy_pool.ts --network hub
- *   npx hardhat run scripts/deploy_privacy_pool.ts --network client
- *   npx hardhat run scripts/deploy_privacy_pool.ts --network clientB
+ *   npx hardhat run scripts/deploy_privacy_pool.ts --network client1
+ *   npx hardhat run scripts/deploy_privacy_pool.ts --network client2   # ...client<n> for CLIENT_COUNT
  *
  * Usage (sepolia):
  *   npx hardhat run scripts/deploy_privacy_pool.ts --network sepoliaHub
- *   npx hardhat run scripts/deploy_privacy_pool.ts --network sepoliaClientA
- *   npx hardhat run scripts/deploy_privacy_pool.ts --network sepoliaClientB
+ *   npx hardhat run scripts/deploy_privacy_pool.ts --network sepoliaClient1
+ *   npx hardhat run scripts/deploy_privacy_pool.ts --network sepoliaClient2
  */
 
 import { ethers } from "hardhat";
@@ -29,6 +29,8 @@ import * as path from "path";
 import {
   getNetworkConfig,
   getChainRole,
+  getChainByRole,
+  getAllChains,
   getCCTPDeploymentFile,
   getGovernanceDeploymentFile,
   getPrivacyPoolDeploymentFile,
@@ -41,6 +43,17 @@ import { createNonceManager, loadDeployment, saveDeployment } from "./deploy-uti
 const poseidonBytecode = JSON.parse(
   fs.readFileSync(path.join(__dirname, "..", "lib", "poseidon_bytecode.json"), "utf-8")
 );
+
+// On fast-block chains (e.g. OP Sepolia) the client initialize() that immediately follows the
+// PrivacyPoolClient deploy must pass an EXPLICIT gasLimit. The RPC backend serving
+// eth_estimateGas has not yet synced the just-deployed contract's code, so it estimates a no-op
+// call to a code-less address (~27k gas) and the real tx then runs out of gas mid-initialize.
+// The client init's real cost (~136k) sits safely under this fixed limit. The hub initialize()
+// is left on normal auto-estimation: it runs on Ethereum Sepolia (slow blocks, reliable
+// estimation) and its cost (~1.5M gas — merkle tree setup + module delegatecalls) is too large
+// and change-prone to safely hardcode. A hub deployed on a fast-block chain would need the same
+// explicit-limit treatment as the client.
+const CLIENT_INIT_GAS_LIMIT = 300_000;
 
 interface HubDeploymentInfo {
   chainId: number;
@@ -286,7 +299,7 @@ async function deployClient(role: ChainRole): Promise<ClientDeploymentInfo> {
   const network = await ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
   const config = getNetworkConfig();
-  const chain = role === "clientA" ? config.clientA : config.clientB;
+  const chain = getChainByRole(role);
   const domain = chain.cctpDomain;
   const name = chain.name;
   const nm = await createNonceManager(deployer);
@@ -350,7 +363,7 @@ async function deployClient(role: ChainRole): Promise<ClientDeploymentInfo> {
     hubDomain,
     hubPoolBytes32,
     deployer.address,
-    nm.override()
+    { ...nm.override(), gasLimit: CLIENT_INIT_GAS_LIMIT }
   );
   await initTx.wait();
   console.log("   PrivacyPoolClient initialized");
@@ -396,12 +409,11 @@ async function deployClient(role: ChainRole): Promise<ClientDeploymentInfo> {
 async function main() {
   const network = await ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
-  const config = getNetworkConfig();
 
   const role = getChainRole(chainId);
   if (!role) {
     console.error(`Unknown chain ID: ${chainId}`);
-    console.error(`Configured chains: hub=${config.hub.chainId}, clientA=${config.clientA.chainId}, clientB=${config.clientB.chainId}`);
+    console.error(`Configured chains: ${getAllChains().map((c) => `${c.role}=${c.chainId}`).join(", ")}`);
     process.exit(1);
   }
 

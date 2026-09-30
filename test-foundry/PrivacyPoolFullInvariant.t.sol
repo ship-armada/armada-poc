@@ -11,6 +11,7 @@ import "../contracts/privacy-pool/interfaces/IPrivacyPool.sol";
 import "../contracts/privacy-pool/storage/PrivacyPoolStorage.sol";
 import "../contracts/cctp/MockUSDCV2.sol";
 import "../contracts/cctp/MockCCTPV2.sol";
+import "./helpers/PoseidonLinker.sol";
 
 // ══════════════════════════════════════════════════════════════════════════
 // INV-1: Every merkle leaf backed by USDC transfer
@@ -177,7 +178,7 @@ contract PrivacyPoolFullHandler is Test {
 /// @title PrivacyPoolFullInvariantTest — Integration invariant tests for PrivacyPool
 /// @dev Tests INV-1 (USDC backing), INV-2 (nullifier write-once via code analysis),
 ///      INV-3 (merkle root consistency), INV-4 (tree number monotonic)
-contract PrivacyPoolFullInvariantTest is Test {
+contract PrivacyPoolFullInvariantTest is Test, PoseidonLinker {
     PrivacyPool public pool;
     ShieldModule public shieldModule;
     TransactModule public transactModule;
@@ -195,6 +196,10 @@ contract PrivacyPoolFullInvariantTest is Test {
     uint256 constant USDC_PER_SHIELDER = 10_000_000 * 1e6;
 
     function setUp() public {
+        // Install the real generated Poseidon bytecode at the pinned link addresses
+        // (foundry.toml `libraries`); the in-tree PoseidonLibs sources are stubs.
+        _linkRealPoseidon();
+
         owner = address(this);
         treasury = address(0xFEE);
 

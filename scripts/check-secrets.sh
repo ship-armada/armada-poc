@@ -62,6 +62,11 @@ for f in "${FILES[@]}"; do
       break
     fi
   done
+  # Directory-prefix allowlist (e.g. golden-vector corpus: calldata, commitments,
+  # and EdDSA signature components are deterministic public test vectors, not secrets)
+  if [[ "$skip" == false && "$f" == test-foundry/fixtures/contract-vectors/* ]]; then
+    skip=true
+  fi
   if [[ "$skip" == false ]]; then
     for adir in "${ALLOWED_DIRS[@]}"; do
       if [[ "$f" == "$adir"* ]]; then

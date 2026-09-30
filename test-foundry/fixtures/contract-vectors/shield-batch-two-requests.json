@@ -1,0 +1,273 @@
+{
+  "id": "shield-batch-two-requests",
+  "category": "shield",
+  "description": "Two shield requests in one call (5 + 7 USDC): single Shield event with two entries, two leaves inserted atomically.",
+  "specRefs": [
+    "§7.1",
+    "I-5"
+  ],
+  "proofsBypassed": false,
+  "dependsOn": [
+    "shield-direct-erc20"
+  ],
+  "setup": [
+    "MockUSDCV2.mint(ALICE, 10_000 USDC), mint(BOB, 1_000 USDC), mint(CAROL, 1_000 USDC) by DEPLOYER (minter)",
+    "USDC.approve(POOL, uint256.max) from ALICE, BOB and CAROL"
+  ],
+  "requiresImpersonation": null,
+  "setupTxs": [],
+  "tx": {
+    "from": "ALICE",
+    "fromAddress": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    "to": "POOL",
+    "toAddress": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+    "calldata": "0xcd6a3d7f0000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000021b8350423b22a8273b598d6053043ec741b952c71aa7fa53c587d77b26e5625900000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004c4b40111568561a74864d0bf862a28e63d90dbe89c9e51614bd00fc6c0daf194bf490deb18d6ed16e57c40875e26df96312e2753e1b249ecf20913bc9081c351fc6dde6fa3a3693aecafc178991c5c8167a77253803710ce3b5f9ff4a329576f690e7aaeedab89be3f3039c2ed313298cd3084e61c041077d7b4b223002d2884b96d70d62c9d59d410340f0af331bf276d2c8f698599b97d2b20c4ecafb1c3cb6bc4100000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006acfc0c4b044dc194589de7132fb071ac1f82db0e5f8b40555bab1a4c405b22e61faecaf63b5b423a044d4599268c6942f2cc49dfbad4bdfeade96c5fd61708deec19a7137bfdec605efdf42b8d8d70aab29e48520b98c8e6800e9834882ce726d4d2482e59c3fe39d9cf4d4ca12de384a241a4db735298bde3621adb88c20f854023d",
+    "value": "0x0",
+    "decodedCall": {
+      "function": "shield",
+      "args": {
+        "requests": [
+          {
+            "preimage": {
+              "npk": "0x1b8350423b22a8273b598d6053043ec741b952c71aa7fa53c587d77b26e56259",
+              "token": {
+                "tokenType": 0,
+                "tokenAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+                "tokenSubID": 0
+              },
+              "value": "0x4c4b40"
+            },
+            "ciphertext": {
+              "encryptedBundle": [
+                "0x111568561a74864d0bf862a28e63d90dbe89c9e51614bd00fc6c0daf194bf490",
+                "0xdeb18d6ed16e57c40875e26df96312e2753e1b249ecf20913bc9081c351fc6dd",
+                "0xe6fa3a3693aecafc178991c5c8167a77253803710ce3b5f9ff4a329576f690e7"
+              ],
+              "shieldKey": "0xaaeedab89be3f3039c2ed313298cd3084e61c041077d7b4b223002d2884b96d7"
+            }
+          },
+          {
+            "preimage": {
+              "npk": "0x0d62c9d59d410340f0af331bf276d2c8f698599b97d2b20c4ecafb1c3cb6bc41",
+              "token": {
+                "tokenType": 0,
+                "tokenAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+                "tokenSubID": 0
+              },
+              "value": "0x6acfc0"
+            },
+            "ciphertext": {
+              "encryptedBundle": [
+                "0xc4b044dc194589de7132fb071ac1f82db0e5f8b40555bab1a4c405b22e61faec",
+                "0xaf63b5b423a044d4599268c6942f2cc49dfbad4bdfeade96c5fd61708deec19a",
+                "0x7137bfdec605efdf42b8d8d70aab29e48520b98c8e6800e9834882ce726d4d24"
+              ],
+              "shieldKey": "0x82e59c3fe39d9cf4d4ca12de384a241a4db735298bde3621adb88c20f854023d"
+            }
+          }
+        ],
+        "integrator": "0x0000000000000000000000000000000000000000"
+      }
+    }
+  },
+  "preState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x2",
+    "pool.merkleRoot": "0x25699c654e2adc45fa87f2b86f3e303b2e610e32064280edefe74c6c3c93fcab",
+    "pool.lastEventBlock": "0x87",
+    "usdc.balanceOf[POOL]": "0x5ee40a7",
+    "usdc.balanceOf[ALICE]": "0x24e160239",
+    "usdc.balanceOf[BOB]": "0x3b9aca00",
+    "usdc.balanceOf[CAROL]": "0x3b9aca00",
+    "usdc.balanceOf[TREASURY]": "0x7a120",
+    "usdc.balanceOf[DEPLOYER]": "0x0",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x0"
+  },
+  "result": {
+    "status": 1,
+    "txHash": "0x95f550d48e133f69eb664b84b8887ad14a516b4a1d0d4187831fe4367759e8d2",
+    "blockNumber": 136,
+    "gasUsed": "0xd1e5f",
+    "returnData": null,
+    "revert": null,
+    "events": [
+      {
+        "logIndex": 0,
+        "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+        "topics": [
+          "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "0x00000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c8",
+          "0x000000000000000000000000e6e340d132b5f46d1e472debcd681b2abc16e57e"
+        ],
+        "data": "0x00000000000000000000000000000000000000000000000000000000004be998",
+        "decoded": {
+          "name": "Transfer",
+          "args": {
+            "from": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+            "to": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+            "value": "0x4be998"
+          }
+        }
+      },
+      {
+        "logIndex": 1,
+        "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+        "topics": [
+          "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "0x00000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c8",
+          "0x000000000000000000000000610178da211fef7d417bc0e6fed39f05609ad788"
+        ],
+        "data": "0x00000000000000000000000000000000000000000000000000000000000061a8",
+        "decoded": {
+          "name": "Transfer",
+          "args": {
+            "from": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+            "to": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+            "value": "0x61a8"
+          }
+        }
+      },
+      {
+        "logIndex": 2,
+        "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+        "topics": [
+          "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "0x00000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c8",
+          "0x000000000000000000000000e6e340d132b5f46d1e472debcd681b2abc16e57e"
+        ],
+        "data": "0x00000000000000000000000000000000000000000000000000000000006a4708",
+        "decoded": {
+          "name": "Transfer",
+          "args": {
+            "from": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+            "to": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+            "value": "0x6a4708"
+          }
+        }
+      },
+      {
+        "logIndex": 3,
+        "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+        "topics": [
+          "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "0x00000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c8",
+          "0x000000000000000000000000610178da211fef7d417bc0e6fed39f05609ad788"
+        ],
+        "data": "0x00000000000000000000000000000000000000000000000000000000000088b8",
+        "decoded": {
+          "name": "Transfer",
+          "args": {
+            "from": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+            "to": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+            "value": "0x88b8"
+          }
+        }
+      },
+      {
+        "logIndex": 4,
+        "address": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+        "topics": [
+          "0x3a5b9dc26075a3801a6ddccf95fec485bb7500a91b44cec1add984c21ee6db3b"
+        ],
+        "data": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000032000000000000000000000000000000000000000000000000000000000000000021b8350423b22a8273b598d6053043ec741b952c71aa7fa53c587d77b26e5625900000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004be9980d62c9d59d410340f0af331bf276d2c8f698599b97d2b20c4ecafb1c3cb6bc4100000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006a47080000000000000000000000000000000000000000000000000000000000000002111568561a74864d0bf862a28e63d90dbe89c9e51614bd00fc6c0daf194bf490deb18d6ed16e57c40875e26df96312e2753e1b249ecf20913bc9081c351fc6dde6fa3a3693aecafc178991c5c8167a77253803710ce3b5f9ff4a329576f690e7aaeedab89be3f3039c2ed313298cd3084e61c041077d7b4b223002d2884b96d7c4b044dc194589de7132fb071ac1f82db0e5f8b40555bab1a4c405b22e61faecaf63b5b423a044d4599268c6942f2cc49dfbad4bdfeade96c5fd61708deec19a7137bfdec605efdf42b8d8d70aab29e48520b98c8e6800e9834882ce726d4d2482e59c3fe39d9cf4d4ca12de384a241a4db735298bde3621adb88c20f854023d000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000061a800000000000000000000000000000000000000000000000000000000000088b8",
+        "decoded": {
+          "name": "Shield",
+          "args": {
+            "treeNumber": "0x0",
+            "startPosition": "0x2",
+            "commitments": [
+              {
+                "npk": "0x1b8350423b22a8273b598d6053043ec741b952c71aa7fa53c587d77b26e56259",
+                "token": {
+                  "tokenType": "0x0",
+                  "tokenAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+                  "tokenSubID": "0x0"
+                },
+                "value": "0x4be998"
+              },
+              {
+                "npk": "0x0d62c9d59d410340f0af331bf276d2c8f698599b97d2b20c4ecafb1c3cb6bc41",
+                "token": {
+                  "tokenType": "0x0",
+                  "tokenAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+                  "tokenSubID": "0x0"
+                },
+                "value": "0x6a4708"
+              }
+            ],
+            "shieldCiphertext": [
+              {
+                "encryptedBundle": [
+                  "0x111568561a74864d0bf862a28e63d90dbe89c9e51614bd00fc6c0daf194bf490",
+                  "0xdeb18d6ed16e57c40875e26df96312e2753e1b249ecf20913bc9081c351fc6dd",
+                  "0xe6fa3a3693aecafc178991c5c8167a77253803710ce3b5f9ff4a329576f690e7"
+                ],
+                "shieldKey": "0xaaeedab89be3f3039c2ed313298cd3084e61c041077d7b4b223002d2884b96d7"
+              },
+              {
+                "encryptedBundle": [
+                  "0xc4b044dc194589de7132fb071ac1f82db0e5f8b40555bab1a4c405b22e61faec",
+                  "0xaf63b5b423a044d4599268c6942f2cc49dfbad4bdfeade96c5fd61708deec19a",
+                  "0x7137bfdec605efdf42b8d8d70aab29e48520b98c8e6800e9834882ce726d4d24"
+                ],
+                "shieldKey": "0x82e59c3fe39d9cf4d4ca12de384a241a4db735298bde3621adb88c20f854023d"
+              }
+            ],
+            "fees": [
+              "0x61a8",
+              "0x88b8"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "postState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x4",
+    "pool.merkleRoot": "0x0fd7423a95dc2a00b20e863326e07b909aaa0981a7b77bf4cf5c0bd25cd591b1",
+    "pool.lastEventBlock": "0x88",
+    "usdc.balanceOf[POOL]": "0x6a47147",
+    "usdc.balanceOf[ALICE]": "0x24d5ee739",
+    "usdc.balanceOf[BOB]": "0x3b9aca00",
+    "usdc.balanceOf[CAROL]": "0x3b9aca00",
+    "usdc.balanceOf[TREASURY]": "0x88b80",
+    "usdc.balanceOf[DEPLOYER]": "0x0",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x0",
+    "pool.rootHistory[postTree][postRoot]": true
+  },
+  "context": {
+    "chainId": 31337,
+    "network": "local fixturenet (Anvil, hub chain only)",
+    "deployments": {
+      "privacyPool": "deployments/privacy-pool-hub.json",
+      "cctp": "deployments/hub-v3.json",
+      "feeModule": "deployments/fee-module-hub.json",
+      "governance": "deployments/governance-hub.json"
+    },
+    "addressBook": {
+      "DEPLOYER": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "ALICE": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "BOB": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "CAROL": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "TREASURY": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+      "POOL": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+      "SHIELD_MODULE": "0xc5a5C42992dECbae36851359345FE25997F5C42d",
+      "TRANSACT_MODULE": "0x67d269191c92Caf3cD7723F116c85e6E9bf55933",
+      "MERKLE_MODULE": "0x7a2088a1bFc9d81c55368AE168C2C02570cB814F",
+      "VERIFIER_MODULE": "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
+      "HOOK_ROUTER": "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
+      "GASLESS_WRAPPER": "0xCD8a1C3ba11CF5ECfa6267617243239504a98d90",
+      "TOKEN_MESSENGER": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+      "MESSAGE_TRANSMITTER": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+      "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "FEE_MODULE": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+      "CLIENT_POOL": "0x0000000000000000000000000000000000C11EA7",
+      "MOCK_PAUSE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+      "MOCK_FEE_MODULE": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f"
+    }
+  },
+  "capturedAt": "2026-09-25T17:02:04.728Z"
+}

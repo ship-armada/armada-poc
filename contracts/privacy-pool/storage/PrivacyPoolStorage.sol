@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
-import "../../railgun/logic/Globals.sol";
+import "../types/PoolTypes.sol";
 
 /**
  * @title PrivacyPoolStorage
@@ -122,7 +122,10 @@ abstract contract PrivacyPoolStorage {
     uint256 internal constant TREE_DEPTH = 16;
 
     /// @notice Zero value for empty leaves
-    bytes32 public constant ZERO_VALUE = bytes32(uint256(keccak256("Railgun")) % SNARK_SCALAR_FIELD);
+    /// @dev Consensus-critical value, pinned as a hard-coded literal (spec section 2).
+    ///      The public getter is part of the frozen ABI.
+    bytes32 public constant ZERO_VALUE =
+        0x0488f89b25bc7011eaf6a5edce71aeafb9fe706faa3c0a5cd9cbe868ae3b9ffc;
 
     /// @notice Index of next leaf to be inserted
     uint256 public nextLeafIndex;

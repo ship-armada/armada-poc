@@ -1,4 +1,8 @@
 // SPDX-License-Identifier: MIT
+// ABOUTME: Shield logic module for the privacy pool (local ERC20 shields and inbound
+// ABOUTME: cross-chain shields). Executes exclusively via delegatecall from the
+// ABOUTME: PrivacyPool router, so all state lives in the router's storage
+// ABOUTME: (see PrivacyPoolStorage).
 pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -8,35 +12,35 @@ import "../storage/PrivacyPoolStorage.sol";
 import "../interfaces/IShieldModule.sol";
 import "../interfaces/IMerkleModule.sol";
 import "../types/CCTPTypes.sol";
-import "../../railgun/logic/Poseidon.sol";
+import "../types/PoseidonLibs.sol";
 import "../../governance/IShieldPauseController.sol";
-import "../../governance/IArmadaGovernance.sol";
 import "../../fees/IArmadaFeeModule.sol";
 
-/**
- * @title ShieldModule
- * @notice Handles shield operations for the privacy pool
- * @dev Called via delegatecall from PrivacyPool router.
- *      Based on Railgun's RailgunSmartWallet.shield() and RailgunLogic.transferTokenIn().
- *
- *      Supports two shield flows:
- *      1. Local shield: User on Hub chain calls shield() directly
- *      2. Cross-chain shield: Client sends CCTP message, Hub calls processIncomingShield()
- */
+/// @title ShieldModule
+/// @notice Entry-point logic for moving value into the pool's commitment tree
+///         (behavior spec section 7).
+/// @dev Two flows converge on the same leaf-insertion path:
+///        1. Local shield — a user on this chain calls the router's `shield`, which
+///           delegatecalls here; tokens are pulled from the caller.
+///        2. Cross-chain shield-in — a CCTP burn on a client chain mints USDC to the
+///           pool and the router's message handler delegatecalls `processIncomingShield`;
+///           tokens are already in the pool's balance.
+///      Fee selection is three-way (spec section 7.3): privileged callers pay nothing;
+///      otherwise the configured `feeModule` prices the shield; with no fee module the
+///      flat `shieldFee` basis-point rate applies (spec section 2.4, modeled in the
+///      Lean fee reference).
 contract ShieldModule is PrivacyPoolStorage, IShieldModule {
     using SafeERC20 for IERC20;
 
-    /// @notice Basis points denominator (100% = 10000)
+    /// @notice Denominator for basis-point fee rates (100% = 10000).
     uint120 private constant BASIS_POINTS = 10000;
 
-    /**
-     * @notice Shield tokens locally (user on Hub chain)
-     * @dev Transfers tokens from sender, creates commitments, inserts into merkle tree.
-     *      Fees are deducted from the shielded amount.
-     *
-     * @param _shieldRequests Array of shield requests to process
-     * @param integrator Integrator address for fee split (address(0) for no integrator)
-     */
+    /// @notice Shields one or more notes in a single atomic batch.
+    /// @dev Emits `Shield` with the PRE-insertion tree position (spec OQ-1) before the
+    ///      leaves are inserted, so wallets can scan logs in emission order. Any failed
+    ///      check reverts the whole batch, including earlier token pulls.
+    /// @param _shieldRequests Notes to shield, processed in order.
+    /// @param integrator Integrator credited for the fee split (zero address for none).
     function shield(ShieldRequest[] calldata _shieldRequests, address integrator) external override onlyDelegatecall {
         _requireShieldsNotPaused();
         uint256 numRequests = _shieldRequests.length;
@@ -53,7 +57,7 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
             // Validate the commitment preimage
             _validateCommitmentPreimage(_shieldRequests[i].preimage);
 
-            // Transfer tokens in and calculate fee-adjusted commitment
+            // Pull tokens from the caller and derive the fee-adjusted note
             (commitments[i], fees[i]) = _transferTokenIn(_shieldRequests[i].preimage, integrator);
 
             // Hash commitment for merkle tree
@@ -63,146 +67,96 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
             shieldCiphertext[i] = _shieldRequests[i].ciphertext;
         }
 
-        // Get insertion position before inserting
+        // Read the insertion position before inserting (router view is pre-insertion)
         (uint256 insertionTreeNumber, uint256 insertionStartIndex) = IMerkleModule(address(this))
             .getInsertionTreeNumberAndStartingIndex(numRequests);
 
-        // Emit Shield event (for wallet sync)
+        // Announce the new notes for wallet sync
         emit Shield(insertionTreeNumber, insertionStartIndex, commitments, shieldCiphertext, fees);
 
-        // Insert leaves into merkle tree via delegatecall to MerkleModule
+        // Append the leaves to the tree via the router's self-call gate
         IMerkleModule(address(this)).insertLeaves(insertionLeaves);
 
-        // Update last event block for wallet sync
+        // Record the liveness marker for wallet sync
         lastEventBlock = block.number;
     }
 
-    /**
-     * @notice Process an incoming cross-chain shield from a Client
-     * @dev Called by Router when CCTP message arrives with MessageType.SHIELD.
-     *      USDC has already been minted to the PrivacyPool by CCTP.
-     *      This function creates a commitment and inserts it into the merkle tree.
-     *
-     * @param amount Amount of USDC received (from CCTP) = grossAmount - feeExecuted
-     * @param datas Shield note array from the CCTP payload. Index 0 is the recipient note (which
-     *        absorbs the CCTP protocol fee); any further notes (e.g. a relayer fee note) are minted
-     *        at their full declared value.
-     */
-    function processIncomingShield(uint256 amount, ShieldData[] calldata datas) external override onlyDelegatecall {
+    /// @notice Processes a cross-chain shield-in after CCTP has minted USDC to the pool.
+    /// @dev Reached only from the router's CCTP message handlers. `amount` is net of the
+    ///      CCTP protocol fee, while `data.value` is the gross amount burned on the client
+    ///      chain, so the net amount must not exceed the declared gross. Fees (if any) are
+    ///      paid out of the pool's own USDC balance, and the privileged-caller check
+    ///      inspects `msg.sender` — here the hook router or token messenger, which is
+    ///      normally not privileged.
+    /// @param amount Net USDC amount minted to the pool.
+    /// @param data Decoded shield payload from the CCTP hook data.
+    function processIncomingShield(uint256 amount, ShieldData calldata data) external override onlyDelegatecall {
         _requireShieldsNotPaused();
-        // Verify caller is the router (self, since we're called via delegatecall)
-        // This is implicitly enforced by the router only calling this on valid CCTP messages
 
-        uint256 n = datas.length;
-        require(n > 0, "ShieldModule: no shield notes");
+        // The delivered amount must fit within the gross burn declared on the client chain
+        require(amount <= uint256(data.value), "ShieldModule: Amount exceeds declared value");
 
-        // Fee notes (index >= 1) are minted at their full declared value; the recipient note (index 0)
-        // absorbs the CCTP protocol fee. `amount = grossAmount - feeExecuted` (CCTP deducts the fee at
-        // protocol level), so the recipient is credited `amount - feeSum`.
-        uint256 feeSum = 0;
-        for (uint256 i = 1; i < n; i++) {
-            feeSum += uint256(datas[i].value);
-        }
-        require(amount > feeSum, "ShieldModule: fee notes exceed received amount");
+        uint256 commitmentAmount = amount;
 
-        // Sanity: never credit the recipient more than the total declared (gross) burn on the source.
-        require(amount <= _sumDeclared(datas), "ShieldModule: Amount exceeds declared value");
-
-        // Build every note, apply its (per-note integrator) shield fee, then insert ALL leaves in one
-        // batch with a SINGLE Shield event — matching the same-chain shield() event shape (one event
-        // with N commitments) rather than emitting one event per note. Tokens are already in the
-        // contract from the CCTP mint, so the fee helper transfers out but never pulls.
-        bytes32[] memory insertionLeaves = new bytes32[](n);
-        CommitmentPreimage[] memory commitments = new CommitmentPreimage[](n);
-        ShieldCiphertext[] memory shieldCiphertext = new ShieldCiphertext[](n);
-        uint256[] memory fees = new uint256[](n);
-
-        for (uint256 i = 0; i < n; i++) {
-            // Recipient (index 0) is credited net of the fee notes + the CCTP fee; fee notes at full value.
-            uint256 noteValue = i == 0 ? amount - feeSum : uint256(datas[i].value);
-            ShieldRequest memory request = _shieldRequestFromData(datas[i], noteValue);
-            _validateCommitmentPreimageMemory(request.preimage);
-            (CommitmentPreimage memory adjustedPreimage, uint256 fee) =
-                _applyShieldFee(request.preimage, datas[i].integrator);
-            commitments[i] = adjustedPreimage;
-            shieldCiphertext[i] = request.ciphertext;
-            fees[i] = fee;
-            insertionLeaves[i] = _hashCommitment(adjustedPreimage);
-        }
-
-        (uint256 insertionTreeNumber, uint256 insertionStartIndex) =
-            IMerkleModule(address(this)).getInsertionTreeNumberAndStartingIndex(n);
-        emit Shield(insertionTreeNumber, insertionStartIndex, commitments, shieldCiphertext, fees);
-        IMerkleModule(address(this)).insertLeaves(insertionLeaves);
-        lastEventBlock = block.number;
-    }
-
-    /// @dev Sum the declared (gross) values across all incoming shield notes.
-    function _sumDeclared(ShieldData[] calldata datas) internal pure returns (uint256 total) {
-        for (uint256 i = 0; i < datas.length; i++) {
-            total += uint256(datas[i].value);
-        }
-    }
-
-    /// @dev Build a USDC ShieldRequest from a CCTP ShieldData with an explicit (fee/CCTP-adjusted) value.
-    function _shieldRequestFromData(ShieldData calldata data, uint256 value)
-        internal
-        view
-        returns (ShieldRequest memory)
-    {
-        return ShieldRequest({
+        // Cross-chain value always arrives as USDC on this chain
+        ShieldRequest[] memory requests = new ShieldRequest[](1);
+        requests[0] = ShieldRequest({
             preimage: CommitmentPreimage({
                 npk: data.npk,
-                token: TokenData({tokenType: TokenType.ERC20, tokenAddress: usdc, tokenSubID: 0}),
-                value: uint120(value)
+                token: TokenData({
+                    tokenType: TokenType.ERC20,
+                    tokenAddress: usdc,
+                    tokenSubID: 0
+                }),
+                value: uint120(commitmentAmount)
             }),
             ciphertext: ShieldCiphertext({
                 encryptedBundle: data.encryptedBundle,
                 shieldKey: data.shieldKey
             })
         });
+
+        // Tokens are already in the contract from the CCTP mint
+        _processInternalShield(requests[0], data.integrator);
     }
 
-    /**
-     * @notice Apply the shield fee to a note whose tokens are ALREADY in the contract (cross-chain
-     *         CCTP mint — no pull). Transfers the fee out (armada take → treasury, integrator fee →
-     *         integrator), records it, and returns the fee-adjusted preimage + total fee. Does NOT
-     *         hash, insert, or emit — `processIncomingShield` batches those across all notes so a
-     *         multi-note cross-chain shield produces a single Shield event.
-     * @param preimage The commitment preimage (with its gross value) to fee-adjust.
-     * @param integrator Integrator address for fee split (address(0) for no integrator).
-     */
-    function _applyShieldFee(CommitmentPreimage memory preimage, address integrator)
-        internal
-        returns (CommitmentPreimage memory adjustedPreimage, uint256 fee)
-    {
-        adjustedPreimage = preimage;
-        fee = 0;
+    /// @notice Shields a note whose tokens are already held by the pool.
+    /// @dev Used by the cross-chain path: validation is identical to a local shield, but
+    ///      instead of pulling tokens the fee (if any) is settled out of the pool's own
+    ///      balance. Emits `Shield` and inserts the leaf exactly like `shield`.
+    /// @param _request The shield request to process.
+    /// @param integrator Integrator credited for the fee split (zero address for none).
+    function _processInternalShield(ShieldRequest memory _request, address integrator) internal {
+        // Validate the commitment preimage
+        _validateCommitmentPreimageMemory(_request.preimage);
 
-        // Privileged callers (registered adapters) bypass the fee.
-        if (!_isPrivilegedShieldCaller(msg.sender)) {
+        // Calculate fee (if any). Privileged callers bypass fee.
+        uint256 fee = 0;
+        CommitmentPreimage memory adjustedPreimage = _request.preimage;
+
+        if (!privilegedShieldCallers[msg.sender]) {
             if (feeModule != address(0)) {
                 // Fee module path: centralized fee calculation with integrator support
-                uint256 amount = uint256(preimage.value);
+                uint256 amount = uint256(_request.preimage.value);
                 (uint256 armadaTake, uint256 integratorFee, uint256 totalFee) =
                     IArmadaFeeModule(feeModule).calculateShieldFee(integrator, amount);
 
                 adjustedPreimage.value = uint120(amount - totalFee);
                 fee = totalFee;
 
-                // Transfer armada take to treasury
+                // Pay the protocol share to the treasury from the pool's balance
                 if (armadaTake > 0 && treasury != address(0)) {
                     IERC20(usdc).safeTransfer(treasury, armadaTake);
                 }
 
-                // Transfer integrator fee directly to integrator
+                // Pay the integrator share directly to the integrator
                 if (integratorFee > 0 && integrator != address(0)) {
                     IERC20(usdc).safeTransfer(integrator, integratorFee);
                 }
 
-                // Record fee in fee module
+                // Record the fee in the fee module
                 IArmadaFeeModule(feeModule).recordShieldFee(
-                    preimage.token.tokenAddress,
+                    _request.preimage.token.tokenAddress,
                     integrator,
                     amount,
                     armadaTake,
@@ -210,74 +164,84 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
                 );
             } else if (shieldFee > 0) {
                 // Flat fee fallback path (used when feeModule == address(0))
-                (uint120 base, uint120 feeAmount) = _getFee(preimage.value, true, shieldFee);
+                (uint120 base, uint120 feeAmount) = _getFee(_request.preimage.value, true, shieldFee);
                 adjustedPreimage.value = base;
                 fee = feeAmount;
 
-                // Transfer fee to treasury
+                // Pay the fee to the treasury from the pool's balance
                 if (feeAmount > 0 && treasury != address(0)) {
                     IERC20(usdc).safeTransfer(treasury, feeAmount);
                 }
             }
         }
+
+        // Prepare arrays for merkle insertion and events
+        bytes32[] memory insertionLeaves = new bytes32[](1);
+        CommitmentPreimage[] memory commitments = new CommitmentPreimage[](1);
+        ShieldCiphertext[] memory shieldCiphertext = new ShieldCiphertext[](1);
+        uint256[] memory fees = new uint256[](1);
+
+        commitments[0] = adjustedPreimage;
+        shieldCiphertext[0] = _request.ciphertext;
+        fees[0] = fee;
+        insertionLeaves[0] = _hashCommitment(adjustedPreimage);
+
+        // Read the insertion position before inserting (router view is pre-insertion)
+        (uint256 insertionTreeNumber, uint256 insertionStartIndex) = IMerkleModule(address(this))
+            .getInsertionTreeNumberAndStartingIndex(1);
+
+        // Announce the new note for wallet sync
+        emit Shield(insertionTreeNumber, insertionStartIndex, commitments, shieldCiphertext, fees);
+
+        // Append the leaf to the tree via the router's self-call gate
+        IMerkleModule(address(this)).insertLeaves(insertionLeaves);
+
+        // Record the liveness marker for wallet sync
+        lastEventBlock = block.number;
     }
 
     // ══════════════════════════════════════════════════════════════════════════
     // INTERNAL HELPERS
     // ══════════════════════════════════════════════════════════════════════════
 
-    /**
-     * @notice True if `caller` is a trusted yield adapter per the governance registry.
-     * @dev Fee-exempt shield path (issue #370). The gate is `authorized OR withdraw-only`, mirroring
-     *      ArmadaYieldAdapter._requireAuthorizedOrWithdrawOnly, so an adapter's wind-down exit re-shields
-     *      stay fee-exempt until it is fully deauthorized (at which point the adapter blocks itself, so
-     *      there is no dangling privilege). When adapterRegistry is unset, no caller is privileged.
-     *      The `||` short-circuits, so the common authorized case is a single STATICCALL.
-     */
-    function _isPrivilegedShieldCaller(address caller) internal view returns (bool) {
-        address reg = adapterRegistry;
-        if (reg == address(0)) return false;
-        return IAdapterRegistry(reg).authorizedAdapters(caller)
-            || IAdapterRegistry(reg).withdrawOnlyAdapters(caller);
-    }
-
-    /**
-     * @notice Validate a commitment preimage (calldata version)
-     * @param _note The commitment preimage to validate
-     */
+    /// @notice Enforces the per-note shield constraints (spec section 7.1 step a).
+    /// @dev Check order is pinned: positive value, blocklist, field-element npk, then the
+    ///      (currently unreachable) ERC721 value check.
+    /// @param _note The commitment preimage to validate.
     function _validateCommitmentPreimage(CommitmentPreimage calldata _note) internal view {
         require(_note.value > 0, "ShieldModule: Invalid value");
         require(!tokenBlocklist[_note.token.tokenAddress], "ShieldModule: Token blocked");
         require(uint256(_note.npk) < SNARK_SCALAR_FIELD, "ShieldModule: Invalid npk");
 
-        // ERC721 notes should have value of 1
+        // ERC721 notes must carry a value of exactly 1
         if (_note.token.tokenType == TokenType.ERC721) {
             require(_note.value == 1, "ShieldModule: Invalid NFT value");
         }
     }
 
-    /**
-     * @notice Validate a commitment preimage (memory version)
-     * @param _note The commitment preimage to validate
-     */
+    /// @notice Memory-struct variant of `_validateCommitmentPreimage` for the
+    ///         cross-chain path, where the request is constructed on-chain.
+    /// @param _note The commitment preimage to validate.
     function _validateCommitmentPreimageMemory(CommitmentPreimage memory _note) internal view {
         require(_note.value > 0, "ShieldModule: Invalid value");
         require(!tokenBlocklist[_note.token.tokenAddress], "ShieldModule: Token blocked");
         require(uint256(_note.npk) < SNARK_SCALAR_FIELD, "ShieldModule: Invalid npk");
 
-        // ERC721 notes should have value of 1
+        // ERC721 notes must carry a value of exactly 1
         if (_note.token.tokenType == TokenType.ERC721) {
             require(_note.value == 1, "ShieldModule: Invalid NFT value");
         }
     }
 
-    /**
-     * @notice Transfer tokens into the contract and calculate fee-adjusted commitment
-     * @param _note The commitment preimage (with original value)
-     * @param integrator Integrator address for fee split (address(0) for no integrator)
-     * @return adjustedNote The fee-adjusted commitment preimage
-     * @return fee The fee amount
-     */
+    /// @notice Pulls the tokens for a local shield and applies the fee (spec section 7.3).
+    /// @dev Every pull into the pool's own balance is balance-delta checked, which rejects
+    ///      fee-on-transfer and rebasing tokens; the fee legs to treasury/integrator are
+    ///      not delta-checked. Selects one of three branches, in order: privileged caller
+    ///      (no fee), configured fee module (split fee), flat basis-point fallback.
+    /// @param _note The commitment preimage as requested (gross value).
+    /// @param integrator Integrator credited for the fee split (zero address for none).
+    /// @return adjustedNote The note with its value reduced by the fee taken.
+    /// @return fee The total fee charged.
     function _transferTokenIn(
         CommitmentPreimage calldata _note,
         address integrator
@@ -286,8 +250,8 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
 
         IERC20 token = IERC20(_note.token.tokenAddress);
 
-        if (_isPrivilegedShieldCaller(msg.sender)) {
-            // Privileged callers (e.g. yield adapter) bypass all fees
+        if (privilegedShieldCallers[msg.sender]) {
+            // Privileged callers (e.g. the yield adapter) bypass all fees
             adjustedNote = CommitmentPreimage({
                 npk: _note.npk,
                 token: _note.token,
@@ -295,7 +259,7 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
             });
             fee = 0;
 
-            // Transfer full amount to this contract
+            // Pull the full amount into the pool
             uint256 balanceBefore = token.balanceOf(address(this));
             token.safeTransferFrom(msg.sender, address(this), _note.value);
             uint256 balanceAfter = token.balanceOf(address(this));
@@ -314,23 +278,23 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
             });
             fee = totalFee;
 
-            // Transfer base amount to this contract
+            // Pull the net amount into the pool
             uint256 balanceBefore = token.balanceOf(address(this));
             token.safeTransferFrom(msg.sender, address(this), base);
             uint256 balanceAfter = token.balanceOf(address(this));
             require(balanceAfter - balanceBefore == base, "ShieldModule: Transfer failed");
 
-            // Transfer armada take to treasury
+            // Pull the protocol share to the treasury
             if (armadaTake > 0 && treasury != address(0)) {
                 token.safeTransferFrom(msg.sender, treasury, armadaTake);
             }
 
-            // Transfer integrator fee directly to integrator
+            // Pull the integrator share directly to the integrator
             if (integratorFee > 0 && integrator != address(0)) {
                 token.safeTransferFrom(msg.sender, integrator, integratorFee);
             }
 
-            // Record fee in fee module
+            // Record the fee in the fee module
             IArmadaFeeModule(feeModule).recordShieldFee(
                 _note.token.tokenAddress,
                 integrator,
@@ -348,27 +312,29 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
             });
             fee = feeAmount;
 
-            // Transfer base amount to this contract
+            // Pull the net amount into the pool
             uint256 balanceBefore = token.balanceOf(address(this));
             token.safeTransferFrom(msg.sender, address(this), base);
             uint256 balanceAfter = token.balanceOf(address(this));
             require(balanceAfter - balanceBefore == base, "ShieldModule: Transfer failed");
 
-            // Transfer fee to treasury
+            // Pull the fee to the treasury
             if (feeAmount > 0 && treasury != address(0)) {
                 token.safeTransferFrom(msg.sender, treasury, feeAmount);
             }
         }
     }
 
-    /**
-     * @notice Calculate base and fee amounts
-     * @param _amount The total amount
-     * @param _isInclusive Whether the amount includes the fee
-     * @param _feeBP Fee in basis points
-     * @return base The base amount (after fee)
-     * @return fee The fee amount
-     */
+    /// @notice Splits an amount into base and fee at a basis-point rate (spec section 2.4).
+    /// @dev The inclusive path (`fee = amount * feeBP / BASIS_POINTS`, floor division) is
+    ///      the only live path; its rounding behavior is pinned by the Lean fee model
+    ///      (conservation `base + fee = amount`, zero fee on small amounts). The exclusive
+    ///      path is unreachable dead code retained for parity (spec OQ-5).
+    /// @param _amount The gross amount.
+    /// @param _isInclusive Whether the fee is carved out of `_amount` (true) or added on top (false).
+    /// @param _feeBP Fee rate in basis points.
+    /// @return base The amount net of the fee.
+    /// @return fee The fee amount.
     function _getFee(
         uint136 _amount,
         bool _isInclusive,
@@ -389,11 +355,9 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
         }
     }
 
-    /**
-     * @notice Hash a commitment preimage
-     * @param _note The commitment preimage
-     * @return The Poseidon hash of (npk, tokenId, value)
-     */
+    /// @notice Computes the commitment leaf hash (spec section 2.2).
+    /// @param _note The commitment preimage.
+    /// @return Poseidon digest of (npk, tokenID, value).
     function _hashCommitment(CommitmentPreimage memory _note) internal pure returns (bytes32) {
         return PoseidonT4.poseidon([
             _note.npk,
@@ -402,11 +366,12 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
         ]);
     }
 
-    /**
-     * @notice Get token ID from token data
-     * @param _tokenData The token data
-     * @return Token ID (address for ERC20, hash for others)
-     */
+    /// @notice Derives the field-element token identifier (spec section 2.2).
+    /// @dev ERC20 tokens are identified by their address, zero-extended. Other token
+    ///      types hash the full token data into the field (currently unreachable — both
+    ///      token in/out paths require ERC20).
+    /// @param _tokenData The token data.
+    /// @return The token ID as a bytes32 field element.
     function _getTokenID(TokenData memory _tokenData) internal pure returns (bytes32) {
         if (_tokenData.tokenType == TokenType.ERC20) {
             return bytes32(uint256(uint160(_tokenData.tokenAddress)));

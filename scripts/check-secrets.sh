@@ -20,6 +20,10 @@ ALLOWED_FILES=(
   "scripts/multicall3-bytecode.ts"  # Canonical Multicall3 public runtime bytecode (not a key) — etched onto local Anvil
   "scripts/capture/vectors/keyset-vectors.json"  # Phase 0 keyset vectors derived from FIXED TEST SEEDS (not real secrets); the live-testnet crosscheck stores only the public 0zk address
   "scripts/capture/spike-claim-as-transfer.ts"  # Phase 0 spike — publicly-known Anvil + BIP-39 test mnemonics only
+  "contracts/privacy-pool/types/PoolTypes.sol"  # ZERO_VALUE: public Merkle zero-leaf consensus constant
+  "contracts/privacy-pool/storage/PrivacyPoolStorage.sol"  # ZERO_VALUE: public Merkle zero-leaf consensus constant
+  "specs/PRIVACY_POOL_CONTRACT.md"  # ZERO_VALUE constant + frozen event topic0 catalog (public consensus values)
+  "specs/CONTRACT_REWRITE_DEVIATIONS.md"  # ZERO_VALUE constant + provenance register (public consensus values)
 )
 
 # Directories whose entire contents are known non-secret data: captured differential test vectors
@@ -28,6 +32,7 @@ ALLOWED_FILES=(
 ALLOWED_DIRS=(
   "scripts/capture/vectors/"  # Phase 0 SDK vectors (keyset, commitment, nullifier, EdDSA, merkle, ...)
   "deployments/"              # Script-generated manifests: public addresses and creation tx hashes (32-byte hex, not keys)
+  "test-foundry/fixtures/contract-vectors/"  # M8 golden-vector corpus: deterministic public test vectors (calldata, commitments, EdDSA sig components)
 )
 
 # Patterns that indicate secrets. Each entry: "LABEL:::REGEX"

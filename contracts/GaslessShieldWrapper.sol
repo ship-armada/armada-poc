@@ -10,7 +10,7 @@ import {EIP712} from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
 import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 import {IPrivacyPool} from "./privacy-pool/interfaces/IPrivacyPool.sol";
-import {ShieldRequest, CommitmentPreimage, TokenType} from "./railgun/logic/Globals.sol";
+import {ShieldRequest, CommitmentPreimage, TokenType} from "./privacy-pool/types/PoolTypes.sol";
 
 /**
  * @title GaslessShieldWrapper

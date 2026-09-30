@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "../privacy-pool/interfaces/IPrivacyPool.sol";
-import "../railgun/logic/Globals.sol";
+import "../privacy-pool/types/PoolTypes.sol";
 import "./YieldAdaptParams.sol";
 import "../governance/IArmadaGovernance.sol";
 
@@ -35,7 +35,7 @@ interface IArmadaYieldVault {
  * - Redeem: User unshields shares → Adapter redeems from vault → Shield USDC back to user
  *
  * For POC purposes, this adapter uses a simplified interface.
- * In production, it would integrate with the full Railgun proof system.
+ * In production, it would integrate with the full pool proof system.
  */
 contract ArmadaYieldAdapter is ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -155,7 +155,7 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
 
     /**
      * @notice Atomic lend: unshield USDC → deposit → shield ayUSDC
-     * @dev Trustless execution via Railgun's adaptContract/adaptParams pattern:
+     * @dev Trustless execution via the pool's adaptContract/adaptParams pattern:
      *
      *      1. User generates unshield proof with:
      *         - boundParams.adaptContract = address(this)
@@ -247,7 +247,7 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
 
     /**
      * @notice Atomic redeem: unshield ayUSDC → redeem → shield USDC
-     * @dev Trustless execution via Railgun's adaptContract/adaptParams pattern.
+     * @dev Trustless execution via the pool's adaptContract/adaptParams pattern.
      *      Same security model as lendAndShield - adapter cannot deviate from
      *      user's committed re-shield destination.
      *

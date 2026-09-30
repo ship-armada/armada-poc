@@ -12,7 +12,7 @@ import "./interfaces/IMerkleModule.sol";
 import "./interfaces/IVerifierModule.sol";
 import "./types/CCTPTypes.sol";
 import "../cctp/ICCTPV2.sol";
-import "../railgun/logic/Snark.sol";
+import "./types/SnarkTypes.sol";
 
 /**
  * @title PrivacyPool

@@ -204,7 +204,7 @@ export type CrowdfundExperienceMyPositionData =
       /** True when the sale's outcome is (or will be) a refund — either
        *  contract `refundMode === true` (post-finalize, below-min) or
        *  cancelled (`phase === 2`), or pre-finalize but the window has closed
-       *  with `cappedDemand < MIN_SALE`. When set, the stat block swaps from
+       *  with a projected post-waterfall allocation below `MIN_SALE`. When set, the stat block swaps from
        *  "ARM allocation" to "USDC refund" and the tooltip + CLAIMED tag pivot
        *  to refund semantics. */
       refundMode?: boolean

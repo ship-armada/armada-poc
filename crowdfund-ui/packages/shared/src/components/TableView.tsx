@@ -22,7 +22,7 @@ import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsUpDown, Copy
 import { toast } from 'sonner'
 import { cn } from '../lib/utils.js'
 import { formatUsdc, formatArm, truncateAddress } from '../lib/format.js'
-import { HOP_CONFIGS } from '../lib/constants.js'
+import { estimateAllocation } from '../lib/allocation.js'
 import type { AddressSummary, GraphNode } from '../lib/graph.js'
 import type { HopStatsData } from './StatsBar.js'
 import { NodeDetail } from './NodeDetail.js'
@@ -132,13 +132,16 @@ function hopBadgeLabel(hop: number): string {
   return `Hop ${hop}`
 }
 
-/** Compute which hop indices are oversubscribed (demand > ceiling allocation) */
-function getOversubscribedHops(hopStats?: HopStatsData[], saleSize?: bigint): Set<number> {
+/** Compute which hop indices are oversubscribed (demand > ceiling allocation).
+ *  Ceilings come from the waterfall (estimateAllocation), matching the
+ *  contract's finalCeilings — including hop-2's floor + rollover ceiling. */
+export function getOversubscribedHops(hopStats?: HopStatsData[], saleSize?: bigint): Set<number> {
   const result = new Set<number>()
   if (!hopStats || !saleSize || saleSize === 0n) return result
+  const cappedDemand = hopStats.reduce((sum, h) => sum + h.cappedCommitted, 0n)
+  const { perHopCeiling } = estimateAllocation(hopStats, cappedDemand, saleSize)
   for (let i = 0; i < hopStats.length; i++) {
-    const ceiling = (saleSize * BigInt(HOP_CONFIGS[i].ceilingBps)) / 10000n
-    if (ceiling > 0n && hopStats[i].cappedCommitted > ceiling) {
+    if (hopStats[i].cappedCommitted > perHopCeiling[i]) {
       result.add(i)
     }
   }

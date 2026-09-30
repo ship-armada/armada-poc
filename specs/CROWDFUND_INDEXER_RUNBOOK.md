@@ -172,7 +172,7 @@ Alert evaluator variables (used by `evaluate-alerts`; see [`MONITORING.md`](MONI
 | `CROWDFUND_TREASURY_ADDRESS` | required | Treasury address — used to read USDC balance for A13 mismatch detection. |
 | `CROWDFUND_USDC_ADDRESS` | optional | USDC contract — required for A13 (treasury balance). Omit to skip A13. |
 | `CROWDFUND_OPEN_TIMESTAMP` | `0` | Unix seconds when the commitment window opens. Drives A2/A8/A9. |
-| `CROWDFUND_WEEK1_DEADLINE` | `0` | Unix seconds when week-1 ends (openTimestamp + 7 days). Marks the week-1 → weeks-2–3 phase boundary in the monitoring model. |
+| `CROWDFUND_LAUNCH_TEAM_INVITE_DEADLINE` | `0` | Unix seconds when the launch-team invite window ends (openTimestamp + 14 days). Marks the days-1-14 → final-week phase boundary in the monitoring model. |
 | `CROWDFUND_COMMITMENT_DEADLINE` | `0` | Unix seconds when the 3-week window closes (openTimestamp + 21 days). Drives A8/A9. |
 | `CROWDFUND_ALERT_WEBHOOK_P0` | unset | Discord webhook URL for P0 (immediate) alerts. |
 | `CROWDFUND_ALERT_WEBHOOK_P1` | unset | Discord webhook URL for P1 (same-day) alerts. |
@@ -388,7 +388,7 @@ npm run crowdfund:indexer:cli -- evaluate-alerts
 
 The command is a single pass — it reads the indexer store, optionally consults the chain for `finalizedAt` and treasury USDC balance, runs every rule, posts new alerts to the configured webhooks, persists which dedupe keys it has already delivered, and exits. Schedule it as a recurring job (cron, systemd timer, or external scheduler) at whatever cadence matches your runbook — once per minute is fine; the cost is dominated by RPC reads.
 
-Required env: `CROWDFUND_CONTRACT_ADDRESS`, `CROWDFUND_TREASURY_ADDRESS`, the three timestamp vars (`CROWDFUND_OPEN_TIMESTAMP`, `CROWDFUND_WEEK1_DEADLINE`, `CROWDFUND_COMMITMENT_DEADLINE`), and at least one webhook URL. Without `CROWDFUND_PRIMARY_RPC_URL` + `CROWDFUND_USDC_ADDRESS`, A13 (treasury proceeds mismatch) and the time-gated rules that need `finalizedAt` (A18/A19/A20) self-skip rather than producing false positives. Alerts whose severity has no configured webhook are logged to stderr and skipped.
+Required env: `CROWDFUND_CONTRACT_ADDRESS`, `CROWDFUND_TREASURY_ADDRESS`, the three timestamp vars (`CROWDFUND_OPEN_TIMESTAMP`, `CROWDFUND_LAUNCH_TEAM_INVITE_DEADLINE`, `CROWDFUND_COMMITMENT_DEADLINE`), and at least one webhook URL. Without `CROWDFUND_PRIMARY_RPC_URL` + `CROWDFUND_USDC_ADDRESS`, A13 (treasury proceeds mismatch) and the time-gated rules that need `finalizedAt` (A18/A19/A20) self-skip rather than producing false positives. Alerts whose severity has no configured webhook are logged to stderr and skipped.
 
 Example systemd timer (drop into `/etc/systemd/system/crowdfund-alerts.timer`):
 

@@ -220,7 +220,7 @@ async function runCommand(args: ParsedCliArgs, store: IndexerStore): Promise<voi
       contractAddress: readRequiredEnv('CROWDFUND_CONTRACT_ADDRESS'),
       treasuryAddress: readRequiredEnv('CROWDFUND_TREASURY_ADDRESS'),
       openTimestamp: readNumberEnv('CROWDFUND_OPEN_TIMESTAMP', 0),
-      week1Deadline: readNumberEnv('CROWDFUND_WEEK1_DEADLINE', 0),
+      launchTeamInviteDeadline: readNumberEnv('CROWDFUND_LAUNCH_TEAM_INVITE_DEADLINE', 0),
       commitmentDeadline: readNumberEnv('CROWDFUND_COMMITMENT_DEADLINE', 0),
     }
     const rpcUrl = process.env.CROWDFUND_PRIMARY_RPC_URL

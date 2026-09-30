@@ -11,7 +11,7 @@ const MINIMAL_CTX: AlertContext = {
   now: 0,
   params: {
     chainId: 1, contractAddress: '0xc', treasuryAddress: '0xt',
-    openTimestamp: 0, week1Deadline: 0, commitmentDeadline: 0,
+    openTimestamp: 0, launchTeamInviteDeadline: 0, commitmentDeadline: 0,
   },
   snapshot: {
     metadata: {

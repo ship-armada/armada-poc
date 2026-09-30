@@ -17,7 +17,7 @@ const Phase = { Active: 0, Finalized: 1, Canceled: 2 };
 
 const ONE_DAY = 86400;
 const THREE_WEEKS = 21 * ONE_DAY;
-const ONE_WEEK = 7 * ONE_DAY;
+const LAUNCH_TEAM_WINDOW = 14 * ONE_DAY;
 
 const USDC = (n: number) => ethers.parseUnits(n.toString(), 6);
 const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
@@ -37,16 +37,44 @@ describe("Crowdfund Adversarial", function () {
     await usdc.connect(signer).approve(await crowdfund.getAddress(), amount);
   }
 
-  // Add hop-1 demand to avoid refundMode when testing with seeds-only at hop-0.
-  // At BASE_SALE, hop-0 ceiling ($798K) < MIN_SALE ($1M). Adding 51 hop-1 at $4K
-  // pushes totalAllocUsdc to $1,002K > $1M. Hop-0 allocation math stays unchanged.
+  // Add $436K of hop-1 demand to clear the $1M projected-allocation minimum.
+  // The helper stacks invites across the supplied wallets so it does not depend
+  // on having 109 distinct Hardhat signers available in each fixture.
   async function addHop1ForMinSale(seeds: SignerWithAddress[], hop1Pool: SignerWithAddress[]) {
-    const count = Math.min(51, hop1Pool.length, seeds.length);
-    for (let i = 0; i < count; i++) {
-      await crowdfund.connect(seeds[i]).invite(hop1Pool[i].address, 0);
-      await fundAndApprove(hop1Pool[i], USDC(4_000));
-      await crowdfund.connect(hop1Pool[i]).commit(1, USDC(4_000));
+    const inviteSlots = 109;
+    const committedSlots = new Map<string, { signer: SignerWithAddress; slots: number }>();
+    for (let i = 0; i < inviteSlots; i++) {
+      const inviter = seeds[i % seeds.length];
+      const signer = hop1Pool[i % hop1Pool.length];
+      await crowdfund.connect(inviter).invite(signer.address, 0);
+      const entry = committedSlots.get(signer.address) ?? { signer, slots: 0 };
+      entry.slots++;
+      committedSlots.set(signer.address, entry);
     }
+    for (const { signer, slots } of committedSlots.values()) {
+      const amount = USDC(4_000 * slots);
+      await fundAndApprove(signer, amount);
+      await crowdfund.connect(signer).commit(1, amount);
+    }
+  }
+
+  // Builds a base-sale success fixture with H0 demand below its $564K raw
+  // ceiling, so the unused H0 capacity is observable rolling into H1.
+  async function addHop1DemandForH0Rollover(seeds: SignerWithAddress[]) {
+    const hop1Invitees = allSigners.slice(100, 156);
+    for (let i = 0; i < 112; i++) {
+      const invitee = hop1Invitees[i % hop1Invitees.length];
+      if (i === 111) {
+        await crowdfund.launchTeamInvite(invitee.address, 0);
+      } else {
+        await crowdfund.connect(seeds[i % seeds.length]).invite(invitee.address, 0);
+      }
+    }
+    for (const invitee of hop1Invitees) {
+      await fundAndApprove(invitee, USDC(8_000));
+      await crowdfund.connect(invitee).commit(1, USDC(8_000));
+    }
+    return hop1Invitees;
   }
 
   beforeEach(async function () {
@@ -102,7 +130,7 @@ describe("Crowdfund Adversarial", function () {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
 
-      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      // Add hop-1 demand to clear the projected-allocation minimum.
       const hop1Pool = allSigners.slice(140, 191);
       await addHop1ForMinSale(seeds.slice(0, 51), hop1Pool);
 
@@ -122,12 +150,12 @@ describe("Crowdfund Adversarial", function () {
         sumAllocUsdc += (USDC(15_000) - refund);
       }
 
-      // Also sum hop-1 allocations
-      for (let i = 0; i < 51; i++) {
-        const [alloc, refund] = await crowdfund.computeAllocation(hop1Pool[i].address);
+      // Also sum hop-1 allocations using each wallet's stacked commitment.
+      for (const hop1 of hop1Pool) {
+        const [alloc, refund] = await crowdfund.computeAllocation(hop1.address);
         sumAllocArm += alloc;
         sumRefund += refund;
-        sumAllocUsdc += (USDC(4_000) - refund);
+        sumAllocUsdc += (await crowdfund.getCommitment(hop1.address, 1)) - refund;
       }
 
       const totalCommitted = await crowdfund.totalCommitted();
@@ -140,9 +168,9 @@ describe("Crowdfund Adversarial", function () {
       // With lazy eval, totalAllocated/totalAllocatedUsdc are hop-level upper bounds.
       // Individual integer division truncation means sum(individual) <= hop-level total.
       // The difference is at most uniqueCommitters per oversubscribed hop (negligible dust).
-      const totalParticipants = BigInt(seeds.length + 51);
+      const totalParticipants = BigInt(seeds.length + hop1Pool.length);
       expect(sumAllocArm).to.be.lte(totalAllocated);
-      expect(sumAllocArm).to.be.gte(totalAllocated - totalParticipants);
+      expect(sumAllocArm).to.be.gte(totalAllocated - totalParticipants * ARM(1));
 
       expect(sumAllocUsdc).to.be.lte(totalAllocatedUsdc);
       expect(sumAllocUsdc).to.be.gte(totalAllocatedUsdc - totalParticipants);
@@ -218,7 +246,7 @@ describe("Crowdfund Adversarial", function () {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
 
-      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      // Add hop-1 demand to clear the projected-allocation minimum.
       await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
 
       await time.increase(THREE_WEEKS + 1);
@@ -239,7 +267,7 @@ describe("Crowdfund Adversarial", function () {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
 
-      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      // Add hop-1 demand to clear the projected-allocation minimum.
       const hop1Pool = allSigners.slice(140, 191);
       await addHop1ForMinSale(seeds.slice(0, 51), hop1Pool);
 
@@ -321,7 +349,7 @@ describe("Crowdfund Adversarial", function () {
       const total = await crowdfund.totalCommitted();
       expect(total).to.equal(USDC(1_000_000));
 
-      // Add hop-1 demand so totalAllocUsdc exceeds MIN_SALE (hop-0 ceiling $798K < $1M)
+      // Add hop-1 demand so projected allocation reaches MIN_SALE.
       await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
 
       await time.increase(THREE_WEEKS + 1);
@@ -408,7 +436,7 @@ describe("Crowdfund Adversarial", function () {
 
     it("finalize with seeds only enters refundMode (hop-0 ceiling < MIN_SALE)", async function () {
       // Only seeds commit — no hop-1/2 participants.
-      // At BASE_SALE, hop-0 ceiling is $798K which is below MIN_SALE ($1M).
+      // At BASE_SALE, hop-0 ceiling is $564K, below MIN_SALE ($1M).
       // Without hop-1/hop-2 demand, totalAllocUsdc cannot reach MIN_SALE, so
       // finalization enters refundMode and all participants get full refunds.
       const seeds = allSigners.slice(1, 71);
@@ -614,14 +642,14 @@ describe("Crowdfund Adversarial", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: window not ended");
     });
 
-    it("addSeeds after week 1 of active window reverts", async function () {
+    it("addSeeds after the launch-team invite window reverts", async function () {
       await crowdfund.addSeeds([allSigners[1].address]);
 
-      await time.increase(ONE_WEEK + 1); // past launch team invite period
+      await time.increase(LAUNCH_TEAM_WINDOW + 1); // past launch team invite period
 
       await expect(
         crowdfund.addSeeds([allSigners[2].address])
-      ).to.be.revertedWith("ArmadaCrowdfund: outside week-1 window");
+      ).to.be.revertedWith("ArmadaCrowdfund: outside launch-team invite window");
     });
 
     // WHY: When demand is below MIN_SALE, finalize() enters refundMode. claim() must
@@ -658,7 +686,7 @@ describe("Crowdfund Adversarial", function () {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
 
-      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      // Add hop-1 demand to clear the projected-allocation minimum.
       await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
 
       await time.increase(THREE_WEEKS + 1);
@@ -722,7 +750,7 @@ describe("Crowdfund Adversarial", function () {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
 
-      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      // Add hop-1 demand to clear the projected-allocation minimum.
       const hop1Pool = allSigners.slice(140, 191);
       await addHop1ForMinSale(seeds.slice(0, 51), hop1Pool);
 
@@ -781,7 +809,7 @@ describe("Crowdfund Adversarial", function () {
     // below enforce that invariant by closing every path that could place launchTeam
     // into the participant graph. Without them, launchTeam could self-register at
     // hop-0 via addSeed, self-invite at hop-1/hop-2 via launchTeamInvite, originate
-    // hop-2 invites via the regular invite() path after week 1, or be invited by
+    // hop-2 invites via the regular invite() path after the launch-team window, or be invited by
     // any participant — all of which contradict the spec.
     describe("launchTeam excluded from participant graph", function () {
       it("addSeed rejects launchTeam as a seed", async function () {
@@ -805,7 +833,7 @@ describe("Crowdfund Adversarial", function () {
       // WHY: Defense in depth. With the addSeed/launchTeamInvite guards above, launchTeam
       // can never become whitelisted to even reach this check. The guard ensures that
       // even if a future code path introduced another whitelist route, launchTeam still
-      // cannot use the regular invite() path to issue invites after the week-1 window.
+      // cannot use the regular invite() path to issue invites after the launch-team window.
       it("invite rejects launchTeam as msg.sender", async function () {
         await expect(
           crowdfund.connect(deployer).invite(allSigners[1].address, 0)
@@ -866,7 +894,7 @@ describe("Crowdfund Adversarial", function () {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
 
-      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      // Add hop-1 demand to clear the projected-allocation minimum.
       await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
 
       await time.increase(THREE_WEEKS + 1);
@@ -889,7 +917,7 @@ describe("Crowdfund Adversarial", function () {
         await crowdfund.connect(seeds[i]).commit(0, USDC(15_000));
       }
 
-      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      // Add hop-1 demand to clear the projected-allocation minimum.
       await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
 
       await time.increase(THREE_WEEKS + 1);
@@ -908,63 +936,47 @@ describe("Crowdfund Adversarial", function () {
   describe("Rollover Edge Cases", function () {
     it("hop-0 leftover rolls unconditionally to hop-1", async function () {
       // Rollover is unconditional — no minimum committer threshold.
-      // hop-0 ceiling = 70% of $1.14M = $798K.
-      // 53 seeds × $15K = $795K < $798K → under-subscribed.
-      // Hop-0 leftover = $798K - $795K = $3K rolls to hop-1.
-      // 52 hop-1 participants × $4K = $208K. Total = $1,003K >= MIN_SALE.
-      // Hop-1 effective ceiling = min($513K + $3K, $345K) = $345K (budget-capped).
-      // Hop-1 demand $208K < $345K → full allocation, no pro-rata.
+      // 37 seeds commit $555K, below the $564K H0 raw ceiling, leaving $9K.
+      // 56 hop-1 participants commit $8K each, for $448K and a $1.003M
+      // allocation total. The unused H0 capacity rolls into H1.
 
-      const seeds = allSigners.slice(1, 54); // 53 seeds (indices 1-53)
+      const seeds = allSigners.slice(1, 38); // 37 seeds
       await crowdfund.addSeeds(seeds.map(s => s.address));
 
-
-      // Each of the first 52 seeds invites one hop-1 participant (signers 54-105)
-      const hop1Invitees: SignerWithAddress[] = [];
-      for (let i = 0; i < 52; i++) {
-        const invitee = allSigners[54 + i];
-        await crowdfund.connect(seeds[i]).invite(invitee.address, 0);
-        hop1Invitees.push(invitee);
-      }
-
-      // All 53 seeds commit $15K
+      // All 37 seeds commit $15K.
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      // 52 hop-1 participants commit $4K
-      for (const h of hop1Invitees) {
-        await fundAndApprove(h, USDC(4_000));
-        await crowdfund.connect(h).commit(1, USDC(4_000));
-      }
+      const hop1Invitees = await addHop1DemandForH0Rollover(seeds);
 
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
-      // Verify hop-0 ceiling: $798K
+      // Verify the $564K H0 raw ceiling.
       const hop0Ceiling = await crowdfund.finalCeilings(0);
-      expect(hop0Ceiling).to.equal(USDC(798_000));
+      expect(hop0Ceiling).to.equal(USDC(564_000));
 
-      // Hop-1 effective ceiling: min($513K + $3K leftover, $345K remaining) = $345K
+      // H1 gets its $513K raw ceiling plus the $9K H0 rollover, constrained by
+      // the $465K remaining available capacity.
       const hop1Ceiling = await crowdfund.finalCeilings(1);
-      expect(hop1Ceiling).to.equal(USDC(345_000));
+      expect(hop1Ceiling).to.equal(USDC(465_000));
 
-      // Hop-1 is under-subscribed ($208K < $345K) → full allocation, no refund
+      // H1 is under-subscribed ($448K < $465K) → full allocation, no refund.
       const [alloc, refund] = await crowdfund.computeAllocation(hop1Invitees[0].address);
       const allocArm = Number(alloc) / 1e18;
-      expect(allocArm).to.be.closeTo(4_000, 1);
+      expect(allocArm).to.be.closeTo(8_000, 1);
       expect(refund).to.equal(0n);
 
-      // Treasury leftover = saleSize - totalAllocatedUsdc = $1.2M - ($795K + $208K) = $197K
+      // Treasury leftover = $1.2M - ($555K + $448K) = $197K.
       const totalAllocUsdc = await crowdfund.totalAllocatedUsdc();
       expect(USDC(1_200_000) - totalAllocUsdc).to.equal(USDC(197_000));
     });
 
     it("rollover works with zero committers at hop-2", async function () {
-      // 68 seeds × $15K = $1.02M. Add 51 hop-1 × $4K = $204K for MIN_SALE.
-      // Hop-0 demand $1.02M > ceiling $798K → oversubscribed, no leftover from hop-0.
-      // Hop-1 eff ceiling = min($513K + $0, $342K remaining) = $342K, demand = $204K → leftover $138K
-      // Hop-2 eff ceiling = $60K floor + $138K leftover = $198K, demand = $0
+      // 68 seeds × $15K = $1.02M plus $436K H1 demand clears MIN_SALE.
+      // H0 fills its $564K ceiling; H1 receives $436K of its $456K capacity,
+      // so $20K rolls into the $180K H2 floor.
       // Rollover flows unconditionally through hops regardless of committer count.
 
       const seeds = allSigners.slice(1, 69); // 68 seeds
@@ -976,7 +988,7 @@ describe("Crowdfund Adversarial", function () {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
 
-      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      // Add hop-1 demand to clear the projected-allocation minimum.
       await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
 
       await time.increase(THREE_WEEKS + 1);
@@ -984,35 +996,32 @@ describe("Crowdfund Adversarial", function () {
 
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
 
-      // saleSize = BASE_SALE = $1.2M (total = $1.224M < $1.5M trigger)
-      // hop2Floor = $60K, available = $1.14M
-      // Hop-0 ceiling = $798K, demand = $1.02M → oversubscribed, alloc = $798K, leftover = $0
-      // remainingAvailable = $1.14M - $798K = $342K
-      // Hop-1 eff ceiling = min($513K + $0, $342K) = $342K, demand = $204K, leftover = $138K
-      // Hop-2 eff ceiling = $60K + $138K = $198K, demand = $0
+      // saleSize = BASE_SALE = $1.2M; available after the $180K H2 floor is $1.02M.
+      // H0 allocates $564K, H1 allocates $436K of a $456K capacity, and H2's
+      // final ceiling is its $180K floor plus the $20K H1 rollover.
 
       const hop0Ceiling = await crowdfund.finalCeilings(0);
-      expect(hop0Ceiling).to.equal(USDC(798_000));
+      expect(hop0Ceiling).to.equal(USDC(564_000));
 
       const hop1Ceiling = await crowdfund.finalCeilings(1);
-      expect(hop1Ceiling).to.equal(USDC(342_000));
+      expect(hop1Ceiling).to.equal(USDC(456_000));
 
       const hop2Ceiling = await crowdfund.finalCeilings(2);
-      expect(hop2Ceiling).to.equal(USDC(198_000));
+      expect(hop2Ceiling).to.equal(USDC(200_000));
 
       // Treasury leftover = saleSize - totalAllocatedUsdc.
       const totalAllocUsdc = await crowdfund.totalAllocatedUsdc();
       const treasuryLeftover = USDC(1_200_000) - totalAllocUsdc;
-      expect(treasuryLeftover).to.be.closeTo(USDC(198_000), 100n); // within $0.0001
+      expect(treasuryLeftover).to.be.closeTo(USDC(200_000), 100n); // within $0.0001
 
       // Key assertion: rollover flowed through hop-1 to hop-2 despite 0 committers
       // at hop-2 — unconditional rollover ensures unused capacity always cascades.
-      expect(hop2Ceiling).to.be.gt(USDC(60_000)); // hop-2 got more than just its floor
+      expect(hop2Ceiling).to.be.gt(USDC(180_000)); // hop-2 got more than just its floor
     });
 
     it("over-subscribed hop-0 produces pro-rata with no rollover", async function () {
-      // 70 seeds × $15K = $1.05M. Hop-0 ceiling = 70% of $1.14M = $798K → over-subscribed.
-      // No leftover from hop-0. Add 51 hop-1 × $4K = $204K for MIN_SALE.
+      // 70 seeds × $15K = $1.05M. The $564K H0 ceiling is over-subscribed.
+      // H1 demand clears MIN_SALE but does not receive H0 rollover.
 
       const seeds = allSigners.slice(1, 71); // 70 seeds
       await crowdfund.addSeeds(seeds.map(s => s.address));
@@ -1023,75 +1032,59 @@ describe("Crowdfund Adversarial", function () {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
 
-      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      // Add hop-1 demand to clear the projected-allocation minimum.
       await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
 
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
-      // Pro-rata: scale = $798K / $1.05M = 0.76
-      // Each $15K → $11,400 allocation, $3,600 refund
+      // Pro-rata: scale = $564K / $1.05M ≈ 0.53714.
+      // Each $15K → about $8,057 allocation and $6,943 refund.
       const [alloc, refund] = await crowdfund.computeAllocation(seeds[0].address);
       const allocArm = Number(alloc) / 1e18;
-      expect(allocArm).to.be.closeTo(11_400, 1);
-      expect(refund).to.be.closeTo(USDC(3_600), USDC(1));
+      expect(allocArm).to.be.closeTo(8_057, 1);
+      expect(refund).to.be.closeTo(USDC(6_943), USDC(1));
 
       // Hop-0 leftover = $0, so hop-1 gets base ceiling only
-      // Hop-1 eff ceiling = min($513K + $0, $342K remaining) = $342K
-      // Hop-1 demand = $204K < $342K → under-subscribed, leftover = $138K
-      // Hop-2 eff ceiling = $60K floor + $138K leftover = $198K
+      // H1 capacity is $456K; its $436K demand leaves $20K to roll into H2.
       // Treasury leftover = saleSize - totalAllocatedUsdc
       const totalAllocUsdcVal = await crowdfund.totalAllocatedUsdc();
       const treasuryLeftover2 = USDC(1_200_000) - totalAllocUsdcVal;
-      expect(treasuryLeftover2).to.be.closeTo(USDC(198_000), 100n); // within $0.0001
+      expect(treasuryLeftover2).to.be.closeTo(USDC(200_000), 100n); // within $0.0001
     });
 
     it("rollover preserves sum-of-parts invariant: alloc + treasury = saleSize", async function () {
       // totalAllocatedUsdc + treasuryLeftoverUsdc must equal saleSize ($1.2M).
 
-      const seeds = allSigners.slice(1, 54); // 53 seeds
+      const seeds = allSigners.slice(1, 38); // 37 seeds
       await crowdfund.addSeeds(seeds.map(s => s.address));
-
-
-      const hop1Invitees: SignerWithAddress[] = [];
-      for (let i = 0; i < 52; i++) {
-        const invitee = allSigners[54 + i];
-        await crowdfund.connect(seeds[i]).invite(invitee.address, 0);
-        hop1Invitees.push(invitee);
-      }
 
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      for (const h of hop1Invitees) {
-        await fundAndApprove(h, USDC(4_000));
-        await crowdfund.connect(h).commit(1, USDC(4_000));
-      }
+      const hop1Invitees = await addHop1DemandForH0Rollover(seeds);
 
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
       const totalAlloc = await crowdfund.totalAllocatedUsdc();
 
-      // Hop-0: demand $795K < ceiling $798K → alloc = $795K
-      // Hop-1: demand $208K < ceiling $345K → alloc = $208K
+      // Hop-0: demand $555K < ceiling $564K → alloc = $555K
+      // Hop-1: demand $448K < ceiling $465K → alloc = $448K
       // Hop-2: demand $0 → alloc = $0
-      expect(totalAlloc).to.equal(USDC(795_000) + USDC(208_000));
+      expect(totalAlloc).to.equal(USDC(555_000) + USDC(448_000));
 
-      // Treasury leftover = saleSize - totalAllocatedUsdc = $1.2M - $1,003K = $197K
+      // Treasury leftover = $1.2M - $1.003M = $197K.
       const treasuryLeftoverVal = USDC(1_200_000) - totalAlloc;
       expect(treasuryLeftoverVal).to.equal(USDC(197_000));
     });
 
     it("multi-hop oversubscription: hop-0 and hop-1 both oversubscribed simultaneously", async function () {
       // Use invite stacking to oversubscribe hop-1 with fewer participants.
-      // Hop-0: 54 seeds × $15K = $810K. Ceiling = 70% of $1,140K = $798K → oversubscribed.
-      // Hop-0 leftover = $0. remaining_available = $1,140K - $798K = $342K.
-      // Hop-1 eff ceiling = min(45% × $1,140K, $342K) = $342K.
-      // Hop-1: 29 participants × 3 stacked invites = $12K cap each.
-      //        29 × $12K = $348K > $342K → oversubscribed.
-      // Total participants: 54 + 29 = 83 (well within gas limits).
+      // Hop-0: 54 seeds × $15K = $810K against a $564K ceiling.
+      // Hop-1's effective ceiling is $456K; 39 participants with three stacked
+      // invites commit $468K, so both hops are oversubscribed.
 
       const seeds = allSigners.slice(1, 55); // 54 seeds
       await crowdfund.addSeeds(seeds.map(s => s.address));
@@ -1101,9 +1094,9 @@ describe("Crowdfund Adversarial", function () {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
 
-      // 29 hop-1 participants, each invited 3 times by different seeds.
+      // 39 hop-1 participants, each invited 3 times by different seeds.
       // Seeds 0-28 give first invite, seeds 29-53 + wraparound give 2nd and 3rd.
-      const hop1Count = 29;
+      const hop1Count = 39;
       const hop1Pool = allSigners.slice(55, 55 + hop1Count);
 
       for (let h = 0; h < hop1Count; h++) {
@@ -1122,17 +1115,17 @@ describe("Crowdfund Adversarial", function () {
       await crowdfund.finalize();
 
       // --- Verify hop-0 is oversubscribed with pro-rata ---
-      // Hop-0 demand = $810K, ceiling = $798K. Scale = $798K / $810K ≈ 0.985
+      // Hop-0 demand = $810K, ceiling = $564K.
       const [, hop0Refund] = await crowdfund.computeAllocationAtHop(seeds[0].address, 0);
-      // Each seed committed $15K. refund = $15K × (1 - 798/810) ≈ $222
+      // Each seed's H0 refund is roughly $4,556.
       expect(hop0Refund).to.be.gt(0n); // confirms oversubscription
-      expect(hop0Refund).to.be.lt(USDC(500)); // small refund, hop-0 barely oversubscribed
+      expect(hop0Refund).to.be.lt(USDC(5_000));
 
       // --- Verify hop-1 is oversubscribed with pro-rata ---
-      // Hop-1 cappedDemand = $348K > hop-1 eff ceiling = $342K. Scale ≈ 0.983
+      // Hop-1 cappedDemand = $468K > hop-1 effective ceiling = $456K.
       const [, hop1Refund] = await crowdfund.computeAllocationAtHop(hop1Pool[0].address, 1);
       expect(hop1Refund).to.be.gt(0n); // confirms hop-1 oversubscription
-      // hop-1 refund per participant ≈ $12K × (1 - 342/348) ≈ $207
+      // Hop-1 refund per participant is about $308.
       expect(hop1Refund).to.be.lt(USDC(500)); // bounded refund
 
       // --- Sum-of-parts invariant across all participants ---
@@ -1256,7 +1249,7 @@ describe("Crowdfund Adversarial", function () {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
 
-      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      // Add hop-1 demand to clear the projected-allocation minimum.
       await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
 
       await time.increase(THREE_WEEKS + 1);
@@ -1304,7 +1297,7 @@ describe("Crowdfund Adversarial", function () {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
 
-      // Add hop-1 demand to avoid refundMode (hop-0 ceiling $798K < MIN_SALE $1M)
+      // Add hop-1 demand to clear the projected-allocation minimum.
       await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 191));
 
       await time.increase(THREE_WEEKS + 1);

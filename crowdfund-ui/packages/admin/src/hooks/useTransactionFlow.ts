@@ -3,6 +3,7 @@
 
 import { useState, useCallback } from 'react'
 import type { TransactionResponse, TransactionReceipt, Signer } from 'ethers'
+import { CROWDFUND_CONSTANTS } from '@armada/crowdfund-shared'
 
 export type TxStatus = 'idle' | 'pending' | 'submitted' | 'confirmed' | 'error'
 
@@ -20,7 +21,7 @@ export interface UseTransactionFlowResult {
 }
 
 /** Map common revert reasons to human-readable messages */
-function friendlyError(err: unknown): string {
+export function friendlyError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err)
 
   if (msg.includes('user rejected')) return 'Transaction rejected by user'
@@ -28,8 +29,8 @@ function friendlyError(err: unknown): string {
   if (msg.includes('not active')) return 'Crowdfund is not in the active phase'
   if (msg.includes('not launch team')) return 'Only the launch team can perform this action'
   if (msg.includes('not security council')) return 'Only the security council can perform this action'
-  if (msg.includes('outside week-1 window')) return 'Launch team invite window has closed'
-  if (msg.includes('max seeds reached')) return 'Maximum seed count (160) has been reached'
+  if (msg.includes('outside launch-team invite window')) return 'Launch team invite window has closed'
+  if (msg.includes('seed cap reached')) return `Maximum seed count (${CROWDFUND_CONSTANTS.MAX_SEEDS}) has been reached`
   if (msg.includes('already finalized')) return 'Crowdfund has already been finalized'
   if (msg.includes('already canceled')) return 'Crowdfund has already been canceled'
   if (msg.includes('window not ended')) return 'Commitment window has not ended yet'

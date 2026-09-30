@@ -64,6 +64,7 @@ const baseProps: ClaimFlowV2Props = {
   totalCommitted: 0n,
   windowEnd: 0,
   cappedDemand: 0n,
+  hopStats: [],
   claimAvailable: true,
   onGoToMyPosition: () => {},
   onGoToNetwork: () => {},
@@ -321,6 +322,57 @@ describe('ClaimFlowV2 ARM claim deadline', () => {
     expect(await screen.findByText('Claim complete.')).toBeTruthy()
     expect(screen.queryByText(/in your wallet/)).toBeNull()
     expect(screen.queryByText('ARM claimed.')).toBeNull()
+  })
+})
+
+describe('ClaimFlowV2 pre-finalize refund heads-up (projected allocation)', () => {
+  // Commit window closed, sale not yet finalized (phase 0, blockTimestamp past windowEnd).
+  const PRE_FINALIZE = { phase: 0, windowEnd: 1_000, blockTimestamp: 2_000 }
+  const USDC = (n: bigint) => n * 1_000_000n
+
+  it('warns of a coming refund when projected allocation falls below the minimum even though capped demand clears it', async () => {
+    // The case the old raw-cappedDemand check missed: concentrated hop-0 demand ($1.5M)
+    // crosses the $1.5M expansion trigger, but the expanded hop-0 ceiling is only $846k —
+    // below the $1M minimum raise. cappedDemand ($1.5M) ≥ MIN_SALE, yet the projected
+    // post-waterfall allocation ($846k) does not clear it → refund. (mainnet profile.)
+    const hopStats = [
+      { cappedCommitted: USDC(1_500_000n) },
+      { cappedCommitted: 0n },
+      { cappedCommitted: 0n },
+    ]
+    renderClaim(
+      <ClaimFlowV2
+        {...baseProps}
+        {...PRE_FINALIZE}
+        walletAddress={ADDR_A}
+        totalCommitted={USDC(500n)}
+        cappedDemand={USDC(1_500_000n)}
+        hopStats={hopStats}
+      />,
+    )
+    expect(await screen.findByText('Sale ended below minimum')).toBeTruthy()
+    expect(screen.getByText(/claim a refund of your committed/)).toBeTruthy()
+  })
+
+  it('shows generic awaiting-finalization (not the refund card) when projected allocation clears the minimum', async () => {
+    // hop-0 $1.5M (→ $846k alloc) + hop-1 $500k (→ $500k alloc) ≈ $1.35M ≥ MIN_SALE.
+    const hopStats = [
+      { cappedCommitted: USDC(1_500_000n) },
+      { cappedCommitted: USDC(500_000n) },
+      { cappedCommitted: 0n },
+    ]
+    renderClaim(
+      <ClaimFlowV2
+        {...baseProps}
+        {...PRE_FINALIZE}
+        walletAddress={ADDR_A}
+        totalCommitted={USDC(500n)}
+        cappedDemand={USDC(2_000_000n)}
+        hopStats={hopStats}
+      />,
+    )
+    expect(await screen.findByText('Awaiting finalization')).toBeTruthy()
+    expect(screen.queryByText('Sale ended below minimum')).toBeNull()
   })
 })
 

@@ -16,7 +16,6 @@ import {
   ErrorAlert,
   ErrorBoundary,
   StaleDataBanner,
-  CROWDFUND_CONSTANTS,
   formatTimeLeft,
   formatTimeLeftDetail,
   truncateAddress,
@@ -49,6 +48,7 @@ import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { abortPipelinesForOtherAddress, applyWatchedTxResult, pipelinesAtom } from '@/hooks/useTxPipeline'
 import { usePendingTxWatcher } from '@/hooks/usePendingTxWatcher'
 import { PageNav, type Page } from '@/appNav'
+import { getClaimAvailability, isProjectedRefund } from '@/lib/claimAvailability'
 
 /**
  * Map a wagmi connector id to the `walletProvider` slug WalletPillMenu uses to
@@ -169,7 +169,6 @@ function HeaderWalletButton({
   )
 }
 
-
 /** Format the Crowdfund hero Progress card's countdown tag from a remaining
  *  duration in seconds. Wraps the shared {@link formatTimeLeft} helper (the
  *  single source of truth for crowdfund "time left", also driving the stats
@@ -196,32 +195,6 @@ function formatSaleStatusLabel(
   if (phase === 2) return { label: 'CANCELLED', dot: 'warning' }
   if (!windowOpen) return { label: 'CLOSED', dot: 'neutral' }
   return { label: 'ACTIVE', dot: 'active' }
-}
-
-type ClaimAvailability =
-  | { state: 'available' }
-  | { state: 'pending'; reason: string }
-  | { state: 'pre-open' }
-
-/** Mirror of the Claim page's gate. Used both to gate tab presentation
- *  ("(soon)" suffix) and to drive the Claim page's empty-state copy. */
-function getClaimAvailability(
-  phase: number,
-  armLoaded: boolean,
-  windowEnd: number,
-  blockTimestamp: number,
-  cappedDemand: bigint,
-): ClaimAvailability {
-  if (!armLoaded && phase === 0) return { state: 'pre-open' }
-  if (phase === 1) return { state: 'available' } // finalized
-  if (phase === 2) return { state: 'available' } // cancelled (refunds)
-
-  // phase 0
-  const windowEnded = windowEnd > 0 && blockTimestamp > windowEnd
-  const belowMin = cappedDemand < CROWDFUND_CONSTANTS.MIN_SALE
-  if (windowEnded && belowMin) return { state: 'available' } // refund eligibility
-  if (windowEnded) return { state: 'pending', reason: 'Awaiting finalization' }
-  return { state: 'pending', reason: 'Opens after the campaign window ends' }
 }
 
 /** Map contract state to the lifecycle banner's stage. */
@@ -533,6 +506,27 @@ export function App() {
     contractState.saleSize,
   ])
 
+  // Pre-finalize refund projection from the post-waterfall allocation (see
+  // isProjectedRefund). Drives both the My Position refund card and the Claim
+  // page gate so a certain refund is surfaced before anyone calls finalize().
+  const projectedRefund = useMemo(
+    () =>
+      isProjectedRefund({
+        phase: contractState.phase,
+        windowEnd: contractState.windowEnd,
+        blockTimestamp: contractState.blockTimestamp,
+        hopStats: contractState.hopStats,
+        cappedDemand: contractState.cappedDemand,
+      }),
+    [
+      contractState.phase,
+      contractState.windowEnd,
+      contractState.blockTimestamp,
+      contractState.hopStats,
+      contractState.cappedDemand,
+    ],
+  )
+
   // Phase 4b.3 — project the connected wallet's primary hop position into the
   // CrowdfundExperience MyPosition discriminated union. Three states:
   //   - disconnected: no wallet → "Connect wallet" empty state
@@ -560,17 +554,13 @@ export function App() {
     const hop = primary.hop
     const userSummary = summaries.get(wallet.address.toLowerCase())
     // Refund-mode signal: contract flag is canonical post-finalize; pre-
-    // finalize we infer it from the closed window + sub-minimum demand so
-    // the card stops showing a misleading "ARM allocation" before the
-    // launch team calls finalize().
-    const windowEnded =
-      contractState.windowEnd > 0 &&
-      contractState.blockTimestamp > contractState.windowEnd
-    const saleBelowMin = contractState.cappedDemand < CROWDFUND_CONSTANTS.MIN_SALE
+    // finalize we project it from the post-waterfall allocation once the
+    // window closes, so the card stops showing a misleading "ARM allocation"
+    // before anyone calls finalize().
     const refundMode =
       contractState.refundMode ||
       contractState.phase === 2 ||
-      (windowEnded && saleBelowMin)
+      projectedRefund
     // Refund amount: prefer the on-chain post-claim `refundUsdc` from the
     // user's graph summary; otherwise the user's total committed across
     // all hops (full refund when sale falls below min).
@@ -605,9 +595,7 @@ export function App() {
     summaries,
     contractState.phase,
     contractState.refundMode,
-    contractState.windowEnd,
-    contractState.blockTimestamp,
-    contractState.cappedDemand,
+    projectedRefund,
   ])
 
   // Claim availability + lifecycle stage — drive the Claim page state and
@@ -619,14 +607,14 @@ export function App() {
         contractState.armLoaded,
         contractState.windowEnd,
         contractState.blockTimestamp,
-        contractState.cappedDemand,
+        projectedRefund,
       ),
     [
       contractState.phase,
       contractState.armLoaded,
       contractState.windowEnd,
       contractState.blockTimestamp,
-      contractState.cappedDemand,
+      projectedRefund,
     ],
   )
 
@@ -939,6 +927,7 @@ export function App() {
                 totalCommitted={userTotalCommitted}
                 windowEnd={contractState.windowEnd}
                 cappedDemand={contractState.cappedDemand}
+                hopStats={contractState.hopStats}
                 claimAvailable={claimAvailability.state === 'available'}
                 claimCountdownSeconds={lifecycleCountdown}
                 onGoToMyPosition={() => setPage('my-position')}

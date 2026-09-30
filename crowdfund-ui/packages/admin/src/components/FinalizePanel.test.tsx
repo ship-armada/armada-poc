@@ -4,6 +4,12 @@
 import { render, screen } from '@testing-library/react'
 import { FinalizePanel } from './FinalizePanel'
 
+const hopStats = (hop0: bigint, hop1 = 0n, hop2 = 0n) => [
+  { cappedCommitted: hop0 },
+  { cappedCommitted: hop1 },
+  { cappedCommitted: hop2 },
+]
+
 vi.mock('@/hooks/useTransactionFlow', () => ({
   useTransactionFlow: () => ({
     state: { status: 'idle', txHash: null, receipt: null, error: null },
@@ -25,6 +31,7 @@ describe('FinalizePanel', () => {
         totalCommitted={1_200_000n * 10n ** 6n}
         saleSize={1_200_000n * 10n ** 6n}
         cappedDemand={1_200_000n * 10n ** 6n}
+        hopStats={hopStats(564_000n * 10n ** 6n, 436_000n * 10n ** 6n)}
       />,
     )
     expect(screen.getByText('✓ Met')).toBeInTheDocument()
@@ -38,6 +45,7 @@ describe('FinalizePanel', () => {
         totalCommitted={500_000n * 10n ** 6n}
         saleSize={1_200_000n * 10n ** 6n}
         cappedDemand={500_000n * 10n ** 6n}
+        hopStats={hopStats(500_000n * 10n ** 6n)}
       />,
     )
     expect(screen.getByText('✗ Not met')).toBeInTheDocument()
@@ -51,10 +59,11 @@ describe('FinalizePanel', () => {
         totalCommitted={500_000n * 10n ** 6n}
         saleSize={1_200_000n * 10n ** 6n}
         cappedDemand={500_000n * 10n ** 6n}
+        hopStats={hopStats(500_000n * 10n ** 6n)}
       />,
     )
     expect(
-      screen.getByText(/Capped demand is below the minimum raise/),
+      screen.getByText(/Projected allocated USDC is below the minimum raise/),
     ).toBeInTheDocument()
   })
 
@@ -66,6 +75,7 @@ describe('FinalizePanel', () => {
         totalCommitted={1_600_000n * 10n ** 6n}
         saleSize={1_800_000n * 10n ** 6n}
         cappedDemand={1_600_000n * 10n ** 6n}
+        hopStats={hopStats(846_000n * 10n ** 6n, 754_000n * 10n ** 6n)}
       />,
     )
     expect(screen.getByText(/✓ Met \(EXPANDED\)/)).toBeInTheDocument()
@@ -79,6 +89,7 @@ describe('FinalizePanel', () => {
         totalCommitted={1_200_000n * 10n ** 6n}
         saleSize={1_200_000n * 10n ** 6n}
         cappedDemand={1_200_000n * 10n ** 6n}
+        hopStats={hopStats(564_000n * 10n ** 6n, 436_000n * 10n ** 6n)}
       />,
     )
     expect(screen.getByText(/expected outcome/i)).toBeInTheDocument()

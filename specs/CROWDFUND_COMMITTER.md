@@ -106,13 +106,13 @@ For each eligible hop with remaining capacity, show an amount input:
 ```
 ┌─ Commit to Hop-0 ──────────────────────────────────────────┐
 │  Amount: [________] USDC          MAX: $3,000 remaining     │
-│  Current hop demand: $987,000 (131% of $798k ceiling)       │
+│  Current hop demand: $987,000 (175% of $564k ceiling)       │
 │  ⚠ This hop is oversubscribed — pro-rata scaling applies    │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─ Commit to Hop-2 ──────────────────────────────────────────┐
 │  Amount: [________] USDC          MAX: $1,000 remaining     │
-│  Current hop demand: $48,000 (80% of $60k floor)            │
+│  Current hop demand: $48,000 (27% of $180k floor)           │
 │  Floor not yet filled — full allocation likely               │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -477,9 +477,9 @@ Claims are available after the crowdfund is finalized.
 Current status: OPEN (14 days remaining)
 ```
 
-Or, if finalization has set refundMode (sub-minimum demand):
+Or, if finalization has set refundMode (sub-minimum post-waterfall allocation):
 ```
-The crowdfund has been finalized in refund mode — total demand ($870,000)
+The crowdfund has been finalized in refund mode — post-waterfall allocated USDC
 was below the minimum raise ($1,000,000). You may withdraw your full deposit.
 
   Your deposit: $19,000 USDC
@@ -534,7 +534,7 @@ was below the minimum raise ($1,000,000). You may withdraw your full deposit.
 ```
 ┌─ Refund Mode ──────────────────────────────────────────────┐
 │                                                             │
-│  The crowdfund finalized but net proceeds ($798,000) fell    │
+│  The crowdfund finalized but net proceeds ($564,000) fell    │
 │  below the minimum raise ($1,000,000). All deposits are      │
 │  fully refundable. No ARM was allocated.                     │
 │                                                             │
@@ -669,8 +669,7 @@ This is an approximation — it doesn't account for floor rounding, multi-hop de
 |---|---|---|---|
 | Pre-commitment (ARM not loaded) | Disabled: "Not yet open" | Disabled: "Not yet open" | Disabled: "Not yet open" |
 | Commitment window open | Active | Active (if address has invite slots) | Disabled: "Available after finalization" |
-| Deadline passed, not finalized, capped_demand ≥ MIN | Disabled: "Deadline passed" | Disabled: "Deadline passed" | Disabled: "Awaiting finalization" |
-| Deadline passed, not finalized, capped_demand < MIN | Disabled: "Deadline passed" | Disabled: "Deadline passed" | Active: refund available |
+| Deadline passed, not finalized | Disabled: "Deadline passed" | Disabled: "Deadline passed" | Disabled: "Awaiting finalization; outcome depends on projected allocation" |
 | Finalized (success) | Disabled: "Finalized" | Disabled: "Finalized" | Active: ARM claim + refund |
 | Finalized (refundMode) | Disabled: "Finalized" | Disabled: "Finalized" | Active: full refund only |
 | Cancelled | Disabled: "Cancelled" | Disabled: "Cancelled" | Active: full refund only |

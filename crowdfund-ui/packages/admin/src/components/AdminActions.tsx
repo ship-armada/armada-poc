@@ -47,7 +47,7 @@ export function AdminActions({ state, role, signer, crowdfundAddress, treasury, 
             <ArmLoadPanel signer={signer} crowdfundAddress={crowdfundAddress} provider={provider} armTokenAddress={armTokenAddress} />
           )}
 
-          {/* Seed management — LT only, week-1 window */}
+          {/* Seed management — LT only, launch-team window */}
           {isLT && ltWindowOpen && (
             <SeedManager
               signer={signer}
@@ -56,7 +56,7 @@ export function AdminActions({ state, role, signer, crowdfundAddress, treasury, 
             />
           )}
 
-          {/* LT invites — LT only, week-1 window */}
+          {/* LT invites — LT only, launch-team window */}
           {isLT && ltWindowOpen && (
             <LaunchTeamInvites
               signer={signer}
@@ -77,6 +77,7 @@ export function AdminActions({ state, role, signer, crowdfundAddress, treasury, 
               totalCommitted={state.totalCommitted}
               saleSize={state.saleSize}
               cappedDemand={state.cappedDemand}
+              hopStats={state.hopStats}
             />
           )}
         </div>

@@ -1,21 +1,21 @@
 {
   "chainId": 11155111,
   "domain": 0,
-  "deployer": "0x98b1CBa0908C98c95c9C87D94e4fCdddc87C933d",
+  "deployer": "0xc43A7aF1f7124E2D919040e749cf252F1dEAc4Ee",
   "contracts": {
-    "privacyPool": "0x5f3324b47b3CFf937BB67C30B362898E193e5216",
-    "merkleModule": "0x4628FF967F1E6dB64b501BbAf979e66CC98cd321",
-    "verifierModule": "0x4B36104Ce5b079765c39a173cae90BF8D1f853A8",
-    "shieldModule": "0x29347919508Ef4458AA1CaA47E96Dc16e4f5E8D6",
-    "transactModule": "0x55CfC0e80D5826acD64a4475Cd2a925C8D19E7CF",
-    "hookRouter": "0x924ad130584b7B75de5C5E9e2816fc067087430B",
-    "gaslessShieldWrapper": "0x7A8853d59d7cA362402f93387eD3272cb9FB3A31"
+    "privacyPool": "0xBbF483F39A3a303777355B2c1A861Cb485587677",
+    "merkleModule": "0x94a68ad666A8aC70c6704D05480305732ab920aE",
+    "verifierModule": "0xd5121a11f60da3e7feAE9dc4E76cc2Dee4169Df6",
+    "shieldModule": "0x823592B1096fdCcc95F4518CAD6e0F83aA3B6618",
+    "transactModule": "0xD1D182895d3795dD2F499e83125e128cD7EfBf8a",
+    "hookRouter": "0x1E07cA3673A00c2E9DbE9D288D9C21C304233B03",
+    "gaslessShieldWrapper": "0x583dc09f02C05E63a9B2D3E0D91bC22e515Ab41C"
   },
   "cctp": {
     "tokenMessenger": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
     "messageTransmitter": "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
     "usdc": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
   },
-  "deployBlock": 11588108,
-  "timestamp": "2026-08-29T00:19:12.472Z"
+  "deployBlock": 11815325,
+  "timestamp": "2026-09-30T14:47:24.503Z"
 }

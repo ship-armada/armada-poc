@@ -24,6 +24,7 @@ ALLOWED_FILES=(
   "contracts/privacy-pool/storage/PrivacyPoolStorage.sol"  # ZERO_VALUE: public Merkle zero-leaf consensus constant
   "specs/PRIVACY_POOL_CONTRACT.md"  # ZERO_VALUE constant + frozen event topic0 catalog (public consensus values)
   "specs/CONTRACT_REWRITE_DEVIATIONS.md"  # ZERO_VALUE constant + provenance register (public consensus values)
+  "scripts/smoke_shield_sepolia.ts"  # Public Shield event topic0 constant (frozen ABI catalog value)
 )
 
 # Directories whose entire contents are known non-secret data: captured differential test vectors

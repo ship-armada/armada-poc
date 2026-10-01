@@ -202,3 +202,38 @@ describe("wind-down deadline", () => {
       .to.equal("2027-12-31T00:00:00Z");
   });
 });
+
+describe("committed mainnet.env", () => {
+  /** Read the `export KEY=VALUE` lines of a committed env template (comments ignored). */
+  function readEnvTemplate(file: string): Record<string, string> {
+    const vars: Record<string, string> = {};
+    for (const line of fs.readFileSync(path.join(__dirname, file), "utf8").split("\n")) {
+      const m = line.match(/^export ([A-Z0-9_]+)=(.*)$/);
+      if (m) vars[m[1]] = m[2];
+    }
+    return vars;
+  }
+
+  const MAINNET_ENV = readEnvTemplate("mainnet.env");
+
+  // The template sets keys outside MANAGED_PREFIXES (IRIS_*, ARM_*, …); drop them all so
+  // they cannot leak into later suites.
+  afterEach(() => {
+    clearManagedEnv();
+    for (const key of Object.keys(MAINNET_ENV)) delete process.env[key];
+    delete process.env.REVENUE_LOCK_BENEFICIARIES_JSON;
+  });
+
+  // WHY: deploy_mainnet.ts step 1 (CCTP-record) runs validateCCTPConfig("hub") before the
+  // crowdfund can read hub USDC from its manifest. The template must carry the CCTP
+  // addresses or the mainnet launch cannot get past step 1 (#535).
+  it("passes the hub CCTP validation run by deploy step 1", () => {
+    const { validateCCTPConfig } = freshConfig({
+      ...MAINNET_ENV,
+      // Supplied by secrets.env / launch-time TODOs, not the committed template.
+      DEPLOYER_PRIVATE_KEY: "test-placeholder-not-a-real-key",
+      REVENUE_LOCK_BENEFICIARIES_JSON: REVENUE_LOCK_JSON,
+    });
+    expect(() => validateCCTPConfig("hub")).to.not.throw();
+  });
+});

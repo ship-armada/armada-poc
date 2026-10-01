@@ -9,7 +9,7 @@ import * as path from "path";
 // can't leak chain topology into the next (getNetworkConfig caches, so we also re-require).
 const MANAGED_PREFIXES = ["CLIENT_", "HUB_", "CCTP_", "DEPLOY_ENV", "DEPLOYER_PRIVATE_KEY",
   "REVENUE_LOCK_", "REVENUE_RESERVE_", "TREASURY_ADDRESS", "SECURITY_COUNCIL_ADDRESS", "LAUNCH_TEAM_ADDRESS",
-  "CCTP_MODE", "WINDDOWN_", "OUTFLOW_"];
+  "CCTP_MODE", "WINDDOWN_", "OUTFLOW_", "CROWDFUND_"];
 
 function clearManagedEnv(): void {
   for (const key of Object.keys(process.env)) {
@@ -179,7 +179,11 @@ describe("wind-down deadline", () => {
     CLIENT_COUNT: "1",
     CLIENT_1_RPC: "https://c1", CLIENT_1_CHAIN_ID: "8453", CLIENT_1_CCTP_DOMAIN: "6",
   };
-  const MAINNET_BASE = { ...SEPOLIA_BASE, ...ONE_CLIENT, DEPLOY_ENV: "mainnet", CCTP_MODE: "real" };
+  // CROWDFUND_OPEN_TIME is also mainnet-required; set it so these cases isolate the deadline.
+  const MAINNET_BASE = {
+    ...SEPOLIA_BASE, ...ONE_CLIENT, DEPLOY_ENV: "mainnet", CCTP_MODE: "real",
+    CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
+  };
 
   // WHY: the deadline arms a permissionless, terminal wind-down and is fixed at the
   // crowdfund deploy; a mainnet deploy must never pick it up from a silent default.
@@ -200,6 +204,45 @@ describe("wind-down deadline", () => {
       .to.equal("2027-12-31T00:00:00Z");
     expect(freshConfig({ ...SEPOLIA_BASE, ...ONE_CLIENT }).getNetworkConfig().windDownDeadline)
       .to.equal("2027-12-31T00:00:00Z");
+  });
+});
+
+describe("crowdfund open time", () => {
+  afterEach(() => {
+    clearManagedEnv();
+    delete process.env.REVENUE_LOCK_BENEFICIARIES_JSON;
+  });
+
+  const ONE_CLIENT = {
+    CLIENT_COUNT: "1",
+    CLIENT_1_RPC: "https://c1", CLIENT_1_CHAIN_ID: "8453", CLIENT_1_CCTP_DOMAIN: "6",
+  };
+  const MAINNET_BASE = {
+    ...SEPOLIA_BASE, ...ONE_CLIENT, DEPLOY_ENV: "mainnet", CCTP_MODE: "real",
+    WINDDOWN_DEADLINE: "2027-12-31T00:00:00Z",
+  };
+
+  // WHY: windowStart is immutable and the launch is announced for a fixed time; a mainnet
+  // deploy must never fall back to a relative delay that drifts with deploy duration.
+  it("requires CROWDFUND_OPEN_TIME on mainnet", () => {
+    expect(() => freshConfig(MAINNET_BASE).getNetworkConfig()).to.throw(/CROWDFUND_OPEN_TIME/);
+  });
+
+  // WHY: the announced open time must reach the deploy script unchanged.
+  it("uses the explicit CROWDFUND_OPEN_TIME on mainnet", () => {
+    const c = freshConfig({ ...MAINNET_BASE, CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z" }).getNetworkConfig();
+    expect(c.crowdfundOpenTime).to.equal("2026-10-08T17:00:00Z");
+  });
+
+  // WHY: local and Sepolia deploys keep working with no open-time env set, opening after
+  // the relative delay; the absolute time is an optional override there (e.g. rehearsals).
+  it("leaves the open time unset on local and Sepolia, keeping the delay fallback", () => {
+    const local = freshConfig({ DEPLOY_ENV: "local" }).getNetworkConfig();
+    expect(local.crowdfundOpenTime).to.equal(undefined);
+    expect(local.crowdfundOpenDelay).to.equal(600);
+    const sepolia = freshConfig({ ...SEPOLIA_BASE, ...ONE_CLIENT, CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z" })
+      .getNetworkConfig();
+    expect(sepolia.crowdfundOpenTime).to.equal("2026-10-08T17:00:00Z");
   });
 });
 
@@ -257,6 +300,7 @@ describe("committed mainnet.env", () => {
       // Supplied by secrets.env / launch-time TODOs, not the committed template.
       DEPLOYER_PRIVATE_KEY: "test-placeholder-not-a-real-key",
       REVENUE_LOCK_BENEFICIARIES_JSON: REVENUE_LOCK_JSON,
+      CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
     });
     expect(() => validateCCTPConfig("hub")).to.not.throw();
   });
@@ -273,6 +317,7 @@ describe("committed mainnet.env", () => {
       ...MAINNET_ENV,
       DEPLOYER_PRIVATE_KEY: "test-placeholder-not-a-real-key",
       REVENUE_LOCK_BENEFICIARIES_JSON: REVENUE_LOCK_JSON,
+      CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
     }).getNetworkConfig();
     expect(c.outflowConfig).to.deep.equal(SPEC_OUTFLOW);
   });

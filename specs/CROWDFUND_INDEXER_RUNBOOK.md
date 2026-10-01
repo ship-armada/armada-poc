@@ -171,7 +171,7 @@ Alert evaluator variables (used by `evaluate-alerts`; see [`MONITORING.md`](MONI
 |----------|---------|----------|
 | `CROWDFUND_TREASURY_ADDRESS` | required | Treasury address — used to read USDC balance for A13 mismatch detection. |
 | `CROWDFUND_USDC_ADDRESS` | optional | USDC contract — required for A13 (treasury balance). Omit to skip A13. |
-| `CROWDFUND_OPEN_TIMESTAMP` | `0` | Unix seconds when the commitment window opens. Drives A2/A8/A9. |
+| `CROWDFUND_OPEN_TIMESTAMP` | `0` | Unix seconds when the commitment window opens (the contract's `windowStart()`; the same instant as the deploy's ISO `CROWDFUND_OPEN_TIME`). Drives A2/A8/A9. |
 | `CROWDFUND_WEEK1_DEADLINE` | `0` | Unix seconds when week-1 ends (openTimestamp + 7 days). Marks the week-1 → weeks-2–3 phase boundary in the monitoring model. |
 | `CROWDFUND_COMMITMENT_DEADLINE` | `0` | Unix seconds when the 3-week window closes (openTimestamp + 21 days). Drives A8/A9. |
 | `CROWDFUND_ALERT_WEBHOOK_P0` | unset | Discord webhook URL for P0 (immediate) alerts. |

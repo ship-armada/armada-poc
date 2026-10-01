@@ -177,6 +177,54 @@ export function assertNoPriorLaunch(filenames: string[], dir: string = DEPLOYMEN
   }
 }
 
+/** Minimum time between the pre-flight check and the crowdfund opening: room for the
+ *  remaining deploy steps, verification, manifest publish, frontend pin and indexer start. */
+export const CROWDFUND_OPEN_MIN_LEAD_SECONDS = 60 * 60;
+/** Maximum lead — a further-out open time is treated as a typo (wrong year or month). */
+export const CROWDFUND_OPEN_MAX_LEAD_SECONDS = 60 * 86400;
+
+// Canonical UTC form only: an explicit "Z", whole seconds. A zone-less string would be parsed
+// in the operator's local timezone, and a bare number could be seconds or milliseconds.
+const ISO_UTC_SECONDS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+
+/**
+ * Resolve the crowdfund's `_openTimestamp` (unix seconds). With an absolute `openTime`
+ * (ISO 8601 UTC), returns it after checking it lies between `now + minLeadSeconds` and
+ * `now + CROWDFUND_OPEN_MAX_LEAD_SECONDS`. Without one, returns `now + openDelay`.
+ *
+ * The mainnet orchestrator calls this with CROWDFUND_OPEN_MIN_LEAD_SECONDS before sending
+ * any transaction; deploy_crowdfund.ts re-checks with a zero lead against the latest block.
+ */
+export function resolveCrowdfundOpenTimestamp(
+  openTime: string | undefined,
+  openDelay: number,
+  now: number,
+  minLeadSeconds: number,
+): number {
+  if (openTime === undefined) return now + openDelay;
+
+  const parsedMs = Date.parse(openTime);
+  // The round-trip rejects calendar overflow (e.g. month 13) that Date.parse may normalize.
+  if (!ISO_UTC_SECONDS.test(openTime) || Number.isNaN(parsedMs) ||
+      new Date(parsedMs).toISOString() !== openTime.replace("Z", ".000Z")) {
+    throw new Error(`CROWDFUND_OPEN_TIME must be ISO 8601 UTC like 2026-10-08T17:00:00Z, got "${openTime}"`);
+  }
+  const openTs = parsedMs / 1000;
+  if (openTs < now + minLeadSeconds) {
+    throw new Error(
+      `CROWDFUND_OPEN_TIME ${openTime} must be at least ${minLeadSeconds}s after now ` +
+      `(${new Date(now * 1000).toISOString()})`
+    );
+  }
+  if (openTs > now + CROWDFUND_OPEN_MAX_LEAD_SECONDS) {
+    throw new Error(
+      `CROWDFUND_OPEN_TIME ${openTime} must be at most ${CROWDFUND_OPEN_MAX_LEAD_SECONDS / 86400} days after now ` +
+      `(${new Date(now * 1000).toISOString()})`
+    );
+  }
+  return openTs;
+}
+
 /**
  * Save a deployment manifest to the deployments directory.
  * Creates the deployments directory if it does not exist.

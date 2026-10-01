@@ -37,7 +37,7 @@ Single source of truth for every concrete value that enters the deployed contrac
 
 | Parameter | Human-readable | Unix timestamp | Mutability | Verified | Notes |
 |---|---|---|---|---|---|
-| Open timestamp | `[TBD: date/time UTC]` | `[TBD]` | Immutable (constructor) | ☐ | Commitment window, hop-0 additions, and invites begin here |
+| Open timestamp | `[TBD: date/time UTC]` | `[TBD]` | Immutable (constructor) | ☐ | Commitment window, hop-0 additions, and invites begin here. Set as `CROWDFUND_OPEN_TIME` (ISO 8601 UTC, e.g. `2026-10-08T17:00:00Z`) in `config/mainnet.env` — required on mainnet; `setup:mainnet` refuses to start unless it is 1h–60d away (#543). |
 | Week-1 deadline | Open + 7 days | `[TBD]` | Immutable (constructor) | ☐ | `addSeed()` and `launchTeamInvite()` revert after this |
 | Commitment deadline | Open + 21 days | `[TBD]` | Immutable (constructor) | ☐ | `commit()`, `commitWithInvite()`, `invite()` revert after this |
 | Claim deadline | Finalization + 3 years | Computed at finalization | Immutable (derived) | — | `claim()` permitted when `block.timestamp <= finalizationTimestamp + 94_608_000`. Sweep eligible at `>`. |

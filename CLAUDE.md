@@ -103,7 +103,7 @@ When writing new code, follow production security practices even though these le
 | `lib/` | Foundry deps (forge-std, halmos) + Railgun SDK helpers |
 | `config/` | Environment configs (local.env, sepolia.env, networks.ts) |
 | `deploy/` | Crowdfund indexer deployment infra (Docker, nginx, backup scripts) |
-| `deployments/` | Generated deployment manifests (Sepolia ones are committed) |
+| `deployments/` | Generated deployment manifests (Sepolia and mainnet ones are committed) |
 | `specs/` | Specifications — governance, crowdfund, fee structure, ARM token, operations, monitoring |
 | `docs/` | Operational runbooks (e.g. wind-down redemption) |
 | `_legacy/llm-analysis-2026-02/` | LLM-generated security analysis snapshot (Feb 2026, formerly `audit-reports/`) — historical, predates fee module/governance/July review |

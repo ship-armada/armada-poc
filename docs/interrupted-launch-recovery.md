@@ -7,6 +7,9 @@ redeployment is needed, record the abandoned stack (addresses, receipts, any rol
 deployer still holds on it) and move both manifests into an archive folder before
 starting the fresh run.
 
+Mainnet manifests are tracked in git and kept by `npm run clean`, but until they are
+committed the deploy machine holds the only copy. Back them up as soon as the run stops.
+
 The crowdfund stage consumes one-shot ARM permissions and wind-down setters. A
 crash after any transaction must be treated as an interrupted launch, not an
 invitation to rerun `deploy_crowdfund.ts`. The governance manifest now saves

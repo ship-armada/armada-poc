@@ -223,10 +223,12 @@ async function main() {
     beneficiaryConfig, revenueReserveDistributor ? { address: revenueReserveDistributor, cap: reserveCap } : undefined);
 
   // Max advance per elapsed day for the observed-revenue ratchet — 18-decimal USD.
-  // $10k/day per PARAMETER_MANIFEST.md (ship-armada/crowdfund) and issue #225:
+  // $10k/day per PARAMETER_MANIFEST.md §8.2 and issue #225:
   // forces a malicious RevenueCounter upgrade to take ≥100 days to accelerate
   // $0 → $1M full-unlock, giving community + Security Council time to respond.
-  const MAX_REVENUE_INCREASE_PER_DAY = ethers.parseUnits("10000", 18);
+  // Configured in whole USD (config.revenueLockMaxIncreasePerDayUsd), scaled here.
+  const MAX_REVENUE_INCREASE_PER_DAY = ethers.parseUnits(config.revenueLockMaxIncreasePerDayUsd, 18);
+  console.log(`   RevenueLock MAX_REVENUE_INCREASE_PER_DAY: $${config.revenueLockMaxIncreasePerDayUsd}/day (${MAX_REVENUE_INCREASE_PER_DAY})`);
 
   // Guard: reject Anvil default addresses on non-local environments
   rejectAnvilAddresses(revenueLockBeneficiaries, "RevenueLock beneficiaries");

@@ -137,7 +137,9 @@ async function main() {
 
   // $10k/day in 18-decimal USD. See PARAMETER_MANIFEST.md / issue #225 — rate cap on
   // the observed-revenue ratchet, defends against malicious RevenueCounter upgrades.
-  const MAX_REVENUE_INCREASE_PER_DAY = ethers.parseUnits("10000", 18);
+  // Configured in whole USD (config.revenueLockMaxIncreasePerDayUsd), scaled here.
+  const MAX_REVENUE_INCREASE_PER_DAY = ethers.parseUnits(config.revenueLockMaxIncreasePerDayUsd, 18);
+  console.log(`  MAX_REVENUE_INCREASE_PER_DAY: $${config.revenueLockMaxIncreasePerDayUsd}/day (${MAX_REVENUE_INCREASE_PER_DAY})`);
 
   const RevenueLock = await ethers.getContractFactory("RevenueLock");
   const lock = await RevenueLock.deploy(

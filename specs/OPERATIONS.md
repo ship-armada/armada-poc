@@ -99,8 +99,8 @@ Execute in exact order. Do not proceed to the next step until the previous step'
 | | |
 |---|---|
 | **Actor** | Deployer |
-| **Action** | Run deploy script with verified constructor params |
-| **Preconditions** | All pre-launch checklist items signed off |
+| **Action** | Run deploy script with verified constructor params: `source config/mainnet.env && DEPLOY_COMMIT=<SHA> npm run setup:mainnet -- --confirm-mainnet`, where `<SHA>` is the full 40-character SHA of the commit being deployed. The script refuses to start, before compiling or sending anything, unless `HEAD` is that commit and the working tree is clean. Etherscan verification (Step 2) must build from the same commit. |
+| **Preconditions** | All pre-launch checklist items signed off; launch config (beneficiaries, open time, addresses) committed — uncommitted or untracked files block the deploy |
 | **On-chain confirmation** | Contract address returned; verify on block explorer: correct bytecode, correct constructor args |
 | **Fallback** | If deploy fails: debug constructor params; do not redeploy without re-running full checklist. If the deploy stopped after sending any transaction, it is an interrupted launch — follow `docs/interrupted-launch-recovery.md`, do not re-run |
 

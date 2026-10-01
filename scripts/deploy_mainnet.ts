@@ -16,11 +16,13 @@
  * belong to the separate shielded-pool launch and must not be part of a hardened run.
  *
  * Env-driven via config.hub.hardhatNetwork (mainnetHub / sepoliaHub):
- *   - Mainnet launch:  source config/mainnet.env && npm run setup:mainnet -- --confirm-mainnet
+ *   - Mainnet launch:  source config/mainnet.env && DEPLOY_COMMIT=<sha> npm run setup:mainnet -- --confirm-mainnet
  *   - #319 dry-run:    source config/sepolia.env && HARDEN_TIMELOCK=true npm run setup:mainnet
  *   - Preview only:    add `-- --dry-run` to print the sequence without executing
  *
- * A live mainnet deploy requires the explicit --confirm-mainnet flag (real-funds guard).
+ * A live mainnet deploy requires the explicit --confirm-mainnet flag (real-funds guard) and
+ * DEPLOY_COMMIT=<40-char SHA>: before compiling, the orchestrator refuses to start unless
+ * HEAD is that commit and the working tree is clean (assertDeployCommit).
  *
  * Not re-runnable: the crowdfund step consumes one-shot setters and distributes ARM. On
  * mainnet the orchestrator refuses to start while governance/crowdfund manifests from an
@@ -37,6 +39,7 @@ import { getNetworkConfig, getGovernanceDeploymentFile, getCrowdfundDeploymentFi
 import {
   assertNoPriorLaunch,
   INTERRUPTED_LAUNCH_RUNBOOK,
+  assertDeployCommit,
   resolveCrowdfundOpenTimestamp,
   CROWDFUND_OPEN_MIN_LEAD_SECONDS,
 } from "./deploy-utils";
@@ -115,7 +118,7 @@ async function main() {
   if (config.env === "mainnet" && !DRY_RUN && !CONFIRM_MAINNET) {
     console.error("Refusing to deploy to MAINNET without explicit confirmation.");
     console.error("  Preview:  npm run setup:mainnet -- --dry-run");
-    console.error("  Deploy:   npm run setup:mainnet -- --confirm-mainnet");
+    console.error("  Deploy:   DEPLOY_COMMIT=<sha> npm run setup:mainnet -- --confirm-mainnet");
     process.exit(1);
   }
   // Re-run guard: manifests from an earlier mainnet run mean transactions were already
@@ -127,6 +130,25 @@ async function main() {
       console.error(`Error: ${(e as Error).message}`);
       process.exit(1);
     }
+  }
+
+  // Commit pin: hardhat compiles whatever is checked out, and a wrong build is only caught
+  // after one-shot initializers are spent. Required for a live mainnet run; checked whenever
+  // set (dry-run, Sepolia rehearsal).
+  const deployCommit = process.env.DEPLOY_COMMIT?.trim() || undefined;
+  if (config.env === "mainnet" && !DRY_RUN && !deployCommit) {
+    console.error("Error: a live mainnet deploy requires DEPLOY_COMMIT=<40-char SHA> (the commit to deploy).");
+    process.exit(1);
+  }
+  if (deployCommit) {
+    try {
+      assertDeployCommit(deployCommit);
+    } catch (e) {
+      console.error(`Error: ${(e as Error).message}`);
+      process.exit(1);
+    }
+  } else if (config.env === "mainnet") {
+    console.warn("WARNING: DEPLOY_COMMIT not set — the build is NOT pinned (required for the live run).\n");
   }
 
   // Open-time pre-flight: windowStart is immutable and the crowdfund step runs after
@@ -150,6 +172,7 @@ async function main() {
   console.log(`  Hub:           ${config.hub.name} (Chain ${config.hub.chainId}, network ${hubNet})`);
   console.log(`  CCTP Mode:     ${config.cctpMode}`);
   console.log(`  Harden:        ${config.hardenTimelock}`);
+  console.log(`  Commit:        ${deployCommit ? `${deployCommit} (HEAD matches, tree clean)` : "NOT pinned (DEPLOY_COMMIT not set)"}`);
   console.log(`  Timelock:      ${config.hardenTimelock ? `deploy at 0 → raise to ${config.timelockDelay}s → renounce` : `${config.timelockDelay}s (deployer keeps roles)`}`);
   console.log(`  Sale opens:    ${config.crowdfundOpenTime
     ? `${config.crowdfundOpenTime} (${openTimestamp})`

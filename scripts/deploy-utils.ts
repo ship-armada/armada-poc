@@ -13,6 +13,7 @@
  */
 
 import { isLocal } from "../config/networks";
+import { execFileSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
@@ -175,6 +176,30 @@ export function assertNoPriorLaunch(filenames: string[], dir: string = DEPLOYMEN
       `An earlier run already sent transactions. Do not re-run; follow ${INTERRUPTED_LAUNCH_RUNBOOK}.`
     );
   }
+}
+
+/**
+ * Refuse to deploy anything but the intended commit. Throws unless `expectedCommit` is a full
+ * 40-character SHA equal to HEAD in `repoDir` and the working tree is clean (hardhat compiles
+ * the working tree, so local edits would deploy code that is in no commit). Returns HEAD.
+ */
+export function assertDeployCommit(expectedCommit: string, repoDir: string = process.cwd()): string {
+  if (!/^[0-9a-f]{40}$/i.test(expectedCommit)) {
+    throw new Error(`DEPLOY_COMMIT must be a full 40-character commit SHA, got "${expectedCommit}"`);
+  }
+  // execFileSync (no shell): nothing user-supplied is interpreted.
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd: repoDir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+
+  const head = git("rev-parse", "HEAD");
+  if (head.toLowerCase() !== expectedCommit.toLowerCase()) {
+    throw new Error(`Refusing to deploy: HEAD is ${head}, DEPLOY_COMMIT is ${expectedCommit}`);
+  }
+  const dirty = git("status", "--porcelain", "--untracked-files=all");
+  if (dirty) {
+    throw new Error(`Refusing to deploy: the working tree is not clean (hardhat compiles the working tree):\n${dirty}`);
+  }
+  return head;
 }
 
 /** Minimum time between the pre-flight check and the crowdfund opening: room for the

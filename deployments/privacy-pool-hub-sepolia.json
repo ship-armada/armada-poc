@@ -3,19 +3,19 @@
   "domain": 0,
   "deployer": "0xc43A7aF1f7124E2D919040e749cf252F1dEAc4Ee",
   "contracts": {
-    "privacyPool": "0xBbF483F39A3a303777355B2c1A861Cb485587677",
-    "merkleModule": "0x94a68ad666A8aC70c6704D05480305732ab920aE",
-    "verifierModule": "0xd5121a11f60da3e7feAE9dc4E76cc2Dee4169Df6",
-    "shieldModule": "0x823592B1096fdCcc95F4518CAD6e0F83aA3B6618",
-    "transactModule": "0xD1D182895d3795dD2F499e83125e128cD7EfBf8a",
-    "hookRouter": "0x1E07cA3673A00c2E9DbE9D288D9C21C304233B03",
-    "gaslessShieldWrapper": "0x583dc09f02C05E63a9B2D3E0D91bC22e515Ab41C"
+    "privacyPool": "0xc9e0ec323CB6638a307D560731e53Aa675C66e76",
+    "merkleModule": "0xA53e9e5346070fccc865257c5cc9A8badE23C68F",
+    "verifierModule": "0xC4400d7Bd07f556FDcAa9201E240B0347118faa4",
+    "shieldModule": "0xc66FEc0318cc99c71369C790983f347D17eD0701",
+    "transactModule": "0x152DB357b4186efA235A83ED27dFDFB9Bdef7632",
+    "hookRouter": "0xdd9Bbab3A5D4D32460b2465f56D7D3B07abe03E9",
+    "gaslessShieldWrapper": "0xd5636de74B888B86B8bfd4Bd9052Aa651140E77D"
   },
   "cctp": {
     "tokenMessenger": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
     "messageTransmitter": "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
     "usdc": "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
   },
-  "deployBlock": 11815325,
-  "timestamp": "2026-09-30T14:47:24.503Z"
+  "deployBlock": 11821615,
+  "timestamp": "2026-10-01T11:52:37.421Z"
 }

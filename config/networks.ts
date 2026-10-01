@@ -63,9 +63,10 @@ export interface OutflowParams {
   windowDuration: number;
   /** Per-window limit as basis points of treasury balance (1..10000). */
   limitBps: number;
-  /** Absolute per-window cap, in the token's smallest unit. */
+  /** Absolute per-window amount, in the token's smallest unit. Not a cap: the effective
+   * limit is the greater of this and limitBps × balance, raised to at least floorAbsolute. */
   limitAbsolute: string;
-  /** Immutable minimum the absolute cap can never be reduced below, smallest unit. */
+  /** Immutable minimum the absolute amount can never be reduced below, smallest unit. */
   floorAbsolute: string;
 }
 
@@ -156,8 +157,8 @@ export interface NetworkConfig {
   /**
    * Treasury outflow rate-limit config per token, applied at deploy via
    * initOutflowConfig so the treasury is protected from launch rather than via a
-   * fragile first governance vote. PLACEHOLDER values — issue #348 tracks the
-   * finalized numbers. Amounts are in each token's smallest unit (USDC 6dp, ARM/ETH 18dp).
+   * fragile first governance vote. USDC/ARM follow GOVERNANCE.md; ETH values are
+   * placeholders pending issue #348. Amounts are in each token's smallest unit (USDC 6dp, ARM/ETH 18dp).
    */
   outflowConfig: { usdc: OutflowParams; arm: OutflowParams; eth: OutflowParams };
 }
@@ -398,21 +399,24 @@ export function getNetworkConfig(): NetworkConfig {
     // Default on for mainnet (safe — can't forget to harden), opt-in elsewhere
     // (the Sepolia dry-run sets HARDEN_TIMELOCK=true to rehearse the mainnet path).
     hardenTimelock: boolEnv("HARDEN_TIMELOCK", env === "mainnet"),
-    // PLACEHOLDER outflow limits (#348). Env-overridable per token. Defaults: 1-day
-    // window, 20% of balance, with a generous absolute cap and no immutable floor.
+    // Treasury outflow limits, env-overridable per token. USDC and ARM defaults are the
+    // GOVERNANCE.md §Treasury Outflow Limits values: 30-day rolling window, limit = greater
+    // of the absolute amount and the % of treasury balance, immutable floor.
     outflowConfig: {
       usdc: {
-        windowDuration: numEnv("OUTFLOW_USDC_WINDOW", 86400),
-        limitBps: numEnv("OUTFLOW_USDC_BPS", 2000),
+        windowDuration: numEnv("OUTFLOW_USDC_WINDOW", 2592000),                         // 30 days
+        limitBps: numEnv("OUTFLOW_USDC_BPS", 1000),                                     // 10%
         limitAbsolute: optionalEnv("OUTFLOW_USDC_ABSOLUTE", "100000000000"),            // 100,000 USDC (6dp)
-        floorAbsolute: optionalEnv("OUTFLOW_USDC_FLOOR", "0"),
+        floorAbsolute: optionalEnv("OUTFLOW_USDC_FLOOR", "50000000000"),                // 50,000 USDC (6dp)
       },
       arm: {
-        windowDuration: numEnv("OUTFLOW_ARM_WINDOW", 86400),
-        limitBps: numEnv("OUTFLOW_ARM_BPS", 2000),
-        limitAbsolute: optionalEnv("OUTFLOW_ARM_ABSOLUTE", "500000000000000000000000"), // 500,000 ARM (18dp)
-        floorAbsolute: optionalEnv("OUTFLOW_ARM_FLOOR", "0"),
+        windowDuration: numEnv("OUTFLOW_ARM_WINDOW", 2592000),                          // 30 days
+        limitBps: numEnv("OUTFLOW_ARM_BPS", 300),                                       // 3%
+        limitAbsolute: optionalEnv("OUTFLOW_ARM_ABSOLUTE", "250000000000000000000000"), // 250,000 ARM (18dp)
+        floorAbsolute: optionalEnv("OUTFLOW_ARM_FLOOR", "100000000000000000000000"),    // 100,000 ARM (18dp)
       },
+      // TODO(#348): ETH limits are not specified in GOVERNANCE.md — these remain
+      // placeholders until decided. Floor stays 0 because floors can only be raised later.
       eth: {
         windowDuration: numEnv("OUTFLOW_ETH_WINDOW", 86400),
         limitBps: numEnv("OUTFLOW_ETH_BPS", 2000),

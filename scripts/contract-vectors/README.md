@@ -80,6 +80,30 @@ mocks, mints USDC, sets approvals) and asserts the mocks land at the manifest's
 recorded addresses. Phase 2c extends this into old-vs-new replay with
 address-book substitution (see TODOs in `replay-check.ts`).
 
+## Post-drift v2 corpus
+
+`test-foundry/fixtures/contract-vectors-v2/` (captured by `capture-v2.ts`) covers the
+behavioral surface main absorbed after the v1 corpus (deviation register D-15..D-18):
+registry-derived shield-fee exemption, token blocklist admin, remoteHookRouters pinning,
+multi-note cross-chain shield-in, destination-bound atomic unshield, deployer-gated
+initialize, and the reentrancy guard. It was captured from a fixturenet deployed from
+**current-main** contracts and replays 23/23 against the rewritten contracts.
+
+Replay the v2 corpus:
+
+```bash
+REPLAY_FIXTURES_DIR=test-foundry/fixtures/contract-vectors-v2 \
+REPLAY_ALL=1 REPLAY_GENESIS=1 npx hardhat run scripts/contract-vectors/replay-check.ts --network hub
+```
+
+Replaying the v1 corpus against the rewritten contracts intentionally diverges on
+exactly the changed surface (`admin-set-privileged-shield-caller` reverts — selector
+removed; `shield-privileged-caller` — registry-derived privilege; `shield-gasless-wrapper`
+— wrapper reworked upstream; `shieldin-*` — array payload; `unshield-atomic-crosschain`
+— new signature) and everything downstream of them (state cascade). All other v1 vectors
+still match; gas deltas on unchanged paths are now +0..+2,624 (the nonReentrant guard's
+SSTORE) instead of the pre-port 0..−353.
+
 ## Proof policy (decision: testingMode bypass)
 
 The capture enables the pool's `testingMode` proof bypass early

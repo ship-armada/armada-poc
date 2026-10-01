@@ -1,0 +1,327 @@
+{
+  "version": 2,
+  "generatedAt": "2026-10-01T11:34:03.215Z",
+  "generator": "scripts/contract-vectors/capture-v2.ts",
+  "network": {
+    "name": "local fixturenet (Anvil hub chain, mock CCTP)",
+    "chainId": 31337,
+    "rpc": "http://localhost:8545",
+    "hubDomain": 100
+  },
+  "proofPolicy": {
+    "summary": "Unshield vectors captured with testingMode proof bypass active; all others need no proofs. Same policy as the v1 corpus.",
+    "bypassEnabledByVector": "v2-admin-set-testing-mode-true",
+    "bypassDisabledByVector": "v2-admin-set-testing-mode-false"
+  },
+  "bootCommands": [
+    "anvil --port 8545 --chain-id 31337 --block-time 1 --accounts 200",
+    "source config/local.env",
+    "npm run compile",
+    "npm run deploy:cctp:hub",
+    "npm run deploy:aave:hub",
+    "npm run deploy:governance",
+    "npm run deploy:privacy-pool:hub",
+    "npm run deploy:gasless-wrapper:hub",
+    "npm run deploy:yield:hub",
+    "npm run deploy:fee-module",
+    "npx hardhat run scripts/contract-vectors/capture-v2.ts --network hub"
+  ],
+  "addressBook": {
+    "DEPLOYER": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "ALICE": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    "BOB": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+    "CAROL": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+    "TREASURY": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+    "POOL": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+    "VERIFIER_MODULE": "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
+    "HOOK_ROUTER": "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
+    "TOKEN_MESSENGER": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+    "MESSAGE_TRANSMITTER": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+    "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "FEE_MODULE": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+    "CLIENT_POOL": "0x0000000000000000000000000000000000C11EA7",
+    "MOCK_PAUSE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+    "MOCK_FEE_MODULE": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f",
+    "MOCK_ADAPTER_REGISTRY": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d",
+    "MALICIOUS_TOKEN": "0xdbC43Ba45381e02825b14322cDdd15eC4B3164E6"
+  },
+  "notes": [
+    "Delta corpus for the post-drift behavior (main absorbed M0-era fixes after the v1 corpus): replay against the rewritten contracts is the post-drift equivalence gate.",
+    "Genesis deploy order is load-bearing: MockShieldPauseController, MockConfigurableFeeModule, MockAdapterRegistry, MaliciousReentrantToken, then funding/approvals (see replay-check.ts).",
+    "Replay requires the fixturenet booted with --timestamp <generatedAt unix> (EIP-2612-free corpus, but keep the harness invariant)."
+  ],
+  "vectors": [
+    {
+      "id": "v2-admin-set-testing-mode-true",
+      "file": "v2-admin-set-testing-mode-true.json",
+      "category": "admin",
+      "dependsOn": [],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner enables testingMode proof bypass so the unshield vectors replay without circuit artifacts (same policy as v1 corpus)."
+    },
+    {
+      "id": "v2-admin-set-shield-fee-50",
+      "file": "v2-admin-set-shield-fee-50.json",
+      "category": "admin",
+      "dependsOn": [
+        "v2-admin-set-testing-mode-true"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner sets the flat shield fee to 50 bps (fee module detached on a fresh fixturenet)."
+    },
+    {
+      "id": "v2-admin-set-remote-pool",
+      "file": "v2-admin-set-remote-pool.json",
+      "category": "admin",
+      "dependsOn": [],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner registers a remote pool on domain 101 (client chain)."
+    },
+    {
+      "id": "v2-admin-set-remote-hook-router",
+      "file": "v2-admin-set-remote-hook-router.json",
+      "category": "admin",
+      "dependsOn": [
+        "v2-admin-set-remote-pool"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner pins the destinationCaller for domain 101 to the hub hook router bytes32 (D-16): outbound burns can only be delivered through the destination chain's CCTPHookRouter."
+    },
+    {
+      "id": "v2-admin-set-remote-pool-102",
+      "file": "v2-admin-set-remote-pool-102.json",
+      "category": "admin",
+      "dependsOn": [],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner registers a remote pool on domain 102 but deliberately leaves its remoteHookRouters entry unset."
+    },
+    {
+      "id": "v2-admin-set-adapter-registry",
+      "file": "v2-admin-set-adapter-registry.json",
+      "category": "admin",
+      "dependsOn": [
+        "v2-admin-set-shield-fee-50"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner sets the timelock-governed adapter registry (set-once). Setup tx authorizes CAROL in the mock registry — CAROL's next shield pays no fee."
+    },
+    {
+      "id": "v2-admin-set-adapter-registry-twice-revert",
+      "file": "v2-admin-set-adapter-registry-twice-revert.json",
+      "category": "admin",
+      "dependsOn": [
+        "v2-admin-set-adapter-registry"
+      ],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "revertReason": "PrivacyPool: registry already set",
+      "description": "Second setAdapterRegistry reverts — the registry is immutable once set (owner has no path to grant shield privilege after configuration)."
+    },
+    {
+      "id": "v2-shield-privileged-adapter",
+      "file": "v2-shield-privileged-adapter.json",
+      "category": "shield",
+      "dependsOn": [
+        "v2-admin-set-adapter-registry"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "CAROL (authorized in the registry) shields 20 USDC with 50bps flat fee configured: fee = 0, full value committed (D-18 registry-derived exemption)."
+    },
+    {
+      "id": "v2-shield-unprivileged-with-registry",
+      "file": "v2-shield-unprivileged-with-registry.json",
+      "category": "shield",
+      "dependsOn": [
+        "v2-shield-privileged-adapter"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "BOB (NOT in the registry) shields 20 USDC with the registry set: flat 50bps fee charged and sent to treasury — proves the retired privilegedShieldCallers map is inert (D-18)."
+    },
+    {
+      "id": "v2-admin-add-to-blocklist",
+      "file": "v2-admin-add-to-blocklist.json",
+      "category": "admin",
+      "dependsOn": [
+        "v2-admin-set-shield-fee-50"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner blocklists the MOCK_PAUSE address (standing in for a token). Emits AddToBlocklist; blocked tokens cannot be SHIELDED but existing notes stay exitable."
+    },
+    {
+      "id": "v2-shield-blocked-token-revert",
+      "file": "v2-shield-blocked-token-revert.json",
+      "category": "shield",
+      "dependsOn": [
+        "v2-admin-add-to-blocklist"
+      ],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "revertReason": "ShieldModule: Token blocked",
+      "description": "Shield of a blocklisted token reverts in preimage validation (spec §7.1(a)) before any token movement."
+    },
+    {
+      "id": "v2-admin-block-usdc-revert",
+      "file": "v2-admin-block-usdc-revert.json",
+      "category": "admin",
+      "dependsOn": [
+        "v2-admin-add-to-blocklist"
+      ],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "revertReason": "PrivacyPool: cannot block USDC",
+      "description": "Blocking the pool's core USDC asset reverts — in-flight cross-chain shields must stay deliverable (D-18)."
+    },
+    {
+      "id": "v2-admin-remove-from-blocklist",
+      "file": "v2-admin-remove-from-blocklist.json",
+      "category": "admin",
+      "dependsOn": [
+        "v2-shield-blocked-token-revert",
+        "v2-admin-block-usdc-revert"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner removes the block (idempotent cleanup; end state: blocklist empty)."
+    },
+    {
+      "id": "v2-admin-set-hook-router",
+      "file": "v2-admin-set-hook-router.json",
+      "category": "admin",
+      "dependsOn": [],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner wires the CCTPHookRouter into the pool (required for inbound cross-chain shields)."
+    },
+    {
+      "id": "v2-cctp-set-mock-relayer",
+      "file": "v2-cctp-set-mock-relayer.json",
+      "category": "cctp-config",
+      "dependsOn": [
+        "v2-admin-set-hook-router"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Mock-CCTP wiring: point the hub MockMessageTransmitterV2's relayer at the CCTPHookRouter so relayWithHook can call receiveMessage."
+    },
+    {
+      "id": "v2-shieldin-multi-note",
+      "file": "v2-shieldin-multi-note.json",
+      "category": "shield-in",
+      "dependsOn": [
+        "v2-admin-set-hook-router",
+        "v2-cctp-set-mock-relayer"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Multi-note cross-chain shield-in (D-15): 500 USDC gross, 2 USDC CCTP fee; note[0] (recipient) is credited 498-5=493, note[1] (relayer fee note) mints at full 5; ONE Shield event with both commitments."
+    },
+    {
+      "id": "v2-shieldin-no-notes-revert",
+      "file": "v2-shieldin-no-notes-revert.json",
+      "category": "shield-in",
+      "dependsOn": [
+        "v2-shieldin-multi-note"
+      ],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "revertReason": "ShieldModule: no shield notes",
+      "description": "Empty ShieldData[] reverts (spec §7.2 step 2)."
+    },
+    {
+      "id": "v2-unshield-crosschain-bound",
+      "file": "v2-unshield-crosschain-bound.json",
+      "category": "unshield",
+      "dependsOn": [
+        "v2-admin-set-testing-mode-true",
+        "v2-admin-set-remote-pool",
+        "v2-shieldin-multi-note"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Bound atomic cross-chain unshield (D-16): adaptParams = CCTPBindingLib.encode(recipient, domain, maxFee); destinationCaller pinned to remoteHookRouters[101] in the burn call; uniqueNonce echoed in hookData; nonce=0 returned."
+    },
+    {
+      "id": "v2-unshield-crosschain-unbound-revert",
+      "file": "v2-unshield-crosschain-unbound-revert.json",
+      "category": "unshield",
+      "dependsOn": [
+        "v2-admin-set-testing-mode-true",
+        "v2-admin-set-remote-pool",
+        "v2-shieldin-multi-note"
+      ],
+      "proofsBypassed": true,
+      "outcome": "revert",
+      "revertReason": "TransactModule: destination not bound to proof",
+      "description": "Unbound cross-chain unshield (adaptParams = 0) reverts — a relayer cannot resubmit a victim's proof with a redirected recipient (D-16)."
+    },
+    {
+      "id": "v2-unshield-crosschain-no-hookrouter-revert",
+      "file": "v2-unshield-crosschain-no-hookrouter-revert.json",
+      "category": "unshield",
+      "dependsOn": [
+        "v2-admin-set-testing-mode-true",
+        "v2-admin-set-remote-pool",
+        "v2-shieldin-multi-note"
+      ],
+      "proofsBypassed": true,
+      "outcome": "revert",
+      "revertReason": "TransactModule: Hook router not configured",
+      "description": "Cross-chain unshield to domain 102 (remote pool registered, hook router NOT pinned) reverts before proof validation (D-16)."
+    },
+    {
+      "id": "v2-unshield-to-pool-revert",
+      "file": "v2-unshield-to-pool-revert.json",
+      "category": "unshield",
+      "dependsOn": [
+        "v2-admin-set-testing-mode-true",
+        "v2-shieldin-multi-note"
+      ],
+      "proofsBypassed": true,
+      "outcome": "revert",
+      "revertReason": "TransactModule: unshield to pool",
+      "description": "Local unshield whose npk encodes the pool address reverts (D-18): blocks replaying an xchain-unshield proof through plain transact() (pool->pool payout would strand funds)."
+    },
+    {
+      "id": "v2-initialize-nondeployer-revert",
+      "file": "v2-initialize-nondeployer-revert.json",
+      "category": "admin",
+      "dependsOn": [],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "revertReason": "PrivacyPool: Only deployer",
+      "description": "initialize() from a non-deployer reverts (OQ-7 closed, D-18): a front-runner cannot initialize a freshly deployed pool with malicious params."
+    },
+    {
+      "id": "v2-shield-reentrancy-revert",
+      "file": "v2-shield-reentrancy-revert.json",
+      "category": "edge",
+      "dependsOn": [
+        "v2-admin-set-shield-fee-50"
+      ],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "revertReason": "PrivacyPool: reentrant call",
+      "description": "Shield with MaliciousReentrantToken: the token's transferFrom re-enters pool.shield mid-deposit; the router's nonReentrant guard fires (D-18)."
+    },
+    {
+      "id": "v2-admin-set-testing-mode-false",
+      "file": "v2-admin-set-testing-mode-false.json",
+      "category": "admin",
+      "dependsOn": [
+        "v2-unshield-crosschain-bound"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner disables testingMode (cleanup): real SNARK verification restored."
+    }
+  ]
+}

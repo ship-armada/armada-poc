@@ -34,6 +34,7 @@ ALLOWED_DIRS=(
   "scripts/capture/vectors/"  # Phase 0 SDK vectors (keyset, commitment, nullifier, EdDSA, merkle, ...)
   "deployments/"              # Script-generated manifests: public addresses and creation tx hashes (32-byte hex, not keys)
   "test-foundry/fixtures/contract-vectors/"  # M8 golden-vector corpus: deterministic public test vectors (calldata, commitments, EdDSA sig components)
+  "test-foundry/fixtures/contract-vectors-v2/"  # M8 post-drift delta corpus (same rationale)
 )
 
 # Patterns that indicate secrets. Each entry: "LABEL:::REGEX"

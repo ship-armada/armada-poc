@@ -1,5 +1,12 @@
 # Interrupted crowdfund deployment recovery
 
+`npm run setup:mainnet` (`scripts/deploy_mainnet.ts`) is not re-runnable. On mainnet it
+refuses to start while `deployments/governance-hub-mainnet.json` or
+`deployments/crowdfund-hub-mainnet.json` exists. If recovery concludes that a clean
+redeployment is needed, record the abandoned stack (addresses, receipts, any roles the
+deployer still holds on it) and move both manifests into an archive folder before
+starting the fresh run.
+
 The crowdfund stage consumes one-shot ARM permissions and wind-down setters. A
 crash after any transaction must be treated as an interrupted launch, not an
 invitation to rerun `deploy_crowdfund.ts`. The governance manifest now saves

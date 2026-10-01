@@ -22,13 +22,19 @@
  *
  * A live mainnet deploy requires the explicit --confirm-mainnet flag (real-funds guard).
  *
+ * Not re-runnable: the crowdfund step consumes one-shot setters and distributes ARM. On
+ * mainnet the orchestrator refuses to start while governance/crowdfund manifests from an
+ * earlier run exist. A run that stops part-way is an interrupted launch — recover it by
+ * hand per docs/interrupted-launch-recovery.md.
+ *
  * Prerequisites (fail loud if missing): deployer key funded on the hub; real CCTP V2
  * addresses + USDC configured; treasury / security council / launch team / RevenueLock
  * beneficiaries set. See config/mainnet.env.
  */
 
 import { execSync } from "child_process";
-import { getNetworkConfig } from "../config/networks";
+import { getNetworkConfig, getGovernanceDeploymentFile, getCrowdfundDeploymentFile } from "../config/networks";
+import { assertNoPriorLaunch, INTERRUPTED_LAUNCH_RUNBOOK } from "./deploy-utils";
 
 // --dry-run prints the deploy sequence without executing it (preview the launch plan).
 const DRY_RUN = process.argv.slice(2).includes("--dry-run");
@@ -58,6 +64,8 @@ function run(cmd: string, description: string): void {
   } catch (e) {
     console.error(`\nFailed: ${description}`);
     console.error(`Command: ${cmd}`);
+    console.error(`If any transaction was sent, this is an interrupted launch. On mainnet do NOT`);
+    console.error(`re-run — follow ${INTERRUPTED_LAUNCH_RUNBOOK}.`);
     process.exit(1);
   }
 }
@@ -104,6 +112,16 @@ async function main() {
     console.error("  Preview:  npm run setup:mainnet -- --dry-run");
     console.error("  Deploy:   npm run setup:mainnet -- --confirm-mainnet");
     process.exit(1);
+  }
+  // Re-run guard: manifests from an earlier mainnet run mean transactions were already
+  // sent. Sepolia dry-runs are disposable and may be re-run freely.
+  if (config.env === "mainnet") {
+    try {
+      assertNoPriorLaunch([getGovernanceDeploymentFile(), getCrowdfundDeploymentFile()]);
+    } catch (e) {
+      console.error(`Error: ${(e as Error).message}`);
+      process.exit(1);
+    }
   }
 
   console.log("=".repeat(60));

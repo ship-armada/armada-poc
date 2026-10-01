@@ -17,7 +17,7 @@ const DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY || ANVIL_KEY;
 // mirroring config/networks.ts so adding a client needs no manual network entry. Each client i
 // yields three entries — client<i> (local), sepoliaClient<i>, mainnetClient<i> — all reading the
 // same CLIENT_<i>_RPC / CLIENT_<i>_CHAIN_ID (only one env file is sourced at a time, so the chainId
-// matches the selected environment). sepolia/mainnet gasMultiplier is 2.0/1.2 for the same reason
+// matches the selected environment). sepolia/mainnet gasMultiplier is 2.0 for the same reason
 // as the hub networks below (public-RPC eth_estimateGas underestimates refund-heavy SSTOREs).
 function buildClientNetworks(): Record<string, any> {
   const localDefaults: Array<{ rpc: string; chainId: number }> = [
@@ -47,7 +47,7 @@ function buildClientNetworks(): Record<string, any> {
       url: rpc || "",
       chainId,
       accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
-      gasMultiplier: 1.2,
+      gasMultiplier: 2.0,
     };
   }
   return nets;
@@ -156,11 +156,15 @@ const config: HardhatUserConfig = {
     // shielded-pool deployment.
 
     // Hub: Ethereum mainnet
+    // gasMultiplier 2.0, same as sepoliaHub: the estimate shortfall on slot-clearing SSTOREs
+    // is not testnet-specific, and an OOG revert at clearDeployer()/renounceRole() mid-launch
+    // cannot be fixed by re-running the deploy (docs/interrupted-launch-recovery.md). Only
+    // actual gasUsed is charged, but the deployer must hold ETH for gasLimit x maxFeePerGas.
     mainnetHub: {
       url: process.env.HUB_RPC || "https://ethereum-rpc.publicnode.com",
       chainId: 1,
       accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
-      gasMultiplier: 1.2,
+      gasMultiplier: 2.0,
     },
     // Client networks (mainnetClient<i>) are generated from CLIENT_COUNT via buildClientNetworks().
 

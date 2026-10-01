@@ -159,6 +159,24 @@ export function loadDeployment(filename: string): any | null {
   return data;
 }
 
+/** Manual recovery procedure for a crowdfund launch that stopped part-way. */
+export const INTERRUPTED_LAUNCH_RUNBOOK = "docs/interrupted-launch-recovery.md";
+
+/**
+ * Throw if any of the given manifests already exist in the deployments directory (or
+ * `dir`). Their presence means an earlier launch already sent transactions; re-running
+ * would deploy a second stack and overwrite the record of the first.
+ */
+export function assertNoPriorLaunch(filenames: string[], dir: string = DEPLOYMENTS_DIR): void {
+  const existing = filenames.filter((f) => fs.existsSync(path.join(dir, f)));
+  if (existing.length > 0) {
+    throw new Error(
+      `Existing launch manifest(s) found in deployments/: ${existing.join(", ")}. ` +
+      `An earlier run already sent transactions. Do not re-run; follow ${INTERRUPTED_LAUNCH_RUNBOOK}.`
+    );
+  }
+}
+
 /**
  * Save a deployment manifest to the deployments directory.
  * Creates the deployments directory if it does not exist.

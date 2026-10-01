@@ -56,47 +56,17 @@ contract VerifierModule is PrivacyPoolStorage, IVerifierModule {
         return verificationKeys[_nullifiers][_commitments];
     }
 
-    /// @notice Checks a transaction's Groth16 proof against the key for its shape.
-    /// @dev Public-input layout: `[merkleRoot, boundParamsHash, nullifiers..., commitments...]`.
-    ///      The designated bypass origin short-circuits to `true` only AFTER the key-set
-    ///      check and the full pairing computation have run, so gas estimation still pays
-    ///      the verification cost and still reverts on unregistered shapes (spec OQ-4:
-    ///      current late placement retained).
-    /// @param _transaction Transaction carrying the proof and public signals.
-    /// @return True iff the proof verifies (or a bypass applies).
-    function verify(Transaction calldata _transaction) external view override onlyDelegatecall returns (bool) {
-        // Testing mode (POC-only escape hatch, spec deviation D-3) skips verification.
-        if (testingMode) {
-            return true;
-        }
-
-        uint256 nullifiersLength = _transaction.nullifiers.length;
-        uint256 commitmentsLength = _transaction.commitments.length;
-
-        // Select the key by circuit shape; alpha1.x == 0 means the shape is unregistered.
-        VerifyingKey memory verifyingKey = verificationKeys[nullifiersLength][commitmentsLength];
-        require(verifyingKey.alpha1.x != 0, "VerifierModule: Key not set");
-
-        // Assemble the public-input vector (spec section 2.3).
-        uint256[] memory inputs = new uint256[](2 + nullifiersLength + commitmentsLength);
-        inputs[0] = uint256(_transaction.merkleRoot);
-        inputs[1] = hashBoundParams(_transaction.boundParams);
-        for (uint256 i = 0; i < nullifiersLength; i++) {
-            inputs[2 + i] = uint256(_transaction.nullifiers[i]);
-        }
-        for (uint256 i = 0; i < commitmentsLength; i++) {
-            inputs[2 + nullifiersLength + i] = uint256(_transaction.commitments[i]);
-        }
-
-        bool validity = Snark.verify(verifyingKey, _transaction.proof, inputs);
-
-        // Gas-estimation escape hatch: checked last, on purpose (spec OQ-4).
-        // solhint-disable-next-line avoid-tx-origin
-        if (tx.origin == VERIFICATION_BYPASS) {
-            return true;
-        }
-
-        return validity;
+    /// @notice Proof verification does not run in this module — it lives on the router.
+    /// @dev The authoritative verifier is `PrivacyPool.verify`. Modules reach verification via
+    ///      `IVerifierModule(address(this)).verify(...)` during their delegatecall, which dispatches
+    ///      to the router's copy; this module-level body is never reached because a view/staticcall
+    ///      cannot delegatecall the module and read the result (which is why the logic is inlined on
+    ///      the router). Keeping a second public-input construction here would risk silent drift from
+    ///      the authoritative implementation, so this stub reverts instead. Only verification-key
+    ///      writes run in this module via delegatecall.
+    /// @return Never returns — always reverts.
+    function verify(Transaction calldata) external view override onlyDelegatecall returns (bool) {
+        revert("VerifierModule: verify handled by PrivacyPool router");
     }
 
     /// @notice Hashes the bound parameters into a SNARK scalar field element.

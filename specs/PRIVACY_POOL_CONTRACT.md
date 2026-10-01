@@ -250,7 +250,13 @@ Defined in `PrivacyPoolStorage` and inherited identically by the router and all 
 | 57 | 20 | 4 | `defaultFinalityThreshold` | `uint32` | public |
 | 58 | 0 | 20 | `shieldPauseContract` | `address` | public |
 | 59 | 0 | 20 | `feeModule` | `address` | public |
-| 60–105 | — | — | `__gap` | `uint256[46]` | private (reserved) |
+| 59 | 0 | 20 | `feeModule` | `address` | public |
+| 60 | — | — | `remoteHookRouters` | `mapping(uint32 => bytes32)` | public (added post-drift, D-16) |
+| 61 | 0 | 32 | `_reentrancyStatus` | `uint256` (0 = not entered) | internal (added post-drift, D-18) |
+| 62 | 0 | 20 | `adapterRegistry` | `address` (timelock-governed privilege source) | public (added post-drift, D-18) |
+| 63–105 | — | — | `__gap` | `uint256[43]` | private (reserved) |
+
+Slot 11 (`privilegedShieldCallers`) is **retired but retained** (never removed/reordered): shield-fee exemption is now derived from `adapterRegistry` (slot 62), and the legacy mapping is always the zero default.
 
 Rules for future changes: append new variables immediately before `__gap` and shrink `__gap` accordingly; never reorder, remove, or change the type of an existing variable.
 
@@ -268,10 +274,11 @@ Solidity `^0.8.17`. Implements the CCTP V2 message-handler interface. All mutabi
 |---|---|
 | Signature | `initialize(address _shieldModule, address _transactModule, address _merkleModule, address _verifierModule, address _tokenMessenger, address _messageTransmitter, address _usdc, uint32 _localDomain, address _owner, address payable _treasury)` |
 | Selector | `0xa928b9ae` |
-| Access | Permissionless; callable exactly once (**OQ-7**) |
+| Access | Deployer-only (`msg.sender == deployer`, where `deployer` is a private immutable set in the constructor); callable exactly once. **OQ-7 resolved post-drift**: the gate prevents a front-runner from initializing the pool with malicious params on a public chain. |
 
 Behavior, in order:
-1. `require(!initialized, "PrivacyPool: Already initialized")`.
+1. `require(msg.sender == deployer, "PrivacyPool: Only deployer")`.
+2. `require(!initialized, "PrivacyPool: Already initialized")`.
 2. Zero-address checks, **in this order**, each reverting with the given string:
    `_shieldModule` → `"PrivacyPool: zero shieldModule"`; `_transactModule` → `"PrivacyPool: zero transactModule"`; `_merkleModule` → `"PrivacyPool: zero merkleModule"`; `_verifierModule` → `"PrivacyPool: zero verifierModule"`; `_tokenMessenger` → `"PrivacyPool: zero tokenMessenger"`; `_messageTransmitter` → `"PrivacyPool: zero messageTransmitter"`; `_usdc` → `"PrivacyPool: zero usdc"`; `_owner` → `"PrivacyPool: zero owner"`; `_treasury` → `"PrivacyPool: zero treasury"`.
 3. Assign the four module addresses, then `tokenMessenger`, `messageTransmitter`, `usdc`, `localDomain`, `owner`, `treasury`.
@@ -286,7 +293,7 @@ No event is emitted. `treasury` has no setter (documented as immutable after ini
 |---|---|---|
 | `shield(ShieldRequest[] calldata, address integrator)` | `0xcd6a3d7f` | `delegatecall` → `ShieldModule.shield` (§7.1). Reverts bubble verbatim. |
 | `transact(Transaction[] calldata)` | `0xd8ae136a` | `delegatecall` → `TransactModule.transact` (§8.1). |
-| `atomicCrossChainUnshield(Transaction calldata, uint32 destinationDomain, address finalRecipient, bytes32 destinationCaller, uint256 maxFee) returns (uint64)` | `0xe484d408` | `delegatecall` → `TransactModule.atomicCrossChainUnshield` (§8.2); ABI-decodes and returns the `uint64`. |
+| `atomicCrossChainUnshield(Transaction calldata, uint32 destinationDomain, address finalRecipient, uint256 maxFee, bytes32 uniqueNonce) returns (uint64)` | `0xe8d1f224` | `delegatecall` → `TransactModule.atomicCrossChainUnshield` (§8.2); ABI-decodes and returns the `uint64`. Selector/signature changed post-drift (D-16): `destinationCaller` removed (pinned on-chain), `uniqueNonce` added. |
 
 ### 5.3 CCTP V2 message handlers
 
@@ -296,7 +303,7 @@ No event is emitted. `treasury` has no setter (documented as immutable after ini
 2. `require(finalityThresholdExecuted >= 2000, "PrivacyPool: Insufficient finality")` (`CCTPFinality.STANDARD`).
 3. `remoteDomain` and `sender` are **ignored** (**OQ-3**).
 4. Shared processing: decode `messageBody` as a CCTP V2 burn message, extracting `(grossAmount, feeExecuted, hookData)` (reverts `"BurnMessageV2: message too short"` if the body is shorter than the fixed burn-message header). `actualAmount = grossAmount - feeExecuted` (checked subtraction).
-5. Decode `hookData` as `CCTPPayload`. If `messageType == SHIELD`: decode `ShieldData` and `delegatecall` `ShieldModule.processIncomingShield(actualAmount, shieldData)` (§7.2). Otherwise revert `"PrivacyPool: Invalid message type"` (the Hub never accepts UNSHIELD payloads).
+5. Decode `hookData` as `CCTPPayload`. If `messageType == SHIELD`: decode `ShieldData[]` (a note ARRAY post-drift, D-15) and `delegatecall` `ShieldModule.processIncomingShield(actualAmount, shieldNotes)` (§7.2). Otherwise revert `"PrivacyPool: Invalid message type"` (the Hub never accepts UNSHIELD payloads).
 6. Return `true`.
 
 **`handleReceiveUnfinalizedMessage(...)`** — selector `0x7c92f219`: identical except step 2 requires `finalityThresholdExecuted >= 1000` (`CCTPFinality.FAST`), reverting `"PrivacyPool: Finality below minimum"`.
@@ -311,8 +318,11 @@ All revert with `"PrivacyPool: Only owner"` unless `msg.sender == owner`.
 | `setVerificationKey(uint256 n, uint256 m, VerifyingKey calldata key)` | `0x2ec0f359` | `delegatecall` → `VerifierModule.setVerificationKey` (§9.1; owner re-checked inside the module) | `VerifyingKeySet` (from module) |
 | `setShieldFee(uint120 feeBps)` | `0x47338389` | `require(feeBps <= 10000, "PrivacyPool: Fee too high")`; sets `shieldFee` | none |
 | `setTestingMode(bool enabled)` | `0x596d7a68` | `delegatecall` → `VerifierModule.setTestingMode`, then emits `TestingModeSet` **again** — two identical events per call (**OQ-8**) | `TestingModeSet` ×2 |
-| `setPrivilegedShieldCaller(address caller, bool privileged)` | `0xc66d0fb9` | sets `privilegedShieldCallers[caller]` | none |
 | `setHookRouter(address)` | `0xdf4af94b` | sets `hookRouter` | none |
+| `setRemoteHookRouter(uint32 domain, bytes32 routerAddress)` | `0x7c1cc0ed` | sets `remoteHookRouters[domain]` (pin for outbound burn `destinationCaller`, D-16) | none |
+| `setAdapterRegistry(address)` | `0x5b34b823` | set-once: `require(adapterRegistry == address(0))` + non-zero arg (D-18) | none |
+| `addToBlocklist(address[])` | `0xf71a55f8` | sets `tokenBlocklist[t] = true`, skips already-blocked; reverts `"PrivacyPool: cannot block USDC"` on the core asset (blocking it would strand in-flight cross-chain shields) | `AddToBlocklist(token)` per newly blocked token |
+| `removeFromBlocklist(address[])` | `0xab63e69c` | clears `tokenBlocklist[t]` | `RemoveFromBlocklist(token)` per newly unblocked token |
 | `setDefaultFinalityThreshold(uint32 threshold)` | `0x50fe9314` | `require(threshold == 1000 \|\| threshold == 2000, "PrivacyPool: Invalid threshold")` | `DefaultFinalityThresholdSet(threshold)` |
 | `setShieldPauseContract(address)` | `0x6960c7da` | sets `shieldPauseContract` (note: declared on the contract but absent from the router interface) | `ShieldPauseContractSet(addr)` |
 | `setFeeModule(address)` | `0x2088df1b` | sets `feeModule` (`address(0)` = flat-fee fallback) | `FeeModuleSet(addr)` |
@@ -402,14 +412,16 @@ Module-private constant `BASIS_POINTS = 10000`. All externals are `onlyDelegatec
 6. Self-call `insertLeaves(leaves)` (§6.2).
 7. `lastEventBlock = block.number`.
 
-### 7.2 `processIncomingShield(uint256 amount, ShieldData calldata data)` — selector `0xcd0b57f3`
+### 7.2 `processIncomingShield(uint256 amount, ShieldData[] calldata datas)` — selector `0xffd149d4`
 
-Invoked by the router's CCTP handler after USDC has already been minted to the pool.
+Invoked by the router's CCTP handler after USDC has already been minted to the pool. Post-drift (D-15) the payload is a note ARRAY: index 0 is the recipient note (it absorbs the CCTP protocol fee); any further notes (e.g. a relayer fee note) mint at their full declared value.
 
 1. Same pause check as §7.1 step 1.
-2. `require(amount <= uint256(data.value), "ShieldModule: Amount exceeds declared value")` (`amount` is net of the CCTP protocol fee; `data.value` is the gross burn declared on the client chain).
-3. Construct a single `ShieldRequest` with `npk = data.npk`, `token = (ERC20, usdc, 0)`, `value = uint120(amount)`, `ciphertext = (data.encryptedBundle, data.shieldKey)`.
-4. Process as an internal shield (§7.4) with `integrator = data.integrator`. **Note:** tokens are already in the contract, so fees (if any) are paid **out of the pool's own USDC balance**; the privileged-caller check inspects `msg.sender`, which here is the `hookRouter`/`tokenMessenger` (normally not privileged).
+2. `require(datas.length > 0, "ShieldModule: no shield notes")`.
+3. `feeSum = Σ datas[i].value` for `i ≥ 1`; `require(amount > feeSum, "ShieldModule: fee notes exceed received amount")`.
+4. Sanity: `require(amount <= Σ datas[i].value (all i), "ShieldModule: Amount exceeds declared value")` — the delivered net amount must fit within the total declared gross burn.
+5. For each note `i`: `noteValue = i == 0 ? amount - feeSum : datas[i].value`; build the USDC `ShieldRequest` from `datas[i]`; validate (§7.1(a)); fee-adjust via §7.4 (`integrator = datas[i].integrator`). **Note:** tokens are already in the contract, so fees (if any) are paid **out of the pool's own USDC balance**; the fee-exemption check inspects `msg.sender`, which here is the `hookRouter`/`tokenMessenger` (normally not a registered adapter).
+6. Read the router insertion position for all `n` leaves; `emit Shield(...)` **once** with all commitments/ciphertexts/fees (same shape as local `shield`); `insertLeaves` in one batch; `lastEventBlock = block.number`.
 
 ### 7.3 `_transferTokenIn(preimage, integrator)` (local-shield token pull)
 
@@ -417,15 +429,15 @@ Invoked by the router's CCTP handler after USDC has already been minted to the p
 
 | Branch | Condition | Token movements (all from `msg.sender` unless noted) | Commitment value |
 |---|---|---|---|
-| Privileged | `privilegedShieldCallers[msg.sender]` | pull full `value` to pool; `fee = 0` | `value` |
+| Privileged | `_isPrivilegedShieldCaller(msg.sender)` — post-drift (D-18): derived from the timelock-governed `adapterRegistry` (`authorizedAdapters(c) || withdrawOnlyAdapters(c)`); when the registry is unset, no caller is privileged. The owner-set `privilegedShieldCallers` map is retired (inert slot). | pull full `value` to pool; `fee = 0` | `value` |
 | Fee module | `feeModule != address(0)` | `(armadaTake, integratorFee, totalFee) = feeModule.calculateShieldFee(integrator, value)`; pull `base = value - totalFee` to pool; pull `armadaTake` → `treasury` (if `> 0` and `treasury != 0`); pull `integratorFee` → `integrator` (if `> 0` and `integrator != 0`); then `feeModule.recordShieldFee(token, integrator, value, armadaTake, integratorFee)` | `base` |
 | Flat fee | otherwise | `(base, fee) = _getFee(value, inclusive=true, shieldFee)`; pull `base` to pool; pull `fee` → `treasury` (if `> 0` and `treasury != 0`) | `base` |
 
 Every pull of the pool's own balance is balance-delta checked: `balanceAfter - balanceBefore == expected`, else revert `"ShieldModule: Transfer failed"` (rejects fee-on-transfer/rebasing tokens). Fee pulls to treasury/integrator are **not** delta-checked. All ERC20 movements use SafeERC20. `base` is narrowed to `uint120` via explicit cast (the upstream subtraction is checked arithmetic).
 
-### 7.4 `_processInternalShield(request, integrator)` (cross-chain path)
+### 7.4 `_applyShieldFee(preimage, integrator)` (cross-chain path)
 
-Same validation as §7.1(a). Fee selection: if `privilegedShieldCallers[msg.sender]` → no fee; else if `feeModule != 0` → `calculateShieldFee`, set `value = amount - totalFee`, **safeTransfer** `armadaTake` → treasury and `integratorFee` → integrator from the pool's balance, then `recordShieldFee`; else if `shieldFee > 0` → flat inclusive fee, safeTransfer fee → treasury. Then: single-element arrays; router position read; `emit Shield(...)`; `insertLeaves`; `lastEventBlock = block.number`. (Identical shape to §7.1 steps 4–7.)
+Same fee selection as §7.3 but for notes whose tokens are ALREADY in the contract: if privileged → no fee; else if `feeModule != 0` → `calculateShieldFee`, set `value = amount - totalFee`, **safeTransfer** `armadaTake` → treasury and `integratorFee` → integrator from the pool's balance, then `recordShieldFee`; else if `shieldFee > 0` → flat inclusive fee, safeTransfer fee → treasury. Returns the fee-adjusted preimage + fee; hashing/insertion/event emission are batched by the caller (§7.2 step 6).
 
 ### 7.5 Helpers
 
@@ -452,7 +464,9 @@ All externals are `onlyDelegatecall`.
 7. If `commitmentsCount > 0`: read position from router (**OQ-1**), `emit Transact(treeNum, startIndex, commitmentHashes[], ciphertext[])`, self-call `insertLeaves(commitmentHashes)`.
 8. `lastEventBlock = block.number`.
 
-### 8.2 `atomicCrossChainUnshield(Transaction calldata tx, uint32 destinationDomain, address finalRecipient, bytes32 destinationCaller, uint256 maxFee) returns (uint64 nonce)` — selector `0xe484d408`
+### 8.2 `atomicCrossChainUnshield(Transaction calldata tx, uint32 destinationDomain, address finalRecipient, uint256 maxFee, bytes32 uniqueNonce) returns (uint64 nonce)` — selector `0xe8d1f224`
+
+Post-drift (D-16): `destinationCaller` is no longer caller-supplied (pinned on-chain to `remoteHookRouters[destinationDomain]`); `uniqueNonce` is an opaque per-tx marker echoed into the hookData for off-chain delivery matching (not fund-relevant).
 
 1. Emergency-pause check (as §8.1 step 2). (No withdraw-only check — unshields are always allowed outside the emergency window.)
 2. Input validation, in order:
@@ -460,16 +474,19 @@ All externals are `onlyDelegatecall`.
    - `finalRecipient != address(0)` else `"TransactModule: Invalid recipient"`;
    - `tx.boundParams.unshield != NONE` else `"TransactModule: Must include unshield"`;
    - `remotePools[destinationDomain] != bytes32(0)` else `"TransactModule: Unknown destination"`;
+   - `remoteHookRouters[destinationDomain] != bytes32(0)` else `"TransactModule: Hook router not configured"`;
+   - `tx.boundParams.adaptContract == address(0)` else `"TransactModule: unexpected adaptContract"`;
+   - **Destination binding:** `CCTPBindingLib.verify(tx.boundParams.adaptParams, finalRecipient, destinationDomain, maxFee)` else `"TransactModule: destination not bound to proof"`. `adaptParams` must equal `keccak256(abi.encode(DOMAIN_TAG, recipient, domain, maxFee))` with `DOMAIN_TAG = keccak256("ArmadaCCTPUnshield.v1")` — since `adaptParams` is a SNARK public input (via `hashBoundParams`), this binds the plaintext destination tuple to the proof with no circuit change, and blocks hijacking a local unshield (adaptParams == 0) through this path;
    - `_validateTransaction(tx)` (§8.3), reverting `"TransactModule: " ++ reason`.
    - **Note:** `unshieldPreimage.token` is **not** checked against `usdc` — the burn always burns `usdc` (**OQ-9**).
 3. Process: if `boundParams.commitmentCiphertext.length > 0` — `_accumulateAndNullify` into fresh accumulators, read router position, `emit Transact(...)`, `insertLeaves`. Otherwise `_accumulateAndNullify` with empty arrays (nullifiers still marked; `Nullified` still emitted; no `Transact` event, no tree insertion).
 4. Burn & bridge:
    - `base = unshieldPreimage.value`; `fee = 0` (unshields are free, D-2).
    - `require(maxFee <= base, "TransactModule: maxFee exceeds base")`.
-   - `hookData = abi.encode(CCTPPayload(UNSHIELD, abi.encode(UnshieldData(finalRecipient))))`.
-   - `IERC20(usdc).safeApprove(tokenMessenger, base)` (per-call approval; assumes USDC-style approval semantics).
-   - `finality = defaultFinalityThreshold > 0 ? defaultFinalityThreshold : 2000`.
-   - `ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(base, destinationDomain, remotePools[destinationDomain], usdc, destinationCaller, maxFee, finality, hookData)`.
+   - `hookData = abi.encode(CCTPPayload(UNSHIELD, abi.encode(UnshieldData(finalRecipient, uniqueNonce))))`.
+   - `IERC20(usdc).safeApprove(tokenMessenger, 0)` then `safeApprove(tokenMessenger, base)` — the zero-reset is required because OZ 4.9 `safeApprove` reverts on a non-zero→non-zero change, and a residual TokenMessenger allowance would otherwise brick later burns.
+   - `finality = defaultFinalityThreshold > 0 ? defaultFinalityThreshold : 2000` (inlined).
+   - `ITokenMessengerV2(tokenMessenger).depositForBurnWithHook(base, destinationDomain, remotePools[destinationDomain], usdc, remoteHookRouters[destinationDomain], maxFee, finality, hookData)`.
    - `nonce = 0` — always; this CCTP V2 call returns no nonce.
 5. `emit CrossChainUnshieldInitiated(destinationDomain, finalRecipient, base, 0)`; `emit Unshield(finalRecipient, unshieldPreimage.token, base, 0)`; `lastEventBlock = block.number`.
 
@@ -494,7 +511,7 @@ For each nullifier `n`: `require(!nullifiers[boundParams.treeNumber][n], "Transa
 
 ### 8.5 `_transferTokenOut(preimage)` (local unshield)
 
-`require(tokenType == ERC20, "TransactModule: Only ERC20 supported")`. `recipient = address(uint160(uint256(preimage.npk)))`. `token.safeTransfer(recipient, preimage.value)`. `emit Unshield(recipient, preimage.token, preimage.value, 0)` (fee hard-coded to 0, D-2).
+`require(tokenType == ERC20, "TransactModule: Only ERC20 supported")`. `recipient = address(uint160(uint256(preimage.npk)))`. Post-drift (D-18): `require(recipient != address(this), "TransactModule: unshield to pool")` — a cross-chain unshield proof pays out to the pool; replaying it through plain `transact()` would otherwise send USDC pool→pool, burn the note, and strand the funds (cross-path replay). `token.safeTransfer(recipient, preimage.value)`. `emit Unshield(recipient, preimage.token, preimage.value, 0)` (fee hard-coded to 0, D-2).
 
 ---
 
@@ -506,7 +523,7 @@ For each nullifier `n`: `require(!nullifiers[boundParams.treeNumber][n], "Transa
 |---|---|---|---|
 | `setVerificationKey(uint256 n, uint256 m, VerifyingKey calldata key)` | `0x2ec0f359` | `onlyDelegatecall` + `require(msg.sender == owner, "VerifierModule: Only owner")` | `verificationKeys[n][m] = key`; `emit VerifyingKeySet(n, m, key)`. Overwrites silently; no deletion; no structural validation of the key. |
 | `getVerificationKey(uint256 n, uint256 m) returns (VerifyingKey)` | `0x7b12ae83` | none (view) | Returns mapping entry. Unreachable via router (router has its own); harmless. |
-| `verify(Transaction calldata) returns (bool)` | `0xee990783` | `onlyDelegatecall` view | Same algorithm as §5.6 but with revert string `"VerifierModule: Key not set"`. **Dead code in practice** — the router never delegates `verify`; see **OQ-2**. |
+| `verify(Transaction calldata) returns (bool)` | `0xee990783` | `onlyDelegatecall` view | **Reverts** `"VerifierModule: verify handled by PrivacyPool router"`. Post-drift (D-17): verification is centralized on the router (§5.6); the module-level copy was removed to kill silent-drift risk between two implementations. **OQ-2 RESOLVED.** |
 | `hashBoundParams(BoundParams calldata) returns (uint256)` | `0x28f89c3a` | none (pure) | `uint256(keccak256(abi.encode(bp))) % SNARK_SCALAR_FIELD`. |
 | `setTestingMode(bool)` | `0x596d7a68` | `onlyDelegatecall` + owner (`"VerifierModule: Only owner"`) | Sets `testingMode`; `emit TestingModeSet(enabled)`. |
 
@@ -519,7 +536,7 @@ For each nullifier `n`: `require(!nullifiers[boundParams.treeNumber][n], "Transa
 
 ### 9.3 Live verification path
 
-`TransactModule` calls `IVerifierModule(address(this)).verify(tx)` — a **staticcall to the router**, whose own `verify` (§5.6) executes. The rewrite MUST keep this behavior (single canonical verification implementation on the router or a deliberate, team-approved consolidation — **OQ-2**).
+`TransactModule` calls `IVerifierModule(address(this)).verify(tx)` — a **staticcall to the router**, whose own `verify` (§5.6) executes. Post-drift (D-17) the router copy is the ONLY implementation; the module's `verify` reverts. **OQ-2 resolved.**
 
 ---
 
@@ -553,6 +570,8 @@ For each nullifier `n`: `require(!nullifiers[boundParams.treeNumber][n], "Transa
 | `ShieldPauseContractSet(address indexed)` | `0xd944792a6be77df7bcf2b336a0c0af6fb2e715460c8f79e90264f4966fbc74c6` | §5.4 |
 | `FeeModuleSet(address indexed)` | `0xfd559fabeec56b489dcf6cf0c7a8c863ed2dd88016bf8d905c72dbdfdc685d29` | §5.4 |
 | `VerifyingKeySet(uint256 nullifiers, uint256 commitments, VerifyingKey key)` | `0x3d09e10d1c966d01c4a2c14d0ac9af253486aa5e99b6cffe9019c4d43eb1fb23` | §9.1 |
+| `AddToBlocklist(address indexed token)` | `0x46742f555939247f80b50a8ca895a561933c48bc9a06ccb0c812e97ac723d33f` | §5.4 (post-drift, D-18) |
+| `RemoveFromBlocklist(address indexed token)` | `0x2ef13bd1aff17b0f9c85afaf228e84266c8394d9d381735e83fe23f607113e2e` | §5.4 (post-drift, D-18) |
 
 `lastEventBlock = block.number` is written on every successful `shield`, `processIncomingShield`, `transact`, and `atomicCrossChainUnshield` (wallet-sync support).
 
@@ -579,12 +598,12 @@ For each nullifier `n`: `require(!nullifiers[boundParams.treeNumber][n], "Transa
 | ID | Question | Current behavior |
 |---|---|---|
 | **OQ-1** | `Shield`/`Transact` events report the **pre-insertion** `(treeNumber, startIndex)` from the router's argument-ignoring view. If a batch triggers tree rollover, the events name the old tree/index while leaves land in `treeNumber + 1` at index 0. Keep (frozen ABI behavior) or fix (accurate events)? Rollover requires >65,536 leaves. | Events may mislabel tree/index at rollover. |
-| **OQ-2** | Verification logic exists twice: live copy on the router (`"PrivacyPool: Verification key not set"`) and a dead copy in VerifierModule (`"VerifierModule: Key not set"`). Consolidate to one canonical implementation? | Router copy is the live path. |
+| **OQ-2** | ~~Verification logic exists twice: live copy on the router and a dead copy in VerifierModule.~~ **RESOLVED post-drift (D-17):** verification centralized on the router; the module's `verify` reverts. | Router copy is the only path. |
 | **OQ-3** | The CCTP handlers ignore the `sender` field and the source domain — any message that mints USDC to the pool with a SHIELD payload is accepted. Trust model relies on the hook router / TokenMessenger authentication only. Is that the intended security boundary? | `sender`/`remoteDomain` unauthenticated. |
 | **OQ-4** | `tx.origin == VERIFICATION_BYPASS` returns `true` only *after* full verification and the VK-set check — it neither saves gas nor tolerates unset keys, and `tx.origin` semantics are deprecated-adjacent. Keep, move earlier, or drop? | Bypass checked last. |
 | **OQ-5** | `_getFee`'s exclusive (non-inclusive) branch is unreachable (unshield fee is gone). Drop it, or keep for parity? | Dead code present. |
 | **OQ-6** | ERC721/ERC1155 validation branches, `tokenIDMapping`, and `nftFee` are unreachable (both token in/out paths require ERC20). Keep types for ABI/event compatibility but drop the dead checks? | Dead NFT paths present. |
-| **OQ-7** | `initialize` is permissionless first-call; if not invoked atomically at deployment it is front-runnable. Make deploy+init atomic in the rewrite's deployer, or add a deployer check? | First call wins. |
+| **OQ-7** | ~~`initialize` is permissionless first-call; if not invoked atomically at deployment it is front-runnable.~~ **RESOLVED post-drift (D-18):** `initialize` is gated to the deployer (private immutable captured in the constructor). | Deployer-only. |
 | **OQ-8** | `setTestingMode` emits `TestingModeSet` twice (once inside the module delegatecall, once on the router). Intentional or bug? | Double emission. |
 | **OQ-9** | `atomicCrossChainUnshield` does not require `unshieldPreimage.token == USDC` — a proof over a non-USDC note would still burn USDC. Add the check? | Token unchecked. |
 | **OQ-10** | `setShieldFee` allows up to 10000 bps (100%). Intended cap? | Cap is 100%. |

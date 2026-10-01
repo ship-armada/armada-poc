@@ -315,7 +315,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
 
     /**
      * @notice Add tokens to the shield blocklist (governance kill-switch for a compromised/incompatible token).
-     * @dev Faithful port of Railgun's TokenBlocklist: blocked tokens cannot be SHIELDED, but existing notes
+     * @dev Blocked tokens cannot be SHIELDED, but existing notes
      *      remain transferable and UNSHIELDABLE so holders can always exit. Non-exhaustive by nature. Idempotent.
      *      USDC (the pool's core asset) can never be blocked — doing so would make in-flight cross-chain shields
      *      undeliverable (burned on the client, unmintable on the hub) and strand funds. (#369)

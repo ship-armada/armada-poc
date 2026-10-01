@@ -468,7 +468,7 @@ async function main() {
 
   // 14. Initialize treasury outflow rate limits (timelock-only). Done at deploy so
   // the treasury is rate-limited from launch rather than via a fragile first
-  // governance vote. PLACEHOLDER limits — see config.outflowConfig / issue #348.
+  // governance vote. Values come from config.outflowConfig (see issue #348).
   console.log("14. Initializing treasury outflow limits...");
   const outflowTokens = [
     { token: usdcAddress, params: config.outflowConfig.usdc, label: "USDC" },

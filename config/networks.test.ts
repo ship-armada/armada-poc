@@ -9,7 +9,7 @@ import * as path from "path";
 // can't leak chain topology into the next (getNetworkConfig caches, so we also re-require).
 const MANAGED_PREFIXES = ["CLIENT_", "HUB_", "CCTP_", "DEPLOY_ENV", "DEPLOYER_PRIVATE_KEY",
   "REVENUE_LOCK_", "REVENUE_RESERVE_", "TREASURY_ADDRESS", "SECURITY_COUNCIL_ADDRESS", "LAUNCH_TEAM_ADDRESS",
-  "CCTP_MODE", "WINDDOWN_"];
+  "CCTP_MODE", "WINDDOWN_", "OUTFLOW_"];
 
 function clearManagedEnv(): void {
   for (const key of Object.keys(process.env)) {
@@ -203,6 +203,30 @@ describe("wind-down deadline", () => {
   });
 });
 
+// GOVERNANCE.md §Treasury Outflow Limits: 30-day rolling window; limit is the greater of the
+// absolute amount and the percentage of treasury balance; the floor is immutable once set.
+const SPEC_OUTFLOW = {
+  usdc: { windowDuration: 30 * 86400, limitBps: 1000, limitAbsolute: "100000000000", floorAbsolute: "50000000000" },
+  arm: {
+    windowDuration: 30 * 86400, limitBps: 300,
+    limitAbsolute: "250000000000000000000000", floorAbsolute: "100000000000000000000000",
+  },
+  // USDC pattern: 30-day window, 10%, 25 ETH absolute (~$100k); floor 0 because floors can
+  // only ever be raised.
+  eth: { windowDuration: 30 * 86400, limitBps: 1000, limitAbsolute: "25000000000000000000", floorAbsolute: "0" },
+};
+
+describe("treasury outflow limits", () => {
+  afterEach(clearManagedEnv);
+
+  // WHY: initOutflowConfig is one-shot per token and its floor can never be lowered, so a
+  // deploy that omits the OUTFLOW_* env must still install the spec limits, not looser ones.
+  it("defaults USDC, ARM and ETH to the GOVERNANCE.md spec values", () => {
+    const c = freshConfig({ DEPLOY_ENV: "local" }).getNetworkConfig();
+    expect(c.outflowConfig).to.deep.equal(SPEC_OUTFLOW);
+  });
+});
+
 describe("committed mainnet.env", () => {
   /** Read the `export KEY=VALUE` lines of a committed env template (comments ignored). */
   function readEnvTemplate(file: string): Record<string, string> {
@@ -235,5 +259,21 @@ describe("committed mainnet.env", () => {
       REVENUE_LOCK_BENEFICIARIES_JSON: REVENUE_LOCK_JSON,
     });
     expect(() => validateCCTPConfig("hub")).to.not.throw();
+  });
+
+  // WHY: the launch freeze sheet reads the outflow limits from the committed template; it
+  // must state the spec values explicitly rather than rely on code defaults (#348).
+  it("sets USDC, ARM and ETH outflow limits to the GOVERNANCE.md spec values", () => {
+    for (const token of ["USDC", "ARM", "ETH"]) {
+      for (const key of ["WINDOW", "BPS", "ABSOLUTE", "FLOOR"]) {
+        expect(MAINNET_ENV).to.have.property(`OUTFLOW_${token}_${key}`);
+      }
+    }
+    const c = freshConfig({
+      ...MAINNET_ENV,
+      DEPLOYER_PRIVATE_KEY: "test-placeholder-not-a-real-key",
+      REVENUE_LOCK_BENEFICIARIES_JSON: REVENUE_LOCK_JSON,
+    }).getNetworkConfig();
+    expect(c.outflowConfig).to.deep.equal(SPEC_OUTFLOW);
   });
 });

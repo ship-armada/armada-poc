@@ -779,10 +779,20 @@ Aggregate rolling-window limits on treasury outflows. These are the primary defe
 | Limit | 250,000 ARM or 3% of ARM in treasury, **whichever is greater** | Yes — increases require extended proposal; decreases require standard |
 | Minimum floor | 100,000 ARM (governance cannot reduce below this) | No — immutable |
 
+### ETH outflow
+
+Follows the USDC pattern. The treasury is not expected to hold meaningful ETH at launch, so no floor is set; governance can raise it later (floors can only increase).
+
+| Parameter | Value | Governable |
+|---|---|---|
+| Rolling window | 30 days | Yes — extensions require extended proposal; reductions require standard |
+| Limit | 25 ETH (≈ $100,000) or 10% of ETH in treasury, **whichever is greater** | Yes — increases require extended proposal; decreases require standard |
+| Minimum floor | None (0) | Raise only — once raised, cannot be reduced |
+
 ### How limits work
 
 - **Aggregate, not per-proposal.** All treasury outflows within a rolling 30-day window count against the same limit — governance proposals, steward proposals, and any authorized module (e.g., future buyback contract).
-- **Per-asset tracking.** USDC and ARM limits are tracked independently. A large USDC outflow does not consume ARM budget or vice versa.
+- **Per-asset tracking.** USDC, ARM and ETH limits are tracked independently. A large USDC outflow does not consume ARM or ETH budget, and vice versa.
 - **Temporarily blocked proposals revert at execution.** If a queued proposal fits within the effective outflow limit but exceeds the currently available budget because of recent outflows, execution reverts and may be retried later once the rolling window has created room. Proposals whose aggregate spend exceeds the effective outflow limit itself are rejected earlier by the queue-time feasibility check (see below).
 - **The percentage scales with treasury size.** On a $1M treasury, the USDC limit is $100k (floor binding). On a $5M treasury, the limit is $500k (10% binding). This allows the protocol to grow without constant parameter adjustments.
 - **The minimum floors are immutable.** Governance can raise the percentage or the floor, but cannot reduce below $50k USDC or 100k ARM. This prevents captured governance from weaponizing the outflow controls by setting them so low that legitimate treasury operations become impractical. Loosening attacks are handled separately by the delayed-activation mechanism.

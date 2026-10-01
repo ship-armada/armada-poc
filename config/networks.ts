@@ -148,7 +148,8 @@ export interface NetworkConfig {
   /** Wind-down deadline as ISO 8601 date string. Required on mainnet (WINDDOWN_DEADLINE);
    *  local/Sepolia default "2027-12-31T00:00:00Z". */
   windDownDeadline: string;
-  /** Wind-down revenue threshold in whole USD (18-decimal). Default "10000". */
+  /** Wind-down revenue threshold in whole USD (18-decimal). Required on mainnet
+   *  (WINDDOWN_REVENUE_THRESHOLD); local/Sepolia default "10000". */
   windDownRevenueThreshold: string;
   /** RevenueLock MAX_REVENUE_INCREASE_PER_DAY in whole USD, scaled to 18 decimals at deploy
    *  (RevenueCounter.recognizedRevenueUsd is 18-decimal USD). Immutable per RevenueLock.
@@ -441,7 +442,11 @@ export function getNetworkConfig(): NetworkConfig {
     windDownDeadline: env === "mainnet"
       ? requireEnv("WINDDOWN_DEADLINE")
       : optionalEnv("WINDDOWN_DEADLINE", "2027-12-31T00:00:00Z"),
-    windDownRevenueThreshold: optionalEnv("WINDDOWN_REVENUE_THRESHOLD", "10000"),
+    // Paired with the deadline: below-threshold revenue after it arms the terminal trigger,
+    // so mainnet takes no default either.
+    windDownRevenueThreshold: env === "mainnet"
+      ? requireEnv("WINDDOWN_REVENUE_THRESHOLD")
+      : optionalEnv("WINDDOWN_REVENUE_THRESHOLD", "10000"),
     revenueLockMaxIncreasePerDayUsd: revenueLockMaxIncreaseEnv("REVENUE_LOCK_MAX_INCREASE_PER_DAY_USD", "10000"),
     cctpFinalityMode: optionalEnv("CCTP_FINALITY_MODE", "fast") as "fast" | "standard",
     // Default on for mainnet (safe — can't forget to harden), opt-in elsewhere

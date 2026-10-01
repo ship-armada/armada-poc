@@ -182,7 +182,7 @@ describe("wind-down deadline", () => {
   // CROWDFUND_OPEN_TIME is also mainnet-required; set it so these cases isolate the deadline.
   const MAINNET_BASE = {
     ...SEPOLIA_BASE, ...ONE_CLIENT, DEPLOY_ENV: "mainnet", CCTP_MODE: "real",
-    CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
+    CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z", WINDDOWN_REVENUE_THRESHOLD: "10000",
   };
 
   // WHY: the deadline arms a permissionless, terminal wind-down and is fixed at the
@@ -207,6 +207,43 @@ describe("wind-down deadline", () => {
   });
 });
 
+describe("wind-down revenue threshold", () => {
+  afterEach(() => {
+    clearManagedEnv();
+    delete process.env.REVENUE_LOCK_BENEFICIARIES_JSON;
+  });
+
+  const ONE_CLIENT = {
+    CLIENT_COUNT: "1",
+    CLIENT_1_RPC: "https://c1", CLIENT_1_CHAIN_ID: "8453", CLIENT_1_CCTP_DOMAIN: "6",
+  };
+  const MAINNET_BASE = {
+    ...SEPOLIA_BASE, ...ONE_CLIENT, DEPLOY_ENV: "mainnet", CCTP_MODE: "real",
+    WINDDOWN_DEADLINE: "2027-12-31T00:00:00Z", CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
+  };
+
+  // WHY: once the deadline passes, recognized revenue below the threshold lets anyone
+  // trigger the terminal wind-down; like the deadline, it must be chosen deliberately on
+  // mainnet, never picked up from a silent default.
+  it("requires WINDDOWN_REVENUE_THRESHOLD on mainnet", () => {
+    expect(() => freshConfig(MAINNET_BASE).getNetworkConfig()).to.throw(/WINDDOWN_REVENUE_THRESHOLD/);
+  });
+
+  // WHY: an explicitly chosen mainnet threshold must reach the deploy script unchanged.
+  it("uses the explicit WINDDOWN_REVENUE_THRESHOLD on mainnet", () => {
+    const c = freshConfig({ ...MAINNET_BASE, WINDDOWN_REVENUE_THRESHOLD: "25000" }).getNetworkConfig();
+    expect(c.windDownRevenueThreshold).to.equal("25000");
+  });
+
+  // WHY: local and testnet deploys keep working with no wind-down env set.
+  it("defaults local and Sepolia to 10000", () => {
+    expect(freshConfig({ DEPLOY_ENV: "local" }).getNetworkConfig().windDownRevenueThreshold)
+      .to.equal("10000");
+    expect(freshConfig({ ...SEPOLIA_BASE, ...ONE_CLIENT }).getNetworkConfig().windDownRevenueThreshold)
+      .to.equal("10000");
+  });
+});
+
 describe("crowdfund open time", () => {
   afterEach(() => {
     clearManagedEnv();
@@ -219,7 +256,7 @@ describe("crowdfund open time", () => {
   };
   const MAINNET_BASE = {
     ...SEPOLIA_BASE, ...ONE_CLIENT, DEPLOY_ENV: "mainnet", CCTP_MODE: "real",
-    WINDDOWN_DEADLINE: "2027-12-31T00:00:00Z",
+    WINDDOWN_DEADLINE: "2027-12-31T00:00:00Z", WINDDOWN_REVENUE_THRESHOLD: "10000",
   };
 
   // WHY: windowStart is immutable and the launch is announced for a fixed time; a mainnet
@@ -259,6 +296,7 @@ describe("privacy pool treasury override", () => {
   const MAINNET_BASE = {
     ...SEPOLIA_BASE, ...ONE_CLIENT, DEPLOY_ENV: "mainnet", CCTP_MODE: "real",
     WINDDOWN_DEADLINE: "2027-12-31T00:00:00Z", CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
+    WINDDOWN_REVENUE_THRESHOLD: "10000",
   };
   const OVERRIDE = "0x0000000000000000000000000000000000000002";
 
@@ -379,6 +417,13 @@ describe("committed mainnet.env", () => {
   // committed template; it must state the spec value explicitly, in whole USD (#530).
   it("sets the RevenueLock max revenue increase to the $10,000/day spec value", () => {
     expect(MAINNET_ENV.REVENUE_LOCK_MAX_INCREASE_PER_DAY_USD).to.equal("10000");
+  });
+
+  // WHY: the freeze sheet (PARAMETER_MANIFEST.md §8.2) reads the wind-down threshold from the
+  // committed template; it must state the $10,000 spec value (GOVERNANCE.md §Wind-Down), in
+  // whole USD (#550).
+  it("sets the wind-down revenue threshold to the $10,000 spec value", () => {
+    expect(MAINNET_ENV.WINDDOWN_REVENUE_THRESHOLD).to.equal("10000");
   });
 
   // WHY: the launch freeze sheet reads the outflow limits from the committed template; it

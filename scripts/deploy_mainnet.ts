@@ -200,7 +200,7 @@ async function main() {
     console.log(`  - Timelock minDelay == ${config.timelockDelay}s (production value).`);
     console.log("  - Wind-down wiring + treasury outflow limits set (see verify output).");
   }
-  console.log("  - Treasury outflow limits are PLACEHOLDERS until #348 is finalized.");
+  console.log("  - Two-person verify the on-chain treasury outflow limits against PARAMETER_MANIFEST.md §8.2.");
   console.log("  - Shielded-pool phases (privacy pool, yield, fee module) are a SEPARATE later deploy.");
   console.log();
 }

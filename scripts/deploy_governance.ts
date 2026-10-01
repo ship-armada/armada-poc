@@ -360,14 +360,11 @@ async function main() {
   // The whitelist must be set before any transfer (including to treasury/revenueLock).
   console.log("13. ARM distribution: DEFERRED (called by deploy_crowdfund after initWhitelist)");
 
-  // 14. Initialize treasury outflow limits
-  // TODO: These defaults should be moved to config/networks.ts when finalized
-  console.log("14. Initializing treasury outflow limits...");
-  // Outflow limits are configured per-token via governance after deployment.
-  // The deployer (as initial owner/timelock admin) cannot call initOutflowConfig directly
-  // because the treasury's owner is the timelock. Outflow config will be set via the
-  // first governance proposal after ARM delegation and governance activation.
-  console.log("   Outflow limits will be configured via governance proposal post-launch");
+  // 14. Treasury outflow limits
+  // initOutflowConfig is timelock-only (the treasury's owner is the timelock), so
+  // deploy_crowdfund.ts calls it via timelockCall with config.outflowConfig, using the
+  // deployer's bootstrap PROPOSER/EXECUTOR roles granted above (Anvil impersonation locally).
+  console.log("14. Treasury outflow limits: DEFERRED (initialized by deploy_crowdfund.ts)");
 
   // 15-16. Wind-down wiring + timelock admin renounce
   // Both deferred to deploy_crowdfund.ts. The deployer retains timelock admin until
@@ -413,10 +410,10 @@ async function main() {
   console.log(`\nDeployment saved to: deployments/${outputFile}`);
   console.log("\n=== Governance deployment complete ===");
   console.log("\nPost-launch TODO:");
-  console.log("  1. Configure treasury outflow limits for USDC, ARM, and ETH (address(0)) (via governance proposal)");
-  console.log("  2. Set shieldPauseContract on PrivacyPool (owner calls setShieldPauseContract)");
+  console.log("  1. Set shieldPauseContract on PrivacyPool (owner calls setShieldPauseContract)");
   console.log("\nNext deployment step: run deploy_crowdfund.ts to complete:")
   console.log("  - Crowdfund deployment + ARM distribution");
+  console.log("  - Treasury outflow limits for USDC, ARM, and ETH (address(0))");
   console.log("  - ArmadaRedemption + ArmadaWindDown deployment");
   console.log("  - Wind-down wiring to governor/treasury/shieldPause");
   console.log("  - Timelock admin renounce (final action)");

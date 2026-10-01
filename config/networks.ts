@@ -102,7 +102,10 @@ export interface NetworkConfig {
   relayerPort: number;
   /** Hardcoded ETH/USDC price for fee calculation */
   ethUsdcPrice: number;
-  /** Optional treasury address override (if empty, deployer is used) */
+  /**
+   * Optional PrivacyPool fee-recipient override (TREASURY_ADDRESS). If empty, the pool uses
+   * ArmadaTreasuryGov from the governance manifest (deployer on local). Refused on mainnet.
+   */
   treasuryAddress: string;
   /**
    * ARM token distribution (12M total supply).
@@ -328,6 +331,17 @@ export function getNetworkConfig(): NetworkConfig {
     throw new Error('CCTP_MODE must be "real" on mainnet (refusing to deploy mock CCTP/USDC).');
   }
 
+  // The PrivacyPool fee recipient is fixed at initialize(). On mainnet it must be the
+  // governance treasury (ArmadaTreasuryGov) so protocol fees stay under governance
+  // control — refuse an override rather than divert fees to another address for good.
+  const treasuryAddress = process.env.TREASURY_ADDRESS?.trim() ?? "";
+  if (env === "mainnet" && treasuryAddress) {
+    throw new Error(
+      "TREASURY_ADDRESS must not be set on mainnet: the privacy pool fee recipient is the " +
+      "governance treasury (ArmadaTreasuryGov) from the governance manifest."
+    );
+  }
+
   // Deployer key: required for real testnets, default Anvil key for local
   const defaultKey = env === "local"
     ? "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
@@ -379,7 +393,7 @@ export function getNetworkConfig(): NetworkConfig {
     timelockDelay: numEnv("TIMELOCK_DELAY", 172800),
     relayerPort: numEnv("RELAYER_PORT", 3001),
     ethUsdcPrice: numEnv("ETH_USDC_PRICE", 2000),
-    treasuryAddress: process.env.TREASURY_ADDRESS ?? "",
+    treasuryAddress,
     armDistribution: {
       treasury: optionalEnv("ARM_TREASURY_ALLOCATION", "7800000"),
       crowdfund: optionalEnv("ARM_CROWDFUND_ALLOCATION", "1800000"),

@@ -28,7 +28,7 @@
  * hand per docs/interrupted-launch-recovery.md.
  *
  * Prerequisites (fail loud if missing): deployer key funded on the hub; real CCTP V2
- * addresses + USDC configured; treasury / security council / launch team / RevenueLock
+ * addresses + USDC configured; security council / launch team / RevenueLock
  * beneficiaries set. See config/mainnet.env.
  */
 

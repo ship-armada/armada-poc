@@ -1,6 +1,7 @@
 // ABOUTME: Guards for the mainnet crowdfund-launch deploy — remote-network gas headroom, the
-// ABOUTME: refusal to re-run over earlier manifests, and the absolute crowdfund open time.
+// ABOUTME: re-run refusal, the absolute crowdfund open time, and the pool-treasury override.
 import { expect } from "chai";
+import { spawnSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -122,6 +123,54 @@ describe("Mainnet launch deploy guards", function () {
 
       expect(await crowdfund.windowStart()).to.equal(BigInt(openTs));
       expect(await crowdfund.windowEnd()).to.equal(BigInt(openTs) + (await crowdfund.WINDOW_DURATION()));
+    });
+  });
+  describe("TREASURY_ADDRESS on mainnet (orchestrator dry-run)", function () {
+    // Spawning ts-node compiles the orchestrator and config on each run.
+    this.timeout(120_000);
+
+    /** Env for `deploy_mainnet.ts --dry-run`: the committed mainnet.env plus launch-time inputs. */
+    function mainnetDryRunEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
+      const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: process.env.HOME };
+      const template = fs.readFileSync(path.join(__dirname, "..", "config", "mainnet.env"), "utf8");
+      for (const line of template.split("\n")) {
+        const m = line.match(/^export ([A-Z0-9_]+)=(.*)$/);
+        if (m) env[m[1]] = m[2];
+      }
+      // Two days out: inside the orchestrator's open-time lead bounds.
+      const openTs = Math.floor(Date.now() / 1000) + 2 * 86400;
+      return {
+        ...env,
+        DEPLOYER_PRIVATE_KEY: "test-placeholder-not-a-real-key",
+        REVENUE_LOCK_BENEFICIARIES_JSON: JSON.stringify(
+          [{ address: "0x0000000000000000000000000000000000000001", amount: "2400000", label: "test" }]),
+        CROWDFUND_OPEN_TIME: new Date(openTs * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"),
+        ...extra,
+      };
+    }
+
+    function dryRun(extra: Record<string, string>) {
+      return spawnSync("npx", ["ts-node", "scripts/deploy_mainnet.ts", "--dry-run"], {
+        cwd: path.join(__dirname, ".."), env: mainnetDryRunEnv(extra), encoding: "utf8",
+      });
+    }
+
+    // WHY: control case — the committed mainnet template (plus launch-time inputs) must reach
+    // the dry-run plan, so the refusal below is attributable to TREASURY_ADDRESS alone.
+    it("prints the launch plan when TREASURY_ADDRESS is unset", function () {
+      const result = dryRun({});
+      expect(result.status, result.stderr).to.equal(0);
+      expect(result.stdout).to.include("CROWDFUND-LAUNCH DEPLOYMENT");
+    });
+
+    // WHY: the privacy pool fee recipient is fixed at initialize(); a mainnet override would
+    // send all protocol fees outside governance for good. The launch must stop before any
+    // step runs, not at the later privacy-pool deploy.
+    it("refuses to start when TREASURY_ADDRESS is set", function () {
+      const result = dryRun({ TREASURY_ADDRESS: "0x0000000000000000000000000000000000000002" });
+      expect(result.status).to.not.equal(0);
+      expect(result.stderr).to.include("TREASURY_ADDRESS must not be set on mainnet");
+      expect(result.stdout).to.not.include("CROWDFUND-LAUNCH DEPLOYMENT");
     });
   });
 });

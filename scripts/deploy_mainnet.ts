@@ -78,17 +78,21 @@ function run(cmd: string, description: string): void {
   }
 }
 
-/** Run a non-deploy check that should not abort the orchestrator on failure. */
-function runNonFatal(cmd: string, description: string): void {
+/**
+ * Run a non-deploy check after all transactions are sent. A failure cannot be rolled back,
+ * so it does not stop the script mid-way; returns false so main() can end loudly instead.
+ */
+function runCheck(cmd: string, description: string): boolean {
   banner(description, cmd);
   if (DRY_RUN) {
     console.log("  [dry-run] skipped");
-    return;
+    return true;
   }
   try {
     execSync(cmd, { stdio: "inherit", cwd: process.cwd() });
+    return true;
   } catch (e) {
-    console.warn(`\nWARNING: ${description} reported issues — review the output above.`);
+    return false;
   }
 }
 
@@ -207,11 +211,21 @@ async function main() {
     "3/3 Deploying crowdfund (+ timelock harden)"
   );
 
-  // Verification (non-fatal — a check, not a deploy step).
-  runNonFatal(
+  // Verification — a check, not a deploy step. Every transaction has been sent by now, so a
+  // failure is reported loudly (and exits non-zero) rather than rolled back.
+  const verified = runCheck(
     `npx hardhat run scripts/verify_deployment.ts --network ${hubNet}`,
     "Verifying deployment"
   );
+  if (!verified) {
+    console.error("\n" + "=".repeat(60));
+    console.error("  VERIFICATION FAILED — transactions were sent, but the deployment");
+    console.error("  does not match the expected configuration.");
+    console.error("  Do NOT announce the sale or pin the frontend. Review the FAIL rows above;");
+    console.error(`  do not re-run this script (see ${INTERRUPTED_LAUNCH_RUNBOOK}).`);
+    console.error("=".repeat(60));
+    process.exit(1);
+  }
 
   console.log("\n" + "=".repeat(60));
   console.log("  CROWDFUND-LAUNCH DEPLOYMENT COMPLETE");

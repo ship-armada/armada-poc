@@ -93,7 +93,7 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
     uint256 constant TOTAL_SUPPLY = 12_000_000 * 1e18;
     uint256 constant TWO_DAYS = 2 days;
     uint256 constant REVENUE_THRESHOLD = 10_000 * 1e18; // $10k
-    uint256 constant WIND_DOWN_DEADLINE = 1_798_761_600; // Dec 31, 2026 (approx)
+    uint256 constant WIND_DOWN_DEADLINE = 1_830_211_200; // 2027-12-31T00:00:00Z
 
     function setUp() public {
         // Set block.timestamp to a reasonable starting point

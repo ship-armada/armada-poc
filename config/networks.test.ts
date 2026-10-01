@@ -8,7 +8,8 @@ import * as path from "path";
 // Env keys the config reads that a test might set — cleared between tests so one case
 // can't leak chain topology into the next (getNetworkConfig caches, so we also re-require).
 const MANAGED_PREFIXES = ["CLIENT_", "HUB_", "CCTP_", "DEPLOY_ENV", "DEPLOYER_PRIVATE_KEY",
-  "REVENUE_LOCK_", "REVENUE_RESERVE_", "TREASURY_ADDRESS", "SECURITY_COUNCIL_ADDRESS", "LAUNCH_TEAM_ADDRESS"];
+  "REVENUE_LOCK_", "REVENUE_RESERVE_", "TREASURY_ADDRESS", "SECURITY_COUNCIL_ADDRESS", "LAUNCH_TEAM_ADDRESS",
+  "CCTP_MODE", "WINDDOWN_"];
 
 function clearManagedEnv(): void {
   for (const key of Object.keys(process.env)) {
@@ -164,5 +165,40 @@ describe("reserve configuration", () => {
       { amount: string }[]).reduce((sum, row) => sum + BigInt(row.amount), 0n);
     expect(total("revenue-lock-beneficiaries-sepolia.json")).to.equal(2_400_000n);
     expect(total("revenue-lock-beneficiaries-sepolia-reserve.json") + 360_000n).to.equal(2_400_000n);
+  });
+});
+
+describe("wind-down deadline", () => {
+  afterEach(() => {
+    clearManagedEnv();
+    delete process.env.REVENUE_LOCK_BENEFICIARIES_JSON;
+  });
+
+  // Non-local envs must pass the client builder before the wind-down field is read.
+  const ONE_CLIENT = {
+    CLIENT_COUNT: "1",
+    CLIENT_1_RPC: "https://c1", CLIENT_1_CHAIN_ID: "8453", CLIENT_1_CCTP_DOMAIN: "6",
+  };
+  const MAINNET_BASE = { ...SEPOLIA_BASE, ...ONE_CLIENT, DEPLOY_ENV: "mainnet", CCTP_MODE: "real" };
+
+  // WHY: the deadline arms a permissionless, terminal wind-down and is fixed at the
+  // crowdfund deploy; a mainnet deploy must never pick it up from a silent default.
+  it("requires WINDDOWN_DEADLINE on mainnet", () => {
+    expect(() => freshConfig(MAINNET_BASE).getNetworkConfig()).to.throw(/WINDDOWN_DEADLINE/);
+  });
+
+  // WHY: an explicitly chosen mainnet deadline must reach the deploy script unchanged.
+  it("uses the explicit WINDDOWN_DEADLINE on mainnet", () => {
+    const c = freshConfig({ ...MAINNET_BASE, WINDDOWN_DEADLINE: "2028-06-30T00:00:00Z" }).getNetworkConfig();
+    expect(c.windDownDeadline).to.equal("2028-06-30T00:00:00Z");
+  });
+
+  // WHY: local and testnet deploys keep working with no wind-down env set; the default sits
+  // well clear of the constructor's "deadline in past" check.
+  it("defaults local and Sepolia to 2027-12-31", () => {
+    expect(freshConfig({ DEPLOY_ENV: "local" }).getNetworkConfig().windDownDeadline)
+      .to.equal("2027-12-31T00:00:00Z");
+    expect(freshConfig({ ...SEPOLIA_BASE, ...ONE_CLIENT }).getNetworkConfig().windDownDeadline)
+      .to.equal("2027-12-31T00:00:00Z");
   });
 });

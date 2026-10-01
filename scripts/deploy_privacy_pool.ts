@@ -203,7 +203,8 @@ async function deployHub(): Promise<HubDeploymentInfo> {
   console.log(`   PrivacyPool: ${privacyPoolAddress} (block ${privacyPoolDeployBlock})`);
 
   // 7. Resolve treasury address and initialize PrivacyPool
-  // Priority: env var > governance manifest (ArmadaTreasuryGov) > deployer (local only)
+  // Priority: env var > governance manifest (ArmadaTreasuryGov) > deployer (local only).
+  // The env var override is refused on mainnet by getNetworkConfig().
   console.log("\n7. Initializing PrivacyPool...");
   const govDeployment = loadDeployment(getGovernanceDeploymentFile());
   let treasuryAddress: string;

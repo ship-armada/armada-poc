@@ -246,6 +246,48 @@ describe("crowdfund open time", () => {
   });
 });
 
+describe("privacy pool treasury override", () => {
+  afterEach(() => {
+    clearManagedEnv();
+    delete process.env.REVENUE_LOCK_BENEFICIARIES_JSON;
+  });
+
+  const ONE_CLIENT = {
+    CLIENT_COUNT: "1",
+    CLIENT_1_RPC: "https://c1", CLIENT_1_CHAIN_ID: "8453", CLIENT_1_CCTP_DOMAIN: "6",
+  };
+  const MAINNET_BASE = {
+    ...SEPOLIA_BASE, ...ONE_CLIENT, DEPLOY_ENV: "mainnet", CCTP_MODE: "real",
+    WINDDOWN_DEADLINE: "2027-12-31T00:00:00Z", CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
+  };
+  const OVERRIDE = "0x0000000000000000000000000000000000000002";
+
+  // WHY: the PrivacyPool fee recipient is fixed at initialize(). On mainnet it must be the
+  // governance treasury; an override would divert all protocol fees outside governance
+  // control for good, so the config must refuse it before any deploy step runs.
+  it("refuses TREASURY_ADDRESS on mainnet", () => {
+    expect(() => freshConfig({ ...MAINNET_BASE, TREASURY_ADDRESS: OVERRIDE }).getNetworkConfig())
+      .to.throw(/TREASURY_ADDRESS/);
+  });
+
+  // WHY: an `export TREASURY_ADDRESS=` left blank (or whitespace) in an env file is not an
+  // override and must not block a mainnet deploy.
+  it("treats a blank TREASURY_ADDRESS on mainnet as unset", () => {
+    for (const blank of ["", "  "]) {
+      const c = freshConfig({ ...MAINNET_BASE, TREASURY_ADDRESS: blank }).getNetworkConfig();
+      expect(c.treasuryAddress).to.equal("");
+    }
+  });
+
+  // WHY: local and Sepolia keep the override (Sepolia sets one in sepolia.env).
+  it("keeps the override on local and Sepolia", () => {
+    expect(freshConfig({ DEPLOY_ENV: "local", TREASURY_ADDRESS: OVERRIDE }).getNetworkConfig().treasuryAddress)
+      .to.equal(OVERRIDE);
+    expect(freshConfig({ ...SEPOLIA_BASE, ...ONE_CLIENT, TREASURY_ADDRESS: OVERRIDE }).getNetworkConfig()
+      .treasuryAddress).to.equal(OVERRIDE);
+  });
+});
+
 // GOVERNANCE.md §Treasury Outflow Limits: 30-day rolling window; limit is the greater of the
 // absolute amount and the percentage of treasury balance; the floor is immutable once set.
 const SPEC_OUTFLOW = {
@@ -320,5 +362,11 @@ describe("committed mainnet.env", () => {
       CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
     }).getNetworkConfig();
     expect(c.outflowConfig).to.deep.equal(SPEC_OUTFLOW);
+  });
+
+  // WHY: on mainnet the pool fee recipient must default to ArmadaTreasuryGov; the template
+  // must not carry an override (the config would refuse it and abort the launch).
+  it("leaves TREASURY_ADDRESS unset", () => {
+    expect(MAINNET_ENV).to.not.have.property("TREASURY_ADDRESS");
   });
 });

@@ -150,6 +150,11 @@ export interface NetworkConfig {
   windDownDeadline: string;
   /** Wind-down revenue threshold in whole USD (18-decimal). Default "10000". */
   windDownRevenueThreshold: string;
+  /** RevenueLock MAX_REVENUE_INCREASE_PER_DAY in whole USD, scaled to 18 decimals at deploy
+   *  (RevenueCounter.recognizedRevenueUsd is 18-decimal USD). Immutable per RevenueLock.
+   *  Default "10000" ($10k/day — issue #225: a malicious RevenueCounter upgrade needs
+   *  >= 100 days to walk $0 -> $1M full unlock). Env: REVENUE_LOCK_MAX_INCREASE_PER_DAY_USD. */
+  revenueLockMaxIncreasePerDayUsd: string;
   /** CCTP finality mode: "fast" (confirmed, ~8-20s) or "standard" (finalized, ~15-19min) */
   cctpFinalityMode: "fast" | "standard";
   /**
@@ -188,6 +193,26 @@ function optionalEnv(key: string, defaultValue: string): string {
 function numEnv(key: string, defaultValue: number): number {
   const value = process.env[key];
   return value ? parseInt(value, 10) : defaultValue;
+}
+
+/** Upper bound for the RevenueLock ratchet rate: the $1M full-unlock milestone. A larger
+ *  per-day cap would let one day's sync unlock everything, i.e. no cap at all. */
+const REVENUE_LOCK_FULL_UNLOCK_USD = 1_000_000n;
+
+/**
+ * Read the RevenueLock ratchet rate cap as a positive whole-USD integer string. Rejects
+ * decimals, exponents and pre-scaled 18-decimal values (anything above the $1M full-unlock
+ * milestone): RevenueLock has no setter, so a scale mistake must fail before deploy.
+ */
+function revenueLockMaxIncreaseEnv(key: string, defaultValue: string): string {
+  const value = optionalEnv(key, defaultValue);
+  if (!/^[1-9]\d*$/.test(value) || BigInt(value) > REVENUE_LOCK_FULL_UNLOCK_USD) {
+    throw new Error(
+      `${key} must be a whole-USD integer between 1 and ${REVENUE_LOCK_FULL_UNLOCK_USD} ` +
+      `(not 18-decimal scaled), got "${value}"`
+    );
+  }
+  return value;
 }
 
 function boolEnv(key: string, defaultValue: boolean): boolean {
@@ -417,6 +442,7 @@ export function getNetworkConfig(): NetworkConfig {
       ? requireEnv("WINDDOWN_DEADLINE")
       : optionalEnv("WINDDOWN_DEADLINE", "2027-12-31T00:00:00Z"),
     windDownRevenueThreshold: optionalEnv("WINDDOWN_REVENUE_THRESHOLD", "10000"),
+    revenueLockMaxIncreasePerDayUsd: revenueLockMaxIncreaseEnv("REVENUE_LOCK_MAX_INCREASE_PER_DAY_USD", "10000"),
     cctpFinalityMode: optionalEnv("CCTP_FINALITY_MODE", "fast") as "fast" | "standard",
     // Default on for mainnet (safe — can't forget to harden), opt-in elsewhere
     // (the Sepolia dry-run sets HARDEN_TIMELOCK=true to rehearse the mainnet path).

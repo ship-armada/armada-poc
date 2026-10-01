@@ -288,6 +288,34 @@ describe("privacy pool treasury override", () => {
   });
 });
 
+describe("RevenueLock max revenue increase per day", () => {
+  afterEach(clearManagedEnv);
+
+  // WHY: the ratchet rate cap is an immutable RevenueLock constructor input; the spec value
+  // ($10k/day, issue #225: >= 100 days for a malicious $0 -> $1M unlock) must be the default.
+  it("defaults to the $10,000/day spec value in whole USD", () => {
+    const c = freshConfig({ DEPLOY_ENV: "local" }).getNetworkConfig();
+    expect(c.revenueLockMaxIncreasePerDayUsd).to.equal("10000");
+  });
+
+  // WHY: an explicitly configured cap must reach the deploy scripts unchanged.
+  it("uses an explicit REVENUE_LOCK_MAX_INCREASE_PER_DAY_USD", () => {
+    const c = freshConfig({ DEPLOY_ENV: "local", REVENUE_LOCK_MAX_INCREASE_PER_DAY_USD: "5000" })
+      .getNetworkConfig();
+    expect(c.revenueLockMaxIncreasePerDayUsd).to.equal("5000");
+  });
+
+  // WHY: the value is whole USD, scaled to 18 decimals at deploy. A pre-scaled entry (10000e18)
+  // or one above the $1M full-unlock milestone disables the cap, and zero freezes every unlock;
+  // RevenueLock has no setter, so these must fail before deploy rather than on-chain.
+  for (const bad of ["0", "10000.5", "1e22", "10000000000000000000000", "1000001", "-10000", "$10000"]) {
+    it(`rejects "${bad}"`, () => {
+      expect(() => freshConfig({ DEPLOY_ENV: "local", REVENUE_LOCK_MAX_INCREASE_PER_DAY_USD: bad })
+        .getNetworkConfig()).to.throw(/REVENUE_LOCK_MAX_INCREASE_PER_DAY_USD/);
+    });
+  }
+});
+
 // GOVERNANCE.md §Treasury Outflow Limits: 30-day rolling window; limit is the greater of the
 // absolute amount and the percentage of treasury balance; the floor is immutable once set.
 const SPEC_OUTFLOW = {
@@ -345,6 +373,12 @@ describe("committed mainnet.env", () => {
       CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
     });
     expect(() => validateCCTPConfig("hub")).to.not.throw();
+  });
+
+  // WHY: the freeze sheet (PARAMETER_MANIFEST.md §8.2) reads the ratchet rate cap from the
+  // committed template; it must state the spec value explicitly, in whole USD (#530).
+  it("sets the RevenueLock max revenue increase to the $10,000/day spec value", () => {
+    expect(MAINNET_ENV.REVENUE_LOCK_MAX_INCREASE_PER_DAY_USD).to.equal("10000");
   });
 
   // WHY: the launch freeze sheet reads the outflow limits from the committed template; it

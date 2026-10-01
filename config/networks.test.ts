@@ -211,6 +211,9 @@ const SPEC_OUTFLOW = {
     windowDuration: 30 * 86400, limitBps: 300,
     limitAbsolute: "250000000000000000000000", floorAbsolute: "100000000000000000000000",
   },
+  // USDC pattern: 30-day window, 10%, 25 ETH absolute (~$100k); floor 0 because floors can
+  // only ever be raised.
+  eth: { windowDuration: 30 * 86400, limitBps: 1000, limitAbsolute: "25000000000000000000", floorAbsolute: "0" },
 };
 
 describe("treasury outflow limits", () => {
@@ -218,10 +221,9 @@ describe("treasury outflow limits", () => {
 
   // WHY: initOutflowConfig is one-shot per token and its floor can never be lowered, so a
   // deploy that omits the OUTFLOW_* env must still install the spec limits, not looser ones.
-  it("defaults USDC and ARM to the GOVERNANCE.md spec values", () => {
+  it("defaults USDC, ARM and ETH to the GOVERNANCE.md spec values", () => {
     const c = freshConfig({ DEPLOY_ENV: "local" }).getNetworkConfig();
-    expect(c.outflowConfig.usdc).to.deep.equal(SPEC_OUTFLOW.usdc);
-    expect(c.outflowConfig.arm).to.deep.equal(SPEC_OUTFLOW.arm);
+    expect(c.outflowConfig).to.deep.equal(SPEC_OUTFLOW);
   });
 });
 
@@ -261,17 +263,17 @@ describe("committed mainnet.env", () => {
 
   // WHY: the launch freeze sheet reads the outflow limits from the committed template; it
   // must state the spec values explicitly rather than rely on code defaults (#348).
-  it("sets USDC and ARM outflow limits to the GOVERNANCE.md spec values", () => {
-    for (const key of ["WINDOW", "BPS", "ABSOLUTE", "FLOOR"]) {
-      expect(MAINNET_ENV, `OUTFLOW_USDC_${key}`).to.have.property(`OUTFLOW_USDC_${key}`);
-      expect(MAINNET_ENV, `OUTFLOW_ARM_${key}`).to.have.property(`OUTFLOW_ARM_${key}`);
+  it("sets USDC, ARM and ETH outflow limits to the GOVERNANCE.md spec values", () => {
+    for (const token of ["USDC", "ARM", "ETH"]) {
+      for (const key of ["WINDOW", "BPS", "ABSOLUTE", "FLOOR"]) {
+        expect(MAINNET_ENV).to.have.property(`OUTFLOW_${token}_${key}`);
+      }
     }
     const c = freshConfig({
       ...MAINNET_ENV,
       DEPLOYER_PRIVATE_KEY: "test-placeholder-not-a-real-key",
       REVENUE_LOCK_BENEFICIARIES_JSON: REVENUE_LOCK_JSON,
     }).getNetworkConfig();
-    expect(c.outflowConfig.usdc).to.deep.equal(SPEC_OUTFLOW.usdc);
-    expect(c.outflowConfig.arm).to.deep.equal(SPEC_OUTFLOW.arm);
+    expect(c.outflowConfig).to.deep.equal(SPEC_OUTFLOW);
   });
 });

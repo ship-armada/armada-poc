@@ -157,8 +157,7 @@ export interface NetworkConfig {
   /**
    * Treasury outflow rate-limit config per token, applied at deploy via
    * initOutflowConfig so the treasury is protected from launch rather than via a
-   * fragile first governance vote. USDC/ARM follow GOVERNANCE.md; ETH values are
-   * placeholders pending issue #348. Amounts are in each token's smallest unit (USDC 6dp, ARM/ETH 18dp).
+   * fragile first governance vote. Values follow GOVERNANCE.md (issue #348). Amounts are in each token's smallest unit (USDC 6dp, ARM/ETH 18dp).
    */
   outflowConfig: { usdc: OutflowParams; arm: OutflowParams; eth: OutflowParams };
 }
@@ -399,9 +398,9 @@ export function getNetworkConfig(): NetworkConfig {
     // Default on for mainnet (safe — can't forget to harden), opt-in elsewhere
     // (the Sepolia dry-run sets HARDEN_TIMELOCK=true to rehearse the mainnet path).
     hardenTimelock: boolEnv("HARDEN_TIMELOCK", env === "mainnet"),
-    // Treasury outflow limits, env-overridable per token. USDC and ARM defaults are the
-    // GOVERNANCE.md §Treasury Outflow Limits values: 30-day rolling window, limit = greater
-    // of the absolute amount and the % of treasury balance, immutable floor.
+    // Treasury outflow limits, env-overridable per token. Defaults are the GOVERNANCE.md
+    // §Treasury Outflow Limits values: 30-day rolling window, limit = greater of the
+    // absolute amount and the % of treasury balance, immutable floor.
     outflowConfig: {
       usdc: {
         windowDuration: numEnv("OUTFLOW_USDC_WINDOW", 2592000),                         // 30 days
@@ -415,13 +414,11 @@ export function getNetworkConfig(): NetworkConfig {
         limitAbsolute: optionalEnv("OUTFLOW_ARM_ABSOLUTE", "250000000000000000000000"), // 250,000 ARM (18dp)
         floorAbsolute: optionalEnv("OUTFLOW_ARM_FLOOR", "100000000000000000000000"),    // 100,000 ARM (18dp)
       },
-      // TODO(#348): ETH limits are not specified in GOVERNANCE.md — these remain
-      // placeholders until decided. Floor stays 0 because floors can only be raised later.
       eth: {
-        windowDuration: numEnv("OUTFLOW_ETH_WINDOW", 86400),
-        limitBps: numEnv("OUTFLOW_ETH_BPS", 2000),
-        limitAbsolute: optionalEnv("OUTFLOW_ETH_ABSOLUTE", "100000000000000000000"),    // 100 ETH (18dp)
-        floorAbsolute: optionalEnv("OUTFLOW_ETH_FLOOR", "0"),
+        windowDuration: numEnv("OUTFLOW_ETH_WINDOW", 2592000),                          // 30 days
+        limitBps: numEnv("OUTFLOW_ETH_BPS", 1000),                                      // 10%
+        limitAbsolute: optionalEnv("OUTFLOW_ETH_ABSOLUTE", "25000000000000000000"),     // 25 ETH (18dp)
+        floorAbsolute: optionalEnv("OUTFLOW_ETH_FLOOR", "0"),                           // none (raisable)
       },
     },
   };

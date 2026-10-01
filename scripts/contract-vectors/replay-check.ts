@@ -35,7 +35,13 @@ import * as fs from "fs";
 import * as path from "path";
 import { deployMock } from "./lib/mock-contracts";
 
-const FIXTURES_DIR = path.join(__dirname, "..", "..", "test-foundry", "fixtures", "contract-vectors");
+// Fixture dir overridable for the post-drift v2 corpus (see README §Post-drift v2 corpus):
+//   REPLAY_FIXTURES_DIR=test-foundry/fixtures/contract-vectors-v2
+const FIXTURES_DIR = path.resolve(
+  __dirname,
+  "..", "..",
+  process.env.REPLAY_FIXTURES_DIR || path.join("test-foundry", "fixtures", "contract-vectors")
+);
 
 const ONE_USDC = 1_000_000n;
 
@@ -112,6 +118,18 @@ async function runStateReads(
       out[key] = await pool[m[1]](tree, slot);
       continue;
     }
+    // pool.<mapping>[key] — single-arg mappings with decimal (remotePools[101],
+    // remoteHookRouters[101]) or 0x address (tokenBlocklist[0x…]) keys.
+    m = key.match(/^pool\.(remotePools|remoteHookRouters)\[(\d+)\]$/);
+    if (m) {
+      out[key] = await pool[m[1]](BigInt(m[2]));
+      continue;
+    }
+    m = key.match(/^pool\.(tokenBlocklist)\[(0x[0-9a-fA-F]+)\]$/);
+    if (m) {
+      out[key] = await pool[m[1]](m[2]);
+      continue;
+    }
     console.warn(`  replay-check: no read binding for state key "${key}" — skipped`);
   }
   return out;
@@ -159,7 +177,8 @@ async function replayVector(id: string, ctx: any): Promise<boolean> {
       return false;
     }
     const setupTo = ctx.addressBook[s.to] ?? s.toAddress;
-    await (await setupFrom.sendTransaction({ to: setupTo, data: s.calldata, value: 0 })).wait();
+    // Empty resolution = contract-creation setup tx (mirrors capture).
+    await (await setupFrom.sendTransaction({ ...(setupTo ? { to: setupTo } : {}), data: s.calldata, value: 0 })).wait();
   }
 
   // ── Send the recorded calldata ─────────────────────────────────────────────
@@ -276,6 +295,27 @@ async function main() {
     console.log("genesis: deploying capture mocks + funding accounts...");
     const mockPause = await deployMock(deployer, "MockShieldPauseController");
     const mockFee = await deployMock(deployer, "MockConfigurableFeeModule");
+    // v2 corpus extras (post-drift delta corpus, capture-v2.ts) deploy in the
+    // SAME position as at capture time: registry mock and reentrancy token
+    // immediately after the fee mock, BEFORE funding (nonce order is
+    // load-bearing for address determinism).
+    let evil: any;
+    if (addressBook.MOCK_ADAPTER_REGISTRY) {
+      const mockRegistry = await deployMock(deployer, "MockAdapterRegistry");
+      if (mockRegistry.address !== addressBook.MOCK_ADAPTER_REGISTRY) {
+        console.error(`genesis: registry mock diverges: ${mockRegistry.address} vs ${addressBook.MOCK_ADAPTER_REGISTRY}`);
+        process.exit(1);
+      }
+    }
+    if (addressBook.MALICIOUS_TOKEN) {
+      const evilFactory = await ethers.getContractFactory("MaliciousReentrantToken");
+      evil = await evilFactory.deploy();
+      await evil.waitForDeployment();
+      if ((await evil.getAddress()) !== addressBook.MALICIOUS_TOKEN) {
+        console.error(`genesis: malicious token diverges: ${await evil.getAddress()} vs ${addressBook.MALICIOUS_TOKEN}`);
+        process.exit(1);
+      }
+    }
     if (
       mockPause.address !== addressBook.MOCK_PAUSE ||
       mockFee.address !== addressBook.MOCK_FEE_MODULE
@@ -292,6 +332,10 @@ async function main() {
     await (await usdc.connect(alice).approve(addressBook.POOL, ethers.MaxUint256)).wait();
     await (await usdc.connect(bob).approve(addressBook.POOL, ethers.MaxUint256)).wait();
     await (await usdc.connect(carol).approve(addressBook.POOL, ethers.MaxUint256)).wait();
+    if (evil) {
+      await (await evil.mint(alice.address, 100n * ONE_USDC)).wait();
+      await (await evil.connect(alice).approve(addressBook.POOL, ethers.MaxUint256)).wait();
+    }
     console.log("genesis: done");
   }
 

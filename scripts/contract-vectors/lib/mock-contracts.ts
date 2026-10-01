@@ -59,6 +59,14 @@ contract MockConfigurableFeeModule {
 
     function recordShieldFee(address, address, uint256, uint256, uint256) external {}
 }
+
+contract MockAdapterRegistry {
+    mapping(address => bool) public authorizedAdapters;
+    mapping(address => bool) public withdrawOnlyAdapters;
+
+    function setAuthorized(address a, bool v) external { authorizedAdapters[a] = v; }
+    function setWithdrawOnly(address a, bool v) external { withdrawOnlyAdapters[a] = v; }
+}
 `;
 
 export interface DeployedMock {
@@ -91,7 +99,7 @@ function compileMocks(): Record<string, { abi: any; bytecode: string }> {
 
 export async function deployMock(
   deployer: Signer,
-  name: "MockShieldPauseController" | "MockConfigurableFeeModule"
+  name: "MockShieldPauseController" | "MockConfigurableFeeModule" | "MockAdapterRegistry"
 ): Promise<DeployedMock> {
   const compiled = compileMocks();
   const artifact = compiled[name];

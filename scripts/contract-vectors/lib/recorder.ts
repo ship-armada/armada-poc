@@ -196,9 +196,10 @@ export class Recorder {
   async capture(req: CaptureRequest): Promise<void> {
     const { meta } = req;
 
-    // Execute and mine executable setup transactions first.
+    // Execute and mine executable setup transactions first. A null/empty `to`
+    // is a contract-creation tx (deterministic address from sender nonce).
     for (const s of req.setupTxs ?? []) {
-      const rcpt = await (await s.from.sendTransaction({ to: s.to, data: s.calldata, value: 0 })).wait();
+      const rcpt = await (await s.from.sendTransaction({ ...(s.to ? { to: s.to } : {}), data: s.calldata, value: 0 })).wait();
       if (rcpt!.status !== 1) throw new Error(`[${meta.id}] setupTx failed: ${s.description}`);
     }
 

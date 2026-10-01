@@ -1,0 +1,168 @@
+{
+  "id": "v2-unshield-crosschain-unbound-revert",
+  "category": "unshield",
+  "description": "Unbound cross-chain unshield (adaptParams = 0) reverts — a relayer cannot resubmit a victim's proof with a redirected recipient (D-16).",
+  "specRefs": [
+    "§8.2"
+  ],
+  "proofsBypassed": true,
+  "dependsOn": [
+    "v2-admin-set-testing-mode-true",
+    "v2-admin-set-remote-pool",
+    "v2-shieldin-multi-note"
+  ],
+  "setup": [
+    "testingMode = true (proof bypass)",
+    "remotePools[101] + remoteHookRouters[101] registered",
+    "Pool USDC balance covers the bridged amount from prior shield-ins"
+  ],
+  "requiresImpersonation": null,
+  "setupTxs": [],
+  "tx": {
+    "from": "DEPLOYER",
+    "fromAddress": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "to": "POOL",
+    "toAddress": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+    "calldata": "0x2bcba06a00000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000650000000000000000000000003c44cdddb6a900fa2b585dd299e03d12fa4293bc00000000000000000000000000000000000000000000000000000000000f4240fa2ed47619362e77589c840fa748664c022c317c3dd6ef44f37cf8b55d5b23670000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000015df4ba4a293eadda3959502fcc393468f5ca56f638d7b392856b1cac3e30f0e0000000000000000000000000000000000000000000000000000000000000220000000000000000000000000000000000000000000000000000000000000026000000000000000000000000000000000000000000000000000000000000002c00000000000000000000000003c44cdddb6a900fa2b585dd299e03d12fa4293bc00000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009896800000000000000000000000000000000000000000000000000000000000000001226e23e45be457013e1dc90b6b2d567d4d6c05afd459f2bafe6aed3bbdfcf085000000000000000000000000000000000000000000000000000000000000000230561b7faafe48c4fa1f61c420c5b8a38982f1ce665390e8652b56f36241e7cb068665ed67f15a70f48bf958a5a6a5c35af0c1263b659c579e7adaa70e3009f60000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000007a690000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e00000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002009c4739e31a90fdd018c61f833d08a1b1624516caa3e3a65a38cad9bd787f0a044e3f63f4955c4bd0c6aa64b400f60952e54d6a25125bf1b73f1d8f9aa5168d412228342d60e7c04c12aaabf954a08fccb479ca661bd4a506e1f4268ae68373f20909b5351a338f2b86e0a0367f77402da4a92da61e2ac4fda4969e2d7ccae47472a031f3b834119cb92c94b7c80beb9cc53f72b4ed76e725a9208638148846296ebe03a1daf69973e6658f4e15eab67197a1469024d9b6dc29e7b71f71613e00000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "value": "0x0",
+    "decodedCall": {
+      "function": "atomicCrossChainUnshield",
+      "args": {
+        "tx": {
+          "proof": {
+            "a": {
+              "x": 0,
+              "y": 0
+            },
+            "b": {
+              "x": [
+                0,
+                0
+              ],
+              "y": [
+                0,
+                0
+              ]
+            },
+            "c": {
+              "x": 0,
+              "y": 0
+            }
+          },
+          "merkleRoot": "0x15df4ba4a293eadda3959502fcc393468f5ca56f638d7b392856b1cac3e30f0e",
+          "nullifiers": [
+            "0x226e23e45be457013e1dc90b6b2d567d4d6c05afd459f2bafe6aed3bbdfcf085"
+          ],
+          "commitments": [
+            "0x30561b7faafe48c4fa1f61c420c5b8a38982f1ce665390e8652b56f36241e7cb",
+            "0x068665ed67f15a70f48bf958a5a6a5c35af0c1263b659c579e7adaa70e3009f6"
+          ],
+          "boundParams": {
+            "treeNumber": 0,
+            "minGasPrice": 0,
+            "unshield": 1,
+            "chainID": 31337,
+            "adaptContract": "0x0000000000000000000000000000000000000000",
+            "adaptParams": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "commitmentCiphertext": [
+              {
+                "ciphertext": [
+                  "0x09c4739e31a90fdd018c61f833d08a1b1624516caa3e3a65a38cad9bd787f0a0",
+                  "0x44e3f63f4955c4bd0c6aa64b400f60952e54d6a25125bf1b73f1d8f9aa5168d4",
+                  "0x12228342d60e7c04c12aaabf954a08fccb479ca661bd4a506e1f4268ae68373f",
+                  "0x20909b5351a338f2b86e0a0367f77402da4a92da61e2ac4fda4969e2d7ccae47"
+                ],
+                "blindedSenderViewingKey": "0x472a031f3b834119cb92c94b7c80beb9cc53f72b4ed76e725a92086381488462",
+                "blindedReceiverViewingKey": "0x96ebe03a1daf69973e6658f4e15eab67197a1469024d9b6dc29e7b71f71613e0",
+                "annotationData": "0x",
+                "memo": "0x"
+              }
+            ]
+          },
+          "unshieldPreimage": {
+            "npk": "0x0000000000000000000000003c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+            "token": {
+              "tokenType": 0,
+              "tokenAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+              "tokenSubID": 0
+            },
+            "value": "0x989680"
+          }
+        },
+        "destinationDomain": 101,
+        "finalRecipient": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+        "maxFee": "0xf4240",
+        "uniqueNonce": "0xfa2ed47619362e77589c840fa748664c022c317c3dd6ef44f37cf8b55d5b2367"
+      }
+    }
+  },
+  "preState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x5",
+    "pool.merkleRoot": "0x15df4ba4a293eadda3959502fcc393468f5ca56f638d7b392856b1cac3e30f0e",
+    "pool.lastEventBlock": "0x84",
+    "usdc.balanceOf[POOL]": "0x1f511ed0",
+    "usdc.balanceOf[ALICE]": "0x2540be400",
+    "usdc.balanceOf[BOB]": "0x3a699d00",
+    "usdc.balanceOf[CAROL]": "0x3a699d00",
+    "usdc.balanceOf[TREASURY]": "0x278530",
+    "usdc.balanceOf[DEPLOYER]": "0x0",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x1e8480"
+  },
+  "result": {
+    "status": 0,
+    "txHash": "0x3116f1ffbe047768412dd8679e8b1c8d3030c1fdee27a79832288952c8996d2f",
+    "blockNumber": 133,
+    "gasUsed": "0x1309f",
+    "returnData": null,
+    "revert": {
+      "kind": "Error(string)",
+      "reason": "TransactModule: destination not bound to proof",
+      "data": "0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000002e5472616e736163744d6f64756c653a2064657374696e6174696f6e206e6f7420626f756e6420746f2070726f6f66000000000000000000000000000000000000"
+    },
+    "events": []
+  },
+  "postState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x5",
+    "pool.merkleRoot": "0x15df4ba4a293eadda3959502fcc393468f5ca56f638d7b392856b1cac3e30f0e",
+    "pool.lastEventBlock": "0x84",
+    "usdc.balanceOf[POOL]": "0x1f511ed0",
+    "usdc.balanceOf[ALICE]": "0x2540be400",
+    "usdc.balanceOf[BOB]": "0x3a699d00",
+    "usdc.balanceOf[CAROL]": "0x3a699d00",
+    "usdc.balanceOf[TREASURY]": "0x278530",
+    "usdc.balanceOf[DEPLOYER]": "0x0",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x1e8480"
+  },
+  "context": {
+    "chainId": 31337,
+    "network": "local fixturenet (Anvil, hub chain only)",
+    "deployments": {
+      "privacyPool": "deployments/privacy-pool-hub.json",
+      "cctp": "deployments/hub-v3.json",
+      "feeModule": "deployments/fee-module-hub.json",
+      "governance": "deployments/governance-hub.json"
+    },
+    "addressBook": {
+      "DEPLOYER": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "ALICE": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "BOB": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "CAROL": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "TREASURY": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+      "POOL": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+      "VERIFIER_MODULE": "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
+      "HOOK_ROUTER": "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
+      "TOKEN_MESSENGER": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+      "MESSAGE_TRANSMITTER": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+      "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "FEE_MODULE": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+      "CLIENT_POOL": "0x0000000000000000000000000000000000C11EA7",
+      "MOCK_PAUSE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+      "MOCK_FEE_MODULE": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f",
+      "MOCK_ADAPTER_REGISTRY": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d",
+      "MALICIOUS_TOKEN": "0xdbC43Ba45381e02825b14322cDdd15eC4B3164E6"
+    }
+  },
+  "capturedAt": "2026-10-01T11:33:56.171Z"
+}

@@ -154,7 +154,7 @@ This ensures the dashboard shows accurate yield even though yield accrues passiv
 | `npm run armada-relayer` | Start the unified relayer (HTTP fee API + CCTP relay) |
 | `npm run relayer` | Start legacy CCTP-only relay (no HTTP API) |
 | `npm run test` | Run integration tests |
-| `npm run clean` | Remove deployments and build artifacts |
+| `npm run clean` | Remove local deployments and build artifacts (keeps Sepolia/mainnet manifests) |
 
 ## Cryptography
 

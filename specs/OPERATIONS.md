@@ -102,9 +102,11 @@ Execute in exact order. Do not proceed to the next step until the previous step'
 | **Action** | Run deploy script with verified constructor params |
 | **Preconditions** | All pre-launch checklist items signed off |
 | **On-chain confirmation** | Contract address returned; verify on block explorer: correct bytecode, correct constructor args |
-| **Fallback** | If deploy fails: debug constructor params; do not redeploy without re-running full checklist |
+| **Fallback** | If deploy fails: debug constructor params; do not redeploy without re-running full checklist. If the deploy stopped after sending any transaction, it is an interrupted launch — follow `docs/interrupted-launch-recovery.md`, do not re-run |
 
 Record: `contract_address = [address]`, `deploy_tx = [hash]`, `block = [number]`
+
+**Deployment manifests.** The deploy writes `deployments/governance-hub-mainnet.json`, `deployments/crowdfund-hub-mainnet.json` and `deployments/hub-mainnet-v3.json`. They hold the RevenueLock constructor arguments, deploy blocks and addresses that source verification, `verify_deployment.ts` and interrupted-launch recovery depend on. As soon as the deploy finishes or stops, copy them off the deploy machine, then commit them to this repo in a PR (they are not gitignored). Never commit manifests produced by a mainnet-fork rehearsal: delete them (`rm deployments/*-mainnet*.json`) after the rehearsal, or they will block the live launch's re-run guard.
 
 ### Step 2: Verify contract source
 
@@ -176,7 +178,7 @@ published manifest exist — it does not depend on `openTimestamp`.
 | | |
 |---|---|
 | **Actor** | Deployer / ops |
-| **Action** | 1. Capture the deployed `crowdfund` address from the Step 1 deploy output. 2. Publish the deployment manifest to `armada-deployments` and record the resulting **commit SHA**. 3. In the mainnet committer Netlify site env (Site settings → Environment variables), set `DEPLOYMENT_REF=<that commit SHA>` (a full SHA, not a branch) and `VITE_EXPECTED_CROWDFUND_ADDRESS=<deployed crowdfund address>`. 4. Trigger a committer redeploy. |
+| **Action** | 1. Capture the deployed `crowdfund` address from the Step 1 deploy output. 2. Publish the full mainnet manifest set (governance, crowdfund and hub CCTP `hub-mainnet-v3.json`, see Step 1) to `armada-deployments` and record the resulting **commit SHA**. 3. In the mainnet committer Netlify site env (Site settings → Environment variables), set `DEPLOYMENT_REF=<that commit SHA>` (a full SHA, not a branch) and `VITE_EXPECTED_CROWDFUND_ADDRESS=<deployed crowdfund address>`. 4. Trigger a committer redeploy. |
 | **Preconditions** | Step 1 complete (crowdfund address known); manifest published to `armada-deployments` |
 | **On-chain confirmation** | Build log prints `crowdfund address verified against VITE_EXPECTED_CROWDFUND_ADDRESS`; the app loads without an address-integrity error |
 | **Fallback** | If the build fails with `FATAL: fetched crowdfund … != expected …`, the pinned manifest's crowdfund address does not match the trusted value — do NOT override the check; confirm the correct manifest/SHA and the correct expected address before redeploying. A mainnet build also hard-fails `validateEnv` if `VITE_EXPECTED_CROWDFUND_ADDRESS` is unset. |

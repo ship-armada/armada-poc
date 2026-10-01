@@ -135,9 +135,13 @@ export interface NetworkConfig {
   launchTeamAddress: string;
   /** Crowdfund open delay in seconds from deployment time. Default 600 (10 minutes) —
    *  an operational buffer that lets the post-deploy verification checklist complete
-   *  before commits can flow. Production deploys should set this explicitly via
-   *  CROWDFUND_OPEN_DELAY; the default is the conservative fallback. */
+   *  before commits can flow. Used only when crowdfundOpenTime is unset (local/Sepolia). */
   crowdfundOpenDelay: number;
+  /** Absolute crowdfund open time as ISO 8601 UTC ("2026-10-08T17:00:00Z"). Required on
+   *  mainnet (CROWDFUND_OPEN_TIME) so the immutable windowStart matches the announced
+   *  launch; optional override on local/Sepolia. Format and lead time are validated by
+   *  resolveCrowdfundOpenTimestamp (scripts/deploy-utils.ts). */
+  crowdfundOpenTime: string | undefined;
   /** Wind-down deadline as ISO 8601 date string. Required on mainnet (WINDDOWN_DEADLINE);
    *  local/Sepolia default "2027-12-31T00:00:00Z". */
   windDownDeadline: string;
@@ -388,6 +392,11 @@ export function getNetworkConfig(): NetworkConfig {
     securityCouncilAddress: optionalEnv("SECURITY_COUNCIL_ADDRESS", ""),
     launchTeamAddress: optionalEnv("LAUNCH_TEAM_ADDRESS", ""),
     crowdfundOpenDelay: numEnv("CROWDFUND_OPEN_DELAY", 600),
+    // No mainnet default: windowStart is immutable, and a relative delay drifts with how long
+    // the earlier deploy steps take, so the announced open time must be stated explicitly.
+    crowdfundOpenTime: env === "mainnet"
+      ? requireEnv("CROWDFUND_OPEN_TIME")
+      : process.env.CROWDFUND_OPEN_TIME || undefined,
     // No mainnet default: the deadline arms the permissionless, terminal wind-down trigger
     // and is fixed at the crowdfund deploy, so it must be chosen deliberately (#381 C2).
     windDownDeadline: env === "mainnet"

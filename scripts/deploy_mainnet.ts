@@ -34,7 +34,12 @@
 
 import { execSync } from "child_process";
 import { getNetworkConfig, getGovernanceDeploymentFile, getCrowdfundDeploymentFile } from "../config/networks";
-import { assertNoPriorLaunch, INTERRUPTED_LAUNCH_RUNBOOK } from "./deploy-utils";
+import {
+  assertNoPriorLaunch,
+  INTERRUPTED_LAUNCH_RUNBOOK,
+  resolveCrowdfundOpenTimestamp,
+  CROWDFUND_OPEN_MIN_LEAD_SECONDS,
+} from "./deploy-utils";
 
 // --dry-run prints the deploy sequence without executing it (preview the launch plan).
 const DRY_RUN = process.argv.slice(2).includes("--dry-run");
@@ -124,6 +129,19 @@ async function main() {
     }
   }
 
+  // Open-time pre-flight: windowStart is immutable and the crowdfund step runs after
+  // governance, so a bad or too-close open time must fail here, before any transaction.
+  let openTimestamp: number;
+  try {
+    openTimestamp = resolveCrowdfundOpenTimestamp(
+      config.crowdfundOpenTime, config.crowdfundOpenDelay,
+      Math.floor(Date.now() / 1000), CROWDFUND_OPEN_MIN_LEAD_SECONDS
+    );
+  } catch (e) {
+    console.error(`Error: ${(e as Error).message}`);
+    process.exit(1);
+  }
+
   console.log("=".repeat(60));
   console.log("  CROWDFUND-LAUNCH DEPLOYMENT (hub-only)");
   console.log("=".repeat(60));
@@ -133,6 +151,9 @@ async function main() {
   console.log(`  CCTP Mode:     ${config.cctpMode}`);
   console.log(`  Harden:        ${config.hardenTimelock}`);
   console.log(`  Timelock:      ${config.hardenTimelock ? `deploy at 0 → raise to ${config.timelockDelay}s → renounce` : `${config.timelockDelay}s (deployer keeps roles)`}`);
+  console.log(`  Sale opens:    ${config.crowdfundOpenTime
+    ? `${config.crowdfundOpenTime} (${openTimestamp})`
+    : `~${new Date(openTimestamp * 1000).toISOString()} (${config.crowdfundOpenDelay}s after the crowdfund step; set CROWDFUND_OPEN_TIME for an exact time)`}`);
   console.log();
 
   if (!config.hardenTimelock) {

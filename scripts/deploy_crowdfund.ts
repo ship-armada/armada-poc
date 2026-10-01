@@ -25,7 +25,7 @@ import {
   getGovernanceDeploymentFile,
   isLocal,
 } from "../config/networks";
-import { createNonceManager, rejectAnvilAddresses, loadDeployment, saveDeployment, timelockCall, retryReadOnLag } from "./deploy-utils";
+import { createNonceManager, rejectAnvilAddresses, loadDeployment, saveDeployment, timelockCall, retryReadOnLag, resolveCrowdfundOpenTimestamp } from "./deploy-utils";
 import { MULTICALL3_ADDRESS, MULTICALL3_RUNTIME_BYTECODE } from "./multicall3-bytecode";
 
 import { ensureRevenueLockActivated, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, assertCreationProvenance, validateReservePlan } from "./revenue-reserve";
@@ -145,11 +145,17 @@ async function main() {
   console.log("3. Deploying ArmadaCrowdfund...");
   const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
   const latestBlock = await ethers.provider.getBlock('latest');
-  // crowdfundOpenDelay is an operational buffer (deployment verification,
+  // The open time is an operational buffer (deployment verification,
   // announcement lead time, infra readiness) — NOT a seed-setup window.
   // Seeds are added during week 1 of the active window; see
   // ArmadaCrowdfund._requireArmLoadedAndPreInviteEnd.
-  const openTimestamp = latestBlock!.timestamp + config.crowdfundOpenDelay;
+  // Absolute CROWDFUND_OPEN_TIME when set (required on mainnet), else latest block +
+  // crowdfundOpenDelay. Zero lead here: the mainnet orchestrator already enforced the
+  // minimum lead before any transaction, and this step runs after governance.
+  const openTimestamp = resolveCrowdfundOpenTimestamp(
+    config.crowdfundOpenTime, config.crowdfundOpenDelay, latestBlock!.timestamp, 0
+  );
+  console.log(`   Open time: ${openTimestamp} (${new Date(openTimestamp * 1000).toISOString()})`);
   // Security council: config-driven for non-local, Anvil signer[10] fallback for local
   let securityCouncilAddress: string;
   if (config.securityCouncilAddress) {

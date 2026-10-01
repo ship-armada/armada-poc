@@ -2,6 +2,7 @@
 // ABOUTME: re-run refusal, the absolute crowdfund open time, and the pool-treasury override.
 import { expect } from "chai";
 import { spawnSync } from "child_process";
+import { execFileSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -10,6 +11,7 @@ import {
   assertNoPriorLaunch,
   INTERRUPTED_LAUNCH_RUNBOOK,
   resolveCrowdfundOpenTimestamp,
+  assertDeployCommit,
   CROWDFUND_OPEN_MIN_LEAD_SECONDS,
   CROWDFUND_OPEN_MAX_LEAD_SECONDS,
 } from "../scripts/deploy-utils";
@@ -172,5 +174,59 @@ describe("Mainnet launch deploy guards", function () {
       expect(result.stderr).to.include("TREASURY_ADDRESS must not be set on mainnet");
       expect(result.stdout).to.not.include("CROWDFUND-LAUNCH DEPLOYMENT");
     });
+  });
+  describe("assertDeployCommit", function () {
+    let repo: string;
+    let head: string;
+
+    const git = (...args: string[]) =>
+      execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: repo, encoding: "utf8" }).trim();
+    const write = (file: string, content: string) => {
+      fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true });
+      fs.writeFileSync(path.join(repo, file), content);
+    };
+
+    beforeEach(function () {
+      repo = fs.mkdtempSync(path.join(os.tmpdir(), "deploy-commit-"));
+      git("init", "-q");
+      write("contracts/Crowdfund.sol", "uint256 constant MAX_SALE = 1_800_000;\n");
+      git("add", "-A");
+      git("commit", "-q", "-m", "launch");
+      head = git("rev-parse", "HEAD");
+    });
+    afterEach(() => { fs.rmSync(repo, { recursive: true, force: true }); });
+
+    // WHY: deploying exactly the intended commit from a clean tree is the case that must pass.
+    it("passes when HEAD is DEPLOY_COMMIT and the tree is clean", function () {
+      expect(assertDeployCommit(head, repo)).to.equal(head);
+    });
+
+    // WHY: a different checkout (e.g. the mini-crowdfund-constants branch) compiles different
+    // bytecode, and the mistake only surfaces after one-shot initializers are spent.
+    it("rejects a HEAD other than DEPLOY_COMMIT", function () {
+      write("contracts/Crowdfund.sol", "uint256 constant MAX_SALE = 360;\n");
+      git("add", "-A");
+      git("commit", "-q", "-m", "other");
+      expect(() => assertDeployCommit(head, repo)).to.throw(/HEAD is [0-9a-f]{40}, DEPLOY_COMMIT is/);
+    });
+
+    // WHY: hardhat compiles the working tree, not HEAD — a local edit or untracked file would
+    // deploy code that is in no commit even though HEAD matches.
+    it("rejects uncommitted changes to a tracked file", function () {
+      write("contracts/Crowdfund.sol", "uint256 constant MAX_SALE = 360;\n");
+      expect(() => assertDeployCommit(head, repo)).to.throw(/working tree is not clean/);
+    });
+
+    it("rejects an untracked file", function () {
+      write("contracts/Extra.sol", "contract Extra {}\n");
+      expect(() => assertDeployCommit(head, repo)).to.throw(/working tree is not clean/);
+    });
+
+    // WHY: a short or mistyped SHA must fail clearly rather than match by prefix.
+    for (const bad of ["", "abc1234", "a".repeat(39), "a".repeat(41), "g".repeat(40)]) {
+      it(`rejects the malformed DEPLOY_COMMIT "${bad}"`, function () {
+        expect(() => assertDeployCommit(bad, repo)).to.throw(/full 40-character/);
+      });
+    }
   });
 });

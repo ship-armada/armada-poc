@@ -677,7 +677,7 @@ Large treasury proposals (especially those approaching outflow limits) should be
 | Parameter | Default | Governable |
 |-----------|---------|------------|
 | Revenue threshold | $10,000 cumulative | Yes (standard proposal) |
-| Deadline | December 31, 2026 | Yes (standard proposal) |
+| Deadline | December 31, 2027 (initial; see CROWDFUND.md §Wind-Down) | Yes (standard proposal) |
 
 ### Sequence
 

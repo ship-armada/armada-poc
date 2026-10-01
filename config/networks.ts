@@ -137,7 +137,8 @@ export interface NetworkConfig {
    *  before commits can flow. Production deploys should set this explicitly via
    *  CROWDFUND_OPEN_DELAY; the default is the conservative fallback. */
   crowdfundOpenDelay: number;
-  /** Wind-down deadline as ISO 8601 date string. Default "2026-12-31T00:00:00Z". */
+  /** Wind-down deadline as ISO 8601 date string. Required on mainnet (WINDDOWN_DEADLINE);
+   *  local/Sepolia default "2027-12-31T00:00:00Z". */
   windDownDeadline: string;
   /** Wind-down revenue threshold in whole USD (18-decimal). Default "10000". */
   windDownRevenueThreshold: string;
@@ -387,7 +388,11 @@ export function getNetworkConfig(): NetworkConfig {
     securityCouncilAddress: optionalEnv("SECURITY_COUNCIL_ADDRESS", ""),
     launchTeamAddress: optionalEnv("LAUNCH_TEAM_ADDRESS", ""),
     crowdfundOpenDelay: numEnv("CROWDFUND_OPEN_DELAY", 600),
-    windDownDeadline: optionalEnv("WINDDOWN_DEADLINE", "2026-12-31T00:00:00Z"),
+    // No mainnet default: the deadline arms the permissionless, terminal wind-down trigger
+    // and is fixed at the crowdfund deploy, so it must be chosen deliberately (#381 C2).
+    windDownDeadline: env === "mainnet"
+      ? requireEnv("WINDDOWN_DEADLINE")
+      : optionalEnv("WINDDOWN_DEADLINE", "2027-12-31T00:00:00Z"),
     windDownRevenueThreshold: optionalEnv("WINDDOWN_REVENUE_THRESHOLD", "10000"),
     cctpFinalityMode: optionalEnv("CCTP_FINALITY_MODE", "fast") as "fast" | "standard",
     // Default on for mainnet (safe — can't forget to harden), opt-in elsewhere

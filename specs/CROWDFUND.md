@@ -533,9 +533,11 @@ The protocol triggers an automatic wind-down if the revenue threshold is not rea
 | Parameter | Default | Governable |
 |---|---|---|
 | Revenue threshold | $10,000 cumulative | Yes (standard proposal) |
-| Deadline | December 31, 2026 | Yes (standard proposal) |
+| Deadline | December 31, 2027 | Yes (standard proposal) |
 
-The intent is to give the protocol approximately 6 months after mainnet launch to demonstrate traction. December 31, 2026 is the concrete implementation default and is calibrated to that intent based on the current launch timeline. If launch slips materially, governance should update the deadline before it becomes binding.
+The intent is to give the protocol approximately 6 months after the **shielded pool launch** to demonstrate traction. Protocol revenue only accrues through the shielded pool's fee module, which launches separately after the crowdfund, on a date not yet known. The deadline is fixed when the wind-down contract is deployed with the crowdfund, so December 31, 2027 is a deliberately conservative initial value. Once the shielded pool launch date is known, governance is expected to set the deadline to roughly 6 months after it; if the shielded pool launch slips, governance should extend the deadline before it becomes binding.
+
+The trade-off of a conservative initial deadline: if the shielded pool is delayed or never ships, participants wait longer before the permissionless wind-down becomes available. Governance can still trigger wind-down at any time via extended proposal (see GOVERNANCE.md §Wind-Down).
 
 If cumulative protocol revenue does not reach the threshold by the deadline, wind-down initiates automatically — no governance vote required. Governance may adjust either parameter before the deadline, or vote to wind down early at any time.
 
@@ -564,7 +566,7 @@ Those who paid have priority over those who received tokens at zero cost basis. 
 - **Propagation may fail.** Unused supply flows to treasury.
 - **This is a trusted-network crowdfund.** Not designed for viral distribution.
 - **Tokens are non-transferable at launch by design.** Transferability prioritizes governance participation during the formative phase. Token transfers can be unlocked by governance proposal.
-- **Automatic wind-down is a real risk.** If the protocol does not reach $10k revenue by December 31, 2026, wind-down initiates automatically.
+- **Automatic wind-down is a real risk.** If the protocol does not reach $10k revenue by the wind-down deadline (initially December 31, 2027; governable), wind-down becomes permissionlessly triggerable. Revenue is zero until the shielded pool launches.
 - **Multi-slot-per-hop is the core implementation dependency.** The entire allocation math — cap scaling, self-fill analysis, `hopDemand`, `computeAllocation()` — depends on the contract modeling `slotCount[address][hop]` as a counter that increments with each invite received. If the contract models hop access as a boolean rather than a counter, the spec's math is wrong. This must be confirmed in code before the crowdfund math is treated as settled.
 - **Wind-down / ARM token integration is an audit hotspot.** Wind-down assumes it can call `setTransferable(true)`, sweep non-ARM assets, exclude four hardcoded addresses from the redemption denominator, and end governance permanently. These hooks between the wind-down contract, ARM token, governor, and redemption contract are load-bearing — if any are slightly off, the wind-down integration story weakens. Priority audit target.
 
@@ -600,7 +602,7 @@ Those who paid have priority over those who received tokens at zero cost basis. 
 | Post-finalization | No privileged roles | All privileged functions permanently inactive after finalization. `withdrawUnallocatedArm` is permissionless — anyone calls it, ARM goes to immutable treasury address. |
 | Governance quiet period | 7 days after finalization; no proposals until day 8 | Gives community time to claim, delegate, and orient. Security Council handles any emergency during this window. Constructor parameter — applies once, no effect after expiry. |
 | ARM claim deadline | 3 years from finalization, fixed | Predeclared term of participation, ungovernable by design |
-| Automatic wind-down | Revenue threshold + deadline, both governable | Removes need for governance vote to initiate failure-case wind-down; defaults ($10k by Dec 31 2026) are conservative enough to signal genuine traction |
+| Automatic wind-down | Revenue threshold + deadline, both governable | Removes need for governance vote to initiate failure-case wind-down; defaults ($10k by Dec 31 2027) are conservative enough to signal genuine traction |
 
 ---
 

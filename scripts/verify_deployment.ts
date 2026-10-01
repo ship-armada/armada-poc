@@ -18,7 +18,10 @@
 import { ethers } from "hardhat";
 import { loadDeployment } from "./deploy-utils";
 import { timelockBootstrapChecks, timelockUnexpectedRoleHolders } from "./verify-timelock";
-import { assertReservePostFunding, assertCreationProvenance, reserveConfigMismatch } from "./revenue-reserve";
+import {
+  assertReservePostFunding, assertCreationProvenance, reserveConfigMismatch,
+  assertRevenueLockAllocation, assertRevenueLockSchedule,
+} from "./revenue-reserve";
 import {
   isLocal,
   isCCTPReal,
@@ -65,6 +68,21 @@ function fail(group: string, check: string, detail: string) {
 /** Pad an address to bytes32 (left-pad with zeros) */
 function addressToBytes32(addr: string): string {
   return "0x" + addr.slice(2).toLowerCase().padStart(64, "0");
+}
+
+/**
+ * Read an on-chain value and record PASS if it equals `expected`, FAIL otherwise (or if the
+ * read throws). Strings compare case-insensitively (addresses); everything else by String().
+ */
+async function expectOnChain(group: string, check: string, read: () => Promise<unknown>, expected: unknown) {
+  const norm = (v: unknown) => (typeof v === "string" ? v.toLowerCase() : String(v));
+  try {
+    const actual = await read();
+    if (norm(actual) === norm(expected)) pass(group, check);
+    else fail(group, check, `expected ${String(expected)}, got ${String(actual)}`);
+  } catch (error) {
+    fail(group, check, `error reading: ${(error as Error).message}`);
+  }
 }
 
 /** Load manifest or return null with a warning */
@@ -644,9 +662,9 @@ async function checkTreasuryConfig(govManifest: any, hubCCTP: any | null) {
   const armTokenAddr = govManifest.contracts.armToken;
 
   // Token candidates to inspect: USDC (if known), ARM, and ETH sentinel address(0).
-  // The deploy script comment notes outflow + steward budgets are seeded "via
-  // governance proposal post-launch" — at fresh deploy, these are expected to be
-  // uninitialized. The verifier warns then; once governance has run, it should pass.
+  // Outflow configs are initialized at deploy by deploy_crowdfund.ts (their values are
+  // checked in "Launch Values"); an uninitialized config means that step did not run.
+  // Steward budgets are authorized via governance post-launch, so empty is expected.
   const candidates: { label: string; address: string }[] = [];
   if (hubCCTP?.contracts?.usdc) {
     candidates.push({ label: "USDC", address: hubCCTP.contracts.usdc });
@@ -741,6 +759,114 @@ async function checkRevenueReserve(govManifest: any, crowdfundManifest: any | nu
 }
 
 // ============================================================================
+// Check Group 10: Launch Values
+// ============================================================================
+
+/**
+ * Read back the launch's frozen values and cross-contract bindings and compare them to
+ * config and the manifests. Runs with or without a revenue reserve (the reserve group adds
+ * its own checks on top).
+ */
+async function checkLaunchValues(govManifest: any, crowdfundManifest: any,
+  config: ReturnType<typeof getNetworkConfig>) {
+  const GROUP = "Launch Values";
+  const c = govManifest.contracts;
+  if (!c.windDown || c.windDown === ethers.ZeroAddress) {
+    warn(GROUP, "Wind-down deployed", "windDown missing from governance manifest — skipping group");
+    return;
+  }
+  const crowdfundAddr: string = crowdfundManifest.contracts.crowdfund;
+  const crowdfund = await ethers.getContractAt("ArmadaCrowdfund", crowdfundAddr);
+  const governor = await ethers.getContractAt("ArmadaGovernor", c.governor);
+  const armToken = await ethers.getContractAt("ArmadaToken", c.armToken);
+  const treasury = await ethers.getContractAt("ArmadaTreasuryGov", c.treasury);
+  const lock = await ethers.getContractAt("RevenueLock", c.revenueLock);
+  const windDown = await ethers.getContractAt("ArmadaWindDown", c.windDown);
+  const usdcAddr: string = crowdfundManifest.contracts.usdc;
+
+  // Crowdfund immutables. Local deploys fall back to the deployer as launch team and an
+  // Anvil signer as security council, so those compare against config only when it is set.
+  await expectOnChain(GROUP, "Crowdfund usdc", () => crowdfund.usdc(), usdcAddr);
+  await expectOnChain(GROUP, "Crowdfund armToken", () => crowdfund.armToken(), c.armToken);
+  await expectOnChain(GROUP, "Crowdfund treasury", () => crowdfund.treasury(), c.treasury);
+  await expectOnChain(GROUP, "Crowdfund launchTeam",
+    () => crowdfund.launchTeam(), config.launchTeamAddress || govManifest.deployer);
+  await expectOnChain(GROUP, "Crowdfund securityCouncil = governor securityCouncil",
+    () => crowdfund.securityCouncil(), await governor.securityCouncil());
+  if (config.securityCouncilAddress) {
+    await expectOnChain(GROUP, "Crowdfund securityCouncil = config",
+      () => crowdfund.securityCouncil(), config.securityCouncilAddress);
+  }
+  if (config.crowdfundOpenTime) {
+    await expectOnChain(GROUP, `Crowdfund windowStart = ${config.crowdfundOpenTime}`,
+      () => crowdfund.windowStart(), Date.parse(config.crowdfundOpenTime) / 1000);
+  } else {
+    const start = Number(await crowdfund.windowStart());
+    warn(GROUP, "Crowdfund windowStart", `CROWDFUND_OPEN_TIME not set — on-chain ${start} (${new Date(start * 1000).toISOString()})`);
+  }
+
+  // Quorum exclusions: non-voting custody must be excluded exactly once.
+  try {
+    const excluded: string[] = await governor.getExcludedFromQuorum();
+    for (const [label, address] of [["crowdfund", crowdfundAddr], ["RevenueLock", c.revenueLock]]) {
+      const count = excluded.filter((e) => e.toLowerCase() === address.toLowerCase()).length;
+      if (count === 1) pass(GROUP, `${label} excluded from quorum`);
+      else fail(GROUP, `${label} excluded from quorum`, `found ${count} times in getExcludedFromQuorum()`);
+    }
+  } catch (error) {
+    fail(GROUP, "Quorum exclusions readable", `error reading: ${(error as Error).message}`);
+  }
+
+  // Wind-down bindings in both directions, and its frozen values.
+  const counterAddr: string = await lock.revenueCounter();
+  const counter = await ethers.getContractAt("RevenueCounter", counterAddr);
+  await expectOnChain(GROUP, "RevenueLock → windDown", () => lock.windDownContract(), c.windDown);
+  await expectOnChain(GROUP, "RevenueCounter → windDown", () => counter.windDownContract(), c.windDown);
+  await expectOnChain(GROUP, "windDown → RevenueLock", () => windDown.revenueLock(), c.revenueLock);
+  await expectOnChain(GROUP, "windDown → RevenueCounter", () => windDown.revenueCounter(), counterAddr);
+  await expectOnChain(GROUP, "windDown → armToken", () => windDown.armToken(), c.armToken);
+  await expectOnChain(GROUP, "windDown → governor", () => windDown.governor(), c.governor);
+  await expectOnChain(GROUP, "windDown → treasury", () => windDown.treasury(), c.treasury);
+  await expectOnChain(GROUP, "windDown → redemption", () => windDown.redemptionContract(), c.redemption);
+  await expectOnChain(GROUP, "windDown → timelock", () => windDown.timelock(), c.timelockController);
+  await expectOnChain(GROUP, `windDown deadline = ${config.windDownDeadline}`,
+    () => windDown.windDownDeadline(), Math.floor(new Date(config.windDownDeadline).getTime() / 1000));
+  await expectOnChain(GROUP, `windDown revenueThreshold = $${config.windDownRevenueThreshold}`,
+    () => windDown.revenueThreshold(), ethers.parseUnits(config.windDownRevenueThreshold, 18));
+
+  // Treasury outflow limits: on-chain values must equal the configured (spec) values.
+  for (const [label, address, expected] of [
+    ["USDC", usdcAddr, config.outflowConfig.usdc],
+    ["ARM", c.armToken, config.outflowConfig.arm],
+    ["ETH", ethers.ZeroAddress, config.outflowConfig.eth],
+  ] as const) {
+    await expectOnChain(GROUP, `${label} outflow limits (window, bps, absolute, floor)`, async () => {
+      const cfg = await treasury.getOutflowConfig(address);
+      return [cfg.windowDuration, cfg.limitBps, cfg.limitAbsolute, cfg.floorAbsolute].join(", ");
+    }, [expected.windowDuration, expected.limitBps, expected.limitAbsolute, expected.floorAbsolute].join(", "));
+  }
+
+  // RevenueLock: activated, rate cap, and (without a reserve) allocation + schedule. The
+  // reserve group verifies allocation and schedule itself when a reserve is configured.
+  await expectOnChain(GROUP, "RevenueLock activated", () => lock.activated(), true);
+  await expectOnChain(GROUP, `RevenueLock MAX_REVENUE_INCREASE_PER_DAY = $${config.revenueLockMaxIncreasePerDayUsd}/day`,
+    () => lock.MAX_REVENUE_INCREASE_PER_DAY(), ethers.parseUnits(config.revenueLockMaxIncreasePerDayUsd, 18));
+  if (!config.revenueReserve) {
+    try {
+      await assertRevenueLockAllocation(c.revenueLock, ethers.parseUnits(config.armDistribution.revenueLock, 18));
+      await assertRevenueLockSchedule(c.revenueLock, config.revenueLockBeneficiaries);
+      pass(GROUP, "RevenueLock allocation + beneficiary schedule");
+    } catch (error) {
+      fail(GROUP, "RevenueLock allocation + beneficiary schedule", (error as Error).message);
+    }
+  }
+
+  // ARM token: the treasury cannot delegate, and transfers stay locked until governance.
+  await expectOnChain(GROUP, "ARM noDelegation(treasury)", () => armToken.noDelegation(c.treasury), true);
+  await expectOnChain(GROUP, "ARM transferable = false", () => armToken.transferable(), false);
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
@@ -803,6 +929,7 @@ async function main() {
 
   if (govManifest && crowdfundManifest) {
     await checkArmTokenCrowdfund(govManifest, crowdfundManifest);
+    await checkLaunchValues(govManifest, crowdfundManifest, config);
   }
 
   // Print results table

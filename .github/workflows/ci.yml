@@ -29,6 +29,8 @@ jobs:
           cache: "npm"
       - run: npm ci --legacy-peer-deps
       - run: npx tsc --noEmit --project tsconfig.ci.json
+      # Config unit tests (mocha, config/*.test.ts) — no chains or compilation needed.
+      - run: npm run test:config
 
   # Hardhat compilation and full integration test suite
   hardhat:

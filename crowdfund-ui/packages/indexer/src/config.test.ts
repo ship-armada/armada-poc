@@ -30,11 +30,11 @@ afterEach(() => {
 
 describe('loadIndexerConfig', () => {
   it('applies documented defaults when chain id + contract address are set', () => {
-    process.env.CROWDFUND_CHAIN_ID = '11155111'
+    process.env.CROWDFUND_CHAIN_ID = '31337'
     process.env.CROWDFUND_CONTRACT_ADDRESS = '0xabc'
     const config = loadIndexerConfig()
     expect(config).toMatchObject({
-      chainId: 11155111,
+      chainId: 31337,
       contractAddress: '0xabc',
       deployBlock: 0,
       primaryRpcUrl: null,
@@ -53,11 +53,13 @@ describe('loadIndexerConfig', () => {
   it('parses overrides from the environment', () => {
     process.env.CROWDFUND_CONTRACT_ADDRESS = '0xabc'
     process.env.CROWDFUND_CHAIN_ID = '1'
+    process.env.CROWDFUND_DEPLOY_BLOCK = '23000000'
     process.env.CROWDFUND_PRIMARY_RPC_URL = 'https://rpc.example.com/key'
     process.env.CROWDFUND_POLL_ON_START = 'true'
     process.env.CROWDFUND_STALE_AFTER_MS = '120000'
     const config = loadIndexerConfig()
     expect(config.chainId).toBe(1)
+    expect(config.deployBlock).toBe(23_000_000)
     expect(config.primaryRpcUrl).toBe('https://rpc.example.com/key')
     expect(config.pollOnStart).toBe(true)
     expect(config.staleAfterMs).toBe(120_000)
@@ -74,11 +76,30 @@ describe('loadIndexerConfig', () => {
   })
 
   it('rejects an invalid numeric variable', () => {
-    process.env.CROWDFUND_CHAIN_ID = '11155111'
+    process.env.CROWDFUND_CHAIN_ID = '31337'
     process.env.CROWDFUND_CONTRACT_ADDRESS = '0xabc'
     process.env.CROWDFUND_MAX_BLOCK_RANGE = '-5'
     expect(() => loadIndexerConfig()).toThrow('CROWDFUND_MAX_BLOCK_RANGE')
   })
+})
+
+describe('CROWDFUND_DEPLOY_BLOCK on non-local chains', () => {
+  // WHY: deployBlock 0 backfills mainnet from genesis — ~46k getLogs ranges per RPC, hours of
+  // startup and paid-RPC quota — so outside local Anvil it must be the manifest deployBlock.
+  for (const [label, value] of [['unset', undefined], ['0', '0']] as const) {
+    it(`loadIndexerConfig rejects a deploy block that is ${label}`, () => {
+      process.env.CROWDFUND_CHAIN_ID = '1'
+      process.env.CROWDFUND_CONTRACT_ADDRESS = '0xabc'
+      if (value !== undefined) process.env.CROWDFUND_DEPLOY_BLOCK = value
+      expect(() => loadIndexerConfig()).toThrow('CROWDFUND_DEPLOY_BLOCK must be set')
+    })
+
+    it(`getInitialCursor rejects a deploy block that is ${label}`, () => {
+      process.env.CROWDFUND_CHAIN_ID = '11155111'
+      if (value !== undefined) process.env.CROWDFUND_DEPLOY_BLOCK = value
+      expect(() => getInitialCursor()).toThrow('CROWDFUND_DEPLOY_BLOCK must be set')
+    })
+  }
 })
 
 describe('getInitialCursor', () => {
@@ -94,7 +115,8 @@ describe('getInitialCursor', () => {
     })
   })
 
-  it('keeps cursors at 0 when deployBlock is unset', () => {
+  it('keeps cursors at 0 when deployBlock is unset on local Anvil', () => {
+    process.env.CROWDFUND_CHAIN_ID = '31337'
     const cursor = getInitialCursor()
     expect(cursor.ingestedCursor).toBe(0)
     expect(cursor.verifiedCursor).toBe(0)

@@ -1,5 +1,5 @@
 # ABOUTME: Docker Compose stack for the crowdfund indexer API, the Discord alert
-# ABOUTME: evaluator loop, and an optional Postgres store (--profile postgres).
+# ABOUTME: evaluator loop, and the Postgres store.
 name: crowdfund-indexer
 
 services:
@@ -7,6 +7,9 @@ services:
     image: ${INDEXER_IMAGE:?set INDEXER_IMAGE to a locally built tag, e.g. crowdfund-indexer:<git-sha>}
     restart: unless-stopped
     env_file: [.env]
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       # Bind to loopback only; the host nginx terminates TLS and proxies in.
       - "127.0.0.1:${CROWDFUND_INDEXER_PORT:-3002}:${CROWDFUND_INDEXER_PORT:-3002}"
@@ -23,6 +26,9 @@ services:
     image: ${INDEXER_IMAGE:?set INDEXER_IMAGE to a locally built tag, e.g. crowdfund-indexer:<git-sha>}
     restart: unless-stopped
     env_file: [.env]
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       # Shares the data volume with the indexer: reads the file store, owns alerts.json.
       - indexer-data:/app/data
@@ -35,11 +41,10 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    profiles: ["postgres"]
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-crowdfund}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crowdfund_local}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-crowdfund}
     volumes:
       - postgres-data:/var/lib/postgresql/data

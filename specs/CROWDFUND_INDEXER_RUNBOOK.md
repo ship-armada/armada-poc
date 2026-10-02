@@ -111,7 +111,7 @@ Core deployment variables:
 |----------|---------|----------|
 | `CROWDFUND_CHAIN_ID` | required | Chain ID stamped into indexed raw logs and snapshot metadata. The server (when polling/backfilling) and every RPC-using CLI command first check `eth_chainId` on the primary and audit RPCs and refuse to start on a mismatch or an unreachable RPC (`primary RPC is chain X, CROWDFUND_CHAIN_ID is Y`). |
 | `CROWDFUND_CONTRACT_ADDRESS` | required | Crowdfund contract address to scan and serve. API/CLI fail fast when missing. |
-| `CROWDFUND_DEPLOY_BLOCK` | `0` | Initial cursor. Set to the deployment block to avoid scanning before deployment. |
+| `CROWDFUND_DEPLOY_BLOCK` | required (except local Anvil) | Initial cursor: the crowdfund manifest's `deployBlock`. Defaults to `0` only on chain 31337; elsewhere unset/0 is refused because it would backfill from genesis. |
 | `CROWDFUND_PRIMARY_RPC_URL` | required for backfill/poll | Primary RPC used for head reads, range ingestion, and reconciliation. |
 | `CROWDFUND_AUDIT_RPC_URL` | unset | Optional independent RPC used to verify range digests. If unset, primary RPC is used for audit too. |
 

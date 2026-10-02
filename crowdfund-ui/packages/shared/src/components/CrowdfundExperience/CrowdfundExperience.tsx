@@ -1340,7 +1340,13 @@ export function CrowdfundExperience({
                   className={mpStyles.footerCta}
                   variant="gradient"
                   size="sm"
-                  label={myPositionEmptyKind === null ? 'Commit again' : 'Participate'}
+                  // Same rule as the header CTA: invited-but-uncommitted wallets
+                  // haven't participated yet.
+                  label={
+                    myPositionEmptyKind === null && myPositionCommittedUsd > 0
+                      ? 'Commit again'
+                      : 'Participate'
+                  }
                   showIcon
                   icon="arrow-right-micro"
                   onClick={onParticipate}

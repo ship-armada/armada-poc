@@ -66,18 +66,19 @@ function renderMyPosition(myPositionData: CrowdfundExperienceMyPositionData) {
   )
 }
 
-describe('CrowdfundExperience My Position header CTA', () => {
+// The card has a header CTA and a mobile footer CTA; both must agree.
+describe('CrowdfundExperience My Position participate CTAs', () => {
   it('shows "Participate" for an invited wallet that has not committed yet', () => {
     renderMyPosition(readyPosition(0n))
     const card = within(screen.getByRole('region', { name: 'Your position' }))
-    expect(card.getByRole('button', { name: /Participate/ })).toBeTruthy()
+    expect(card.getAllByRole('button', { name: /Participate/ })).toHaveLength(2)
     expect(card.queryByRole('button', { name: /Commit again/ })).toBeNull()
   })
 
   it('shows "Commit again" once the wallet has committed', () => {
     renderMyPosition(readyPosition(500n * 1_000_000n))
     const card = within(screen.getByRole('region', { name: 'Your position' }))
-    expect(card.getByRole('button', { name: /Commit again/ })).toBeTruthy()
+    expect(card.getAllByRole('button', { name: /Commit again/ })).toHaveLength(2)
     expect(card.queryByRole('button', { name: /Participate/ })).toBeNull()
   })
 })

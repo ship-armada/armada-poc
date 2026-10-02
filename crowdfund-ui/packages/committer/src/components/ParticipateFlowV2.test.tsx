@@ -268,6 +268,19 @@ describe('ParticipateFlowV2 splash card', () => {
     expect(link.getAttribute('href')).toBe(`${EXPLORER}/address/${CROWDFUND}`)
   })
 
+  it('keeps the entered amount when going back from Review to Commit', async () => {
+    render(<ParticipateFlowV2 {...makeProps()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Join now' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Commit' }))
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: '100' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }))
+    expect(await screen.findByRole('button', { name: 'Approve and commit' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+
+    expect(((await screen.findByRole('textbox')) as HTMLInputElement).value).toBe('100')
+  })
+
   it('returns from Before you start to the splash on Back', async () => {
     render(<ParticipateFlowV2 {...makeProps()} />)
 

@@ -670,6 +670,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
             maxAmount={maxAmount}
             existingCommittedUsdc={existingCommitted}
             availableBalance={availableBalance}
+            initialAmount={amount}
             maxArm={Math.round(estimateArmForAmount(remaining))}
             estimateArm={estimateArmForAmount}
             hopLabel={hopLabel(targetHop)}

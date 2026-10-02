@@ -9,6 +9,7 @@ import { FlowChrome } from '../FlowChrome'
 import type { ParticipateStepBarProps } from '../participateFlowSteps'
 import { WhatHappensNextSlider } from './WhatHappensNextSlider'
 import { UsefulLinks } from '../../UsefulLinks/UsefulLinks'
+import { MaxOutBanner, type Step2MaxOutOption } from './Step2Commit'
 
 export interface Step5ConfirmationProps extends ParticipateStepBarProps {
   /** When false (e.g. Hop-2 with no invite capacity), hide Invite and promote View position. */
@@ -37,6 +38,9 @@ export interface Step5ConfirmationProps extends ParticipateStepBarProps {
   daysLeft?: number
   secondsLeft?: number
   endsAt?: number | Date | null
+  /** Max out offer. Desktop flows hoist it above the card; this renders the
+   *  in-card copy, which only shows on mobile (`inShell`). */
+  maxOut?: Step2MaxOutOption
 }
 
 type SummaryRow = { label: string; value: string; accent?: boolean }
@@ -102,6 +106,7 @@ export default function Step5Confirmation({
   daysLeft,
   secondsLeft,
   endsAt = null,
+  maxOut,
 }: Step5ConfirmationProps) {
   const formattedAmount = formatUsd(amount)
   const totalCommitted = totalCommittedUsdc ?? estimatedArm
@@ -150,6 +155,7 @@ export default function Step5Confirmation({
           closeAriaLabel="Close participate flow"
         />
       </div>
+      {maxOut ? <MaxOutBanner maxOut={maxOut} placement="inShell" /> : null}
 
       <div className={styles.contentWrap}>
         <div className={styles.content}>

@@ -492,6 +492,7 @@ export function ParticipateFlowV2({
           }
           explorerBaseUrl={getExplorerUrl()}
           secondsLeft={secondsLeft}
+          maxOut={maxOutOption ?? undefined}
         />
       </MaxOutFlowStack>
     )

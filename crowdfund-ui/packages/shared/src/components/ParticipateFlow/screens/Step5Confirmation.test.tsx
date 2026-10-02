@@ -53,6 +53,24 @@ describe('Step5Confirmation', () => {
     expect(screen.getByText(/The commitment window is closing\./)).toBeTruthy()
   })
 
+  it('offers Max out inside the card (the mobile placement) when an option is passed', () => {
+    render(
+      <Step5Confirmation
+        amount={1000}
+        estimatedArm={1000}
+        maxOut={{ ceilingUsd: 8000, newCommitUsd: 7000, inviteCount: 2, onMaxOut: vi.fn() }}
+      />,
+    )
+    const banner = screen.getByRole('region', { name: 'Commit the maximum' })
+    expect(banner.className).toMatch(/inShell/)
+    expect(screen.getByRole('button', { name: 'Max out' })).toBeTruthy()
+  })
+
+  it('shows no Max out banner without an option', () => {
+    render(<Step5Confirmation amount={1000} estimatedArm={1000} />)
+    expect(screen.queryByRole('region', { name: 'Commit the maximum' })).toBeNull()
+  })
+
   it('omits the tx hash row when no hash is provided', () => {
     render(<Step5Confirmation amount={1000} estimatedArm={1000} />)
     expect(screen.queryByText('Tx hash')).toBeNull()

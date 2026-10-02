@@ -533,6 +533,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
           txHash={maxedOut ? undefined : commitTxHashFromRows(pipeline.state.rows)}
           explorerBaseUrl={getExplorerUrl()}
           secondsLeft={commitWindowSecondsLeft(contractState.windowEnd, contractState.blockTimestamp)}
+          maxOut={maxOutOption ?? undefined}
           showViewPositionButton
           canInvite={hasFreeInviteSlot(inviteSlots.sections)}
           onViewPosition={() => navigate('/?view=myposition')}

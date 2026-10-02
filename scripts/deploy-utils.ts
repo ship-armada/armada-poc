@@ -251,15 +251,36 @@ export function resolveCrowdfundOpenTimestamp(
 }
 
 /**
- * Save a deployment manifest to the deployments directory.
- * Creates the deployments directory if it does not exist.
+ * Save a deployment manifest to the deployments directory (or `dir`).
+ * Creates the directory if it does not exist.
  */
-export function saveDeployment(filename: string, data: any): void {
-  if (!fs.existsSync(DEPLOYMENTS_DIR)) {
-    fs.mkdirSync(DEPLOYMENTS_DIR, { recursive: true });
+export function saveDeployment(filename: string, data: any, dir: string = DEPLOYMENTS_DIR): void {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
   }
-  const filePath = path.join(DEPLOYMENTS_DIR, filename);
+  const filePath = path.join(dir, filename);
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+}
+
+/**
+ * Save the manifest of a launch stage that has not finished, marked `inProgress: true`.
+ * deploy_governance writes one before its first transaction and deploy_crowdfund right after
+ * deploying the crowdfund; both update it after each later deployment. A run that stops
+ * part-way therefore leaves the addresses it created and trips the mainnet re-run guard.
+ * The stage's final saveDeployment replaces it without the marker.
+ */
+export function saveDeploymentInProgress(filename: string, data: object, dir: string = DEPLOYMENTS_DIR): void {
+  saveDeployment(filename, { ...data, inProgress: true }, dir);
+}
+
+/** Throw if `manifest` comes from a stage that did not finish (see saveDeploymentInProgress). */
+export function assertDeploymentComplete(manifest: any, filename: string): void {
+  if (manifest?.inProgress) {
+    throw new Error(
+      `${filename} is from a deploy stage that did not finish (inProgress: true). ` +
+      `Do not build on it; follow ${INTERRUPTED_LAUNCH_RUNBOOK}.`
+    );
+  }
 }
 
 // ============================================================================

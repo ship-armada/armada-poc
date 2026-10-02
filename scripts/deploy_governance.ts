@@ -36,7 +36,7 @@ import {
   getChainRole,
   getGovernanceDeploymentFile,
 } from "../config/networks";
-import { createNonceManager, rejectAnvilAddresses, retryReadOnLag, saveDeployment } from "./deploy-utils";
+import { createNonceManager, rejectAnvilAddresses, retryReadOnLag, saveDeployment, saveDeploymentInProgress } from "./deploy-utils";
 import { assertAllocatorMultisig, revenueLockSchedule, validateReservePlan, type RevenueLockConstructorArgs } from "./revenue-reserve";
 
 interface GovernanceDeployment {
@@ -99,6 +99,19 @@ async function main() {
   console.log(`Timelock delay: ${timelockDelay}s`);
   console.log("");
 
+  // Write the manifest before the first transaction and after every deployment, so a run
+  // that stops part-way leaves the addresses it created and the mainnet re-run guard
+  // refuses to deploy a second stack. The complete manifest replaces it at the end.
+  const outputFile = getGovernanceDeploymentFile();
+  const progress: { contracts: Record<string, string>; [field: string]: unknown } =
+    { chainId, deployer: deployer.address, contracts: {} };
+  const recordProgress = (contracts: Record<string, string>, extra: object = {}) => {
+    Object.assign(progress.contracts, contracts);
+    Object.assign(progress, extra);
+    saveDeploymentInProgress(outputFile, progress);
+  };
+  recordProgress({});
+
   // 1. Deploy TimelockController (needed before ArmadaToken for timelock address)
   // When hardening (mainnet / sepolia dry-run), deploy at minDelay 0 so the deployer
   // can run all timelock-only bootstrap ops instantly; deploy_crowdfund raises the
@@ -118,6 +131,7 @@ async function main() {
   // number tens of blocks past contract creation (issue #324).
   const governanceDeployBlock = timelockReceipt!.blockNumber;
   const timelockAddress = await timelock.getAddress();
+  recordProgress({ timelockController: timelockAddress }, { deployBlock: governanceDeployBlock });
   console.log(`   TimelockController: ${timelockAddress} (block ${governanceDeployBlock})`);
 
   // 2. Deploy ArmadaToken (needs timelock address for addToWhitelist gating)
@@ -126,6 +140,7 @@ async function main() {
   const armToken = await ArmadaToken.deploy(deployer.address, timelockAddress, nm.override());
   await armToken.deploymentTransaction()!.wait();
   const armTokenAddress = await armToken.getAddress();
+  recordProgress({ armToken: armTokenAddress });
   console.log(`   ArmadaToken: ${armTokenAddress}`);
 
   // 3. Deploy ArmadaTreasuryGov
@@ -136,6 +151,7 @@ async function main() {
   );
   await treasury.deploymentTransaction()!.wait();
   const treasuryAddress = await treasury.getAddress();
+  recordProgress({ treasury: treasuryAddress });
   console.log(`   ArmadaTreasuryGov: ${treasuryAddress}`);
 
   // 4. Deploy ArmadaGovernor (UUPS proxy)
@@ -144,6 +160,7 @@ async function main() {
   const governorImpl = await ArmadaGovernor.deploy(nm.override());
   await governorImpl.deploymentTransaction()!.wait();
   const governorImplAddress = await governorImpl.getAddress();
+  recordProgress({ governorImpl: governorImplAddress });
   console.log(`   ArmadaGovernor (impl): ${governorImplAddress}`);
 
   const governorInitData = ArmadaGovernor.interface.encodeFunctionData("initialize", [
@@ -155,6 +172,7 @@ async function main() {
   );
   await governorProxy.deploymentTransaction()!.wait();
   const governorAddress = await governorProxy.getAddress();
+  recordProgress({ governor: governorAddress });
   const governor = ArmadaGovernor.attach(governorAddress) as typeof governorImpl;
   console.log(`   ArmadaGovernor (proxy): ${governorAddress}`);
 
@@ -168,6 +186,7 @@ async function main() {
   );
   await steward.deploymentTransaction()!.wait();
   const stewardAddress = await steward.getAddress();
+  recordProgress({ steward: stewardAddress });
   console.log(`   TreasurySteward: ${stewardAddress}`);
 
   // 5b. Register steward contract on governor (one-time setter)
@@ -180,6 +199,7 @@ async function main() {
   const adapterRegistry = await AdapterRegistry.deploy(timelockAddress, nm.override());
   await adapterRegistry.deploymentTransaction()!.wait();
   const adapterRegistryAddress = await adapterRegistry.getAddress();
+  recordProgress({ adapterRegistry: adapterRegistryAddress });
   console.log(`   AdapterRegistry: ${adapterRegistryAddress}`);
 
   // 6. Deploy RevenueCounter (UUPS proxy)
@@ -188,6 +208,7 @@ async function main() {
   const revenueCounterImpl = await RevenueCounter.deploy(nm.override());
   await revenueCounterImpl.deploymentTransaction()!.wait();
   const revenueCounterImplAddress = await revenueCounterImpl.getAddress();
+  recordProgress({ revenueCounterImpl: revenueCounterImplAddress });
   console.log(`   RevenueCounter (impl): ${revenueCounterImplAddress}`);
 
   const initData = RevenueCounter.interface.encodeFunctionData("initialize", [timelockAddress]);
@@ -197,6 +218,7 @@ async function main() {
   );
   await revenueCounterProxy.deploymentTransaction()!.wait();
   const revenueCounterAddress = await revenueCounterProxy.getAddress();
+  recordProgress({ revenueCounter: revenueCounterAddress });
   console.log(`   RevenueCounter (proxy): ${revenueCounterAddress}`);
 
   // 7. Deploy RevenueLock (immutable — holds team + airdrop ARM)
@@ -216,6 +238,8 @@ async function main() {
     await reserve.deploymentTransaction()!.wait();
     revenueReserveDistributor = await reserve.getAddress();
     reserveDeploymentTransaction = reserve.deploymentTransaction()!.hash;
+    recordProgress({ revenueReserveDistributor },
+      { revenueReserveDistributorDeploymentTransaction: reserveDeploymentTransaction });
     console.log(`   Reserve distributor: ${revenueReserveDistributor} — ${config.revenueReserve.amount} ARM`);
   }
 
@@ -247,6 +271,12 @@ async function main() {
   );
   await revenueLockContract.deploymentTransaction()!.wait();
   const revenueLockAddress = await revenueLockContract.getAddress();
+  const revenueLockConstructorArgs: RevenueLockConstructorArgs = [armTokenAddress, revenueCounterAddress,
+    MAX_REVENUE_INCREASE_PER_DAY.toString(), revenueLockBeneficiaries, revenueLockAmounts.map(amount => amount.toString())];
+  recordProgress({ revenueLock: revenueLockAddress }, {
+    revenueLockConstructorArgs,
+    revenueLockDeploymentTransaction: revenueLockContract.deploymentTransaction()!.hash,
+  });
   console.log(`   RevenueLock: ${revenueLockAddress}`);
   if (revenueReserveDistributor) {
     const reserve = await ethers.getContractAt("RevenueReserveDistributor", revenueReserveDistributor);
@@ -294,6 +324,7 @@ async function main() {
   );
   await shieldPause.deploymentTransaction()!.wait();
   const shieldPauseAddress = await shieldPause.getAddress();
+  recordProgress({ shieldPauseController: shieldPauseAddress });
   console.log(`   ShieldPauseController: ${shieldPauseAddress}`);
 
   // 9-10. ArmadaRedemption + ArmadaWindDown
@@ -376,8 +407,7 @@ async function main() {
 
   // Save deployment
   const deployment: GovernanceDeployment = {
-    revenueLockConstructorArgs: [armTokenAddress, revenueCounterAddress, MAX_REVENUE_INCREASE_PER_DAY.toString(),
-      revenueLockBeneficiaries, revenueLockAmounts.map(amount => amount.toString())],
+    revenueLockConstructorArgs,
     revenueLockDeploymentTransaction: revenueLockContract.deploymentTransaction()!.hash,
     ...(reserveDeploymentTransaction ? { revenueReserveDistributorDeploymentTransaction: reserveDeploymentTransaction } : {}),
     chainId,
@@ -407,7 +437,6 @@ async function main() {
     timestamp: new Date().toISOString(),
   };
 
-  const outputFile = getGovernanceDeploymentFile();
   saveDeployment(outputFile, deployment);
   console.log(`\nDeployment saved to: deployments/${outputFile}`);
   console.log("\n=== Governance deployment complete ===");

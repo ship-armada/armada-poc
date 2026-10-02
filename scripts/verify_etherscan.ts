@@ -92,6 +92,38 @@ export async function buildRevenueLockVerificationTasks(c: {
   return tasks;
 }
 
+/**
+ * The timelock's constructor minDelay. Under the harden profile the timelock is deployed at
+ * delay 0 and raised to its production value later, so getMinDelay() and the manifest's
+ * timelockMinDelay hold the final value, not the constructor argument. The constructor emits
+ * MinDelayChange(0, minDelay) in the timelock's creation block (the governance deployBlock).
+ */
+export async function timelockConstructorDelay(timelockAddr: string, deployBlock: number): Promise<bigint> {
+  const timelock = await ethers.getContractAt("TimelockController", timelockAddr);
+  const events = await timelock.queryFilter(timelock.filters.MinDelayChange(), deployBlock, deployBlock);
+  if (events.length === 0) {
+    throw new Error(`No MinDelayChange event from timelock ${timelockAddr} in its deploy block ${deployBlock}`);
+  }
+  const first = events.reduce((a, b) => (b.index < a.index ? b : a));
+  return first.args.newDuration;
+}
+
+/**
+ * The crowdfund's constructor arguments, read from its immutables. The launch team is not
+ * the deployer on mainnet, so none of them can be assumed from the governance manifest.
+ */
+export async function crowdfundConstructorArgs(crowdfundAddr: string): Promise<unknown[]> {
+  const crowdfund = await ethers.getContractAt("ArmadaCrowdfund", crowdfundAddr);
+  return [
+    await crowdfund.usdc(),
+    await crowdfund.armToken(),
+    await crowdfund.treasury(),
+    await crowdfund.launchTeam(),
+    await crowdfund.securityCouncil(),
+    await crowdfund.windowStart(), // the constructor's openTimestamp
+  ];
+}
+
 async function verify(task: VerifyTask): Promise<boolean> {
   console.log(`\nVerifying ${task.name} at ${task.address}...`);
   try {
@@ -124,9 +156,8 @@ async function buildGovernanceCrowdfundTasks(): Promise<VerifyTask[]> {
   const c = gov.contracts;
 
   // Read values from on-chain that weren't stored in manifests
-  const crowdfund = await ethers.getContractAt("ArmadaCrowdfund", cf.contracts.crowdfund);
-  const openTimestamp = await crowdfund.windowStart();
-  const securityCouncil = await crowdfund.securityCouncil();
+  const timelockDelay = await timelockConstructorDelay(c.timelockController, gov.deployBlock);
+  const crowdfundArgs = await crowdfundConstructorArgs(cf.contracts.crowdfund);
 
   const windDown = await ethers.getContractAt("ArmadaWindDown", c.windDown);
   const windDownDeadline = await windDown.windDownDeadline();
@@ -141,7 +172,7 @@ async function buildGovernanceCrowdfundTasks(): Promise<VerifyTask[]> {
     {
       name: "TimelockController",
       address: c.timelockController,
-      constructorArguments: [gov.config.timelockMinDelay, [], [], gov.deployer],
+      constructorArguments: [timelockDelay, [], [], gov.deployer],
       contract: "@openzeppelin/contracts/governance/TimelockController.sol:TimelockController",
     },
     {
@@ -207,14 +238,7 @@ async function buildGovernanceCrowdfundTasks(): Promise<VerifyTask[]> {
     {
       name: "ArmadaCrowdfund",
       address: cf.contracts.crowdfund,
-      constructorArguments: [
-        cf.contracts.usdc,
-        cf.contracts.armToken,
-        cf.contracts.treasury,
-        gov.deployer,        // launchTeam = deployer
-        securityCouncil,     // read from on-chain
-        openTimestamp,        // read from on-chain
-      ],
+      constructorArguments: crowdfundArgs,
     },
     {
       name: "ArmadaRedemption",

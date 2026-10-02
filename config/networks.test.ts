@@ -11,7 +11,7 @@ import * as path from "path";
 // can't leak chain topology into the next (getNetworkConfig caches, so we also re-require).
 const MANAGED_PREFIXES = ["CLIENT_", "HUB_", "CCTP_", "DEPLOY_ENV", "DEPLOYER_PRIVATE_KEY",
   "REVENUE_LOCK_", "REVENUE_RESERVE_", "TREASURY_ADDRESS", "SECURITY_COUNCIL_ADDRESS", "LAUNCH_TEAM_ADDRESS",
-  "CCTP_MODE", "WINDDOWN_", "OUTFLOW_", "CROWDFUND_"];
+  "CCTP_MODE", "WINDDOWN_", "OUTFLOW_", "CROWDFUND_", "HARDEN_TIMELOCK"];
 
 function clearManagedEnv(): void {
   for (const key of Object.keys(process.env)) {
@@ -325,6 +325,47 @@ describe("privacy pool treasury override", () => {
       .to.equal(OVERRIDE);
     expect(freshConfig({ ...SEPOLIA_BASE, ...ONE_CLIENT, TREASURY_ADDRESS: OVERRIDE }).getNetworkConfig()
       .treasuryAddress).to.equal(OVERRIDE);
+  });
+});
+
+describe("timelock harden profile", () => {
+  afterEach(() => {
+    clearManagedEnv();
+    delete process.env.REVENUE_LOCK_BENEFICIARIES_JSON;
+  });
+
+  const MAINNET_BASE = {
+    ...SEPOLIA_BASE, CLIENT_COUNT: "1",
+    CLIENT_1_RPC: "https://c1", CLIENT_1_CHAIN_ID: "8453", CLIENT_1_CCTP_DOMAIN: "6",
+    DEPLOY_ENV: "mainnet", CCTP_MODE: "real",
+    WINDDOWN_DEADLINE: "2027-12-31T00:00:00Z", CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
+    WINDDOWN_REVENUE_THRESHOLD: "10000",
+  };
+
+  // WHY: without the harden profile the deployer never holds timelock roles, so the crowdfund
+  // step's first timelock-only call reverts after its one-shot initializers are spent — an
+  // interrupted launch. Mainnet must refuse before any step runs, not warn.
+  it("refuses HARDEN_TIMELOCK=false on mainnet", () => {
+    for (const off of ["false", "0"]) {
+      expect(() => freshConfig({ ...MAINNET_BASE, HARDEN_TIMELOCK: off }).getNetworkConfig())
+        .to.throw(/HARDEN_TIMELOCK/);
+    }
+  });
+
+  // WHY: mainnet hardens by default, so leaving the variable unset must still deploy.
+  it("hardens mainnet when HARDEN_TIMELOCK is unset or true", () => {
+    expect(freshConfig(MAINNET_BASE).getNetworkConfig().hardenTimelock).to.equal(true);
+    expect(freshConfig({ ...MAINNET_BASE, HARDEN_TIMELOCK: "true" }).getNetworkConfig().hardenTimelock)
+      .to.equal(true);
+  });
+
+  // WHY: local and Sepolia ops deploys keep the deployer's timelock roles; only the #319
+  // dry-run opts in to hardening there.
+  it("keeps hardening opt-in on local and Sepolia", () => {
+    expect(freshConfig({ DEPLOY_ENV: "local" }).getNetworkConfig().hardenTimelock).to.equal(false);
+    expect(freshConfig({ ...SEPOLIA_BASE, CLIENT_COUNT: "1", CLIENT_1_RPC: "https://c1",
+      CLIENT_1_CHAIN_ID: "84532", CLIENT_1_CCTP_DOMAIN: "6", HARDEN_TIMELOCK: "false" })
+      .getNetworkConfig().hardenTimelock).to.equal(false);
   });
 });
 

@@ -314,6 +314,9 @@ export function App() {
   const [participateRunning, setParticipateRunning] = useState(false)
   // True while a claim tx is in flight — gates the Claim modal's close confirm.
   const [claimRunning, setClaimRunning] = useState(false)
+  // Whether the Claim modal renders its own X — only on claim gate screens,
+  // which draw no in-card close (mirrors `participateModalClose`).
+  const [claimModalClose, setClaimModalClose] = useState(true)
   // Warn before a refresh/tab-close drops the user while a commit is broadcasting.
   useBeforeUnloadGuard(participateRunning)
 
@@ -929,7 +932,8 @@ export function App() {
       ariaLabel="Claim your allocation"
       confirmBeforeClose={claimRunning}
       closeConfirmMessage={CLAIM_CLOSE_CONFIRM_MESSAGE}
-      showClose
+      closeAriaLabel="Close claim flow"
+      showClose={claimModalClose}
     >
       {claimOpen && claimReady ? (
         <ErrorBoundary>
@@ -938,6 +942,8 @@ export function App() {
             // (hasClaimed, allocation) can't show under another.
             key={wallet.address ?? 'disconnected'}
             onRunningChange={setClaimRunning}
+            onModalCloseChange={setClaimModalClose}
+            onClose={closeClaim}
             walletConnected={wallet.connected}
             isWrongNetwork={wallet.isWrongNetwork}
             switchNetwork={wallet.switchNetwork}

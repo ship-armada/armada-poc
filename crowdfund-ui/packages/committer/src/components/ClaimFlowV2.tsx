@@ -119,6 +119,12 @@ export interface ClaimFlowV2Props {
   /** Reports whether a claim tx is in flight, so the hosting modal can ask
    *  before Escape / its X closes it mid-claim. */
   onRunningChange?: (running: boolean) => void
+  /** Close the flow in place (e.g. the Claim modal). Without it, the X and
+   *  Done fall back to `onGoToNetwork`. */
+  onClose?: () => void
+  /** Reports whether the hosting modal should show its own X: gate screens
+   *  draw none, every other screen has the in-card FlowChrome X. */
+  onModalCloseChange?: (show: boolean) => void
 }
 
 export function ClaimFlowV2(props: ClaimFlowV2Props) {
@@ -140,6 +146,8 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     onReceiptLogs,
     refreshAllowance,
     onRunningChange,
+    onClose,
+    onModalCloseChange,
   } = props
 
   const selfRadioId = useId()
@@ -481,8 +489,21 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
 
   const handleClose = () => {
     if (!confirmClaimClose(claimInFlight)) return
-    onGoToNetwork()
+    if (onClose) onClose()
+    else onGoToNetwork()
   }
+
+  // Mirrors the gate early returns below (a claimed wallet's done screen wins
+  // over a read error). Gate screens have no in-card X, so the modal shows its.
+  const onGateScreen =
+    !walletConnected ||
+    !claimAvailable ||
+    loading ||
+    (!hasClaimed && step !== 'done' && readError)
+  useEffect(() => {
+    onModalCloseChange?.(onGateScreen)
+    return () => onModalCloseChange?.(true)
+  }, [onGateScreen, onModalCloseChange])
 
   // Submit the claim/refund transaction through the shared single-step engine,
   // so it inherits the two-phase labels, explorer link, and quiet-rejection

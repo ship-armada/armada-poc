@@ -261,6 +261,34 @@ describe('ClaimFlowV2 submit step Back', () => {
   })
 })
 
+describe('ClaimFlowV2 in the Claim modal', () => {
+  it('asks the modal for its X only on gate screens, which draw none of their own', async () => {
+    allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 0n]) // 1 ARM
+    const onModalCloseChange = vi.fn()
+    const { rerender } = renderClaim(
+      <ClaimFlowV2 {...baseProps} walletConnected={false} onModalCloseChange={onModalCloseChange} />,
+    )
+    expect(await screen.findByText('Connect your wallet to claim')).toBeTruthy()
+    expect(onModalCloseChange).toHaveBeenLastCalledWith(true)
+
+    rerender(<ClaimFlowV2 {...baseProps} onModalCloseChange={onModalCloseChange} />)
+    expect(await screen.findByRole('button', { name: 'Start' })).toBeTruthy()
+    expect(onModalCloseChange).toHaveBeenLastCalledWith(false)
+  })
+
+  it('closes in place via onClose (no page change) from the in-card X', async () => {
+    allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 0n]) // 1 ARM
+    const onClose = vi.fn()
+    const onGoToNetwork = vi.fn()
+    renderClaim(<ClaimFlowV2 {...baseProps} onClose={onClose} onGoToNetwork={onGoToNetwork} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Close claim flow' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(onGoToNetwork).not.toHaveBeenCalled()
+  })
+})
+
 describe('ClaimFlowV2 close mid-claim', () => {
   it('reports the claim as running and asks before the in-card X closes', async () => {
     allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 0n]) // 1 ARM

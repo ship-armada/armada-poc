@@ -38,6 +38,8 @@ export interface ParticipateFlowModalProps {
   /** Prompt for `confirmBeforeClose`. Defaults to the participate wording;
    *  other flows hosted in this shell (e.g. Claim) pass their own. */
   closeConfirmMessage?: string
+  /** Accessible name for the top-right X. Defaults to the participate wording. */
+  closeAriaLabel?: string
   /** When false, hides the top-right close control (e.g. invite uses “Do it later”). */
   showClose?: boolean
   /** Optional content below the step shell (e.g. “Do it later” text link). */
@@ -51,6 +53,7 @@ export function ParticipateFlowModal({
   ariaLabel,
   confirmBeforeClose = false,
   closeConfirmMessage,
+  closeAriaLabel = 'Close participate flow',
   showClose = true,
   footer,
 }: ParticipateFlowModalProps) {
@@ -179,7 +182,7 @@ export function ParticipateFlowModal({
             type="button"
             className={styles.close}
             onClick={requestClose}
-            aria-label="Close participate flow"
+            aria-label={closeAriaLabel}
           >
             <XMarkIcon width={14} height={14} aria-hidden />
           </button>

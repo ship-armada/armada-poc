@@ -61,4 +61,10 @@ describe('ParticipateFlowModal close', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close participate flow' }))
     expect(window.confirm).toHaveBeenCalledWith('Claim still running. Close?')
   })
+
+  it('labels its X for the hosted flow (e.g. Claim)', () => {
+    const { onClose } = renderModal({ closeAriaLabel: 'Close claim flow' })
+    fireEvent.click(screen.getByRole('button', { name: 'Close claim flow' }))
+    expect(onClose).toHaveBeenCalledOnce()
+  })
 })

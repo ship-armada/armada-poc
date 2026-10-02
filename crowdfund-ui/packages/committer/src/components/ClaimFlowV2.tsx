@@ -385,20 +385,21 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
         phase === 1
           ? (contract.computeAllocation(walletAddress) as Promise<[bigint, bigint]>)
           : Promise.resolve(null),
-        // A cancelled sale (phase 2) can't `computeAllocation` (it reverts), so sum
-        // the raw per-hop commitments. This makes the refund gate + amount
+        // Sum the raw per-hop commitments. A cancelled sale (phase 2) can't
+        // `computeAllocation` (it reverts), so this makes its refund gate + amount
         // contract-authoritative rather than indexer-derived — the indexer lags on
-        // a cold load and would otherwise flash a false "no refund to claim".
-        phase === 2
-          ? Promise.all(
-              HOP_CONFIGS.map((_, h) => contract.getCommitment(walletAddress, h) as Promise<bigint>),
-            )
-          : Promise.resolve(null),
+        // a cold load and would otherwise flash a false "no refund to claim". In
+        // every phase it is also the "Final commit" the intro screens show.
+        Promise.all(
+          HOP_CONFIGS.map((_, h) => contract.getCommitment(walletAddress, h) as Promise<bigint>),
+        ),
       ])
       const hasClaimed = claimedRes.status === 'fulfilled' ? claimedRes.value : false
       let armAmount = 0n
       let refundAmount = 0n
-      let committedTotal = 0n
+      // Null when the commitment read failed outside phase 2, where it is
+      // display-only — "Final commit" then falls back to the indexer total.
+      let committedTotal: bigint | null = null
       let readError = false
       if (phase === 1) {
         if (allocRes.status === 'fulfilled' && allocRes.value) {
@@ -408,12 +409,10 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
           readError = true
         }
       }
-      if (phase === 2) {
-        if (committedRes.status === 'fulfilled' && committedRes.value) {
-          committedTotal = committedRes.value.reduce((sum, c) => sum + c, 0n)
-        } else if (committedRes.status === 'rejected') {
-          readError = true
-        }
+      if (committedRes.status === 'fulfilled') {
+        committedTotal = committedRes.value.reduce((sum, c) => sum + c, 0n)
+      } else if (phase === 2) {
+        readError = true
       }
       return { hasClaimed, armAmount, refundAmount, committedTotal, readError }
     },
@@ -423,7 +422,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     hasClaimed: false,
     armAmount: 0n,
     refundAmount: 0n,
-    committedTotal: 0n,
+    committedTotal: null,
     readError: false,
   }
   const hasClaimed = reads.hasClaimed || justClaimed
@@ -440,7 +439,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   // this instead of the indexer-derived `totalCommitted` fixes both the false
   // "no refund" flash on a cold load and the over-cap understatement (claimRefund
   // returns the raw deposit, which the capped graph value understates).
-  const refundClaimable = phase === 2 ? reads.committedTotal : refundAmount
+  const refundClaimable = phase === 2 ? (reads.committedTotal ?? 0n) : refundAmount
 
   // What the user actually gets back.
   const armDisplay = useMemo(() => formatArm(armAmount), [armAmount])
@@ -448,11 +447,12 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     () => formatUsdc(mode === 'refund' ? refundClaimable : refundAmount),
     [mode, refundClaimable, refundAmount],
   )
-  const finalCommitDisplay = useMemo(() => {
-    if (props.totalCommitted > 0n) return formatUsdc(props.totalCommitted)
-    if (mode === 'refund' && refundClaimable > 0n) return formatUsdc(refundClaimable)
-    return formatUsdc(0n)
-  }, [props.totalCommitted, mode, refundClaimable])
+  // The raw on-chain commitment, so it squares with the ARM + refund shown beside
+  // it. The indexer total is capped and lags on a cold load — fallback only.
+  const finalCommitDisplay = useMemo(
+    () => formatUsdc(reads.committedTotal ?? props.totalCommitted),
+    [reads.committedTotal, props.totalCommitted],
+  )
 
   const walletDisplay =
     walletAddress != null ? truncateAddress(walletAddress) : null

@@ -261,6 +261,33 @@ describe('ClaimFlowV2 submit step Back', () => {
   })
 })
 
+describe('ClaimFlowV2 Final commit', () => {
+  const USDC = 1_000_000n
+  const finalCommit = async () =>
+    (await screen.findByText('Final commit')).nextElementSibling?.textContent
+
+  it('shows the on-chain commitment even while the indexer total lags at zero', async () => {
+    allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 0n]) // 1 ARM
+    commitmentFor = (_addr, hop) => Promise.resolve(hop === 0 ? 5_000n * USDC : 0n)
+
+    renderClaim(<ClaimFlowV2 {...baseProps} totalCommitted={0n} walletAddress={ADDR_A} />)
+
+    await waitFor(async () => expect(await finalCommit()).toBe('$5,000'))
+  })
+
+  it('matches the refund for an over-cap commit (not the capped indexer total)', async () => {
+    // Refund-mode finalized sale: the whole raw deposit comes back.
+    allocationFor = () => Promise.resolve([0n, 5_000n * USDC])
+    commitmentFor = (_addr, hop) => Promise.resolve(hop === 0 ? 5_000n * USDC : 0n)
+
+    renderClaim(
+      <ClaimFlowV2 {...baseProps} refundMode totalCommitted={4_000n * USDC} walletAddress={ADDR_A} />,
+    )
+
+    await waitFor(async () => expect(await finalCommit()).toBe('$5,000'))
+  })
+})
+
 describe('ClaimFlowV2 read semantics', () => {
   it('shows a retry (not a false 0 ARM) when the allocation read fails', async () => {
     claimedFor = () => Promise.resolve(false)

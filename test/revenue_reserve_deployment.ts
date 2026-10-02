@@ -5,7 +5,7 @@ import { ethers } from "hardhat";
 import { loadFixture, takeSnapshot, time, mine, setBalance } from "@nomicfoundation/hardhat-network-helpers";
 import { deployGovernorProxy } from "./helpers/deploy-governor";
 import { assertAllocatorMultisig, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, assertReservePostFunding, assertCreationProvenance, validateReservePlan, revenueLockSchedule, reserveConfigMismatch, type RevenueLockConstructorArgs } from "../scripts/revenue-reserve";
-import { buildRevenueLockVerificationTasks } from "../scripts/verify_sepolia";
+import { buildRevenueLockVerificationTasks } from "../scripts/verify_etherscan";
 
 describe("Reserve deployment funding gate", function () {
   async function fixture(blockAllocatorDelegation = false) {

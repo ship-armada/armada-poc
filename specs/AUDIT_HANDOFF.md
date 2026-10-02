@@ -262,7 +262,7 @@ The Phase 1 scope must explicitly include:
 - Integration with ARM permissions, RevenueLock, RevenueCounter, real-governor quorum
   snapshots, and wind-down/redemption accounting, including counter failure.
 - `deploy_governance.ts`, `deploy_crowdfund.ts`, `revenue-reserve.ts`,
-  `verify_sepolia.ts`, `verify_deployment.ts`, and `verify-timelock.ts`: constructor
+  `verify_etherscan.ts`, `verify_deployment.ts`, and `verify-timelock.ts`: constructor
   provenance, checks before any ARM transfer, activation races and nonce handling,
   treasury limits, timelock delay, role renunciation, and final verification.
 - The exact launch cap table, airdrop distribution path, allocator Safe configuration,

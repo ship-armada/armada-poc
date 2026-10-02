@@ -100,9 +100,10 @@
     "slither": "slither . --config-file slither.config.json",
     "verify": "hardhat run scripts/verify_deployment.ts --network hub",
     "verify:sepolia": "hardhat run scripts/verify_deployment.ts --network sepoliaHub",
-    "verify:etherscan:sepolia": "hardhat run scripts/verify_sepolia.ts --network sepoliaHub",
-    "verify:etherscan:sepolia:client1": "hardhat run scripts/verify_sepolia.ts --network sepoliaClient1",
-    "verify:etherscan:sepolia:client2": "hardhat run scripts/verify_sepolia.ts --network sepoliaClient2"
+    "verify:etherscan:sepolia": "hardhat run scripts/verify_etherscan.ts --network sepoliaHub",
+    "verify:etherscan:sepolia:client1": "hardhat run scripts/verify_etherscan.ts --network sepoliaClient1",
+    "verify:etherscan:sepolia:client2": "hardhat run scripts/verify_etherscan.ts --network sepoliaClient2",
+    "verify:etherscan:mainnet": "hardhat run scripts/verify_etherscan.ts --network mainnetHub"
   },
   "dependencies": {
     "@armada/sdk": "github:ship-armada/armada-sdk#555621f40447ff0801912d4fda891f8d2dae97e5",

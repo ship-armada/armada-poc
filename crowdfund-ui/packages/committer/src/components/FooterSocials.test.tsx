@@ -10,7 +10,7 @@ describe('FooterSocials', () => {
     render(<FooterSocials />)
 
     const discord = screen.getByRole('link', { name: 'Armada on Discord' })
-    expect(discord).toHaveAttribute('href', 'https://discord.gg/QcpeNenwhj')
+    expect(discord).toHaveAttribute('href', 'https://discord.com/invite/ship-armada')
     expect(discord).toHaveAttribute('target', '_blank')
     expect(discord).toHaveAttribute('rel', 'noopener noreferrer')
 

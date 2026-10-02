@@ -3,6 +3,7 @@
 
 import type { SVGProps } from 'react'
 import { ChatBubbleLeftRightIcon, NewspaperIcon } from '@heroicons/react/24/outline'
+import { DISCORD_URL, X_URL } from '../../lib/socials'
 import styles from './UsefulLinks.module.css'
 
 function DiscordIcon(props: SVGProps<SVGSVGElement>) {
@@ -30,7 +31,7 @@ const RESOURCE_LINKS = [
   },
   {
     label: 'Twitter',
-    href: 'https://x.com/ship_armada',
+    href: X_URL,
     Icon: XIcon,
   },
   {
@@ -40,7 +41,7 @@ const RESOURCE_LINKS = [
   },
   {
     label: 'Discord',
-    href: 'https://discord.gg/eyD58prEV',
+    href: DISCORD_URL,
     Icon: DiscordIcon,
   },
 ] as const

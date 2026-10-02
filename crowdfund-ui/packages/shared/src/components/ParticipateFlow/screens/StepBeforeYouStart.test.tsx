@@ -36,3 +36,12 @@ describe('StepBeforeYouStart Contract link', () => {
     expect(screen.queryByRole('link', { name: /Contract/ })).toBeNull()
   })
 })
+
+describe('StepBeforeYouStart resource links', () => {
+  it('links Discord to the canonical Armada server', () => {
+    render(<StepBeforeYouStart onBack={vi.fn()} onContinue={vi.fn()} />)
+    expect(screen.getByRole('link', { name: /Discord/ }).getAttribute('href')).toBe(
+      'https://discord.com/invite/ship-armada',
+    )
+  })
+})

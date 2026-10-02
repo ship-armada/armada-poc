@@ -8,6 +8,7 @@ import type { HopVariant } from '../../HopPill/HopPill'
 import { hopPillDotColor } from '../../../lib/graphHopColors'
 import { DEMO_WALLET, DEMO_WALLET_DISPLAY } from '../../MyPosition/myPositionDemo'
 import { FlowChrome } from '../FlowChrome'
+import { DISCORD_URL, X_URL } from '../../../lib/socials'
 import styles from './StepBeforeYouStart.module.css'
 
 const HOP_TAG_LABEL: Record<HopVariant, string> = {
@@ -41,12 +42,12 @@ const RESOURCE_LINKS = [
   },
   {
     label: 'Discord',
-    href: 'https://discord.gg/eyD58prEV',
+    href: DISCORD_URL,
     Icon: DiscordIcon,
   },
   {
     label: 'X',
-    href: 'https://x.com/ship_armada',
+    href: X_URL,
     Icon: XIcon,
   },
 ] as const

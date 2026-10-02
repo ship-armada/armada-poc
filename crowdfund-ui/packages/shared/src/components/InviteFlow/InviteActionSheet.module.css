@@ -1,4 +1,5 @@
 /* ABOUTME: Mobile bottom sheet that hosts InviteActionScreen over the hop list. */
+/* ABOUTME: Scrim + sheet with a handle bar; its offsets track the visual viewport (set in InviteActionSheet.tsx). */
 
 .scrim {
   position: fixed;

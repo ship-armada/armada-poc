@@ -25,7 +25,7 @@
   overflow: visible;
 }
 
-.rootSheet .footer {
+.rootSheet .ctaRow {
   margin-top: 0;
 }
 
@@ -34,7 +34,7 @@
   line-height: 1.35;
 }
 
-.rootSheet .meta,
+.rootSheet .createdLinkMeta,
 .rootSheet .hint {
   overflow: visible;
   padding-block: 1px;

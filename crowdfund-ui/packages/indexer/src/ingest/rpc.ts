@@ -127,6 +127,67 @@ function createRecord(
   }
 }
 
+/** The slice of an ethers provider needed to ask which chain it serves (eth_chainId). */
+export interface ChainIdProvider {
+  getNetwork(): Promise<{ chainId: bigint }>
+}
+
+/**
+ * Throw unless `provider` serves `expectedChainId`. A wrong-chain RPC returns zero logs for
+ * the contract — indistinguishable from a quiet sale — so the indexer must refuse to run.
+ * Fails after `timeoutMs` (ethers retries network detection forever on a dead RPC); error
+ * text is sanitized because RPC URLs carry API keys.
+ */
+export async function assertRpcChainId(
+  provider: ChainIdProvider,
+  expectedChainId: number,
+  name: string,
+  timeoutMs: number,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let actual: bigint
+  try {
+    const network = await Promise.race([
+      provider.getNetwork(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`no response within ${timeoutMs}ms`)), timeoutMs)
+      }),
+    ])
+    actual = network.chainId
+  } catch (err) {
+    // A refused connection is an AggregateError with an empty message but a `code`.
+    const code = (err as { code?: unknown } | null)?.code
+    const message = (err instanceof Error && err.message) || (typeof code === 'string' ? code : String(err))
+    throw new Error(`${name} RPC chain id check failed: ${sanitizeErrorMessage(message)}`)
+  } finally {
+    clearTimeout(timer)
+  }
+  if (actual !== BigInt(expectedChainId)) {
+    throw new Error(`${name} RPC is chain ${actual}, CROWDFUND_CHAIN_ID is ${expectedChainId}`)
+  }
+}
+
+/**
+ * Check each configured RPC URL (unset ones are skipped) against `expectedChainId`, using a
+ * throwaway provider that is always destroyed so its retry loop cannot keep the process alive.
+ */
+export async function checkRpcChainIds(
+  rpcs: ReadonlyArray<{ name: string; url: string | null | undefined }>,
+  expectedChainId: number,
+  timeoutMs: number,
+  createProvider: (url: string) => ChainIdProvider & { destroy(): void } = (url) => new JsonRpcProvider(url),
+): Promise<void> {
+  for (const { name, url } of rpcs) {
+    if (!url) continue
+    const provider = createProvider(url)
+    try {
+      await assertRpcChainId(provider, expectedChainId, name, timeoutMs)
+    } finally {
+      provider.destroy()
+    }
+  }
+}
+
 export function createJsonRpcRangeProvider(url: string): RangeLogProvider {
   return new JsonRpcProvider(url) as unknown as RangeLogProvider
 }

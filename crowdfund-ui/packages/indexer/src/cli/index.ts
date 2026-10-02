@@ -15,7 +15,7 @@ import { createDiscordNotifierFromEnv, runAlertsOnce } from '../alerts/runner.js
 import type { CrowdfundParams } from '../alerts/types.js'
 import { backfillVerifiedRanges, planBackfillRanges } from '../ingest/backfill.js'
 import { sanitizeErrorMessage } from '../ingest/errors.js'
-import { createJsonRpcRangeProvider, repairRanges, verifyRange } from '../ingest/rpc.js'
+import { checkRpcChainIds, createJsonRpcRangeProvider, repairRanges, verifyRange } from '../ingest/rpc.js'
 import { createReadableCrowdfundContract, reconcileSnapshot } from '../reconcile/contract.js'
 import { buildSnapshot, withReconciliation } from '../snapshots/build.js'
 import { publishSnapshot, publishSnapshotToObjectStorage } from '../snapshots/publish.js'
@@ -50,8 +50,14 @@ async function runCommand(args: ParsedCliArgs, store: IndexerStore): Promise<voi
   const data = await store.readMeta()
 
   if (args.command === 'verify' || args.command === 'repair' || args.command === 'backfill') {
-    const provider = createJsonRpcRangeProvider(readRequiredEnv('CROWDFUND_PRIMARY_RPC_URL'))
+    const primaryRpcUrl = readRequiredEnv('CROWDFUND_PRIMARY_RPC_URL')
     const auditRpcUrl = process.env.CROWDFUND_AUDIT_RPC_URL
+    await checkRpcChainIds(
+      [{ name: 'primary', url: primaryRpcUrl }, { name: 'audit', url: auditRpcUrl }],
+      readRequiredNumberEnv('CROWDFUND_CHAIN_ID'),
+      readNumberEnv('CROWDFUND_RPC_TIMEOUT_MS', 15_000),
+    )
+    const provider = createJsonRpcRangeProvider(primaryRpcUrl)
     const auditProvider = auditRpcUrl ? createJsonRpcRangeProvider(auditRpcUrl) : undefined
     if (!auditRpcUrl) {
       process.stderr.write(
@@ -153,6 +159,7 @@ async function runCommand(args: ParsedCliArgs, store: IndexerStore): Promise<voi
     let snapshot = buildSnapshot({ data: snapshotData, chainId, contractAddress })
     const rpcUrl = process.env.CROWDFUND_PRIMARY_RPC_URL
     if (rpcUrl) {
+      await checkRpcChainIds([{ name: 'primary', url: rpcUrl }], chainId, readNumberEnv('CROWDFUND_RPC_TIMEOUT_MS', 15_000))
       const provider = new JsonRpcProvider(rpcUrl)
       try {
         const contract = createReadableCrowdfundContract(provider, contractAddress)
@@ -225,6 +232,9 @@ async function runCommand(args: ParsedCliArgs, store: IndexerStore): Promise<voi
     }
     const rpcUrl = process.env.CROWDFUND_PRIMARY_RPC_URL
     const usdcAddress = process.env.CROWDFUND_USDC_ADDRESS
+    if (rpcUrl) {
+      await checkRpcChainIds([{ name: 'primary', url: rpcUrl }], params.chainId, readNumberEnv('CROWDFUND_RPC_TIMEOUT_MS', 15_000))
+    }
     const chainState = rpcUrl && usdcAddress
       ? createRpcChainStateReader({
           rpcUrl,

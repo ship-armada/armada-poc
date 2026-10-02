@@ -10,11 +10,20 @@ starting the fresh run.
 Mainnet manifests are tracked in git and kept by `npm run clean`, but until they are
 committed the deploy machine holds the only copy. Back them up as soon as the run stops.
 
+Each stage writes its manifest as it goes. `deploy_governance.ts` writes
+`governance-hub-mainnet.json` before its first transaction and again after each
+deployment. `deploy_crowdfund.ts` writes `crowdfund-hub-mainnet.json` right after
+the crowdfund deploys, and adds `redemption` and `windDown` to the governance
+manifest as each is mined, before ARM funding. Until a stage finishes, its
+manifest carries `"inProgress": true` and lists only the contracts deployed so
+far. A transaction sent just before the stop may be missing from it; resolve that
+from the deployer nonce. `deploy_crowdfund.ts` refuses a governance manifest that is
+still in progress.
+
 The crowdfund stage consumes one-shot ARM permissions and wind-down setters. A
 crash after any transaction must be treated as an interrupted launch, not an
-invitation to rerun `deploy_crowdfund.ts`. The governance manifest now saves
-`redemption` and `windDown` immediately after each mined deployment, before ARM
-funding. Keep a copy of both manifests, transaction hashes, and the deployer nonce.
+invitation to rerun `deploy_crowdfund.ts`. Keep a copy of both manifests,
+transaction hashes, and the deployer nonce.
 
 1. Stop all deployment senders. Compare manifest chain ID, deployer, contract
    addresses, constructor transactions, current nonce, and each transaction

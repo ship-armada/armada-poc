@@ -106,7 +106,7 @@ Execute in exact order. Do not proceed to the next step until the previous step'
 
 Record: `contract_address = [address]`, `deploy_tx = [hash]`, `block = [number]`
 
-**Deployment manifests.** The deploy writes `deployments/governance-hub-mainnet.json`, `deployments/crowdfund-hub-mainnet.json` and `deployments/hub-mainnet-v3.json`. They hold the RevenueLock constructor arguments, deploy blocks and addresses that source verification, `verify_deployment.ts` and interrupted-launch recovery depend on. As soon as the deploy finishes or stops, copy them off the deploy machine, then commit them to this repo in a PR (they are not gitignored). Never commit manifests produced by a mainnet-fork rehearsal: delete them (`rm deployments/*-mainnet*.json`) after the rehearsal, or they will block the live launch's re-run guard.
+**Deployment manifests.** The deploy writes `deployments/governance-hub-mainnet.json`, `deployments/crowdfund-hub-mainnet.json` and `deployments/hub-mainnet-v3.json`. They hold the RevenueLock constructor arguments, deploy blocks and addresses that source verification, `verify_deployment.ts` and interrupted-launch recovery depend on. A stage that stops part-way leaves its manifest marked `"inProgress": true` with the addresses deployed so far (see `docs/interrupted-launch-recovery.md`). As soon as the deploy finishes or stops, copy them off the deploy machine, then commit them to this repo in a PR (they are not gitignored). Never commit manifests produced by a mainnet-fork rehearsal: delete them (`rm deployments/*-mainnet*.json`) after the rehearsal, or they will block the live launch's re-run guard.
 
 ### Step 2: Verify contract source
 

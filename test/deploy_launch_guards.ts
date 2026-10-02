@@ -1,5 +1,5 @@
 // ABOUTME: Guards for the mainnet crowdfund-launch deploy — remote-network gas headroom, the
-// ABOUTME: re-run refusal, the absolute crowdfund open time, and the pool-treasury override.
+// ABOUTME: re-run refusal, the absolute crowdfund open time, pool-treasury override and harden profile.
 import { expect } from "chai";
 import { spawnSync } from "child_process";
 import { execFileSync } from "child_process";
@@ -9,6 +9,9 @@ import * as path from "path";
 import hre from "hardhat";
 import {
   assertNoPriorLaunch,
+  saveDeployment,
+  saveDeploymentInProgress,
+  assertDeploymentComplete,
   INTERRUPTED_LAUNCH_RUNBOOK,
   resolveCrowdfundOpenTimestamp,
   assertDeployCommit,
@@ -51,6 +54,41 @@ describe("Mainnet launch deploy guards", function () {
       expect(() => assertNoPriorLaunch(["governance-hub-mainnet.json", "crowdfund-hub-mainnet.json"], dir))
         .to.throw(/governance-hub-mainnet\.json[\s\S]*docs\/interrupted-launch-recovery\.md/);
       expect(INTERRUPTED_LAUNCH_RUNBOOK).to.equal("docs/interrupted-launch-recovery.md");
+    });
+  });
+  describe("in-progress launch manifests", function () {
+    let dir: string;
+    beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), "launch-progress-")); });
+    afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
+    const read = (f: string) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8"));
+
+    // WHY: a stage that stops part-way must still leave a manifest — it records the addresses
+    // already deployed for recovery and makes the mainnet re-run guard refuse a second stack.
+    it("marks an unfinished stage's manifest and trips the re-run guard", function () {
+      saveDeploymentInProgress("governance-hub-mainnet.json", { contracts: { timelockController: "0x01" } }, dir);
+      expect(read("governance-hub-mainnet.json")).to.deep.equal(
+        { contracts: { timelockController: "0x01" }, inProgress: true });
+      expect(() => assertNoPriorLaunch(["governance-hub-mainnet.json"], dir)).to.throw(/Do not re-run/);
+    });
+
+    // WHY: the stage's final save replaces the in-progress record with the complete manifest.
+    it("drops the marker when the stage saves its final manifest", function () {
+      saveDeploymentInProgress("governance-hub-mainnet.json", { contracts: {} }, dir);
+      saveDeployment("governance-hub-mainnet.json", { contracts: { governor: "0x02" } }, dir);
+      expect(read("governance-hub-mainnet.json")).to.not.have.property("inProgress");
+    });
+
+    // WHY: the crowdfund stage consumes one-shot initializers against the governance
+    // contracts; building on a governance stage that did not finish must stop before any
+    // transaction and point at the recovery runbook.
+    it("refuses a manifest from an unfinished stage", function () {
+      expect(() => assertDeploymentComplete({ contracts: {}, inProgress: true }, "governance-hub-mainnet.json"))
+        .to.throw(/governance-hub-mainnet\.json[\s\S]*did not finish[\s\S]*docs\/interrupted-launch-recovery\.md/);
+    });
+
+    // WHY: complete manifests, including ones written before the marker existed, pass.
+    it("accepts a complete manifest", function () {
+      expect(() => assertDeploymentComplete({ contracts: {} }, "governance-hub-sepolia.json")).to.not.throw();
     });
   });
   describe("resolveCrowdfundOpenTimestamp", function () {
@@ -127,7 +165,7 @@ describe("Mainnet launch deploy guards", function () {
       expect(await crowdfund.windowEnd()).to.equal(BigInt(openTs) + (await crowdfund.WINDOW_DURATION()));
     });
   });
-  describe("TREASURY_ADDRESS on mainnet (orchestrator dry-run)", function () {
+  describe("mainnet config refusals (orchestrator dry-run)", function () {
     // Spawning ts-node compiles the orchestrator and config on each run.
     this.timeout(120_000);
 
@@ -172,6 +210,16 @@ describe("Mainnet launch deploy guards", function () {
       const result = dryRun({ TREASURY_ADDRESS: "0x0000000000000000000000000000000000000002" });
       expect(result.status).to.not.equal(0);
       expect(result.stderr).to.include("TREASURY_ADDRESS must not be set on mainnet");
+      expect(result.stdout).to.not.include("CROWDFUND-LAUNCH DEPLOYMENT");
+    });
+
+    // WHY: without the harden profile the deployer holds no timelock roles, so the crowdfund
+    // step would revert at its first timelock-only call after spending one-shot initializers.
+    // The orchestrator must refuse up front instead of warning and running anyway.
+    it("refuses to start when HARDEN_TIMELOCK is disabled", function () {
+      const result = dryRun({ HARDEN_TIMELOCK: "false" });
+      expect(result.status).to.not.equal(0);
+      expect(result.stderr).to.include("HARDEN_TIMELOCK must not be disabled on mainnet");
       expect(result.stdout).to.not.include("CROWDFUND-LAUNCH DEPLOYMENT");
     });
   });

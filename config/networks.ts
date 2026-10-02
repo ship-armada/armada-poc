@@ -164,7 +164,7 @@ export interface NetworkConfig {
    * PROPOSER/EXECUTOR/CANCELLER, run all timelock-only setup, raise the delay to its
    * production value, then renounce all deployer timelock roles. Used for mainnet (and
    * the Sepolia production-like dry-run, #319). Defaults to true on mainnet, false
-   * elsewhere. See issue #347.
+   * elsewhere; disabling it on mainnet is refused. See issue #347.
    */
   hardenTimelock: boolean;
   /**
@@ -401,6 +401,19 @@ export function getNetworkConfig(): NetworkConfig {
   // RevenueLock beneficiaries: local uses Anvil defaults, non-local requires explicit config
   const revenueLockBeneficiaries = buildRevenueLockBeneficiaries(env);
 
+  // Default on for mainnet (safe — can't forget to harden), opt-in elsewhere
+  // (the Sepolia dry-run sets HARDEN_TIMELOCK=true to rehearse the mainnet path).
+  const hardenTimelock = boolEnv("HARDEN_TIMELOCK", env === "mainnet");
+  // Without the harden profile the deployer never holds timelock roles, so the crowdfund
+  // step's first timelock-only call would revert after its one-shot initializers are spent,
+  // leaving an interrupted launch. Refuse rather than let the deploy start.
+  if (env === "mainnet" && !hardenTimelock) {
+    throw new Error(
+      "HARDEN_TIMELOCK must not be disabled on mainnet: the crowdfund launch bootstraps " +
+      "timelock-only wiring through the harden profile (issue #347)."
+    );
+  }
+
   _cachedConfig = {
     env,
     cctpMode,
@@ -449,9 +462,7 @@ export function getNetworkConfig(): NetworkConfig {
       : optionalEnv("WINDDOWN_REVENUE_THRESHOLD", "10000"),
     revenueLockMaxIncreasePerDayUsd: revenueLockMaxIncreaseEnv("REVENUE_LOCK_MAX_INCREASE_PER_DAY_USD", "10000"),
     cctpFinalityMode: optionalEnv("CCTP_FINALITY_MODE", "fast") as "fast" | "standard",
-    // Default on for mainnet (safe — can't forget to harden), opt-in elsewhere
-    // (the Sepolia dry-run sets HARDEN_TIMELOCK=true to rehearse the mainnet path).
-    hardenTimelock: boolEnv("HARDEN_TIMELOCK", env === "mainnet"),
+    hardenTimelock,
     // Treasury outflow limits, env-overridable per token. Defaults are the GOVERNANCE.md
     // §Treasury Outflow Limits values: 30-day rolling window, limit = greater of the
     // absolute amount and the % of treasury balance, immutable floor.

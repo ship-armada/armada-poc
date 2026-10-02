@@ -25,7 +25,7 @@ import {
   getGovernanceDeploymentFile,
   isLocal,
 } from "../config/networks";
-import { createNonceManager, rejectAnvilAddresses, loadDeployment, saveDeployment, timelockCall, retryReadOnLag, resolveCrowdfundOpenTimestamp } from "./deploy-utils";
+import { createNonceManager, rejectAnvilAddresses, loadDeployment, saveDeployment, saveDeploymentInProgress, assertDeploymentComplete, timelockCall, retryReadOnLag, resolveCrowdfundOpenTimestamp } from "./deploy-utils";
 import { MULTICALL3_ADDRESS, MULTICALL3_RUNTIME_BYTECODE } from "./multicall3-bytecode";
 
 import { ensureRevenueLockActivated, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, assertCreationProvenance, validateReservePlan } from "./revenue-reserve";
@@ -91,6 +91,8 @@ async function main() {
       `Governance deployment not found (${govFilename}). Run deploy_governance first.`
     );
   }
+  // A governance stage that stopped part-way is an interrupted launch, not a base to build on.
+  assertDeploymentComplete(govDeployment, govFilename);
   const armTokenAddress = govDeployment.contracts.armToken;
   const treasuryAddress = govDeployment.contracts.treasury;
   const governorAddress = govDeployment.contracts.governor;
@@ -198,6 +200,31 @@ async function main() {
   const crowdfundDeployBlock = crowdfundReceipt!.blockNumber;
   const crowdfundAddress = await crowdfund.getAddress();
   console.log(`   ArmadaCrowdfund: ${crowdfundAddress} (block ${crowdfundDeployBlock})`);
+
+  // Record the crowdfund address now, marked in progress, so a run that stops during the
+  // wiring below still leaves it on disk. The complete manifest replaces it at the end.
+  const outputFile = getCrowdfundDeploymentFile();
+  const deployment: CrowdfundDeployment = {
+    chainId,
+    deployer: deployer.address,
+    deployBlock: crowdfundDeployBlock,
+    contracts: {
+      armToken: armTokenAddress,
+      usdc: usdcAddress,
+      crowdfund: crowdfundAddress,
+      treasury: treasuryAddress,
+      governor: governorAddress,
+    },
+    config: {
+      baseSale: "1200000",
+      maxSale: "1800000",
+      minSale: "1000000",
+      armPrice: "1.00",
+      armFunded: config.armDistribution.crowdfund,
+    },
+    timestamp: new Date().toISOString(),
+  };
+  saveDeploymentInProgress(outputFile, deployment);
 
   // 4. Set transfer whitelist (one-shot — must happen before any ARM transfers)
   // Per ARM token spec §5: crowdfund, treasury, revenueLock.
@@ -526,29 +553,8 @@ async function main() {
   await (await timelock.renounceRole(ADMIN_ROLE, deployer.address, nm.override())).wait();
   console.log("   Renounced TIMELOCK_ADMIN_ROLE from deployer");
 
-  // Save deployment
-  const deployment: CrowdfundDeployment = {
-    chainId,
-    deployer: deployer.address,
-    deployBlock: crowdfundDeployBlock,
-    contracts: {
-      armToken: armTokenAddress,
-      usdc: usdcAddress,
-      crowdfund: crowdfundAddress,
-      treasury: treasuryAddress,
-      governor: governorAddress,
-    },
-    config: {
-      baseSale: "1200000",
-      maxSale: "1800000",
-      minSale: "1000000",
-      armPrice: "1.00",
-      armFunded: config.armDistribution.crowdfund,
-    },
-    timestamp: new Date().toISOString(),
-  };
-
-  const outputFile = getCrowdfundDeploymentFile();
+  // Save the complete deployment (drops the in-progress marker)
+  deployment.timestamp = new Date().toISOString();
   saveDeployment(outputFile, deployment);
   console.log(`\nDeployment saved to: deployments/${outputFile}`);
 

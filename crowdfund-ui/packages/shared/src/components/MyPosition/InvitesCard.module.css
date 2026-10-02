@@ -271,6 +271,20 @@
   -webkit-overflow-scrolling: touch;
 }
 
+/* Pinned-open mobile list — skip collapse chrome; height comes from listScroll. */
+.listPanelPinned {
+  flex: 0 0 auto;
+}
+
+.listPanelPinned .listExpand {
+  grid-template-rows: 1fr;
+  flex: 0 0 auto;
+}
+
+.listPanelPinned .listControls {
+  border-bottom: 1px solid var(--semantic-color-border-default);
+}
+
 .header {
   display: flex;
   align-items: center;
@@ -882,10 +896,10 @@
 }
 
 /*
- * Short viewport (≤799px height) — match crowdfund: whitelist exits down+fade,
- * then list expands; close reverses with whitelist re-enter.
+ * Short laptop height (≤799px) — whitelist exits while the invites list is open.
+ * Mobile (≤767px width) keeps the whitelist card visible above the list.
  */
-@media (max-height: 799px) {
+@media (max-height: 799px) and (min-width: 768px) {
   .stackListOpen.stackShortCardDone .root {
     display: none;
   }
@@ -991,15 +1005,14 @@
     animation: revokePopoverInMobile 160ms ease;
   }
 
-  .stackHero .root {
-    background: transparent;
-    border: none;
-    border-radius: 0;
-    padding: 0;
-  }
-
-  .stackHero .listPanel {
-    max-height: min(360px, 50vh);
+  /*
+   * Always-open list: show up to 5 rows, then scroll inside the list.
+   * Row ≈ padding-y (spacing-4 × 2) + action target (spacing-8).
+   */
+  .listScroll {
+    max-height: calc(
+      5 * (var(--primitives-spacing-4) + var(--primitives-spacing-4) + var(--primitives-spacing-8))
+    );
   }
 }
 

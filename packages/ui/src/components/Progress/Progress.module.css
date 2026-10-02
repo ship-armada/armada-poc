@@ -66,6 +66,10 @@
   flex-shrink: 0;
 }
 
+.footerAction {
+  display: none;
+}
+
 .tags {
   display: flex;
   gap: 12px;
@@ -279,6 +283,21 @@
     width: 100%;
     max-width: none;
     gap: var(--primitives-spacing-10);
+  }
+
+  .headerAction {
+    display: none;
+  }
+
+  .footerAction {
+    display: flex;
+    width: 100%;
+    margin-top: var(--primitives-spacing-6);
+  }
+
+  .footerAction > :global(*) {
+    width: 100%;
+    justify-content: center;
   }
 
   .tags {

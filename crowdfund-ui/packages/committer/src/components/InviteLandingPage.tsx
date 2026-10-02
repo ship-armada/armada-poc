@@ -38,7 +38,6 @@ const PRE_CHECK_MESSAGES: Record<PreCheckError, string> = {
 }
 
 const DEFAULT_DAYS_LEFT = 3
-const PROJECT_URL = 'https://armada.wtf'
 
 function parseHopVariant(fromHop: number): HopVariant {
   // The invite carries the inviter's hop; the invitee joins at the next hop.
@@ -202,8 +201,8 @@ export function InviteLandingPage() {
     return () => { cancelled = true }
   }, [inviteData])
 
-  // "Not ready to participate yet?" nav + socials, shown on the landing/error
-  // states (hidden once the user joins the flow).
+  // "Not ready to participate yet?" — centered crowdfund page CTA (hidden once
+  // the user joins the flow). Socials stay under the prompt for brand presence.
   const footer = (
     <footer className={styles.footer}>
       <p className={styles.footerPrompt}>Not ready to participate yet?</p>
@@ -211,15 +210,7 @@ export function InviteLandingPage() {
         <Button
           variant="secondary"
           size="lg"
-          label="The project"
-          showIcon={false}
-          className={styles.footerBtn}
-          onClick={() => window.open(PROJECT_URL, '_blank', 'noopener,noreferrer')}
-        />
-        <Button
-          variant="secondary"
-          size="lg"
-          label="Crowdfund"
+          label="View crowdfund page"
           showIcon={false}
           className={styles.footerBtn}
           onClick={() => navigate('/')}

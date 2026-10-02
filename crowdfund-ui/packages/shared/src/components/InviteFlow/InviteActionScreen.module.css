@@ -12,9 +12,37 @@
   box-sizing: border-box;
 }
 
+.rootSheet {
+  height: auto;
+  min-height: 0;
+  flex: 0 1 auto;
+  overflow: visible;
+}
+
+.rootSheet .body {
+  flex: 0 0 auto;
+  min-height: auto;
+  overflow: visible;
+}
+
+.rootSheet .footer {
+  margin-top: 0;
+}
+
+.rootSheet .title {
+  overflow: visible;
+  line-height: 1.35;
+}
+
+.rootSheet .meta,
+.rootSheet .hint {
+  overflow: visible;
+  padding-block: 1px;
+}
+
 .topRow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--primitives-spacing-3);
   flex-shrink: 0;

@@ -52,15 +52,13 @@
 }
 
 .footerNav {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: var(--primitives-spacing-3);
+  display: flex;
+  justify-content: center;
   width: 100%;
-  max-width: 400px;
 }
 
 .footerBtn {
-  width: 100%;
+  width: auto;
 }
 
 /* Social links row beneath the project / crowdfund nav. The extra margin-top

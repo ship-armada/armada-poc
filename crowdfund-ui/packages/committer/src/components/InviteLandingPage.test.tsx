@@ -30,8 +30,9 @@ describe('InviteLandingPage footer', () => {
     )
 
     expect(screen.getByText('Not ready to participate yet?')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'The project' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Crowdfund' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'View crowdfund page' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'The project' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Crowdfund' })).toBeNull()
 
     const discord = screen.getByRole('link', { name: 'Armada on Discord' })
     expect(discord).toHaveAttribute('href', 'https://discord.com/invite/ship-armada')

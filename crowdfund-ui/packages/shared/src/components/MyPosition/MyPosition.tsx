@@ -22,6 +22,7 @@ import {
   GRAPH_PARTICIPANTS,
   GRAPH_SEED,
 } from './myPositionDemo'
+import { createDemoInviteLink } from '../../lib/demoInviteLink'
 import type { InviteeHop } from './inviteModel'
 import type { ReactNode } from 'react'
 
@@ -49,7 +50,7 @@ export function MyPosition({ header }: MyPositionProps = {}) {
     const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000)
     return {
       id: Date.now(),
-      link: `https://armada.wtf/join?invite=demo&hop=hop-${hop}`,
+      link: createDemoInviteLink(`hop-${hop}`),
       expiresAt,
     }
   }

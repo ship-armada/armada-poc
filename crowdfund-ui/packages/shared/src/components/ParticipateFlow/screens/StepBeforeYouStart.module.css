@@ -317,6 +317,21 @@
 }
 
 @media (max-width: 767px) {
+  .shell {
+    padding: var(--primitives-spacing-5) 0;
+  }
+
+  .chromeRow,
+  .footer {
+    padding-inline: var(--primitives-spacing-5);
+  }
+
+  .content {
+    gap: var(--primitives-spacing-5);
+    padding-inline: var(--primitives-spacing-5);
+    padding-bottom: var(--primitives-spacing-5);
+  }
+
   .stepCards {
     grid-template-columns: 1fr;
   }

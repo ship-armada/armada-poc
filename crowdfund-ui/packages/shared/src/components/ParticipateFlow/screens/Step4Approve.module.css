@@ -14,3 +14,9 @@
   box-sizing: border-box;
   overflow: hidden;
 }
+
+@media (max-width: 767px) {
+  .shell {
+    padding: var(--primitives-spacing-5);
+  }
+}

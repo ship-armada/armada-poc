@@ -7,6 +7,7 @@ import hopPillStyles from '../../../HopPill/HopPill.module.css'
 import JoinButton from '../../../JoinButton/JoinButton'
 import { formatTimeLeft } from '../../../../lib/format.js'
 import fleetPng from '../../../../assets/fleet.png'
+import { FlowChrome } from '../../FlowChrome'
 import styles from './Step0Invite.module.css'
 
 export interface Step0InviteProps {
@@ -20,6 +21,8 @@ export interface Step0InviteProps {
    *  `secondsLeft` countdown in the meta row. Omit in the modal variants. */
   inviteExpiresInSeconds?: number
   onJoin: () => void
+  /** Close the participate flow (top-right X on the fleet intro). */
+  onClose?: () => void
   /**
    * @deprecated Wallet connect is RainbowKit before this screen — eyebrow removed.
    * Kept so existing callers keep compiling.
@@ -35,6 +38,7 @@ export default function Step0Invite({
   secondsLeft = 3 * 86400,
   inviteExpiresInSeconds,
   onJoin,
+  onClose,
   variant = 'default',
   className,
 }: Step0InviteProps) {
@@ -72,10 +76,24 @@ export default function Step0Invite({
         aria-hidden
       />
       <div className={styles.overlay} />
+      {onClose ? (
+        <FlowChrome
+          variant="overlay"
+          showBack={false}
+          onClose={onClose}
+          closeAriaLabel="Close participate flow"
+        />
+      ) : null}
       <div className={[styles.content, isLanding && styles.contentLanding].filter(Boolean).join(' ')}>
         <div className={styles.top}>
           <p className={styles.brandEyebrow}>Armada Crowdfund</p>
-          <h1 className={styles.headline}>You are invited to join the fleet</h1>
+          <h1 className={styles.headline}>
+            You are{' '}
+            <br className={styles.headlineBreak} />
+            invited to{' '}
+            <br className={styles.headlineBreak} />
+            join the fleet
+          </h1>
           {inviteExpiryLabel && <p className={styles.inviteExpiry}>{inviteExpiryLabel}</p>}
           <div className={styles.metaTag}>
             <Tag label={timeLeftLabel} />

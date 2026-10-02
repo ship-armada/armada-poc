@@ -599,9 +599,8 @@ export default function SlotCard({
             </span>
           )}
           <p className={styles.hint}>
-            This sends an onchain transaction. The invitee can then visit{' '}
-            {typeof window !== 'undefined' ? window.location.host : 'the app'} and commit.
-            Requires gas.
+            This sends an onchain transaction. The invitee can then open the crowdfund
+            website and commit. Requires gas.
           </p>
           <div className={styles.expandedAction}>
             <Button

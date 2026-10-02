@@ -2,6 +2,7 @@
 
 import type { SlotData } from '../InviteFlow/screens/SlotCard'
 import type { PinnedNode } from '../NodeSphere/NodeSphere'
+import { demoInviteLink } from '../../lib/demoInviteLink'
 import {
   availableForHop,
   type InviteAllowance,
@@ -55,7 +56,7 @@ export const DEMO_SLOTS: SlotData[] = [
   {
     id: 1,
     status: 'link-active',
-    link: 'https://armada.wtf/join?invite=y2kh71abc&hop=hop-1',
+    link: demoInviteLink('y2kh71abc', 'hop-1'),
     expiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
     inviteeHop: 1,
     invitedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
@@ -79,7 +80,7 @@ export const DEMO_SLOTS: SlotData[] = [
   {
     id: 4,
     status: 'expired',
-    link: 'https://armada.wtf/join?invite=expired99&hop=hop-1',
+    link: demoInviteLink('expired99', 'hop-1'),
     expiresAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
     closedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
     inviteeHop: 1,
@@ -88,7 +89,7 @@ export const DEMO_SLOTS: SlotData[] = [
   {
     id: 5,
     status: 'revoked',
-    link: 'https://armada.wtf/join?invite=revoked01&hop=hop-2',
+    link: demoInviteLink('revoked01', 'hop-2'),
     closedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000),
     inviteeHop: 2,
     invitedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000),

@@ -25,8 +25,8 @@ export type { NavItemProps } from './components/NavItem'
 export { NavBar } from './components/NavBar'
 export type { NavBarProps, NavBarItem } from './components/NavBar'
 
-export { Header, WalletPillMenu } from './components/Header'
-export type { HeaderProps, WalletPillMenuProps } from './components/Header'
+export { Header, WalletPillMenu, WalletMenuSheet } from './components/Header'
+export type { HeaderProps, WalletPillMenuProps, WalletMenuSheetProps } from './components/Header'
 
 export { BarTrackTicks } from './components/BarTrackTicks'
 

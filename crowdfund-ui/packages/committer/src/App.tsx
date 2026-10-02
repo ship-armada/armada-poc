@@ -44,6 +44,7 @@ import { ParticipateFlowV2 } from '@/components/ParticipateFlowV2'
 import { ClaimFlowV2 } from '@/components/ClaimFlowV2'
 import { ObserveDetailsModal } from '@/components/ObserveDetailsModal'
 import { CommitterMobileMenu } from '@/components/CommitterMobileMenu'
+import { CommitterMobileWallet } from '@/components/CommitterMobileWallet'
 import { useInviteSlots } from '@/hooks/useInviteSlots'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { abortPipelinesForOtherAddress, applyWatchedTxResult, pipelinesAtom } from '@/hooks/useTxPipeline'
@@ -245,7 +246,9 @@ function deriveLifecycleStage(
 
 /** Resolve the initial page from the URL. `/observe` and `?view=observe` open
  *  the Details modal over the crowdfund hero (handled separately via
- *  `detailsOpenFromUrl`); they no longer select a dedicated page. */
+ *  `detailsOpenFromUrl`); they no longer select a dedicated page.
+ *  `?view=claim` opens the Claim modal over the hero (see `claimOpenFromUrl`)
+ *  and keeps the underlying page on Crowdfund — Claim is never a selected tab. */
 function pageFromUrl(): Page | null {
   if (typeof window === 'undefined') return null
   if (window.location.pathname === '/observe') return 'network'
@@ -253,13 +256,18 @@ function pageFromUrl(): Page | null {
     case 'myposition':
       return 'my-position'
     case 'claim':
-      return 'claim'
+      return 'network'
     case 'network':
     case 'observe':
       return 'network'
     default:
       return null
   }
+}
+
+function claimOpenFromUrl(): boolean {
+  if (typeof window === 'undefined') return false
+  return new URLSearchParams(window.location.search).get('view') === 'claim'
 }
 
 function detailsOpenFromUrl(): boolean {
@@ -284,6 +292,7 @@ export function App() {
       const next = pageFromUrl()
       if (next) setPage(next)
       setDetailsOpen(detailsOpenFromUrl())
+      setClaimOpen(claimOpenFromUrl())
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
@@ -298,6 +307,8 @@ export function App() {
   const [participateModalClose, setParticipateModalClose] = useState(true)
   // Crowdfund Progress "Details" — observe cards in a blurred modal overlay.
   const [detailsOpen, setDetailsOpen] = useState(() => detailsOpenFromUrl())
+  // Claim opens as a modal over the hero — never a selected page tab.
+  const [claimOpen, setClaimOpen] = useState(() => claimOpenFromUrl())
   // True while the participate pipeline is in flight — gates modal close confirm.
   const [participateRunning, setParticipateRunning] = useState(false)
   // Warn before a refresh/tab-close drops the user while a commit is broadcasting.
@@ -769,6 +780,28 @@ export function App() {
     setParticipateModalClose(true)
   }
 
+  const openClaim = () => {
+    if (!claimReady) return
+    setParticipateOpen(false)
+    setClaimOpen(true)
+  }
+  const closeClaim = () => {
+    setClaimOpen(false)
+  }
+
+  useEffect(() => {
+    if (claimOpen && !claimReady) setClaimOpen(false)
+  }, [claimOpen, claimReady])
+
+  const handlePageNav = (next: Page) => {
+    if (next === 'claim') {
+      openClaim()
+      return
+    }
+    setClaimOpen(false)
+    setPage(next)
+  }
+
   const headerRightChrome = (
     <div className="flex items-center gap-3">
       <LastTxChip override={lastTxChip} />
@@ -790,7 +823,9 @@ export function App() {
     <CommitterMobileMenu
       onClose={close}
       current={page}
-      onNavigate={setPage}
+      onNavigate={(next) => {
+        handlePageNav(next)
+      }}
       onParticipate={openParticipate}
       claimAvailable={claimReady}
       participationEnabled={windowOpen}
@@ -798,8 +833,10 @@ export function App() {
     />
   )
 
+  const mobileActions = <CommitterMobileWallet usdcBalance={allowance.balance} />
+
   const headerNav = (
-    <PageNav current={page} onChange={setPage} claimEnabled={claimReady} />
+    <PageNav current={page} onChange={handlePageNav} claimEnabled={claimReady} />
   )
 
   const participateModal = (
@@ -874,10 +911,57 @@ export function App() {
     />
   )
 
+  const claimModal = (
+    <ParticipateFlowModal
+      open={claimOpen && claimReady}
+      onClose={closeClaim}
+      ariaLabel="Claim your allocation"
+      showClose
+    >
+      {claimOpen && claimReady ? (
+        <ErrorBoundary>
+          <ClaimFlowV2
+            // Remount on account switch so one account's claim state
+            // (hasClaimed, allocation) can't show under another.
+            key={wallet.address ?? 'disconnected'}
+            walletConnected={wallet.connected}
+            isWrongNetwork={wallet.isWrongNetwork}
+            switchNetwork={wallet.switchNetwork}
+            walletAddress={wallet.address}
+            signer={wallet.signer}
+            provider={provider}
+            crowdfundAddress={crowdfundAddress}
+            armTokenAddress={armTokenAddress}
+            phase={contractState.phase}
+            refundMode={contractState.refundMode}
+            blockTimestamp={contractState.blockTimestamp}
+            claimDeadline={contractState.claimDeadline}
+            totalCommitted={userTotalCommitted}
+            windowEnd={contractState.windowEnd}
+            cappedDemand={contractState.cappedDemand}
+            claimAvailable={claimAvailability.state === 'available'}
+            claimCountdownSeconds={lifecycleCountdown}
+            onGoToMyPosition={() => {
+              closeClaim()
+              setPage('my-position')
+            }}
+            onGoToNetwork={() => {
+              closeClaim()
+              setPage('network')
+            }}
+            onReceiptLogs={ingestReceiptLogs}
+            refreshAllowance={allowance.refresh}
+          />
+        </ErrorBoundary>
+      ) : null}
+    </ParticipateFlowModal>
+  )
+
   // Hero shell — AppShell renders the single chrome header (via AppHeader);
   // CrowdfundExperience renders the full-bleed body with its own header slot
   // suppressed. Controlled `view` syncs to the committer's `page` state;
   // transitions inside CrowdfundExperience notify back via `onViewChange`.
+  // Claim is a modal overlay (never a selected page tab).
   if (isHeroPage) {
     return (
       <>
@@ -886,7 +970,7 @@ export function App() {
           network={getNetworkMode()}
           headerNav={headerNav}
           headerRight={headerRightChrome}
-          mobileMenu={mobileMenu}
+          mobileActions={mobileActions}
           bare
         >
           <CrowdfundExperience
@@ -901,6 +985,8 @@ export function App() {
             connectedAddress={wallet.address ?? undefined}
             onConnectWallet={openConnectModal}
             onParticipate={openParticipate}
+            onClaim={openClaim}
+            claimAvailable={claimReady}
             onDetails={() => setDetailsOpen(true)}
             // Hide the Participate CTA (and the My Position invite card) once
             // the sale's outcome is fixed — finalized, cancelled by the
@@ -914,6 +1000,7 @@ export function App() {
           />
         </AppShell>
         {participateModal}
+        {claimModal}
         {detailsModal}
       </>
     )
@@ -932,44 +1019,11 @@ export function App() {
       <div className="container mx-auto p-4 space-y-4">
         <StaleDataBanner indexerHealth={indexerHealth} />
         {wallet.error && <ErrorAlert>{wallet.error}</ErrorAlert>}
-
-        {page === 'claim' && (
-          <div key="page-claim" className="animate-page-enter">
-            <ErrorBoundary>
-              <ClaimFlowV2
-                // Remount on account switch so one account's claim state
-                // (hasClaimed, allocation) can't show under another.
-                key={wallet.address ?? 'disconnected'}
-                walletConnected={wallet.connected}
-                isWrongNetwork={wallet.isWrongNetwork}
-                switchNetwork={wallet.switchNetwork}
-                walletAddress={wallet.address}
-                signer={wallet.signer}
-                provider={provider}
-                crowdfundAddress={crowdfundAddress}
-                armTokenAddress={armTokenAddress}
-                phase={contractState.phase}
-                refundMode={contractState.refundMode}
-                blockTimestamp={contractState.blockTimestamp}
-                claimDeadline={contractState.claimDeadline}
-                totalCommitted={userTotalCommitted}
-                windowEnd={contractState.windowEnd}
-                cappedDemand={contractState.cappedDemand}
-                claimAvailable={claimAvailability.state === 'available'}
-                claimCountdownSeconds={lifecycleCountdown}
-                onGoToMyPosition={() => setPage('my-position')}
-                onGoToNetwork={() => setPage('network')}
-                onReceiptLogs={ingestReceiptLogs}
-                refreshAllowance={allowance.refresh}
-              />
-            </ErrorBoundary>
-          </div>
-        )}
-
       </div>
      </ErrorBoundary>
     </AppShell>
     {participateModal}
+    {claimModal}
     </>
   )
 }

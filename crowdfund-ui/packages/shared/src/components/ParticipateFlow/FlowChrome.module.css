@@ -18,9 +18,19 @@
 .overlay {
   position: absolute;
   inset: var(--primitives-spacing-8) var(--primitives-spacing-8) auto;
-  z-index: 2;
+  /* Above stacked step media/content (e.g. Step0 fleet card at z-index 2). */
+  z-index: 3;
   pointer-events: none;
   height: var(--primitives-spacing-8);
+}
+
+@media (max-width: 767px) {
+  .overlay {
+    inset:
+      max(var(--primitives-spacing-5), env(safe-area-inset-top, 0px))
+      var(--primitives-spacing-5)
+      auto;
+  }
 }
 
 .overlayBack,

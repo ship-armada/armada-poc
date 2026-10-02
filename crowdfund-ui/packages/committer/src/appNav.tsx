@@ -16,8 +16,9 @@ const NAV_ITEMS: ReadonlyArray<{ id: Page; label: string }> = [
 /**
  *  Page navigation — renders as header nav on desktop, stacked list on mobile.
  *
- *  Tabs: Crowdfund · My position · Claim. Claim stays in the strip but is
- *  disabled until the claim phase opens (`claimEnabled`).
+ *  Tabs: Crowdfund · My position · Claim. Claim opens a modal — never treated
+ *  as the selected page tab. Claim stays in the strip but is disabled until
+ *  the claim phase opens (`claimEnabled`).
  */
 export function PageNav({
   current,
@@ -37,7 +38,8 @@ export function PageNav({
       const disabled = id === 'claim' && !claimEnabled
       return {
         label: item.label,
-        active: !disabled && id === current,
+        // Claim opens a modal — never treat it as the selected page tab.
+        active: id === 'claim' ? false : !disabled && id === current,
         disabled,
         accent: id === 'claim' && !disabled ? ('brand' as const) : undefined,
         onClick: disabled ? undefined : () => onChange(id),
@@ -50,7 +52,8 @@ export function PageNav({
     <ul className="flex flex-col items-stretch gap-1">
       {NAV_ITEMS.map((item) => {
         const disabled = item.id === 'claim' && !claimEnabled
-        const active = !disabled && item.id === current
+        // Claim opens a modal — never treat it as the selected page tab.
+        const active = item.id === 'claim' ? false : !disabled && item.id === current
         return (
           <li key={item.id}>
             <button

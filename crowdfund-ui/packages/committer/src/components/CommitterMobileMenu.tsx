@@ -234,16 +234,15 @@ export function CommitterMobileMenu({
             type="button"
             className={[
               styles.navItem,
-              claimAvailable && current === 'claim' && styles.navItemActive,
               !claimAvailable && styles.navItemDisabled,
             ]
               .filter(Boolean)
               .join(' ')}
-            aria-current={claimAvailable && current === 'claim' ? 'page' : undefined}
             aria-disabled={!claimAvailable}
             disabled={!claimAvailable}
             onClick={() => {
               if (!claimAvailable) return
+              // Claim opens a modal — never mark Claim as the selected page tab.
               navigate('claim')
             }}
           >

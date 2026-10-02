@@ -333,6 +333,16 @@ export interface CrowdfundExperienceProps {
    * omitted, the empty state renders text-only guidance.
    */
   onParticipate?: () => void
+  /**
+   * Fires when a Claim CTA is clicked (Progress header/footer, My Position
+   * header/footer). Claim opens as a modal in the committer — never a page.
+   */
+  onClaim?: () => void
+  /**
+   * When true, surface Claim CTAs on Progress + My Position (gated until the
+   * claim phase opens). Defaults to false.
+   */
+  claimAvailable?: boolean
   /** Forwarded to `HeroParticipantsPanel` — renders a "Details" button beside
    *  the Show/Hide toggle (the committer wires it to open the Observe view). */
   onDetails?: () => void
@@ -405,6 +415,8 @@ export function CrowdfundExperience({
   connectedAddress,
   onConnectWallet,
   onParticipate,
+  onClaim,
+  claimAvailable = false,
   onDetails,
   participationEnabled = true,
   etherscanBaseUrl,
@@ -1131,6 +1143,17 @@ export function CrowdfundExperience({
                       {...(liveReady?.saleStatusDot
                         ? { statusDot: liveReady.saleStatusDot }
                         : {})}
+                      headerAction={
+                        claimAvailable && !myPositionTerminalClaimed && onClaim ? (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            label={myPositionRefundMode ? 'Claim refund' : 'Claim'}
+                            showIcon={false}
+                            onClick={onClaim}
+                          />
+                        ) : undefined
+                      }
                     />
                     {onDetails && (
                       // Overlaid on the @armada/ui Progress card's top-right corner
@@ -1192,6 +1215,16 @@ export function CrowdfundExperience({
                     onClick={onParticipate}
                   />
                 )}
+                {claimAvailable && !myPositionTerminalClaimed && myPositionEmptyKind === null && onClaim ? (
+                  <Button
+                    className={mpStyles.headerCta}
+                    variant="primary"
+                    size="sm"
+                    label={myPositionRefundMode ? 'Claim refund' : 'Claim'}
+                    showIcon={false}
+                    onClick={onClaim}
+                  />
+                ) : null}
               </div>
               <div className={mpStyles.metaTags}>
                 {myPositionWalletDisplay && (
@@ -1301,6 +1334,28 @@ export function CrowdfundExperience({
                   </span>
                 </div>
               </div>
+
+              {participationEnabled && onParticipate ? (
+                <Button
+                  className={mpStyles.footerCta}
+                  variant="gradient"
+                  size="sm"
+                  label={myPositionEmptyKind === null ? 'Commit again' : 'Participate'}
+                  showIcon
+                  icon="arrow-right-micro"
+                  onClick={onParticipate}
+                />
+              ) : null}
+              {claimAvailable && !myPositionTerminalClaimed && myPositionEmptyKind === null && onClaim ? (
+                <Button
+                  className={mpStyles.footerCta}
+                  variant="primary"
+                  size="sm"
+                  label={myPositionRefundMode ? 'Claim refund' : 'Claim'}
+                  showIcon={false}
+                  onClick={onClaim}
+                />
+              ) : null}
             </div>
             )}
           </section>

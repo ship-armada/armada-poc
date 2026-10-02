@@ -412,24 +412,61 @@
   gap: var(--primitives-spacing-3);
   width: 100%;
   flex-shrink: 0;
-  /* Match gap above the ARM card (bar scale → card). */
-  margin-top: var(--primitives-spacing-6);
 }
 
 .buttonRow > * {
   flex: 1;
 }
 
+/* Progress + allocation + CTA — pinned under the amount field. */
+.bottomDock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-6);
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.maxOutSlot {
+  display: none;
+  flex-shrink: 0;
+  width: 100%;
+}
+
 .ctaBlocked {
   cursor: not-allowed;
 }
 
-/* Mobile (≤767px) — stack the action buttons full-width, primary on top.
- * Ported from the armada-crowdfund mockup mobile rework. */
+/* Mobile (≤767px) — full-page shell; stack CTAs; max-out banner under chrome. */
 @media (max-width: 767px) {
+  .shell {
+    overflow: hidden;
+    padding: var(--primitives-spacing-5);
+    gap: 0;
+  }
+
+  .maxOutSlot {
+    display: block;
+    margin-top: var(--primitives-spacing-4);
+    margin-bottom: var(--primitives-spacing-4);
+  }
+
+  .maxOutSlot > * {
+    max-width: none;
+  }
+
+  .content {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .bottomDock {
+    flex-shrink: 0;
+  }
+
   .buttonRow {
     flex-direction: column-reverse;
-    margin-top: 0;
     gap: var(--primitives-spacing-3);
   }
 

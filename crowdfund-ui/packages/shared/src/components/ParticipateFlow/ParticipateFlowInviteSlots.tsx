@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react'
 import { Button } from '@armada/ui'
+import { FlowChrome } from './FlowChrome'
 import {
   InviteHopFocusChrome,
   useInviteHopFocus,
@@ -19,6 +20,7 @@ import { HopAvailableRow } from '../MyPosition/InvitesCard'
 import inviteCardStyles from '../MyPosition/InvitesCard.module.css'
 import {
   availableForHop,
+  formatInviteeHop,
   hopsWithAllowance,
   type InviteeHop,
 } from '../MyPosition/inviteModel'
@@ -30,6 +32,7 @@ import {
   revokeLinkViaSections,
   sectionForInviteeHop,
 } from '../MyPosition/inviteSectionsToCard'
+import { useIsMobileLayout } from '../../hooks/useIsMobileLayout'
 import inviteStyles from '../InviteFlow/screens/InviteSlots.module.css'
 import styles from './ParticipateFlowInviteSlots.module.css'
 
@@ -40,16 +43,53 @@ export interface ParticipateFlowInviteSlotsProps {
   /** Connected wallet — self-invite CTA when the pasted address matches. */
   selfWalletAddress?: string
   onDoItLater?: () => void
+  /** FlowChrome back — returns to the previous participate step (usually confirmation). */
+  onBack?: () => void
+  /** FlowChrome close — dismisses the participate invite step. */
+  onClose?: () => void
+  /** Reveal a just-created invite in the sent list (Done). */
+  onConfirmCreated?: (inviteId: number) => void
+  /** Free the slot if the create confirmation is abandoned / discarded. */
+  onDiscardCreated?: (inviteId: number) => void
   /** Rendered beneath the "Do it later" button — e.g. social links. */
   socials?: ReactNode
+}
+
+function whitelistSubtitle(
+  sections: ReadonlyArray<CrowdfundInviteSlotSection>,
+): string {
+  const allowance = allowanceFromInviteSections(sections)
+  const issuedSlots = issuedSlotsFromInviteSections(sections)
+  const hopRows = hopsWithAllowance(allowance)
+  const availableHops = hopRows.filter(
+    (hop) => availableForHop(issuedSlots, allowance, hop) > 0,
+  )
+  const total = availableHops.reduce(
+    (sum, hop) => sum + availableForHop(issuedSlots, allowance, hop),
+    0,
+  )
+  if (total <= 0) {
+    return 'You have no invites left to send right now.'
+  }
+  const countLabel = total === 1 ? '1 invite left' : `${total} invites left`
+  if (availableHops.length === 1) {
+    const hop = availableHops[0]
+    return `You have ${countLabel} for ${formatInviteeHop(hop!)}. Share a link (no gas) or whitelist an address onchain so a friend can join.`
+  }
+  return `You have ${countLabel}. Share a link (no gas) or whitelist an address onchain so a friend can join the fleet.`
 }
 
 export function ParticipateFlowInviteSlots({
   sections,
   selfWalletAddress,
   onDoItLater,
+  onBack,
+  onClose,
+  onConfirmCreated,
+  onDiscardCreated,
   socials,
 }: ParticipateFlowInviteSlotsProps) {
+  const isMobile = useIsMobileLayout()
   const focusApi = useInviteHopFocus()
   const [rollFromByHop, setRollFromByHop] = useState<
     Partial<Record<InviteeHop, number>>
@@ -70,6 +110,9 @@ export function ParticipateFlowInviteSlots({
 
   const isEmpty = hopRows.length === 0
   const isActionView = focusApi.view === 'action'
+  /** Mobile keeps the hop list under the action sheet — do not swap the chrome. */
+  const isInPlaceAction = isActionView && !isMobile
+  const subtitle = useMemo(() => whitelistSubtitle(sections), [sections])
 
   const loadingHop = useMemo((): InviteeHop | null => {
     for (const section of sections) {
@@ -200,32 +243,17 @@ export function ParticipateFlowInviteSlots({
     </div>
   )
 
-  const listFrame = (
-    <div className={inviteStyles.listFrame}>
-      {!isActionView && (
-        <div className={inviteStyles.header}>
-          <h2 className={inviteStyles.title}>Whitelist a friend</h2>
-          {!isEmpty && (
-            <p className={inviteStyles.subtitle}>
-              We need more sailors like you to join the fleet.
-              <br />
-              Share a link or send an onchain invite to a specific address.
-            </p>
-          )}
+  const listBody = (
+    <div className={styles.scroll}>
+      {isEmpty ? (
+        <div className={styles.empty} role="status">
+          <p className={styles.emptyText}>
+            You have no invite slots available at this hop.
+          </p>
         </div>
+      ) : (
+        hopList
       )}
-
-      <div className={styles.scroll}>
-        {isEmpty ? (
-          <div className={styles.empty} role="status">
-            <p className={styles.emptyText}>
-              You have no invite slots available at this hop.
-            </p>
-          </div>
-        ) : (
-          hopList
-        )}
-      </div>
     </div>
   )
 
@@ -233,8 +261,26 @@ export function ParticipateFlowInviteSlots({
     <div className={styles.layout}>
       <div
         className={[inviteStyles.shell, styles.shell].join(' ')}
+        data-flow-shell
         data-invite-surface=""
       >
+        {/* Chrome stays outside the list↔action crossfade so back/close never drop out. */}
+        {!isInPlaceAction ? (
+          <div className={styles.chromeBlock}>
+            <FlowChrome
+              title="Whitelist a friend"
+              titleId="whitelist-friend-title"
+              onBack={onBack}
+              onClose={onClose}
+              closeAriaLabel="Close invite flow"
+              backAriaLabel="Back to confirmation"
+            />
+            {!isEmpty ? (
+              <p className={styles.subtitle}>{subtitle}</p>
+            ) : null}
+          </div>
+        ) : null}
+
         {!isEmpty ? (
           <InviteHopFocusChrome
             focusApi={focusApi}
@@ -243,13 +289,15 @@ export function ParticipateFlowInviteSlots({
             onInviteOnchain={handleInviteOnchain}
             onCopy={handleCopy}
             onRevoke={handleRevoke}
+            onConfirmCreated={onConfirmCreated}
+            onDiscardCreated={onDiscardCreated}
             copiedInviteId={copiedInviteId}
             resolveEns={resolveEns}
             selfWalletAddress={selfWalletAddress}
-            list={listFrame}
+            list={listBody}
           />
         ) : (
-          listFrame
+          listBody
         )}
       </div>
 

@@ -85,6 +85,11 @@
   color: var(--semantic-color-text-primary);
 }
 
+/* Desktop — keep the title on one flowing line. */
+.headlineBreak {
+  display: none;
+}
+
 /* Invite link's own expiry (Path 1 landing only) — secondary line under the
    headline, distinct from the campaign "TIME LEFT" tag. */
 .inviteExpiry {
@@ -121,11 +126,15 @@
   gap: var(--primitives-spacing-6);
 }
 
-/* Mobile (≤767px) — card goes fluid-height. Ported from the mockup. */
+/* Mobile (≤767px) — full-page fleet cover; chrome/safe-area on content. */
 @media (max-width: 767px) {
   .card {
-    height: auto;
-    min-height: min(500px, 70dvh);
+    height: 100%;
+    min-height: 100%;
+    max-height: none;
+    border-radius: 0;
+    /* Fleet cover is edge-to-edge — safe area lives on content / chrome. */
+    padding-bottom: 0 !important;
     /* Explicit fill column — the global `mobile-layout.css` [data-flow-shell]
      * reflow forces `justify-content: flex-start` (it targets flex shells),
      * which would otherwise left-pack this grid's auto column in the now
@@ -135,5 +144,52 @@
 
   .cardLanding {
     max-width: none;
+  }
+
+  .content {
+    padding:
+      max(var(--primitives-spacing-8), env(safe-area-inset-top, 0px))
+      var(--primitives-spacing-5)
+      max(var(--primitives-spacing-8), env(safe-area-inset-bottom, 0px));
+  }
+
+  .top {
+    align-items: center;
+    text-align: center;
+    /* Drop the copy block ~40px below the safe-area top inset. */
+    margin-top: var(--primitives-spacing-10);
+  }
+
+  .headline {
+    text-align: center;
+  }
+
+  .headlineBreak {
+    display: block;
+  }
+
+  .footer,
+  .footerLanding {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--primitives-spacing-3);
+    width: 100%;
+  }
+
+  .footer > *,
+  .footerLanding > * {
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  /* Hop pill spans the row; Join CTA stays centered in its full-width control. */
+  .footer > :first-child,
+  .footerLanding > :first-child {
+    justify-content: space-between;
+  }
+
+  .footer > :last-child,
+  .footerLanding > :last-child {
+    justify-content: center;
   }
 }

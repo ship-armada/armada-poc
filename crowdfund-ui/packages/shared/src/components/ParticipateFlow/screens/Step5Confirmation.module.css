@@ -301,6 +301,20 @@
 }
 
 @media (max-width: 767px) {
+  .shell {
+    padding: var(--primitives-spacing-5) 0;
+  }
+
+  .chromeRow,
+  .footer {
+    padding-inline: var(--primitives-spacing-5);
+  }
+
+  .content {
+    padding-inline: var(--primitives-spacing-5);
+    padding-bottom: var(--primitives-spacing-5);
+  }
+
   .buttonRow {
     flex-direction: column-reverse;
     gap: var(--primitives-spacing-3);

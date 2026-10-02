@@ -175,6 +175,11 @@ export type { PrefetchedAllocation, UseAllocationsConfig } from './hooks/useAllo
 export { useContractState } from './hooks/useContractState.js'
 export type { ContractState } from './hooks/useContractState.js'
 
+export {
+  useIsMobileLayout,
+  visualViewportBottomInset,
+} from './hooks/useIsMobileLayout.js'
+
 // Components
 export { StatsBar } from './components/StatsBar.js'
 export type { StatsBarProps, HopStatsData, UserAllocation } from './components/StatsBar.js'
@@ -335,6 +340,7 @@ export {
   confirmParticipateClose,
   ParticipateFlowInviteSlots,
   MaxOutBanner,
+  MaxOutFlowStack,
   INVITE_LINK_STEPS,
   CROWDFUND_MODAL_STEPS,
 } from './components/ParticipateFlow/index.js'
@@ -367,8 +373,35 @@ export {
   InviteSlots,
   SlotCard,
   truncateAddress as inviteSlotTruncateAddress,
+  InviteActionScreen,
+  InviteActionSheet,
+  InviteMethodPicker,
+  INVITE_SHEET_EXIT_MS,
+  useInviteHopFocus,
+  InviteHopFocusChrome,
+  INVITE_FOCUS_TRANSITION_MS,
+  INVITE_LIST_ENTER_MS,
+  INVITE_COUNT_ROLL_DELAY_MS,
+  INVITE_COUNT_ROLL_MS,
 } from './components/InviteFlow/index.js'
-export type { SlotData, SlotStatus, SlotCardEnsResult } from './components/InviteFlow/index.js'
+export type {
+  SlotData,
+  SlotStatus,
+  SlotCardEnsResult,
+  InviteActionScreenProps,
+  CreatedInviteLink,
+  CreatedOnchainInvite,
+  InviteActionSheetProps,
+  InviteMethodPickerProps,
+  InviteHopFocus,
+  InviteHopFocusChromeProps,
+  InviteFocusView,
+} from './components/InviteFlow/index.js'
+
+export {
+  createDemoInviteLink,
+  demoInviteLink,
+} from './lib/demoInviteLink.js'
 
 export { CrowdfundToaster } from './components/CrowdfundToaster.js'
 

@@ -14,6 +14,7 @@ import {
 } from '../../../lib/amountInput'
 import { CROWDFUND_CONSTANTS } from '../../../lib/constants'
 import type { ParticipateStepBarProps } from '../participateFlowSteps'
+import maxOutStyles from './MaxOutBanner.module.css'
 
 /** Per-commit minimum (USD), from the active profile's MIN_COMMIT. The contract
  *  reverts a commit below this, so each hop's commit must individually clear it. */
@@ -43,8 +44,17 @@ export interface Step2MaxOutOption {
 
 /** Banner CTA for the self-fill ("max out") path. Can render inside the commit
  *  card (via the `maxOut` prop) or be hoisted above the card by a flow
- *  controller (Option A spike's "banner between the X and the modal"). */
-export function MaxOutBanner({ maxOut }: { maxOut: Step2MaxOutOption }) {
+ *  controller (desktop `aboveShell`; mobile uses `inShell` inside Step2Commit). */
+export function MaxOutBanner({
+  maxOut,
+  className,
+  placement,
+}: {
+  maxOut: Step2MaxOutOption
+  className?: string
+  /** Desktop hoist (`aboveShell`) vs mobile in-shell (`inShell`) visibility. */
+  placement?: 'aboveShell' | 'inShell'
+}) {
   const { ceilingUsd, newCommitUsd, inviteCount, onMaxOut, loading, balanceLimited, error } = maxOut
   // When the plan needs no self-invites (no slots available, or already spent),
   // "max out" is just a one-click commit-to-cap — drop the self-invite framing.
@@ -57,64 +67,57 @@ export function MaxOutBanner({ maxOut }: { maxOut: Step2MaxOutOption }) {
     : inviteCount > 0
       ? `Bundle ${invitePhrase} + per-hop commits (${commitUsd}) into one transaction.`
       : `Commit ${commitUsd} across all your hops in one transaction.`
+
+  const placementClass =
+    placement === 'aboveShell'
+      ? maxOutStyles.aboveShell
+      : placement === 'inShell'
+        ? maxOutStyles.inShell
+        : undefined
+
+  const button = (
+    <Button
+      className={maxOutStyles.cta}
+      variant="gradient"
+      size="md"
+      label={loading ? 'Preparing…' : 'Max out'}
+      showIcon={false}
+      disabled={loading || balanceLimited}
+      onClick={onMaxOut}
+    />
+  )
+
   return (
     <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 16,
-        padding: '14px 16px',
-        marginBottom: 18,
-        borderRadius: 14,
-        border: '1px solid rgba(168, 130, 255, 0.45)',
-        background:
-          'linear-gradient(120deg, rgba(124, 92, 255, 0.18), rgba(124, 92, 255, 0.06))',
-      }}
+      className={[maxOutStyles.banner, placementClass, className].filter(Boolean).join(' ')}
+      role="region"
+      aria-label="Commit the maximum"
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-        <span style={{ fontWeight: 600, fontSize: 14 }}>
+      <div className={maxOutStyles.copy}>
+        <p className={maxOutStyles.title}>
           Commit the maximum — up to ${ceilingUsd.toLocaleString()}
-        </span>
-        <span style={{ fontSize: 12, opacity: 0.75, lineHeight: 1.35 }}>{subtitle}</span>
-        {error && (
-          <span
-            style={{
-              fontSize: 12,
-              lineHeight: 1.35,
-              fontWeight: 600,
-              color: 'var(--semantic-color-status-warning)',
-            }}
-          >
+        </p>
+        <p className={maxOutStyles.subtitle}>{subtitle}</p>
+        {error ? (
+          <p className={maxOutStyles.error} role="alert">
             {error}
-          </span>
-        )}
+          </p>
+        ) : null}
       </div>
-      {(() => {
-        const button = (
-          <Button
-            variant="gradient"
-            size="md"
-            label={loading ? 'Preparing…' : 'Max out'}
-            showIcon={false}
-            disabled={loading || balanceLimited}
-            onClick={onMaxOut}
-          />
-        )
-        // Explain why the button is dead when it's disabled for balance. The
-        // Tooltip listens on its wrapper div, so hover works over the disabled
-        // button. Only wrap in the balance case so an enabled / loading button
-        // keeps its normal (no-tooltip) behavior.
-        return balanceLimited && !loading ? (
-          <Tooltip variant="centered" content="Insufficient balance">
-            {button}
-          </Tooltip>
-        ) : (
-          button
-        )
-      })()}
+      {balanceLimited && !loading ? (
+        <Tooltip variant="centered" content="Insufficient balance">
+          {button}
+        </Tooltip>
+      ) : (
+        button
+      )}
     </div>
   )
+}
+
+/** Layout wrapper for desktop max-out banner + step shell (mobile fills the panel). */
+export function MaxOutFlowStack({ children }: { children: React.ReactNode }) {
+  return <div className={maxOutStyles.stack}>{children}</div>
 }
 
 /** One per-hop input row for the multi-hop variant. The single-hop path is
@@ -291,6 +294,13 @@ function SingleHopVariant({
   const overBalance = amount > availableBalance
   const canFillMax = remainingCap > 0 && amount < remainingCap
 
+  const inShellBanner =
+    maxOut != null ? (
+      <div className={styles.maxOutSlot}>
+        <MaxOutBanner maxOut={maxOut} placement="inShell" />
+      </div>
+    ) : null
+
   function handleInput(raw: string) {
     setCommaError(isInvalidCommaInput(raw))
     const next = sanitizeAmountInput(raw)
@@ -327,6 +337,7 @@ function SingleHopVariant({
           onBack={onBack}
           onClose={onClose}
         />
+        {inShellBanner}
 
         <div className={styles.content}>
           <div className={styles.inputBlock}>
@@ -351,26 +362,28 @@ function SingleHopVariant({
           </div>
         </div>
 
-        <div className={styles.buttonRow}>
-          {onViewPosition ? (
-            <Button
-              variant="secondary"
-              size="lg"
-              label="View your position"
-              showIcon={false}
-              onClick={onViewPosition}
-            />
-          ) : (
-            showBack && (
+        <div className={styles.bottomDock}>
+          <div className={styles.buttonRow}>
+            {onViewPosition ? (
               <Button
                 variant="secondary"
                 size="lg"
-                label="Back"
+                label="View your position"
                 showIcon={false}
-                onClick={onBack}
+                onClick={onViewPosition}
               />
-            )
-          )}
+            ) : (
+              showBack && (
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  label="Back"
+                  showIcon={false}
+                  onClick={onBack}
+                />
+              )
+            )}
+          </div>
         </div>
       </div>
     )
@@ -385,9 +398,9 @@ function SingleHopVariant({
         onBack={onBack}
         onClose={onClose}
       />
+      {inShellBanner}
 
       <div className={styles.content}>
-        {maxOut && <MaxOutBanner maxOut={maxOut} />}
         <div className={styles.inputBlock}>
           <div className={styles.amountGroup}>
             {hopLabel && (
@@ -451,7 +464,9 @@ function SingleHopVariant({
             </div>
           </div>
         </div>
+      </div>
 
+      <div className={styles.bottomDock}>
         <div className={styles.allocationBlock}>
           <div className={styles.barSection}>
             <div
@@ -520,21 +535,21 @@ function SingleHopVariant({
             </span>
           </div>
         </div>
-      </div>
 
-      <div className={styles.buttonRow}>
-        <Button
-          variant="primary"
-          size="lg"
-          label={hasNewAmount ? 'Review' : 'Input amount'}
-          showIcon={false}
-          className={amount < MIN_COMMIT_USD || overBalance ? styles.ctaBlocked : undefined}
-          aria-disabled={amount < MIN_COMMIT_USD || overBalance || undefined}
-          onClick={() => {
-            if (amount < MIN_COMMIT_USD || overBalance) return
-            onNext(amount)
-          }}
-        />
+        <div className={styles.buttonRow}>
+          <Button
+            variant="primary"
+            size="lg"
+            label={hasNewAmount ? 'Review' : 'Input amount'}
+            showIcon={false}
+            className={amount < MIN_COMMIT_USD || overBalance ? styles.ctaBlocked : undefined}
+            aria-disabled={amount < MIN_COMMIT_USD || overBalance || undefined}
+            onClick={() => {
+              if (amount < MIN_COMMIT_USD || overBalance) return
+              onNext(amount)
+            }}
+          />
+        </div>
       </div>
     </div>
   )
@@ -666,6 +681,13 @@ function MultiHopVariant({
       (row) => row.existingCommittedUsdc > 0 && row.maxAmount - row.existingCommittedUsdc <= 0,
     )
 
+  const inShellBanner =
+    maxOut != null ? (
+      <div className={styles.maxOutSlot}>
+        <MaxOutBanner maxOut={maxOut} placement="inShell" />
+      </div>
+    ) : null
+
   if (allFullyCommitted) {
     return (
       <div className={styles.shell} data-flow-shell>
@@ -675,6 +697,7 @@ function MultiHopVariant({
           onBack={onBack}
           onClose={onClose}
         />
+        {inShellBanner}
 
         <div className={styles.content}>
           <div className={styles.inputBlock}>
@@ -687,26 +710,28 @@ function MultiHopVariant({
           </div>
         </div>
 
-        <div className={styles.buttonRow}>
-          {onViewPosition ? (
-            <Button
-              variant="secondary"
-              size="lg"
-              label="View your position"
-              showIcon={false}
-              onClick={onViewPosition}
-            />
-          ) : (
-            showBack && (
+        <div className={styles.bottomDock}>
+          <div className={styles.buttonRow}>
+            {onViewPosition ? (
               <Button
                 variant="secondary"
                 size="lg"
-                label="Back"
+                label="View your position"
                 showIcon={false}
-                onClick={onBack}
+                onClick={onViewPosition}
               />
-            )
-          )}
+            ) : (
+              showBack && (
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  label="Back"
+                  showIcon={false}
+                  onClick={onBack}
+                />
+              )
+            )}
+          </div>
         </div>
       </div>
     )
@@ -720,9 +745,9 @@ function MultiHopVariant({
         onBack={onBack}
         onClose={onClose}
       />
+      {inShellBanner}
 
       <div className={styles.content}>
-        {maxOut && <MaxOutBanner maxOut={maxOut} />}
         <div className={styles.multiList}>
           <p className={styles.multiAvailableLabel}>Balance {formatBalance(availableBalance)}</p>
 
@@ -761,7 +786,9 @@ function MultiHopVariant({
             )
           })}
         </div>
+      </div>
 
+      <div className={styles.bottomDock}>
         <div className={styles.allocationBlock}>
           <div className={styles.barSection}>
             <div
@@ -833,21 +860,21 @@ function MultiHopVariant({
           )}
           {commaError && <p className={styles.overBalance}>Use a period for decimals.</p>}
         </div>
-      </div>
 
-      <div className={styles.buttonRow}>
-        <Button
-          variant="primary"
-          size="lg"
-          label={totalNew > 0 ? 'Review' : 'Input amount'}
-          showIcon={false}
-          className={!canReview ? styles.ctaBlocked : undefined}
-          aria-disabled={!canReview || undefined}
-          onClick={() => {
-            if (!canReview) return
-            handleNext()
-          }}
-        />
+        <div className={styles.buttonRow}>
+          <Button
+            variant="primary"
+            size="lg"
+            label={totalNew > 0 ? 'Review' : 'Input amount'}
+            showIcon={false}
+            className={!canReview ? styles.ctaBlocked : undefined}
+            aria-disabled={!canReview || undefined}
+            onClick={() => {
+              if (!canReview) return
+              handleNext()
+            }}
+          />
+        </div>
       </div>
     </div>
   )

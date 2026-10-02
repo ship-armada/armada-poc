@@ -6,7 +6,10 @@ import * as THREE from 'three'
 import { ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline'
 import armadaSymbolUrl from '../../assets/armada-symbol.svg'
 import { GRAPH_HOP_NODE_COLORS } from '../../lib/graphHopColors.js'
+import { MOBILE_LAYOUT_MAX_WIDTH_PX } from '../../lib/viewportBreakpoints.js'
+import { useIsMobileLayout } from '../../hooks/useIsMobileLayout.js'
 import { SplashBackdrop } from '../SplashBackdrop.js'
+import styles from './NodeSphere.module.css'
 
 type NodeKind = 'Hop 0' | 'Hop 1' | 'Hop 2' | 'Multi-hop' | 'Your wallet'
 
@@ -17,6 +20,33 @@ type HoverState = {
   kind: NodeKind
   address: string
   committed: string
+}
+
+const TIP_WIDTH_PX = 272
+const TIP_HEIGHT_EST_PX = 120
+const TIP_GAP_PX = 14
+const TIP_VIEW_MARGIN_PX = 12
+
+function placeFloatingTip(
+  anchorX: number,
+  anchorY: number,
+  bounds: { left: number; top: number; right: number; bottom: number },
+): { x: number; y: number } {
+  let x = anchorX + TIP_GAP_PX
+  let y = anchorY - 12
+
+  if (x + TIP_WIDTH_PX > bounds.right - TIP_VIEW_MARGIN_PX) {
+    x = anchorX - TIP_GAP_PX - TIP_WIDTH_PX
+  }
+  x = Math.min(
+    Math.max(x, bounds.left + TIP_VIEW_MARGIN_PX),
+    bounds.right - TIP_WIDTH_PX - TIP_VIEW_MARGIN_PX,
+  )
+  y = Math.min(
+    Math.max(y, bounds.top + TIP_VIEW_MARGIN_PX),
+    bounds.bottom - TIP_HEIGHT_EST_PX - TIP_VIEW_MARGIN_PX,
+  )
+  return { x, y }
 }
 
 type NodeMeta = { kind: NodeKind; address: string; committed: string; ghost?: boolean; multiHop?: boolean; inviters?: string[] }
@@ -244,6 +274,8 @@ export function NodeSphere({
 
   const hoverActiveRef = useRef(false)
   const isDraggingRef = useRef(false)
+  const isMobile = useIsMobileLayout()
+  const isMobileRef = useRef(isMobile)
   const highlightRef = useRef<string | undefined>(highlightAddress)
   const filterRef = useRef<NodeSphereProps['filterKind']>(filterKind)
   const interactionDisabledRef = useRef(!!interactionDisabled)
@@ -258,6 +290,10 @@ export function NodeSphere({
     // Stable per mount, changes on reload unless caller provides a seed.
     return scenarioSeed ?? Math.floor(Math.random() * 1_000_000_000)
   }, [scenarioSeed])
+
+  useEffect(() => {
+    isMobileRef.current = isMobile
+  }, [isMobile])
 
   // Avoid tearing down/recreating Three.js scene due to new array references.
   // `multiHop` and `inviters` are baked into the key so the scene rebuilds when
@@ -797,14 +833,23 @@ export function NodeSphere({
         hovered = hit
         const meta = hit.userData as NodeMeta
         hoverActiveRef.current = true
-        setHover({
-          visible: true,
-          x: e.clientX + 14,
-          y: e.clientY + 14,
-          kind: meta.kind,
-          address: meta.address,
-          committed: meta.committed,
-        })
+        // Touch/mobile uses the docked selection tip — skip cursor-follow hover cards.
+        if (!isMobileRef.current) {
+          const placed = placeFloatingTip(e.clientX, e.clientY, {
+            left: 0,
+            top: 0,
+            right: window.innerWidth,
+            bottom: window.innerHeight,
+          })
+          setHover({
+            visible: true,
+            x: placed.x,
+            y: placed.y,
+            kind: meta.kind,
+            address: meta.address,
+            committed: meta.committed,
+          })
+        }
       } else {
         hovered = null
         hoverActiveRef.current = false
@@ -914,11 +959,14 @@ export function NodeSphere({
     let cameraResetActive = false
     let userAdjustedView = false
 
-    // Focused nodes sit slightly right and above center so tooltips have room
-    // and so the MyPosition view's taller right-corner invites card doesn't
-    // clip the locked wallet node.
-    const FOCUS_OFFSET_X = 0.18
-    const FOCUS_OFFSET_Y = 0.28
+    // Focused nodes sit slightly right and above center so floating tooltips
+    // have room. On mobile the tip docks to the graph bottom, so keep the node
+    // more centered.
+    const mobileFocus = window.matchMedia(
+      `(max-width: ${MOBILE_LAYOUT_MAX_WIDTH_PX}px)`,
+    ).matches
+    const FOCUS_OFFSET_X = mobileFocus ? 0 : 0.18
+    const FOCUS_OFFSET_Y = mobileFocus ? 0.16 : 0.28
     const FOCUS_INNER_RADIUS = 2.6
     const FOCUS_OUTER_RADIUS = 6.2
     const FOCUS_ZOOM_OUT_MAX = 0.65
@@ -1146,13 +1194,17 @@ export function NodeSphere({
           selectedMesh.getWorldPosition(world)
           const projected = world.project(camera)
           const rect = renderer.domElement.getBoundingClientRect()
-          const x = rect.left + (projected.x * 0.5 + 0.5) * rect.width + 14
-          const y = rect.top + (-projected.y * 0.5 + 0.5) * rect.height - 12
+          const anchorX = rect.left + (projected.x * 0.5 + 0.5) * rect.width
+          const anchorY = rect.top + (-projected.y * 0.5 + 0.5) * rect.height
+          // Mobile docks the tip in CSS — x/y unused. Desktop floats with clamp/flip.
+          const placed = isMobileRef.current
+            ? { x: anchorX, y: anchorY }
+            : placeFloatingTip(anchorX, anchorY, rect)
 
           const next: HoverState = {
             visible: true,
-            x,
-            y,
+            x: placed.x,
+            y: placed.y,
             kind: meta.kind,
             address: meta.address,
             committed: meta.committed,
@@ -1249,88 +1301,38 @@ export function NodeSphere({
           child) so the nodes composite over it. The photo competes with the
           nodes, so we show only a subtle vignette wash (no photo) in both themes. */}
       <SplashBackdrop vignetteOnly />
-      {/* Hover tooltip — follows the cursor over selectable nodes. Mirrors
-          the selected-tip's "Your wallet" eyebrow + truncated-address
-          rendering so live 40-hex addresses don't overflow the 272px box. */}
-      {!hideNodePopover && SHOW_HOVER_POPUP && hover && hover.visible && (() => {
-        const hoverIsOwnWallet =
-          !!walletAddress && hover.address.toLowerCase() === walletAddress.toLowerCase()
-        const hoverEyebrow = hoverIsOwnWallet ? 'Your wallet' : hover.kind
-        const hoverTruncated =
-          hover.address.length > 12
-            ? `${hover.address.slice(0, 6)}…${hover.address.slice(-4)}`
-            : hover.address
-        return (
-        <div
-          style={{
-            position: 'fixed',
-            left: hover.x,
-            top: hover.y,
-            zIndex: 30,
-            width: '272px',
-            padding: 'var(--primitives-spacing-5)',
-            borderRadius: 'calc(var(--semantic-borderRadius-card) * 1px)',
-            border: '1px solid color-mix(in srgb, var(--semantic-color-text-primary) 16%, transparent)',
-            background: 'color-mix(in srgb, var(--semantic-color-surface-default) 55%, transparent)',
-            backdropFilter: 'blur(14px)',
-            WebkitBackdropFilter: 'blur(14px)',
-            color: 'var(--semantic-color-text-secondary)',
-            fontFamily: 'var(--primitives-fontFamily-ui), sans-serif',
-            pointerEvents: 'none',
-            boxSizing: 'border-box',
-            overflow: 'hidden',
-          }}
-        >
-          <div
-            style={{
-              position: 'absolute',
-              top: 'var(--primitives-spacing-4)',
-              right: 'var(--primitives-spacing-4)',
-              width: 16,
-              height: 16,
-              color: 'var(--semantic-color-text-dim)',
-              opacity: 0.9,
-            }}
-            aria-hidden
-          >
-            <ArrowTopRightOnSquareIcon width={16} height={16} />
-          </div>
-          <div
-            style={{
-              fontSize: 'var(--semantic-component-tag-font-size)',
-              letterSpacing: 'var(--primitives-letterSpacing-widest)',
-              textTransform: 'uppercase',
-              color: 'var(--semantic-color-text-secondary)',
-              marginBottom: 'var(--primitives-spacing-2)',
-            }}
-          >
-            {hoverEyebrow}
-          </div>
-          <div
-            style={{
-              fontFamily: 'var(--primitives-fontFamily-mono), monospace',
-              fontSize: 'var(--primitives-fontSize-2xl)',
-              letterSpacing: 'var(--primitives-letterSpacing-tight)',
-              color: 'var(--semantic-color-text-primary)',
-              marginBottom: 'var(--primitives-spacing-3)',
-            }}
-          >
-            {hoverTruncated}
-          </div>
-          <div style={{ fontSize: 'var(--primitives-fontSize-lg)', opacity: 0.8, marginBottom: 'var(--primitives-spacing-2)' }}>
-            {hover.committed}
-          </div>
-        </div>
-        )
-      })()}
+      {/* Hover tooltip — desktop only (mobile uses the docked selection tip). */}
+      {!hideNodePopover &&
+        !isMobile &&
+        SHOW_HOVER_POPUP &&
+        hover &&
+        hover.visible &&
+        (!selectedTip?.visible || hover.address !== selectedTip.address) &&
+        (() => {
+          const hoverIsOwnWallet =
+            !!walletAddress && hover.address.toLowerCase() === walletAddress.toLowerCase()
+          const hoverEyebrow = hoverIsOwnWallet ? 'Your wallet' : hover.kind
+          const hoverTruncated =
+            hover.address.length > 12
+              ? `${hover.address.slice(0, 6)}…${hover.address.slice(-4)}`
+              : hover.address
+          return (
+            <div
+              className={[styles.tip, styles.tipFloat].join(' ')}
+              style={{ left: hover.x, top: hover.y, zIndex: 30 }}
+            >
+              <div className={styles.tipIcon} aria-hidden>
+                <ArrowTopRightOnSquareIcon width={16} height={16} />
+              </div>
+              <div className={styles.tipKind}>{hoverEyebrow}</div>
+              <div className={styles.tipAddressHover}>{hoverTruncated}</div>
+              <div className={styles.tipCommittedHover}>{hover.committed}</div>
+            </div>
+          )
+        })()}
 
-      {/* Selected tooltip (pinned) */}
+      {/* Selected tooltip — docked inside the graph on mobile; floats near node on desktop. */}
       {!hideNodePopover && selectedTip?.visible && (() => {
-        // Derive display fields. When the selected address is the connected
-        // wallet, the tooltip's eyebrow swaps from the hop label to "YOUR
-        // WALLET" (matches the designer's mockup). The address itself is
-        // always truncated for display — live graph addresses are full
-        // 40-hex hex and overflow the 272px tooltip width otherwise.
         const isOwnWallet =
           !!walletAddress && selectedTip.address.toLowerCase() === walletAddress.toLowerCase()
         const eyebrow = isOwnWallet ? 'Your wallet' : selectedTip.kind
@@ -1342,97 +1344,31 @@ export function NodeSphere({
           ? `${etherscanBaseUrl}/address/${selectedTip.address}`
           : null
         return (
-        <div
-          style={{
-            position: 'fixed',
-            left: selectedTip.x,
-            top: selectedTip.y,
-            zIndex: 29,
-            width: '272px',
-            padding: 'var(--primitives-spacing-5)',
-            borderRadius: 'calc(var(--semantic-borderRadius-card) * 1px)',
-            border: '1px solid color-mix(in srgb, var(--semantic-color-text-primary) 16%, transparent)',
-            background: 'color-mix(in srgb, var(--semantic-color-surface-default) 55%, transparent)',
-            backdropFilter: 'blur(14px)',
-            WebkitBackdropFilter: 'blur(14px)',
-            color: 'var(--semantic-color-text-secondary)',
-            fontFamily: 'var(--primitives-fontFamily-ui), sans-serif',
-            // Tooltip is non-interactive for everything except the explorer
-            // link, which restores its own pointer events below.
-            pointerEvents: 'none',
-            boxSizing: 'border-box',
-            overflow: 'hidden',
-          }}
-        >
-          {explorerHref ? (
-            <a
-              href={explorerHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="View address on block explorer"
-              // CrowdfundExperience attaches a window-level `pointerdown`
-              // listener on the Crowdfund view that deselects the active node
-              // for any click outside the participants panel. The tooltip is
-              // outside that panel, so without `stopPropagation` here the
-              // link's pointerdown would deselect — unmounting the tooltip
-              // before the synthetic click ever resolves on the <a>. Stop the
-              // propagation at the link itself; My Position doesn't install
-              // the same listener, so the prior behavior is unchanged there.
-              onPointerDown={(e) => e.stopPropagation()}
-              style={{
-                position: 'absolute',
-                top: 'var(--primitives-spacing-4)',
-                right: 'var(--primitives-spacing-4)',
-                width: 16,
-                height: 16,
-                color: 'var(--semantic-color-text-dim)',
-                opacity: 0.9,
-                pointerEvents: 'auto',
-              }}
-            >
-              <ArrowTopRightOnSquareIcon width={16} height={16} />
-            </a>
-          ) : (
-            <div
-              style={{
-                position: 'absolute',
-                top: 'var(--primitives-spacing-4)',
-                right: 'var(--primitives-spacing-4)',
-                width: 16,
-                height: 16,
-                color: 'var(--semantic-color-text-dim)',
-                opacity: 0.9,
-              }}
-              aria-hidden
-            >
-              <ArrowTopRightOnSquareIcon width={16} height={16} />
-            </div>
-          )}
           <div
-            style={{
-              fontSize: 'var(--semantic-component-tag-font-size)',
-              letterSpacing: 'var(--primitives-letterSpacing-widest)',
-              textTransform: 'uppercase',
-              color: 'var(--semantic-color-text-secondary)',
-              marginBottom: 'var(--primitives-spacing-2)',
-            }}
+            className={[styles.tip, isMobile ? styles.tipDocked : styles.tipFloat].join(' ')}
+            style={isMobile ? undefined : { left: selectedTip.x, top: selectedTip.y }}
+            role="status"
           >
-            {eyebrow}
+            {explorerHref ? (
+              <a
+                href={explorerHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="View address on block explorer"
+                className={[styles.tipIcon, styles.tipInteractive].join(' ')}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <ArrowTopRightOnSquareIcon width={16} height={16} />
+              </a>
+            ) : (
+              <div className={styles.tipIcon} aria-hidden>
+                <ArrowTopRightOnSquareIcon width={16} height={16} />
+              </div>
+            )}
+            <div className={styles.tipKind}>{eyebrow}</div>
+            <div className={styles.tipAddress}>{truncated}</div>
+            <div className={styles.tipCommitted}>{selectedTip.committed}</div>
           </div>
-          <div
-            style={{
-              fontFamily: 'var(--primitives-fontFamily-mono), monospace',
-              fontSize: 'calc(var(--primitives-fontSize-lg) * 1px)',
-              fontWeight: 600,
-              color: 'var(--semantic-color-text-primary)',
-            }}
-          >
-            {truncated}
-          </div>
-          <div style={{ marginTop: 'var(--primitives-spacing-2)', color: 'var(--semantic-color-text-muted)' }}>
-            {selectedTip.committed}
-          </div>
-        </div>
         )
       })()}
     </div>

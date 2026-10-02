@@ -8,6 +8,7 @@ import armadaSymbol from '../../assets/armada-symbol-color.png'
 import styles from './ParticipateFlowModal.module.css'
 
 const EXIT_MS = 280
+const MODAL_OPEN_ATTR = 'data-flow-modal-open'
 
 const CLOSE_CONFIRM_MESSAGE =
   'A transaction is still running. It will continue, and you can reopen Participate to finish the remaining steps. Close?'
@@ -97,23 +98,31 @@ export function ParticipateFlowModal({
     // and restore scroll position on close.
     const html = document.documentElement
     const body = document.body
+    const root = document.getElementById('root')
     const scrollY = window.scrollY
     const prev = {
       htmlOverflow: html.style.overflow,
+      htmlOverscroll: html.style.overscrollBehavior,
       bodyOverflow: body.style.overflow,
+      bodyOverscroll: body.style.overscrollBehavior,
       bodyPosition: body.style.position,
       bodyTop: body.style.top,
       bodyLeft: body.style.left,
       bodyRight: body.style.right,
       bodyWidth: body.style.width,
+      rootInert: root?.inert ?? false,
     }
     html.style.overflow = 'hidden'
+    html.style.overscrollBehavior = 'none'
+    html.setAttribute(MODAL_OPEN_ATTR, '')
     body.style.overflow = 'hidden'
+    body.style.overscrollBehavior = 'none'
     body.style.position = 'fixed'
     body.style.top = `-${scrollY}px`
     body.style.left = '0'
     body.style.right = '0'
     body.style.width = '100%'
+    if (root) root.inert = true
 
     // Move focus into the dialog. Steps that draw their own chrome (FlowChrome's
     // back / close) leave `showClose` false and render no footer, so fall
@@ -139,12 +148,16 @@ export function ParticipateFlowModal({
 
     return () => {
       html.style.overflow = prev.htmlOverflow
+      html.style.overscrollBehavior = prev.htmlOverscroll
+      html.removeAttribute(MODAL_OPEN_ATTR)
       body.style.overflow = prev.bodyOverflow
+      body.style.overscrollBehavior = prev.bodyOverscroll
       body.style.position = prev.bodyPosition
       body.style.top = prev.bodyTop
       body.style.left = prev.bodyLeft
       body.style.right = prev.bodyRight
       body.style.width = prev.bodyWidth
+      if (root) root.inert = prev.rootInert
       window.scrollTo(0, scrollY)
       window.removeEventListener('keydown', onKeyDown)
     }

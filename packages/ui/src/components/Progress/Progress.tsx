@@ -1,7 +1,15 @@
 // ABOUTME: Crowdfund progress card — committed amount, gradient fill bar, threshold line, and status tags.
 // ABOUTME: Ported from the armada-crowdfund mockup; under 48h remaining the time-left tag is a live HH:MM:SS counter.
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import {
+  cloneElement,
+  isValidElement,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from 'react'
 import { BarTrackTicks } from '../BarTrackTicks'
 import { Tag, type TagDot } from '../Tag'
 import { Tooltip } from '../Tooltip'
@@ -240,6 +248,12 @@ export function Progress({
             </div>
           </div>
         </div>
+
+        {headerAction && isValidElement(headerAction) ? (
+          <div className={styles.footerAction}>
+            {cloneElement(headerAction as ReactElement)}
+          </div>
+        ) : null}
       </div>
     </div>
   )

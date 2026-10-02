@@ -1,5 +1,5 @@
 /* ABOUTME: Layout + scroll container for the invite-slots step rendered inside the Participate modal. */
-/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup (ParticipateFlow/ParticipateFlowInviteSlots.module.css). */
+/* ABOUTME: Ported from the armada-crowdfund mockup; mobile fills the full-page shell with pinned chrome/CTA. */
 
 .layout {
   display: flex;
@@ -15,6 +15,25 @@
   display: flex;
   flex-direction: column;
   overflow: visible;
+}
+
+.chromeBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+  flex-shrink: 0;
+  width: 100%;
+  min-width: 0;
+}
+
+.subtitle {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-muted);
+  line-height: 1.5;
+  text-align: left;
 }
 
 .footer {
@@ -44,4 +63,36 @@
   font-size: calc(var(--primitives-fontSize-base) * 1px);
   color: var(--semantic-color-text-muted);
   text-align: center;
+}
+
+@media (max-width: 767px) {
+  .layout {
+    height: 100%;
+    min-height: 0;
+    align-items: stretch;
+    gap: 0;
+  }
+
+  .shell {
+    flex: 1;
+    min-height: 0;
+    height: auto !important;
+    overflow: hidden;
+  }
+
+  .footer {
+    flex-shrink: 0;
+    padding: var(--primitives-spacing-4) var(--primitives-spacing-5)
+      max(var(--primitives-spacing-5), env(safe-area-inset-bottom, 0px));
+  }
+
+  .scroll {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+
+  .scroll::-webkit-scrollbar {
+    display: none;
+  }
 }

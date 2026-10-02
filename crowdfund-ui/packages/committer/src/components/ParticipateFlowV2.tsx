@@ -18,6 +18,7 @@ import {
   StepBeforeYouStart,
   confirmParticipateClose,
   MaxOutBanner,
+  MaxOutFlowStack,
   hopPillDotColor,
   truncateAddress,
   type CrowdfundInviteSlotSection,
@@ -446,13 +447,15 @@ export function ParticipateFlowV2({
     // fall back to live local state.
     const snap = pipeline.state.confirmation
     return (
-      // Banner hoisted ABOVE the card (between the X and the modal), consistent
-      // with the commit step. When commit headroom still remains (fully
-      // committed at current caps but self-fill can raise them, or a partial
-      // commit), it offers Max out here instead of a dead-end; gated by
-      // `showMaxOut`, so it hides once there's nothing left to maximize.
-      <div style={{ width: '100%' }}>
-        {maxOutOption && <MaxOutBanner maxOut={maxOutOption} />}
+      // Banner hoisted ABOVE the card on desktop; mobile shows it inside Step2Commit.
+      // When commit headroom still remains (fully committed at current caps but
+      // self-fill can raise them, or a partial commit), it offers Max out here
+      // instead of a dead-end; gated by `showMaxOut`, so it hides once there's
+      // nothing left to maximize.
+      <MaxOutFlowStack>
+        {maxOutOption ? (
+          <MaxOutBanner maxOut={maxOutOption} placement="aboveShell" />
+        ) : null}
         <Step5Confirmation
           onViewPosition={onGoToMyPosition}
           onBackToCrowdfund={onGoToNetwork}
@@ -490,7 +493,7 @@ export function ParticipateFlowV2({
           explorerBaseUrl={getExplorerUrl()}
           secondsLeft={secondsLeft}
         />
-      </div>
+      </MaxOutFlowStack>
     )
   }
 
@@ -651,6 +654,7 @@ export function ParticipateFlowV2({
         secondsLeft={secondsLeft}
         hideConnectEyebrow
         onJoin={() => setStep('beforeYouStart')}
+        onClose={handleClose}
       />
     )
   }
@@ -721,6 +725,7 @@ export function ParticipateFlowV2({
           showBack={showSplash}
           onBack={() => (showSplash ? setStep('beforeYouStart') : onGoToNetwork())}
           onClose={handleClose}
+          maxOut={maxOutOption ?? undefined}
         />
       )
     } else if (primaryPosition) {
@@ -747,15 +752,18 @@ export function ParticipateFlowV2({
           initialAmount={amounts[primaryPosition.hop]}
           hopLabel={HOP_LABELS[primaryPosition.hop]}
           hopColor={hopPillDotColor(HOP_DOT_KEYS[primaryPosition.hop])}
+          maxOut={maxOutOption ?? undefined}
         />
       )
     }
     if (!commitCard) return null
     return (
-      <div style={{ width: '100%' }}>
-        {maxOutOption && <MaxOutBanner maxOut={maxOutOption} />}
+      <MaxOutFlowStack>
+        {maxOutOption ? (
+          <MaxOutBanner maxOut={maxOutOption} placement="aboveShell" />
+        ) : null}
         {commitCard}
-      </div>
+      </MaxOutFlowStack>
     )
   }
 
@@ -893,6 +901,8 @@ export function ParticipateFlowV2({
           sections={inviteSlotSections}
           selfWalletAddress={walletAddress ?? undefined}
           onDoItLater={onGoToMyPosition}
+          onBack={() => setStep('confirmation')}
+          onClose={handleClose}
           socials={<FooterSocials />}
         />
       )

@@ -30,6 +30,14 @@ describe('PageNav', () => {
     expect(screen.getByRole('button', { name: 'Claim' })).toBeEnabled()
   })
 
+  it('never marks Claim as the selected page tab', () => {
+    render(<PageNav current="claim" onChange={vi.fn()} claimEnabled />)
+    expect(screen.getByRole('button', { name: 'Claim' })).not.toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+  })
+
   it('no longer renders the social links in the header', () => {
     render(<PageNav current="network" onChange={vi.fn()} />)
     expect(screen.queryByRole('link', { name: 'Armada on Discord' })).toBeNull()

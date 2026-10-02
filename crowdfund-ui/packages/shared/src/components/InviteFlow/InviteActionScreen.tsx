@@ -94,6 +94,11 @@ export interface InviteActionScreenProps {
   copiedInviteId?: number | null
   /** Real ENS resolver — omit to use the internal mock (showcase only). */
   resolveEns?: (input: string) => Promise<SlotCardEnsResult>
+  /**
+   * `panel` — fills the parent shell (desktop in-place).
+   * `sheet` — content-sized for mobile bottom sheet.
+   */
+  layout?: 'panel' | 'sheet'
 }
 
 export function InviteActionScreen({
@@ -112,6 +117,7 @@ export function InviteActionScreen({
   selfWalletAddress,
   copiedInviteId = null,
   resolveEns,
+  layout = 'panel',
 }: InviteActionScreenProps) {
   const [addressInput, setAddressInput] = useState('')
   const addressInputRef = useRef(addressInput)
@@ -195,12 +201,14 @@ export function InviteActionScreen({
         : loading
 
   useEffect(() => {
+    // Sheet layout: never autofocus — that opens the mobile keyboard and clips the sheet.
+    if (layout === 'sheet') return
     if (method !== 'onchain' || createdLink || createdOnchain) return
     const id = window.requestAnimationFrame(() => {
       addressInputElRef.current?.focus()
     })
     return () => window.cancelAnimationFrame(id)
-  }, [method, createdLink, createdOnchain])
+  }, [layout, method, createdLink, createdOnchain])
 
   useEffect(() => {
     if (method !== 'onchain' || createdOnchain || hasAddressInput) {
@@ -408,11 +416,15 @@ export function InviteActionScreen({
       <p className={styles.slotLabel}>Slot {slotId}</p>
     )
 
+  const rootClass = [styles.root, layout === 'sheet' ? styles.rootSheet : undefined]
+    .filter(Boolean)
+    .join(' ')
+
   if (createdLink) {
     const copied = copiedInviteId === createdLink.id
     const path = inviteLinkPath(createdLink.link)
     return (
-      <div className={styles.root}>
+      <div className={rootClass}>
         <div className={styles.topRow}>
           <div className={styles.titleBlock}>
             {hopTag}
@@ -505,7 +517,7 @@ export function InviteActionScreen({
     const display =
       createdOnchain.ensName ?? truncateAddress(createdOnchain.address)
     return (
-      <div className={styles.root}>
+      <div className={rootClass}>
         <div className={styles.topRow}>
           <div className={styles.titleBlock}>
             {hopTag}
@@ -546,7 +558,7 @@ export function InviteActionScreen({
   }
 
   return (
-    <div className={styles.root}>
+    <div className={rootClass}>
       <div className={styles.topRow}>
         <div className={styles.titleBlock}>
           {hopTag}

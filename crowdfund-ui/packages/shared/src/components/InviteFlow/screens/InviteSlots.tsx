@@ -6,6 +6,7 @@ import styles from './InviteSlots.module.css'
 import { Tooltip } from '@armada/ui'
 import SlotCard, { type SlotData } from './SlotCard'
 import { INVITE_METHOD_PICKER_UX } from '../../../lib/inviteUx'
+import { createDemoInviteLink } from '../../../lib/demoInviteLink'
 import { InviteFocusChrome, useInviteSlotFocus } from '../useInviteSlotFocus'
 
 interface InviteSlotsProps {
@@ -31,7 +32,7 @@ export default function InviteSlots({
     setLoadingId(slotId)
     await new Promise(r => setTimeout(r, 1200))
     const expiresAt = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000)
-    const link = `https://fund.armada.blue/join?invite=${Math.random().toString(36).slice(2, 10)}&hop=${hopLevel.toLowerCase()}`
+    const link = createDemoInviteLink(hopLevel.toLowerCase())
     setSlots(prev =>
       prev.map(s =>
         s.id === slotId ? { ...s, status: 'link-active', link, expiresAt } : s

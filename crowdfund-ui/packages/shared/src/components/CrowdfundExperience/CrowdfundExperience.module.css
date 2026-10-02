@@ -192,8 +192,15 @@
   .page {
     height: auto;
     min-height: 100vh;
-    overflow-x: hidden;
-    overflow-y: visible;
+    overflow: visible;
+    box-sizing: border-box;
+  }
+
+  /* Modal open — freeze the page scroller so the full-view flow stays locked. */
+  :global(html[data-flow-modal-open]) .page {
+    overflow: hidden !important;
+    overscroll-behavior: none;
+    touch-action: none;
   }
 
   .experienceLayout {
@@ -206,6 +213,7 @@
       var(--primitives-spacing-5)
       var(--primitives-spacing-6);
     box-sizing: border-box;
+    overflow: visible;
   }
 
   .graphHost {
@@ -217,7 +225,7 @@
     min-height: 280px;
     border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
     border: 1px solid var(--semantic-color-border-default);
-    background: var(--semantic-color-surface-raised);
+    background: var(--semantic-color-surface-bg);
     overflow: hidden;
     z-index: 1;
   }
@@ -317,8 +325,17 @@
     z-index: 10;
   }
 
-  /* My Position view has no graph on mobile — the position cards stack alone. */
+  /* My Position: position → whitelist → locked invite graph. */
   .experienceLayoutMyPosition .graphHost {
-    display: none;
+    display: block;
+    order: 3;
+  }
+
+  .experienceLayoutMyPosition .leftCorner {
+    order: 1;
+  }
+
+  .experienceLayoutMyPosition .rightCorner {
+    order: 2;
   }
 }

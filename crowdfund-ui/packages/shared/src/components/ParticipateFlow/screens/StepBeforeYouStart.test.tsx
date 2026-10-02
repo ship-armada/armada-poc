@@ -3,7 +3,7 @@
 // @vitest-environment jsdom
 
 import { render, screen } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import StepBeforeYouStart from './StepBeforeYouStart.js'
 
 const CROWDFUND = '0x' + 'c'.repeat(40)
@@ -43,5 +43,32 @@ describe('StepBeforeYouStart resource links', () => {
     expect(screen.getByRole('link', { name: /Discord/ }).getAttribute('href')).toBe(
       'https://discord.com/invite/ship-armada',
     )
+  })
+})
+
+describe('StepBeforeYouStart refund threshold', () => {
+  afterEach(() => {
+    vi.doUnmock('../../../lib/constants')
+    vi.resetModules()
+  })
+
+  it('states the mainnet minimum raise by default', () => {
+    render(<StepBeforeYouStart onBack={vi.fn()} onContinue={vi.fn()} />)
+    expect(screen.getByText(/If the raise ends under \$1,000,000, everyone gets a full refund\./)).toBeTruthy()
+  })
+
+  it('states the active profile\'s minimum raise (e.g. medi: $800)', async () => {
+    // The profile is fixed at build time, so swap the constants module in directly.
+    vi.doMock('../../../lib/constants', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../../lib/constants')>()
+      return {
+        ...actual,
+        CROWDFUND_CONSTANTS: { ...actual.CROWDFUND_CONSTANTS, MIN_SALE: 800n * 10n ** 6n },
+      }
+    })
+    vi.resetModules()
+    const { default: MediStep } = await import('./StepBeforeYouStart.js')
+    render(<MediStep onBack={vi.fn()} onContinue={vi.fn()} />)
+    expect(screen.getByText(/If the raise ends under \$800, everyone gets a full refund\./)).toBeTruthy()
   })
 })

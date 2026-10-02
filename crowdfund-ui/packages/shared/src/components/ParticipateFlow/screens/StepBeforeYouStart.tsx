@@ -9,6 +9,7 @@ import { hopPillDotColor } from '../../../lib/graphHopColors'
 import { DEMO_WALLET, DEMO_WALLET_DISPLAY } from '../../MyPosition/myPositionDemo'
 import { FlowChrome } from '../FlowChrome'
 import { DISCORD_URL, X_URL } from '../../../lib/socials'
+import { CROWDFUND_CONSTANTS } from '../../../lib/constants'
 import styles from './StepBeforeYouStart.module.css'
 
 const HOP_TAG_LABEL: Record<HopVariant, string> = {
@@ -100,6 +101,9 @@ export interface StepBeforeYouStartProps {
   explorerBaseUrl?: string
 }
 
+// Minimum raise for the active profile (whole USDC), for the refund bullet.
+const minSaleUsdc = Number(CROWDFUND_CONSTANTS.MIN_SALE / 1_000_000n)
+
 function formatUsdc(value: number): string {
   return value.toLocaleString('en-US', {
     maximumFractionDigits: 0,
@@ -154,7 +158,7 @@ function knowItems(
 
   items.push(
     'Allocation isn’t guaranteed. If your hop is oversubscribed you get a pro-rata share and the rest comes back to you.',
-    'If the raise ends under $1M, everyone gets a full refund.',
+    `If the raise ends under $${formatUsdc(minSaleUsdc)}, everyone gets a full refund.`,
     'ARM is claimed after the window closes. Voting power starts once you claim and delegate.',
   )
   return items

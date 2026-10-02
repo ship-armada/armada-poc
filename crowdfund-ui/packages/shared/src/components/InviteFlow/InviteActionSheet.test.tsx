@@ -5,8 +5,11 @@
 import { render, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 import { InviteActionSheet } from './InviteActionSheet'
+import { ParticipateFlowModal } from '../ParticipateFlow/ParticipateFlowModal'
 
 beforeAll(() => {
+  // jsdom doesn't implement scrollTo; the page scroll lock calls it on release.
+  vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
   // Mobile layout — the sheet only renders (and listens for Escape) on mobile.
   window.matchMedia = ((query: string) => ({
     matches: true,
@@ -44,5 +47,24 @@ describe('InviteActionSheet dismissal', () => {
     fireEvent.click(scrim)
     fireEvent.keyDown(window, { key: 'Escape' })
     expect(onClose).not.toHaveBeenCalled()
+  })
+})
+
+describe('InviteActionSheet inside the participate modal', () => {
+  it('Escape closes only the sheet, not the modal underneath', () => {
+    const onSheetClose = vi.fn()
+    const onModalClose = vi.fn()
+    render(
+      <ParticipateFlowModal open onClose={onModalClose} ariaLabel="Participate">
+        <InviteActionSheet open onClose={onSheetClose} ariaLabel="Invite to Hop-1">
+          <div>invite form</div>
+        </InviteActionSheet>
+      </ParticipateFlowModal>,
+    )
+
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+
+    expect(onSheetClose).toHaveBeenCalledOnce()
+    expect(onModalClose).not.toHaveBeenCalled()
   })
 })

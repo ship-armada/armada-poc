@@ -2,11 +2,18 @@
 // ABOUTME: While a tx is in flight, closing must require confirmation.
 // @vitest-environment jsdom
 
-import { render, screen, fireEvent } from '@testing-library/react'
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { render, screen, fireEvent, cleanup } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ParticipateFlowModal } from './ParticipateFlowModal.js'
 
+beforeEach(() => {
+  // jsdom doesn't implement scrollTo; the page scroll lock calls it on release.
+  vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+})
+
 afterEach(() => {
+  // Unmount before restoring mocks so the lock's release still hits the stub.
+  cleanup()
   vi.restoreAllMocks()
 })
 

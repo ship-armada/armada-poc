@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { XMarkIcon } from '@heroicons/react/24/outline'
 import armadaSymbol from '../../assets/armada-symbol-color.png'
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock'
 import styles from './ParticipateFlowModal.module.css'
 
 const EXIT_MS = 280
@@ -104,35 +105,12 @@ export function ParticipateFlowModal({
   useEffect(() => {
     if (!mounted || exiting) return
 
-    // Lock page scroll while the modal is open. `overflow: hidden` alone is not
-    // enough on iOS / when the hero page scrolls the document — pin the body
-    // and restore scroll position on close.
+    // Page scroll is locked by `useBodyScrollLock` below; this marks the page
+    // as behind a modal and makes it inert.
     const html = document.documentElement
-    const body = document.body
     const root = document.getElementById('root')
-    const scrollY = window.scrollY
-    const prev = {
-      htmlOverflow: html.style.overflow,
-      htmlOverscroll: html.style.overscrollBehavior,
-      bodyOverflow: body.style.overflow,
-      bodyOverscroll: body.style.overscrollBehavior,
-      bodyPosition: body.style.position,
-      bodyTop: body.style.top,
-      bodyLeft: body.style.left,
-      bodyRight: body.style.right,
-      bodyWidth: body.style.width,
-      rootInert: root?.inert ?? false,
-    }
-    html.style.overflow = 'hidden'
-    html.style.overscrollBehavior = 'none'
+    const prevRootInert = root?.inert ?? false
     html.setAttribute(MODAL_OPEN_ATTR, '')
-    body.style.overflow = 'hidden'
-    body.style.overscrollBehavior = 'none'
-    body.style.position = 'fixed'
-    body.style.top = `-${scrollY}px`
-    body.style.left = '0'
-    body.style.right = '0'
-    body.style.width = '100%'
     if (root) root.inert = true
 
     // Move focus into the dialog. Steps that draw their own chrome (FlowChrome's
@@ -150,7 +128,9 @@ export function ParticipateFlowModal({
     }
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
+      // A sheet / menu layered over the modal handles Escape first (capture
+      // phase) and marks it — it closes that layer, not the modal.
+      if (e.key !== 'Escape' || e.defaultPrevented) return
       // Read refs directly so this effect needn't depend on requestClose.
       if (!confirmParticipateClose(confirmBeforeCloseRef.current, closeConfirmMessageRef.current)) return
       onCloseRef.current()
@@ -158,21 +138,13 @@ export function ParticipateFlowModal({
     window.addEventListener('keydown', onKeyDown)
 
     return () => {
-      html.style.overflow = prev.htmlOverflow
-      html.style.overscrollBehavior = prev.htmlOverscroll
       html.removeAttribute(MODAL_OPEN_ATTR)
-      body.style.overflow = prev.bodyOverflow
-      body.style.overscrollBehavior = prev.bodyOverscroll
-      body.style.position = prev.bodyPosition
-      body.style.top = prev.bodyTop
-      body.style.left = prev.bodyLeft
-      body.style.right = prev.bodyRight
-      body.style.width = prev.bodyWidth
-      if (root) root.inert = prev.rootInert
-      window.scrollTo(0, scrollY)
+      if (root) root.inert = prevRootInert
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [mounted, exiting, showClose])
+
+  useBodyScrollLock(mounted && !exiting)
 
   if (!mounted) return null
 

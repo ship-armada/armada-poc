@@ -8,6 +8,7 @@ import {
   useIsMobileLayout,
   visualViewportBottomInset,
 } from '../../hooks/useIsMobileLayout'
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock'
 import { INVITE_SHEET_EXIT_MS } from './inviteSheetMotion'
 import styles from './InviteMethodPicker.module.css'
 
@@ -143,10 +144,12 @@ export function InviteMethodPicker({
       onClose()
     }
 
-    window.addEventListener('keydown', onKeyDown)
+    // Capture phase so this top layer sees Escape before a modal underneath;
+    // `preventDefault` (above) tells that modal it was handled.
+    window.addEventListener('keydown', onKeyDown, true)
     window.addEventListener('pointerdown', onPointerDown)
     return () => {
-      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keydown', onKeyDown, true)
       window.removeEventListener('pointerdown', onPointerDown)
     }
   }, [open, exiting, anchorEl, onClose])
@@ -158,32 +161,7 @@ export function InviteMethodPicker({
     first?.focus()
   }, [open, exiting, isMobile])
 
-  useEffect(() => {
-    if (!mounted || !isMobile) return
-    const html = document.documentElement
-    const body = document.body
-    const scrollY = window.scrollY
-    const prev = {
-      htmlOverflow: html.style.overflow,
-      bodyOverflow: body.style.overflow,
-      bodyPosition: body.style.position,
-      bodyTop: body.style.top,
-      bodyWidth: body.style.width,
-    }
-    html.style.overflow = 'hidden'
-    body.style.overflow = 'hidden'
-    body.style.position = 'fixed'
-    body.style.top = `-${scrollY}px`
-    body.style.width = '100%'
-    return () => {
-      html.style.overflow = prev.htmlOverflow
-      body.style.overflow = prev.bodyOverflow
-      body.style.position = prev.bodyPosition
-      body.style.top = prev.bodyTop
-      body.style.width = prev.bodyWidth
-      window.scrollTo(0, scrollY)
-    }
-  }, [mounted, isMobile])
+  useBodyScrollLock(mounted && isMobile)
 
   if (!mounted || typeof document === 'undefined') return null
 

@@ -596,6 +596,8 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
             walletAddress={lowerAddress ?? ''}
             walletDisplayAddress={lowerAddress ? truncateAddress(lowerAddress) : '—'}
             windowClosesLabel={formatWindowCloses(contractState.windowEnd)}
+            contractAddress={deployment?.contracts.crowdfund}
+            explorerBaseUrl={getExplorerUrl()}
             // No modal to dismiss — Back and the X both leave for the crowdfund.
             onBack={handleClose}
             onContinue={() => transitionTo('commit')}

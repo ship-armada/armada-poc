@@ -662,6 +662,8 @@ export function ParticipateFlowV2({
         walletAddress={walletAddress ?? ''}
         walletDisplayAddress={walletAddress ? truncateAddress(walletAddress) : '—'}
         windowClosesLabel={formatWindowCloses(windowEndUnix)}
+        contractAddress={crowdfundAddress ?? undefined}
+        explorerBaseUrl={getExplorerUrl()}
         onBack={() => setStep('splash')}
         onContinue={() => setStep('commit')}
         onClose={handleClose}

@@ -49,12 +49,20 @@ const RESOURCE_LINKS = [
     href: 'https://x.com/ship_armada',
     Icon: XIcon,
   },
-  {
-    label: 'Contract',
-    href: 'https://sepolia.etherscan.io/address/0xA11Ada0000000000000000000000000000A11Ada',
-    Icon: DocumentTextIcon,
-  },
 ] as const
+
+/** Resource tiles plus a Contract tile when the deployed address and explorer are known. */
+function resourceLinks(contractAddress: string | undefined, explorerBaseUrl: string | undefined) {
+  if (!contractAddress || !explorerBaseUrl) return RESOURCE_LINKS
+  return [
+    ...RESOURCE_LINKS,
+    {
+      label: 'Contract',
+      href: `${explorerBaseUrl}/address/${contractAddress}`,
+      Icon: DocumentTextIcon,
+    },
+  ]
+}
 
 const NEXT_STEPS = [
   { label: 'Commit', hint: 'Choose how much USDC to lock' },
@@ -85,6 +93,10 @@ export interface StepBeforeYouStartProps {
   onClose?: () => void
   /** When false, hides the chrome back control (still keeps layout balance). */
   showBack?: boolean
+  /** Deployed crowdfund address for the Contract tile. Tile omitted when unset. */
+  contractAddress?: string
+  /** Block-explorer base URL (no trailing slash). Contract tile omitted when unset. */
+  explorerBaseUrl?: string
 }
 
 function formatUsdc(value: number): string {
@@ -159,6 +171,8 @@ export default function StepBeforeYouStart({
   onContinue,
   onClose,
   showBack = true,
+  contractAddress,
+  explorerBaseUrl,
 }: StepBeforeYouStartProps) {
   const display =
     walletDisplayAddress ??
@@ -255,7 +269,7 @@ export default function StepBeforeYouStart({
             </h3>
             <nav className={styles.resourceNav} aria-label="Useful links">
               <ul className={styles.iconLinkList}>
-                {RESOURCE_LINKS.map(({ label, href, Icon }) => (
+                {resourceLinks(contractAddress, explorerBaseUrl).map(({ label, href, Icon }) => (
                   <li key={href} className={styles.iconLinkItem}>
                     <a
                       className={styles.iconLink}

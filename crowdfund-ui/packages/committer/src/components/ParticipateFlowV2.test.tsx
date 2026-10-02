@@ -20,6 +20,12 @@ vi.mock('@rainbow-me/rainbowkit', () => ({
 vi.mock('wagmi', () => ({
   useDisconnect: () => ({ disconnect: vi.fn() }),
 }))
+// Local/test network mode has no block explorer; pin one so explorer links render.
+const EXPLORER = 'https://explorer.test'
+vi.mock('@/config/network', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/config/network')>()),
+  getExplorerUrl: () => EXPLORER,
+}))
 
 // Drive the approve/commit contract calls via the mocked ethers Contract.
 const approveSpy = vi.fn()
@@ -252,6 +258,14 @@ describe('ParticipateFlowV2 splash card', () => {
     // Continue → commit input appears.
     fireEvent.click(screen.getByRole('button', { name: 'Commit' }))
     expect(await screen.findByRole('textbox')).toBeTruthy()
+  })
+
+  it('links Before you start\'s Contract tile to the deployed crowdfund', async () => {
+    render(<ParticipateFlowV2 {...makeProps()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Join now' }))
+
+    const link = await screen.findByRole('link', { name: /Contract/ })
+    expect(link.getAttribute('href')).toBe(`${EXPLORER}/address/${CROWDFUND}`)
   })
 
   it('returns from Before you start to the splash on Back', async () => {

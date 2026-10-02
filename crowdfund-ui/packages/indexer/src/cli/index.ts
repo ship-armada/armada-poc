@@ -2,7 +2,7 @@
 // ABOUTME: Reads the durable JSON store and runs status/repair workflow commands.
 
 import { join } from 'node:path'
-import { JsonRpcProvider } from 'ethers'
+import { Contract, JsonRpcProvider } from 'ethers'
 import { getInitialCursor, readBooleanEnv, readNumberEnv, readRequiredEnv, readRequiredNumberEnv } from '../config.js'
 import { createIndexerStore } from '../db/createStore.js'
 import type { IndexerStore } from '../db/store.js'
@@ -10,6 +10,8 @@ import type { IngestRangeRecord } from '../types.js'
 import { parseCliArgs, runReadOnlyCommand } from './commands.js'
 import type { ParsedCliArgs } from './commands.js'
 import { createRpcChainStateReader } from '../alerts/chainState.js'
+import { CROWDFUND_ALERT_PARAMS_ABI, readCrowdfundAlertParams } from '../alerts/params.js'
+import type { CrowdfundAlertParamsReadable } from '../alerts/params.js'
 import { createFileAlertStateStore } from '../alerts/state.js'
 import { createDiscordNotifierFromEnv, runAlertsOnce } from '../alerts/runner.js'
 import type { CrowdfundParams } from '../alerts/types.js'
@@ -222,27 +224,26 @@ async function runCommand(args: ParsedCliArgs, store: IndexerStore): Promise<voi
   }
 
   if (args.command === 'evaluate-alerts') {
-    const params: CrowdfundParams = {
-      chainId: readRequiredNumberEnv('CROWDFUND_CHAIN_ID'),
-      contractAddress: readRequiredEnv('CROWDFUND_CONTRACT_ADDRESS'),
-      treasuryAddress: readRequiredEnv('CROWDFUND_TREASURY_ADDRESS'),
-      openTimestamp: readNumberEnv('CROWDFUND_OPEN_TIMESTAMP', 0),
-      week1Deadline: readNumberEnv('CROWDFUND_WEEK1_DEADLINE', 0),
-      commitmentDeadline: readNumberEnv('CROWDFUND_COMMITMENT_DEADLINE', 0),
+    const chainId = readRequiredNumberEnv('CROWDFUND_CHAIN_ID')
+    const contractAddress = readRequiredEnv('CROWDFUND_CONTRACT_ADDRESS')
+    const rpcUrl = readRequiredEnv('CROWDFUND_PRIMARY_RPC_URL')
+    await checkRpcChainIds([{ name: 'primary', url: rpcUrl }], chainId, readNumberEnv('CROWDFUND_RPC_TIMEOUT_MS', 15_000))
+    // Timing and treasury/USDC come from the contract, not hand-copied env values.
+    const paramsProvider = new JsonRpcProvider(rpcUrl)
+    let params: CrowdfundParams
+    let usdcAddress: string
+    try {
+      const crowdfund = new Contract(contractAddress, CROWDFUND_ALERT_PARAMS_ABI, paramsProvider) as unknown as CrowdfundAlertParamsReadable
+      ;({ params, usdcAddress } = await readCrowdfundAlertParams(crowdfund, chainId, contractAddress))
+    } finally {
+      paramsProvider.destroy()
     }
-    const rpcUrl = process.env.CROWDFUND_PRIMARY_RPC_URL
-    const usdcAddress = process.env.CROWDFUND_USDC_ADDRESS
-    if (rpcUrl) {
-      await checkRpcChainIds([{ name: 'primary', url: rpcUrl }], params.chainId, readNumberEnv('CROWDFUND_RPC_TIMEOUT_MS', 15_000))
-    }
-    const chainState = rpcUrl && usdcAddress
-      ? createRpcChainStateReader({
-          rpcUrl,
-          crowdfundAddress: params.contractAddress,
-          usdcAddress,
-          treasuryAddress: params.treasuryAddress,
-        })
-      : null
+    const chainState = createRpcChainStateReader({
+      rpcUrl,
+      crowdfundAddress: params.contractAddress,
+      usdcAddress,
+      treasuryAddress: params.treasuryAddress,
+    })
     const stateFile = process.env.CROWDFUND_ALERT_STATE_FILE
       ?? join(process.cwd(), 'data/crowdfund-indexer/alerts.json')
     let result
@@ -257,7 +258,7 @@ async function runCommand(args: ParsedCliArgs, store: IndexerStore): Promise<voi
         notifier: createDiscordNotifierFromEnv(),
       })
     } finally {
-      chainState?.close?.()
+      chainState.close?.()
     }
     process.stdout.write(
       `evaluated ${result.total} candidates; delivered ${result.delivered.length}; skipped ${result.skipped.length}; failed ${result.failed.length}; undelivered ${result.undelivered.length}\n`,

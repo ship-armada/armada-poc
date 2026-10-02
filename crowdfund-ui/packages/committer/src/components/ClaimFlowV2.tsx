@@ -844,11 +844,10 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     return (
       <CardFlowShell
         title="Confirm"
-        onBack={() => {
-          clearClaimInFlight()
-          setTxs(null)
-          setStep(mode === 'refund' ? 'intro' : 'review')
-        }}
+        // No chrome Back: mid-flight it would hide a later revert/timeout and drop
+        // the in-flight marker. Once a row errors, WalletConfirmStep's footer
+        // offers Back + Retry.
+        showBack={false}
         onClose={handleClose}
       >
         <WalletConfirmStep

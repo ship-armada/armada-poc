@@ -240,6 +240,27 @@ describe('ClaimFlowV2 wallet rejection', () => {
   })
 })
 
+describe('ClaimFlowV2 submit step Back', () => {
+  it('hides Back while the claim tx is pending', async () => {
+    // Back mid-flight would hide a later revert/timeout and clear the in-flight
+    // marker that lets a remount show "Submitting…" instead of a fresh Claim.
+    allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 0n]) // 1 ARM
+    claimImpl = () => Promise.resolve({ hash: '0xclaim', wait: () => new Promise(() => {}) })
+    // The read-provider race must stay pending too, or the claim errors out.
+    const provider = { waitForTransaction: () => new Promise(() => {}) } as unknown as JsonRpcProvider
+
+    renderClaim(
+      <ClaimFlowV2 {...baseProps} signer={{} as never} provider={provider} walletAddress={ADDR_A} />,
+    )
+
+    await startArmToReview()
+    fireEvent.click(screen.getByRole('button', { name: 'Claim ARM' }))
+
+    expect(await screen.findByText('Submitting…')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull()
+  })
+})
+
 describe('ClaimFlowV2 read semantics', () => {
   it('shows a retry (not a false 0 ARM) when the allocation read fails', async () => {
     claimedFor = () => Promise.resolve(false)

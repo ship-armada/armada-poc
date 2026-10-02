@@ -99,12 +99,15 @@ export default function Step4Approve({
     : (controlledTxs ?? internalTxs)
 
   const hasError = txs.some((t) => t.status === 'error')
+  // Back resets the consumer's pipeline and reopens Review with Confirm enabled,
+  // so it must not be offered while a tx is being built, signed or mined.
+  const inFlight = preparing || txs.some((t) => t.status === 'loading')
 
   return (
     <div className={styles.shell} data-flow-shell>
       <FlowChrome
         title={title ? undefined : 'Confirm'}
-        showBack={!!onBack && !hasError}
+        showBack={!!onBack && !hasError && !inFlight}
         onBack={onBack}
         onClose={onClose}
       />

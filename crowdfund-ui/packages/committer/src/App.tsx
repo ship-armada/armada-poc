@@ -50,6 +50,7 @@ import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { abortPipelinesForOtherAddress, applyWatchedTxResult, pipelinesAtom } from '@/hooks/useTxPipeline'
 import { usePendingTxWatcher } from '@/hooks/usePendingTxWatcher'
 import { localWindowEndUnix, commitWindowSecondsLeft } from '@/lib/windowClock'
+import { shouldDismissClaimModal } from '@/lib/claimModal'
 import { PageNav, type Page } from '@/appNav'
 
 /**
@@ -674,6 +675,18 @@ export function App() {
     ],
   )
 
+  // Claim is disabled in the nav and its modal closed until claim opens.
+  const claimReady = claimAvailability.state === 'available'
+
+  // Close an open Claim modal once the loaded state says claim isn't available.
+  // Sits above the load-gate early returns below — hooks must run every render.
+  const claimStateLoading = contractState.loading
+  useEffect(() => {
+    if (shouldDismissClaimModal({ open: claimOpen, ready: claimReady, stateLoading: claimStateLoading })) {
+      setClaimOpen(false)
+    }
+  }, [claimOpen, claimReady, claimStateLoading])
+
   const lifecycleStage = useMemo(
     () =>
       deriveLifecycleStage(
@@ -756,8 +769,8 @@ export function App() {
   }
 
   // Right-side chrome: wallet + Participate CTA. Crowdfund / My position /
-  // Claim live in the left PageNav strip; Claim is disabled until claim opens.
-  const claimReady = claimAvailability.state === 'available'
+  // Claim live in the left PageNav strip; Claim is disabled until claim opens
+  // (`claimReady`, above).
 
   // Phase 6 — open/close helpers for the modal Participate flow. In v2 mode
   // the flow runs as a modal overlay (mounted alongside whichever page the
@@ -788,10 +801,6 @@ export function App() {
   const closeClaim = () => {
     setClaimOpen(false)
   }
-
-  useEffect(() => {
-    if (claimOpen && !claimReady) setClaimOpen(false)
-  }, [claimOpen, claimReady])
 
   const handlePageNav = (next: Page) => {
     if (next === 'claim') {

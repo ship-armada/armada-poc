@@ -2,7 +2,7 @@
 // ABOUTME: Distinct headline/subline + View-position action vs the first-time confirmation.
 // @vitest-environment jsdom
 
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import Step5Confirmation from './Step5Confirmation.js'
 
@@ -44,6 +44,13 @@ describe('Step5Confirmation', () => {
     const link = screen.getByRole('link', { name: /0x9f2e/ })
     expect(link.getAttribute('href')).toBe(`https://sepolia.etherscan.io/tx/${txHash}`)
     expect(screen.getByRole('navigation', { name: 'Useful links' })).toBeTruthy()
+  })
+
+  it('never invents a window deadline when no countdown is passed', () => {
+    render(<Step5Confirmation amount={1000} estimatedArm={1000} />)
+    fireEvent.click(screen.getByRole('button', { name: 'While the window is open' }))
+    expect(screen.queryByText(/closes in/)).toBeNull()
+    expect(screen.getByText(/The commitment window is closing\./)).toBeTruthy()
   })
 
   it('omits the tx hash row when no hash is provided', () => {

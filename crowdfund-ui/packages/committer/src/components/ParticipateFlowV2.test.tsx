@@ -364,6 +364,15 @@ describe('ParticipateFlowV2 confirmation invite gate', () => {
     expect(screen.getByRole('button', { name: 'Back to crowdfund' })).toBeTruthy()
   })
 
+  it('shows the real commit-window countdown in What happens next', () => {
+    getDefaultStore().set(pipelinesAtom, {
+      [ADDR]: { rows: [{ label: 'Commit participation', status: 'done' }], phase: 'success' },
+    })
+    render(<ParticipateFlowV2 {...makeProps()} secondsLeft={5 * 86_400 + 600} />)
+    fireEvent.click(screen.getByRole('button', { name: 'While the window is open' }))
+    expect(screen.getByText(/closes in 5 days\./)).toBeTruthy()
+  })
+
   it('hides Whitelist a friend for a Hop-2 wallet, which cannot invite', () => {
     const hop2Section: CrowdfundInviteSlotSection = {
       ...makeInviteSection(0),

@@ -1,7 +1,7 @@
 // ABOUTME: Unit tests for converting the chain-time commit-window end onto the local clock.
 // ABOUTME: A skewed device clock must not change the remaining time the countdown shows.
 import { describe, it, expect } from 'vitest'
-import { localWindowEndUnix } from './windowClock'
+import { localWindowEndUnix, commitWindowSecondsLeft } from './windowClock'
 
 const WINDOW_END = 1_750_100_000
 const BLOCK_TS = 1_750_000_000 // chain says 100_000s remain
@@ -26,5 +26,20 @@ describe('localWindowEndUnix', () => {
 
   it('rounds the local observation time to whole seconds', () => {
     expect(localWindowEndUnix(WINDOW_END, BLOCK_TS, BLOCK_TS * 1000 + 400)).toBe(WINDOW_END)
+  })
+})
+
+describe('commitWindowSecondsLeft', () => {
+  it('is the chain remaining time once the window and block have loaded', () => {
+    expect(commitWindowSecondsLeft(WINDOW_END, BLOCK_TS)).toBe(100_000)
+  })
+
+  it('floors at zero once the chain is past the window end', () => {
+    expect(commitWindowSecondsLeft(WINDOW_END, WINDOW_END + 5)).toBe(0)
+  })
+
+  it('is undefined until both chain values have loaded', () => {
+    expect(commitWindowSecondsLeft(0, BLOCK_TS)).toBeUndefined()
+    expect(commitWindowSecondsLeft(WINDOW_END, 0)).toBeUndefined()
   })
 })

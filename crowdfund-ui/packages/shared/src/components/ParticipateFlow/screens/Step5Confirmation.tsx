@@ -99,7 +99,7 @@ export default function Step5Confirmation({
   maxedOut = false,
   txHash,
   explorerBaseUrl,
-  daysLeft = 3,
+  daysLeft,
   secondsLeft,
   endsAt = null,
 }: Step5ConfirmationProps) {

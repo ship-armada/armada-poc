@@ -14,6 +14,7 @@ export interface WhatHappensNextSliderProps {
   /**
    * Whole days remaining (demo / URL). Ignored when `endsAt` or `secondsLeft`
    * is set. Converted to an absolute deadline so the copy can live-tick under 48h.
+   * With no countdown input at all, the copy names no deadline.
    */
   daysLeft?: number
   /** Remaining seconds in the commit window. Prefer `endsAt` when available. */
@@ -27,7 +28,7 @@ type Item = { id: string; title: string; body: string }
 function resolveEndMs(
   endsAt: number | Date | null | undefined,
   secondsLeft: number | undefined,
-  daysLeft: number,
+  daysLeft: number | undefined,
 ): number | null {
   if (endsAt != null) {
     return typeof endsAt === 'number' ? endsAt : endsAt.getTime()
@@ -35,7 +36,7 @@ function resolveEndMs(
   if (secondsLeft != null && Number.isFinite(secondsLeft)) {
     return Date.now() + Math.max(0, secondsLeft) * 1000
   }
-  if (Number.isFinite(daysLeft) && daysLeft > 0) {
+  if (daysLeft != null && Number.isFinite(daysLeft) && daysLeft > 0) {
     return Date.now() + daysLeft * 86400 * 1000
   }
   return null
@@ -77,7 +78,7 @@ const STATIC_ITEMS: ReadonlyArray<Omit<Item, 'body'> & { body?: string }> = [
 
 /** @deprecated Name kept for import stability — renders as a FAQ accordion. */
 export function WhatHappensNextSlider({
-  daysLeft = 3,
+  daysLeft,
   secondsLeft,
   endsAt = null,
 }: WhatHappensNextSliderProps) {

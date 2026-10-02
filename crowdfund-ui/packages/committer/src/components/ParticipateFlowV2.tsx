@@ -483,6 +483,7 @@ export function ParticipateFlowV2({
               : commitTxHashFromRows(pipeline.state.rows)
           }
           explorerBaseUrl={getExplorerUrl()}
+          secondsLeft={secondsLeft}
         />
       </div>
     )

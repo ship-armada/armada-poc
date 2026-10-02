@@ -48,7 +48,7 @@ import { useInviteSlots } from '@/hooks/useInviteSlots'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { abortPipelinesForOtherAddress, applyWatchedTxResult, pipelinesAtom } from '@/hooks/useTxPipeline'
 import { usePendingTxWatcher } from '@/hooks/usePendingTxWatcher'
-import { localWindowEndUnix } from '@/lib/windowClock'
+import { localWindowEndUnix, commitWindowSecondsLeft } from '@/lib/windowClock'
 import { PageNav, type Page } from '@/appNav'
 
 /**
@@ -537,10 +537,7 @@ export function App() {
   // stats banner) and formatted by the shared helper, so every "time left"
   // surface agrees. Undefined until the window/block load so Step0Invite falls
   // back to its placeholder rather than flashing "ENDS TODAY".
-  const secondsLeft =
-    contractState.windowEnd > 0 && contractState.blockTimestamp > 0
-      ? Math.max(0, contractState.windowEnd - contractState.blockTimestamp)
-      : undefined
+  const secondsLeft = commitWindowSecondsLeft(contractState.windowEnd, contractState.blockTimestamp)
 
   // Connected user's projected ARM allocation, used by StatsBar's
   // "Your Allocation" card. Undefined when the user has no positions —

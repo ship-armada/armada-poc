@@ -15,3 +15,16 @@ export function localWindowEndUnix(
 ): number {
   return Math.round(observedAtMs / 1000) + (windowEnd - blockTimestamp)
 }
+
+/**
+ * Seconds left in the commit window by chain time (`windowEnd - blockTimestamp`),
+ * floored at 0. Undefined until both chain values have loaded, so consumers show
+ * their no-deadline copy instead of a made-up countdown.
+ */
+export function commitWindowSecondsLeft(
+  windowEnd: number,
+  blockTimestamp: number,
+): number | undefined {
+  if (windowEnd <= 0 || blockTimestamp <= 0) return undefined
+  return Math.max(0, windowEnd - blockTimestamp)
+}

@@ -46,6 +46,7 @@ import type { CrowdfundDeployment } from '@/config/deployments'
 import type { InviteLinkData } from '@/lib/inviteLinks'
 import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
 import { commitTxHashFromRows } from '@/lib/commitTxHash'
+import { commitWindowSecondsLeft } from '@/lib/windowClock'
 import { countFreeInviteSlots, hasFreeInviteSlot } from '@/lib/inviteSlots'
 import { submitWrite } from '@/lib/submitWrite'
 import { useWallet } from '@/hooks/useWallet'
@@ -523,6 +524,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
           maxedOut={maxedOut}
           txHash={maxedOut ? undefined : commitTxHashFromRows(pipeline.state.rows)}
           explorerBaseUrl={getExplorerUrl()}
+          secondsLeft={commitWindowSecondsLeft(contractState.windowEnd, contractState.blockTimestamp)}
           showViewPositionButton
           canInvite={hasFreeInviteSlot(inviteSlots.sections)}
           onViewPosition={() => navigate('/?view=myposition')}

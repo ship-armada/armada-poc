@@ -1,4 +1,5 @@
 /* ABOUTME: Useful links eyebrow + 4-up icon tile grid for confirmation screens. */
+/* ABOUTME: Each tile opens its destination in a new tab (see UsefulLinks.tsx). */
 
 .root {
   display: flex;

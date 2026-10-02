@@ -1,3 +1,6 @@
+/* ABOUTME: Wallet-confirm tx list — loading/done/error rows, error details toggle, Back/Retry footer. */
+/* ABOUTME: Shared by the participate Confirm step (Step4Approve) and the claim submit step. */
+
 .root {
   display: flex;
   flex-direction: column;

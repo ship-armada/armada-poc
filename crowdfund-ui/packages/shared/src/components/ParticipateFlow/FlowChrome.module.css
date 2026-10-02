@@ -1,4 +1,5 @@
 /* ABOUTME: Back / title / close row for participate commit-flow shells. */
+/* ABOUTME: `bar` lays the controls out in a header row; `overlay` pins them to the card corners. */
 
 .bar {
   display: grid;

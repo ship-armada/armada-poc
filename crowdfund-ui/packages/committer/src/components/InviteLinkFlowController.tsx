@@ -47,6 +47,7 @@ import type { InviteLinkData } from '@/lib/inviteLinks'
 import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
 import { commitTxHashFromRows } from '@/lib/commitTxHash'
 import { commitWindowSecondsLeft } from '@/lib/windowClock'
+import { confirmLeaveInviteFlow } from '@/lib/inviteFlowLeave'
 import { countFreeInviteSlots, hasFreeInviteSlot } from '@/lib/inviteSlots'
 import { submitWrite } from '@/lib/submitWrite'
 import { useWallet } from '@/hooks/useWallet'
@@ -495,8 +496,12 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
   // ── Step renderers ─────────────────────────────────────────────────────
 
   // Leave the flow. There's no modal here, so "close" means returning to the
-  // crowdfund page — wired to every step's FlowChrome X.
-  const handleClose = () => navigate('/')
+  // crowdfund page — wired to every step's FlowChrome X. Mid-pipeline it asks
+  // first; leaving pauses the pipeline until the invite link is reopened.
+  const handleClose = () => {
+    if (!confirmLeaveInviteFlow(submitting)) return
+    navigate('/')
+  }
 
   // The confirmation screen, shared by the normal post-commit path and the
   // "already fully committed" shortcut. `maxedOut` swaps in the no-new-commit

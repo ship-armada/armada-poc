@@ -2,10 +2,10 @@
 // ABOUTME: Mocks the ethers Contract reads so claimed/allocation can be driven per address.
 // @vitest-environment jsdom
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createElement, type ReactElement, type ReactNode } from 'react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query'
 import type { JsonRpcProvider } from 'ethers'
 import { ClaimFlowV2, type ClaimFlowV2Props } from './ClaimFlowV2'
 import { clearClaimInFlight, setClaimInFlight } from '@/lib/claimInFlight'
@@ -17,7 +17,7 @@ function renderClaim(ui: ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const wrapper = ({ children }: { children: ReactNode }) =>
     createElement(QueryClientProvider, { client }, children)
-  return render(ui, { wrapper })
+  return { ...render(ui, { wrapper }), client }
 }
 
 /** Walk intro → self-delegate → review for the ARM path. */
@@ -258,6 +258,28 @@ describe('ClaimFlowV2 submit step Back', () => {
 
     expect(await screen.findByText('Submitting…')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Back' })).toBeNull()
+  })
+})
+
+describe('ClaimFlowV2 stale data', () => {
+  it('warns that claim data may be out of date when the connection drops', async () => {
+    allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 0n]) // 1 ARM
+    const { client } = renderClaim(<ClaimFlowV2 {...baseProps} />)
+    expect(await screen.findByRole('button', { name: 'Start' })).toBeTruthy()
+    expect(screen.queryByText('Connection interrupted')).toBeNull()
+
+    try {
+      await act(async () => {
+        onlineManager.setOnline(false)
+        void client.refetchQueries()
+        await new Promise((r) => setTimeout(r, 0))
+      })
+      expect(await screen.findByText('Connection interrupted')).toBeTruthy()
+    } finally {
+      // Back online: the paused refetch resumes and the warning clears.
+      act(() => onlineManager.setOnline(true))
+      await waitFor(() => expect(screen.queryByText('Connection interrupted')).toBeNull())
+    }
   })
 })
 

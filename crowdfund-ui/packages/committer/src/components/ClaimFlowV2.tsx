@@ -11,6 +11,7 @@ import {
 import { CheckCircleIcon } from '@heroicons/react/24/solid'
 import {
   FlowChrome,
+  StaleDataBanner,
   UsefulLinks,
   WalletConfirmStep,
   type Step4Transaction,
@@ -127,7 +128,18 @@ export interface ClaimFlowV2Props {
   onModalCloseChange?: (show: boolean) => void
 }
 
+/** The claim flow plus a stale-data warning above it. The Claim modal sits over
+ *  the hero, which has no page-level StaleDataBanner of its own. */
 export function ClaimFlowV2(props: ClaimFlowV2Props) {
+  return (
+    <>
+      <StaleDataBanner />
+      <ClaimFlowScreens {...props} />
+    </>
+  )
+}
+
+function ClaimFlowScreens(props: ClaimFlowV2Props) {
   const {
     walletConnected,
     isWrongNetwork,

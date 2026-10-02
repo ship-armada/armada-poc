@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
 import { FileIndexerStore } from '../db/fileStore.js'
-import { repairRanges, stageRange, verifyRange } from './rpc.js'
+import { assertRpcChainId, checkRpcChainIds, repairRanges, stageRange, verifyRange } from './rpc.js'
 import type { CursorState, IngestRangeRecord } from '../types.js'
 import type { RangeLogProvider, RpcLog } from './rpc.js'
 
@@ -207,3 +207,71 @@ describe('RPC range pipeline', () => {
     expect(data.cursor.verifiedCursor).toBe(109)
   })
 })
+
+describe('assertRpcChainId', () => {
+  const providerOn = (chainId: bigint) => ({ getNetwork: async () => ({ chainId }) })
+
+  // WHY: the expected case — RPC serves the configured chain — must pass silently.
+  it('passes when the RPC serves CROWDFUND_CHAIN_ID', async () => {
+    await expect(assertRpcChainId(providerOn(1n), 1, 'primary', 1_000)).resolves.toBeUndefined()
+  })
+
+  // WHY: a wrong-chain RPC returns zero logs for the contract, which looks like a healthy
+  // empty sale; the indexer must refuse to start instead of serving that.
+  it('throws naming both chain ids on a mismatch', async () => {
+    await expect(assertRpcChainId(providerOn(11155111n), 1, 'audit', 1_000))
+      .rejects.toThrow('audit RPC is chain 11155111, CROWDFUND_CHAIN_ID is 1')
+  })
+
+  // WHY: an RPC error must surface without leaking the API key embedded in the URL.
+  it('wraps RPC errors with the URL path redacted', async () => {
+    const failing = { getNetwork: async () => { throw new Error('request to https://eth.example.com/v2/SECRETKEY failed') } }
+    const message = await assertRpcChainId(failing, 1, 'primary', 1_000).then(() => 'resolved', (e: Error) => e.message)
+    expect(message).toContain('primary RPC chain id check failed')
+    expect(message).not.toContain('SECRETKEY')
+  })
+
+  // WHY: a refused connection surfaces as an AggregateError with an empty message; the
+  // operator still needs to see why the check failed.
+  it('falls back to the error code when the message is empty', async () => {
+    const refused = { getNetwork: async () => { throw Object.assign(new AggregateError([], ''), { code: 'ECONNREFUSED' }) } }
+    await expect(assertRpcChainId(refused, 1, 'audit', 1_000))
+      .rejects.toThrow('audit RPC chain id check failed: ECONNREFUSED')
+  })
+
+  // WHY: ethers retries network detection forever on an unreachable RPC; startup must
+  // fail within the configured RPC timeout rather than hang.
+  it('times out when the RPC never answers', async () => {
+    const hanging = { getNetwork: () => new Promise<{ chainId: bigint }>(() => {}) }
+    await expect(assertRpcChainId(hanging, 1, 'primary', 20))
+      .rejects.toThrow('primary RPC chain id check failed: no response within 20ms')
+  })
+})
+
+describe('checkRpcChainIds', () => {
+  // WHY: the audit RPC is optional; an unset URL is skipped, a set one is checked.
+  it('checks every configured URL and skips unset ones', async () => {
+    const checked: string[] = []
+    const factory = (url: string) => ({
+      getNetwork: async () => { checked.push(url); return { chainId: 1n } },
+      destroy: () => {},
+    })
+    await checkRpcChainIds([{ name: 'primary', url: 'https://a' }, { name: 'audit', url: null }], 1, 1_000, factory)
+    expect(checked).toEqual(['https://a'])
+  })
+
+  // WHY: one wrong-chain RPC is enough to refuse startup, and each provider is destroyed so
+  // its network-detection retry loop cannot keep the process alive.
+  it('rejects when any URL is on the wrong chain and destroys every provider', async () => {
+    const destroyed: string[] = []
+    const factory = (url: string) => ({
+      getNetwork: async () => ({ chainId: url === 'https://audit' ? 11155111n : 1n }),
+      destroy: () => { destroyed.push(url) },
+    })
+    await expect(checkRpcChainIds(
+      [{ name: 'primary', url: 'https://primary' }, { name: 'audit', url: 'https://audit' }], 1, 1_000, factory,
+    )).rejects.toThrow('audit RPC is chain 11155111, CROWDFUND_CHAIN_ID is 1')
+    expect(destroyed).toEqual(['https://primary', 'https://audit'])
+  })
+})
+

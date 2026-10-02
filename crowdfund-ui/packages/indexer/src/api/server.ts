@@ -11,7 +11,7 @@ import type { IndexerMeta, IndexerStore } from '../db/store.js'
 import { CrowdfundIndexerPoller } from '../ingest/poller.js'
 import { getRepairRanges } from '../ingest/ranges.js'
 import { getExhaustedRepairRanges } from '../ingest/reconcile.js'
-import { createJsonRpcRangeProvider } from '../ingest/rpc.js'
+import { checkRpcChainIds, createJsonRpcRangeProvider } from '../ingest/rpc.js'
 import { sanitizeErrorMessage } from '../ingest/errors.js'
 import { createReadableCrowdfundContract, reconcileSnapshot } from '../reconcile/contract.js'
 import { buildSnapshot, withReconciliation } from '../snapshots/build.js'
@@ -192,6 +192,16 @@ export function createIndexerApi(options: CreateIndexerApiOptions) {
 
 async function main(): Promise<void> {
   const config = loadIndexerConfig()
+  const polling = config.pollOnStart || config.backfillOnStart
+  if (polling) {
+    if (!config.primaryRpcUrl) throw new Error('Missing required environment variable: CROWDFUND_PRIMARY_RPC_URL')
+    // Before the API listens: a wrong-chain RPC would otherwise be served as an empty sale.
+    await checkRpcChainIds(
+      [{ name: 'primary', url: config.primaryRpcUrl }, { name: 'audit', url: config.auditRpcUrl }],
+      config.chainId,
+      config.rpcTimeoutMs,
+    )
+  }
   const store = createIndexerStore({
     defaultFilePath: join(process.cwd(), 'data/crowdfund-indexer/store.json'),
     initialCursor: getInitialCursor(),
@@ -215,8 +225,7 @@ async function main(): Promise<void> {
   process.on('SIGINT', shutdown)
   process.on('SIGTERM', shutdown)
 
-  if (config.pollOnStart || config.backfillOnStart) {
-    if (!config.primaryRpcUrl) throw new Error('Missing required environment variable: CROWDFUND_PRIMARY_RPC_URL')
+  if (polling && config.primaryRpcUrl) {
     const primaryRpcUrl = config.primaryRpcUrl
     if (!config.auditRpcUrl) {
       process.stderr.write(

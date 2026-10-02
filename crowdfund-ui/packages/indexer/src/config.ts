@@ -66,8 +66,26 @@ export function readBooleanEnv(name: string, fallback: boolean): boolean {
   throw new Error(`Invalid boolean environment variable: ${name}`)
 }
 
-export function getInitialCursor(): CursorState {
+/** Anvil's chain id — the only chain where indexing from block 0 is reasonable. */
+const LOCAL_CHAIN_ID = '31337'
+
+/**
+ * CROWDFUND_DEPLOY_BLOCK, defaulting to 0 only on local Anvil. Elsewhere 0 would backfill
+ * from genesis (tens of thousands of getLogs ranges per RPC), so it must be the crowdfund
+ * manifest's deployBlock.
+ */
+function readDeployBlock(): number {
   const deployBlock = readNumberEnv('CROWDFUND_DEPLOY_BLOCK', 0)
+  if (deployBlock === 0 && process.env.CROWDFUND_CHAIN_ID !== LOCAL_CHAIN_ID) {
+    throw new Error(
+      'CROWDFUND_DEPLOY_BLOCK must be set to the crowdfund manifest deployBlock on non-local chains (0 backfills from genesis)',
+    )
+  }
+  return deployBlock
+}
+
+export function getInitialCursor(): CursorState {
+  const deployBlock = readDeployBlock()
   return {
     deployBlock,
     confirmationDepth: readNumberEnv('CROWDFUND_CONFIRMATION_DEPTH', 12),
@@ -82,7 +100,7 @@ export function loadIndexerConfig(): IndexerConfig {
   return {
     chainId: readRequiredNumberEnv('CROWDFUND_CHAIN_ID'),
     contractAddress: readRequiredEnv('CROWDFUND_CONTRACT_ADDRESS'),
-    deployBlock: readNumberEnv('CROWDFUND_DEPLOY_BLOCK', 0),
+    deployBlock: readDeployBlock(),
     primaryRpcUrl: process.env.CROWDFUND_PRIMARY_RPC_URL ?? null,
     auditRpcUrl: process.env.CROWDFUND_AUDIT_RPC_URL ?? null,
     confirmationDepth: readNumberEnv('CROWDFUND_CONFIRMATION_DEPTH', 12),

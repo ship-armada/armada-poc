@@ -109,9 +109,9 @@ Core deployment variables:
 
 | Variable | Default | Behavior |
 |----------|---------|----------|
-| `CROWDFUND_CHAIN_ID` | `11155111` | Chain ID stamped into indexed raw logs and snapshot metadata. |
+| `CROWDFUND_CHAIN_ID` | required | Chain ID stamped into indexed raw logs and snapshot metadata. The server (when polling/backfilling) and every RPC-using CLI command first check `eth_chainId` on the primary and audit RPCs and refuse to start on a mismatch or an unreachable RPC (`primary RPC is chain X, CROWDFUND_CHAIN_ID is Y`). |
 | `CROWDFUND_CONTRACT_ADDRESS` | required | Crowdfund contract address to scan and serve. API/CLI fail fast when missing. |
-| `CROWDFUND_DEPLOY_BLOCK` | `0` | Initial cursor. Set to the deployment block to avoid scanning before deployment. |
+| `CROWDFUND_DEPLOY_BLOCK` | required (except local Anvil) | Initial cursor: the crowdfund manifest's `deployBlock`. Defaults to `0` only on chain 31337; elsewhere unset/0 is refused because it would backfill from genesis. |
 | `CROWDFUND_PRIMARY_RPC_URL` | required for backfill/poll | Primary RPC used for head reads, range ingestion, and reconciliation. |
 | `CROWDFUND_AUDIT_RPC_URL` | unset | Optional independent RPC used to verify range digests. If unset, primary RPC is used for audit too. |
 
@@ -169,11 +169,7 @@ Alert evaluator variables (used by `evaluate-alerts`; see [`MONITORING.md`](MONI
 
 | Variable | Default | Behavior |
 |----------|---------|----------|
-| `CROWDFUND_TREASURY_ADDRESS` | required | Treasury address — used to read USDC balance for A13 mismatch detection. |
-| `CROWDFUND_USDC_ADDRESS` | optional | USDC contract — required for A13 (treasury balance). Omit to skip A13. |
-| `CROWDFUND_OPEN_TIMESTAMP` | `0` | Unix seconds when the commitment window opens (the contract's `windowStart()`; the same instant as the deploy's ISO `CROWDFUND_OPEN_TIME`). Drives A2/A8/A9. |
-| `CROWDFUND_WEEK1_DEADLINE` | `0` | Unix seconds when week-1 ends (openTimestamp + 7 days). Marks the week-1 → weeks-2–3 phase boundary in the monitoring model. |
-| `CROWDFUND_COMMITMENT_DEADLINE` | `0` | Unix seconds when the 3-week window closes (openTimestamp + 21 days). Drives A8/A9. |
+| `CROWDFUND_PRIMARY_RPC_URL` | required | `evaluate-alerts` reads the open / week-1 / commitment-deadline timestamps (`windowStart`, `launchTeamInviteEnd`, `windowEnd`) and the treasury + USDC addresses (`treasury`, `usdc`) from the crowdfund contract through this RPC — there are no env vars for them. Also used for `finalizedAt` and the treasury USDC balance (A13/A18–A20). |
 | `CROWDFUND_ALERT_WEBHOOK_P0` | unset | Discord webhook URL for P0 (immediate) alerts. |
 | `CROWDFUND_ALERT_WEBHOOK_P1` | unset | Discord webhook URL for P1 (same-day) alerts. |
 | `CROWDFUND_ALERT_WEBHOOK_P2` | unset | Discord webhook URL for P2 (attention) alerts. |
@@ -388,7 +384,7 @@ npm run crowdfund:indexer:cli -- evaluate-alerts
 
 The command is a single pass — it reads the indexer store, optionally consults the chain for `finalizedAt` and treasury USDC balance, runs every rule, posts new alerts to the configured webhooks, persists which dedupe keys it has already delivered, and exits. Schedule it as a recurring job (cron, systemd timer, or external scheduler) at whatever cadence matches your runbook — once per minute is fine; the cost is dominated by RPC reads.
 
-Required env: `CROWDFUND_CONTRACT_ADDRESS`, `CROWDFUND_TREASURY_ADDRESS`, the three timestamp vars (`CROWDFUND_OPEN_TIMESTAMP`, `CROWDFUND_WEEK1_DEADLINE`, `CROWDFUND_COMMITMENT_DEADLINE`), and at least one webhook URL. Without `CROWDFUND_PRIMARY_RPC_URL` + `CROWDFUND_USDC_ADDRESS`, A13 (treasury proceeds mismatch) and the time-gated rules that need `finalizedAt` (A18/A19/A20) self-skip rather than producing false positives. Alerts whose severity has no configured webhook are logged to stderr and skipped.
+Required env: `CROWDFUND_CHAIN_ID`, `CROWDFUND_CONTRACT_ADDRESS`, `CROWDFUND_PRIMARY_RPC_URL`, and at least one webhook URL. The sale window timestamps and the treasury/USDC addresses are read from the contract on every run, so they cannot be mistyped or left at 0. Alerts whose severity has no configured webhook are logged to stderr and skipped. In the Docker stack, a failed run is logged as `evaluate-alerts FAILED (exit N)` and the `alerts` container turns unhealthy after 3 intervals without a successful run.
 
 Example systemd timer (drop into `/etc/systemd/system/crowdfund-alerts.timer`):
 

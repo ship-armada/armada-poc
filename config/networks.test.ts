@@ -2,7 +2,9 @@
 // ABOUTME: scheme, client ordering, role/domain/chainId lookups, and CCTP address merging.
 
 import { expect } from "chai";
+import { execFileSync } from "child_process";
 import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 
 // Env keys the config reads that a test might set — cleared between tests so one case
@@ -449,3 +451,43 @@ describe("committed mainnet.env", () => {
     expect(MAINNET_ENV).to.not.have.property("TREASURY_ADDRESS");
   });
 });
+
+describe("env templates keep a private RPC from secrets.env", () => {
+  /**
+   * Source a committed env template in bash with `preset` already exported (as secrets.env
+   * would have done) and return the resulting values of `keys`. Runs from a temp dir holding
+   * only the template, so a developer's real config/secrets.env is never sourced.
+   */
+  function sourceTemplate(file: string, preset: Record<string, string>, keys: string[]): Record<string, string> {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "env-template-"));
+    try {
+      fs.mkdirSync(path.join(dir, "config"));
+      fs.copyFileSync(path.join(__dirname, file), path.join(dir, "config", file));
+      const script = `source config/${file} >/dev/null; ` + keys.map((k) => `echo "${k}=$${k}"`).join("; ");
+      const env: Record<string, string> = { PATH: process.env.PATH ?? "", ...preset };
+      const out = execFileSync("bash", ["-c", script], { cwd: dir, env, encoding: "utf8" });
+      return Object.fromEntries(out.trim().split("\n").map((l) => [l.slice(0, l.indexOf("=")), l.slice(l.indexOf("=") + 1)]));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  const RPC_KEYS = ["HUB_RPC", "CLIENT_1_RPC", "CLIENT_2_RPC"];
+
+  for (const file of ["mainnet.env", "sepolia.env"]) {
+    // WHY: the templates source secrets.env first; an unconditional `export HUB_RPC=<public>`
+    // afterwards silently replaced the operator's private (keyed) RPC, so the mainnet deploy
+    // ran over the rate-limited public endpoint (#556).
+    it(`${file} keeps RPC URLs that were already set`, () => {
+      const preset = Object.fromEntries(RPC_KEYS.map((k) => [k, `https://private.example/${k}`]));
+      expect(sourceTemplate(file, preset, RPC_KEYS)).to.deep.equal(preset);
+    });
+
+    // WHY: without a private RPC the public fallbacks must still apply.
+    it(`${file} falls back to public RPC URLs when none are set`, () => {
+      const values = sourceTemplate(file, {}, RPC_KEYS);
+      for (const k of RPC_KEYS) expect(values[k], k).to.match(/^https:\/\//);
+    });
+  }
+});
+

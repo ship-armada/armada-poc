@@ -113,7 +113,7 @@ Record: `contract_address = [address]`, `deploy_tx = [hash]`, `block = [number]`
 | | |
 |---|---|
 | **Actor** | Deployer |
-| **Action** | Submit source to block explorer verification (Etherscan/Basescan) |
+| **Action** | Submit source to block explorer verification: from the deployed commit (`git checkout <DEPLOY_COMMIT>`, clean tree), with `ETHERSCAN_API_KEY` set in `config/secrets.env`, run `source config/mainnet.env && npm run verify:etherscan:mainnet`. hardhat-verify recompiles and compares bytecode, so any other commit fails. Re-running is safe — already-verified contracts are skipped |
 | **Preconditions** | Step 1 complete |
 | **On-chain confirmation** | Explorer shows verified ✓ with correct source and ABI |
 | **Fallback** | If verification fails: debug compilation settings; the contract is deployed and functional regardless — verification is a transparency step, not a gating condition |

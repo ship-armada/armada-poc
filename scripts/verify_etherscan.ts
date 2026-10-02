@@ -1,18 +1,24 @@
-// ABOUTME: Verifies deployed Sepolia contracts on Etherscan using deployment manifests.
+// ABOUTME: Verifies deployed contracts (Sepolia or mainnet) on Etherscan using deployment manifests.
 // ABOUTME: Chain-aware — hub verifies governance + crowdfund + privacy pool + yield + aave + fee module; clients verify their PrivacyPoolClient + CCTPHookRouter.
 
 /**
- * Verify Sepolia Contracts on Etherscan
+ * Verify Contracts on Etherscan
  *
  * Reads deployment manifests and reconstructs constructor arguments to verify
- * each contract. Requires ETHERSCAN_API_KEY in environment.
+ * each contract. Requires ETHERSCAN_API_KEY in environment. Manifests are resolved
+ * for the sourced env (sepolia / mainnet); hub tasks for contracts whose manifests
+ * don't exist (e.g. the privacy pool before the shielded-pool launch) are skipped.
  *
- * Usage (run once per chain — same key works for all three explorers via Etherscan V2):
+ * Usage (run once per chain — same key works for every explorer via Etherscan V2):
  *   source config/sepolia.env
  *   export ETHERSCAN_API_KEY=your_key_here
- *   npx hardhat run scripts/verify_sepolia.ts --network sepoliaHub
- *   npx hardhat run scripts/verify_sepolia.ts --network sepoliaClient1   # first client chain
- *   npx hardhat run scripts/verify_sepolia.ts --network sepoliaClient2   # ...sepoliaClient<n>
+ *   npx hardhat run scripts/verify_etherscan.ts --network sepoliaHub
+ *   npx hardhat run scripts/verify_etherscan.ts --network sepoliaClient1   # first client chain
+ *   npx hardhat run scripts/verify_etherscan.ts --network sepoliaClient2   # ...sepoliaClient<n>
+ *
+ * Mainnet (crowdfund launch): run from the same commit that was deployed (DEPLOY_COMMIT) —
+ * hardhat-verify recompiles and compares bytecode:
+ *   source config/mainnet.env && npm run verify:etherscan:mainnet
  *
  * Some contracts require values not stored in manifests (e.g. crowdfund openTimestamp).
  * These are read from the deployed contract on-chain where possible.
@@ -366,7 +372,7 @@ async function main() {
   // PrivacyPoolClient + CCTPHookRouter.
   const role = getChainRole(chainId);
   if (role === "hub") {
-    label = "Sepolia (hub)";
+    label = `${network.name} (hub)`;
     tasks.push(...(await buildGovernanceCrowdfundTasks()));
     tasks.push(...(await buildHubProtocolTasks()));
     console.log(
@@ -380,7 +386,7 @@ async function main() {
     tasks.push(...(await buildClientChainTasks(role)));
   } else {
     throw new Error(
-      `Unsupported chain id ${chainId}. Run with --network sepoliaHub or a sepoliaClient<n> network.`,
+      `Unsupported chain id ${chainId}. Run with --network <env>Hub or an <env>Client<n> network matching the sourced env.`,
     );
   }
 

@@ -1,0 +1,171 @@
+{
+  "id": "transact-double-spend-revert",
+  "category": "transact",
+  "description": "Replaying the exact calldata of transact-1x1 reverts: its nullifier is already marked (I-4). The old merkle root remains valid in rootHistory (I-2), so validation reaches the nullifier check.",
+  "specRefs": [
+    "§8.4",
+    "I-4"
+  ],
+  "proofsBypassed": true,
+  "dependsOn": [
+    "transact-1x1"
+  ],
+  "setup": [
+    "Calldata byte-identical to vector transact-1x1"
+  ],
+  "requiresImpersonation": null,
+  "setupTxs": [],
+  "tx": {
+    "from": "DEPLOYER",
+    "fromAddress": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "to": "POOL",
+    "toAddress": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+    "calldata": "0xd8ae136a000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001ac2e5004d50e6833e9172e2b25cb23b630fb14d7cc150ae63dc323e10b9b70a0000000000000000000000000000000000000000000000000000000000000220000000000000000000000000000000000000000000000000000000000000026000000000000000000000000000000000000000000000000000000000000002a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000104540bdd99e9ad9e503a8dc9fa51d9238af9c36de86f3b888bbfe6c1e68146f2000000000000000000000000000000000000000000000000000000000000000105b68a16ded237102ebd8f92f13281fd8b6146985d022da08e19881f2e5c32780000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007a690000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e00000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002054c824649f14c2dbdec8c17055434bca8ffb75d9de65baafdb59e25d5a705be646d3f3790695fb117ae23a4e4cade56b53ff06d7c2419af17d545b805f9e96f273f8f7c1a04cd49e2a756bf4fa99716138a3311c57c8b332c1c4295a19675b9ca99c71bca37c8d29132775916e04d1bb425b1a22ded84c8de398f7f386669a87f2a8cad005b86f807270cf28b369b7e8e2024724b684602073edc8e945276b0309c16fa568b21c685776b5e67fb23cc8ce8bf7b07aa9a0e930930fb983c0dbb50000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "value": "0x0",
+    "decodedCall": {
+      "function": "transact",
+      "args": {
+        "txs": [
+          {
+            "proof": {
+              "a": {
+                "x": 0,
+                "y": 0
+              },
+              "b": {
+                "x": [
+                  0,
+                  0
+                ],
+                "y": [
+                  0,
+                  0
+                ]
+              },
+              "c": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            "merkleRoot": "0x1ac2e5004d50e6833e9172e2b25cb23b630fb14d7cc150ae63dc323e10b9b70a",
+            "nullifiers": [
+              "0x04540bdd99e9ad9e503a8dc9fa51d9238af9c36de86f3b888bbfe6c1e68146f2"
+            ],
+            "commitments": [
+              "0x05b68a16ded237102ebd8f92f13281fd8b6146985d022da08e19881f2e5c3278"
+            ],
+            "boundParams": {
+              "treeNumber": 0,
+              "minGasPrice": 0,
+              "unshield": 0,
+              "chainID": 31337,
+              "adaptContract": "0x0000000000000000000000000000000000000000",
+              "adaptParams": "0x0000000000000000000000000000000000000000000000000000000000000000",
+              "commitmentCiphertext": [
+                {
+                  "ciphertext": [
+                    "0x54c824649f14c2dbdec8c17055434bca8ffb75d9de65baafdb59e25d5a705be6",
+                    "0x46d3f3790695fb117ae23a4e4cade56b53ff06d7c2419af17d545b805f9e96f2",
+                    "0x73f8f7c1a04cd49e2a756bf4fa99716138a3311c57c8b332c1c4295a19675b9c",
+                    "0xa99c71bca37c8d29132775916e04d1bb425b1a22ded84c8de398f7f386669a87"
+                  ],
+                  "blindedSenderViewingKey": "0xf2a8cad005b86f807270cf28b369b7e8e2024724b684602073edc8e945276b03",
+                  "blindedReceiverViewingKey": "0x09c16fa568b21c685776b5e67fb23cc8ce8bf7b07aa9a0e930930fb983c0dbb5",
+                  "annotationData": "0x",
+                  "memo": "0x"
+                }
+              ]
+            },
+            "unshieldPreimage": {
+              "npk": "0x0000000000000000000000000000000000000000000000000000000000000000",
+              "token": {
+                "tokenType": 0,
+                "tokenAddress": "0x0000000000000000000000000000000000000000",
+                "tokenSubID": 0
+              },
+              "value": 0
+            }
+          }
+        ]
+      }
+    }
+  },
+  "preState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x2d",
+    "pool.merkleRoot": "0x0fbb9d86b4fbb43aab114c77bed187d1428bf04ce2fbbef363e4ad41cccfbd7c",
+    "pool.lastEventBlock": "0xa4",
+    "usdc.balanceOf[POOL]": "0x43abfe2f",
+    "usdc.balanceOf[ALICE]": "0x211c41d39",
+    "usdc.balanceOf[BOB]": "0x3a699d00",
+    "usdc.balanceOf[CAROL]": "0x3b023380",
+    "usdc.balanceOf[TREASURY]": "0x5649d8",
+    "usdc.balanceOf[DEPLOYER]": "0xf4240",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x0",
+    "pool.rootHistory[0][0x1ac2e5004d50e6833e9172e2b25cb23b630fb14d7cc150ae63dc323e10b9b70a]": true,
+    "pool.nullifiers[0][0x04540bdd99e9ad9e503a8dc9fa51d9238af9c36de86f3b888bbfe6c1e68146f2]": true
+  },
+  "result": {
+    "status": 0,
+    "txHash": "0x04300fa67d2600fba9253ce0f85f65c9bca92ccc944dd97b72a27f42a2950bd1",
+    "blockNumber": 165,
+    "gasUsed": "0xf34a",
+    "returnData": null,
+    "revert": {
+      "kind": "Error(string)",
+      "reason": "TransactModule: Note already spent",
+      "data": "0x08c379a0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000225472616e736163744d6f64756c653a204e6f746520616c7265616479207370656e74000000000000000000000000000000000000000000000000000000000000"
+    },
+    "events": []
+  },
+  "postState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x2d",
+    "pool.merkleRoot": "0x0fbb9d86b4fbb43aab114c77bed187d1428bf04ce2fbbef363e4ad41cccfbd7c",
+    "pool.lastEventBlock": "0xa4",
+    "usdc.balanceOf[POOL]": "0x43abfe2f",
+    "usdc.balanceOf[ALICE]": "0x211c41d39",
+    "usdc.balanceOf[BOB]": "0x3a699d00",
+    "usdc.balanceOf[CAROL]": "0x3b023380",
+    "usdc.balanceOf[TREASURY]": "0x5649d8",
+    "usdc.balanceOf[DEPLOYER]": "0xf4240",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x0",
+    "pool.rootHistory[0][0x1ac2e5004d50e6833e9172e2b25cb23b630fb14d7cc150ae63dc323e10b9b70a]": true,
+    "pool.nullifiers[0][0x04540bdd99e9ad9e503a8dc9fa51d9238af9c36de86f3b888bbfe6c1e68146f2]": true,
+    "pool.rootHistory[postTree][postRoot]": true
+  },
+  "context": {
+    "chainId": 31337,
+    "network": "local fixturenet (Anvil, hub chain only)",
+    "deployments": {
+      "privacyPool": "deployments/privacy-pool-hub.json",
+      "cctp": "deployments/hub-v3.json",
+      "feeModule": "deployments/fee-module-hub.json",
+      "governance": "deployments/governance-hub.json"
+    },
+    "addressBook": {
+      "DEPLOYER": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "ALICE": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "BOB": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "CAROL": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "TREASURY": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+      "POOL": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+      "SHIELD_MODULE": "0xc5a5C42992dECbae36851359345FE25997F5C42d",
+      "TRANSACT_MODULE": "0x67d269191c92Caf3cD7723F116c85e6E9bf55933",
+      "MERKLE_MODULE": "0x7a2088a1bFc9d81c55368AE168C2C02570cB814F",
+      "VERIFIER_MODULE": "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
+      "HOOK_ROUTER": "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
+      "GASLESS_WRAPPER": "0xCD8a1C3ba11CF5ECfa6267617243239504a98d90",
+      "TOKEN_MESSENGER": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+      "MESSAGE_TRANSMITTER": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+      "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "FEE_MODULE": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+      "CLIENT_POOL": "0x0000000000000000000000000000000000C11EA7",
+      "MOCK_PAUSE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+      "MOCK_FEE_MODULE": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f"
+    }
+  },
+  "capturedAt": "2026-09-25T17:02:33.688Z"
+}

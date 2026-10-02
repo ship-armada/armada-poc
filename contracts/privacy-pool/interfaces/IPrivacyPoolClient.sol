@@ -17,7 +17,7 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
     /**
      * @notice Emitted when a cross-chain shield is initiated
      * @dev The initiating EOA is intentionally omitted so this event does not broadcast an
-     *      indexed, filterable EOA -> NPK link (matches Railgun's Shield-event convention).
+     *      indexed, filterable EOA -> NPK link.
      * @param amount Amount of USDC being shielded
      * @param npk Note public key
      * @param nonce CCTP message nonce

@@ -20,6 +20,11 @@ ALLOWED_FILES=(
   "scripts/multicall3-bytecode.ts"  # Canonical Multicall3 public runtime bytecode (not a key) — etched onto local Anvil
   "scripts/capture/vectors/keyset-vectors.json"  # Phase 0 keyset vectors derived from FIXED TEST SEEDS (not real secrets); the live-testnet crosscheck stores only the public 0zk address
   "scripts/capture/spike-claim-as-transfer.ts"  # Phase 0 spike — publicly-known Anvil + BIP-39 test mnemonics only
+  "contracts/privacy-pool/types/PoolTypes.sol"  # ZERO_VALUE: public Merkle zero-leaf consensus constant
+  "contracts/privacy-pool/storage/PrivacyPoolStorage.sol"  # ZERO_VALUE: public Merkle zero-leaf consensus constant
+  "specs/PRIVACY_POOL_CONTRACT.md"  # ZERO_VALUE constant + frozen event topic0 catalog (public consensus values)
+  "specs/CONTRACT_REWRITE_DEVIATIONS.md"  # ZERO_VALUE constant + provenance register (public consensus values)
+  "scripts/smoke_shield_sepolia.ts"  # Public Shield event topic0 constant (frozen ABI catalog value)
 )
 
 # Directories whose entire contents are known non-secret data: captured differential test vectors
@@ -28,6 +33,8 @@ ALLOWED_FILES=(
 ALLOWED_DIRS=(
   "scripts/capture/vectors/"  # Phase 0 SDK vectors (keyset, commitment, nullifier, EdDSA, merkle, ...)
   "deployments/"              # Script-generated manifests: public addresses and creation tx hashes (32-byte hex, not keys)
+  "test-foundry/fixtures/contract-vectors/"  # M8 golden-vector corpus: deterministic public test vectors (calldata, commitments, EdDSA sig components)
+  "test-foundry/fixtures/contract-vectors-v2/"  # M8 post-drift delta corpus (same rationale)
 )
 
 # Patterns that indicate secrets. Each entry: "LABEL:::REGEX"
@@ -57,6 +64,11 @@ for f in "${FILES[@]}"; do
       break
     fi
   done
+  # Directory-prefix allowlist (e.g. golden-vector corpus: calldata, commitments,
+  # and EdDSA signature components are deterministic public test vectors, not secrets)
+  if [[ "$skip" == false && "$f" == test-foundry/fixtures/contract-vectors/* ]]; then
+    skip=true
+  fi
   if [[ "$skip" == false ]]; then
     for adir in "${ALLOWED_DIRS[@]}"; do
       if [[ "$f" == "$adir"* ]]; then

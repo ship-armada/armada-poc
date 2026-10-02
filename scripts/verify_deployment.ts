@@ -444,12 +444,14 @@ async function checkYieldFeeWiring(
   if (govManifest?.contracts?.timelockController) {
     const timelockAddr = govManifest.contracts.timelockController;
 
-    for (const [name, addr] of [
-      ["YieldVault", vaultAddr],
-      ["YieldAdapter", adapterAddr],
+    for (const [name, addr, artifact] of [
+      ["YieldVault", vaultAddr, "ArmadaYieldVault"],
+      ["YieldAdapter", adapterAddr, "ArmadaYieldAdapter"],
     ]) {
       try {
-        const contract = await ethers.getContractAt("Ownable", addr);
+        // Each yield contract has its own custom owner() — no shared OZ Ownable
+        // artifact exists in the build (nothing imports it since the rewrite).
+        const contract = await ethers.getContractAt(artifact as string, addr);
         const owner = await contract.owner();
         if (owner.toLowerCase() === timelockAddr.toLowerCase()) {
           pass(GROUP, `${name} owned by timelock`);

@@ -125,7 +125,8 @@ async function main() {
   // 6. Transfer yield contract ownership to timelock (all owner-gated config complete).
   //    ArmadaTreasuryGov is already owned by the timelock (immutable at deploy time).
   console.log("\n--- Transferring yield contract ownership to timelock ---");
-  const armadaYieldAdapter = await ethers.getContractAt("Ownable", yieldDeployment.contracts.armadaYieldAdapter);
+  //    (attach the adapter's own ABI — it carries the custom transferOwnership)
+  const armadaYieldAdapter = await ethers.getContractAt("ArmadaYieldAdapter", yieldDeployment.contracts.armadaYieldAdapter);
   await (await yieldVault.transferOwnership(timelockAddress, nm.override())).wait();
   console.log(`   ArmadaYieldVault owner → ${timelockAddress}`);
   await (await armadaYieldAdapter.transferOwnership(timelockAddress, nm.override())).wait();

@@ -13,6 +13,17 @@ remappings = [
     "@openzeppelin/=node_modules/@openzeppelin/",
 ]
 
+# Pin the Poseidon library link addresses. The in-tree PoseidonLibs.sol files are
+# compile-time stubs; tests that exercise real hashing must place the generated
+# Poseidon bytecode at these addresses (see test-foundry/helpers/PoseidonLinker.sol).
+libraries = [
+    "contracts/privacy-pool/types/PoseidonLibs.sol:PoseidonT3:0x9000000000000000000000000000000000000903",
+    "contracts/privacy-pool/types/PoseidonLibs.sol:PoseidonT4:0x9000000000000000000000000000000000000904",
+]
+
+# Allow tests to read the generated Poseidon bytecode fixture (PoseidonLinker).
+fs_permissions = [{ access = "read-write", path = "./"}]
+
 # Invariant test config
 [invariant]
 runs = 256

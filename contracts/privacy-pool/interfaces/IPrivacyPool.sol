@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
-import "../../railgun/logic/Globals.sol";
+import "../types/PoolTypes.sol";
 import "../../cctp/ICCTPV2.sol";
 
 /**

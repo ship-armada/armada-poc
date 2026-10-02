@@ -1,0 +1,187 @@
+{
+  "id": "transact-withdraw-only-revert",
+  "category": "pause",
+  "description": "Transact with unshield=NONE while withdrawOnlyMode()=true reverts (spec §8.1 step 3).",
+  "specRefs": [
+    "§8.1"
+  ],
+  "proofsBypassed": true,
+  "dependsOn": [
+    "admin-set-shield-pause-contract"
+  ],
+  "setup": [
+    "MockShieldPauseController.setShieldsPaused(false) + setWithdrawOnlyMode(true)",
+    "testingMode = true"
+  ],
+  "requiresImpersonation": null,
+  "setupTxs": [
+    {
+      "from": "DEPLOYER",
+      "to": "MOCK_PAUSE",
+      "toAddress": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+      "calldata": "0x9a87b8ad0000000000000000000000000000000000000000000000000000000000000000",
+      "description": "unpause shields"
+    },
+    {
+      "from": "DEPLOYER",
+      "to": "MOCK_PAUSE",
+      "toAddress": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+      "calldata": "0xf80c521c0000000000000000000000000000000000000000000000000000000000000001",
+      "description": "enable withdraw-only mode"
+    }
+  ],
+  "tx": {
+    "from": "DEPLOYER",
+    "fromAddress": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "to": "POOL",
+    "toAddress": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+    "calldata": "0xd8ae136a000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001f3184f148d6729211da2df4bda6518b58a3a6c472ecd66e0c1cac5ab2c06da40000000000000000000000000000000000000000000000000000000000000220000000000000000000000000000000000000000000000000000000000000026000000000000000000000000000000000000000000000000000000000000002a00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010728626afcb34d1e15696eb95bdb783b74c56a720fa29036807daf8ac21921b90000000000000000000000000000000000000000000000000000000000000001104f0fa9e52389bc0ecaea594e84571a69e23d8bc20c113c3a772f3e37982a530000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007a690000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000020277975f464fb56985052fe0d1f41d775ad34f26eb68b6c881746a691b10f8ffa456571b66f82e0fbe1cf2a0508ac5ac6c1935e52df4c84e3ddfe633011e7a289d40f2099063734223c4997ece1a0488c702b964de368de348e6d2d49444e312217b5546fc31e7d6adf5d9772ecf30563a10fae6a5357751b50dc969af7c20f982b9e9c90845df8de7d6fa891c827945725de954c446a09b4c139118b09b8b3eac992b0b70023b18e5be1a5345571fae9d9816c091554cb618ad36df99f0273880000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "value": "0x0",
+    "decodedCall": {
+      "function": "transact",
+      "args": {
+        "txs": [
+          {
+            "proof": {
+              "a": {
+                "x": 0,
+                "y": 0
+              },
+              "b": {
+                "x": [
+                  0,
+                  0
+                ],
+                "y": [
+                  0,
+                  0
+                ]
+              },
+              "c": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            "merkleRoot": "0x1f3184f148d6729211da2df4bda6518b58a3a6c472ecd66e0c1cac5ab2c06da4",
+            "nullifiers": [
+              "0x0728626afcb34d1e15696eb95bdb783b74c56a720fa29036807daf8ac21921b9"
+            ],
+            "commitments": [
+              "0x104f0fa9e52389bc0ecaea594e84571a69e23d8bc20c113c3a772f3e37982a53"
+            ],
+            "boundParams": {
+              "treeNumber": 0,
+              "minGasPrice": 0,
+              "unshield": 0,
+              "chainID": 31337,
+              "adaptContract": "0x0000000000000000000000000000000000000000",
+              "adaptParams": "0x0000000000000000000000000000000000000000000000000000000000000000",
+              "commitmentCiphertext": [
+                {
+                  "ciphertext": [
+                    "0x277975f464fb56985052fe0d1f41d775ad34f26eb68b6c881746a691b10f8ffa",
+                    "0x456571b66f82e0fbe1cf2a0508ac5ac6c1935e52df4c84e3ddfe633011e7a289",
+                    "0xd40f2099063734223c4997ece1a0488c702b964de368de348e6d2d49444e3122",
+                    "0x17b5546fc31e7d6adf5d9772ecf30563a10fae6a5357751b50dc969af7c20f98"
+                  ],
+                  "blindedSenderViewingKey": "0x2b9e9c90845df8de7d6fa891c827945725de954c446a09b4c139118b09b8b3ea",
+                  "blindedReceiverViewingKey": "0xc992b0b70023b18e5be1a5345571fae9d9816c091554cb618ad36df99f027388",
+                  "annotationData": "0x",
+                  "memo": "0x"
+                }
+              ]
+            },
+            "unshieldPreimage": {
+              "npk": "0x0000000000000000000000000000000000000000000000000000000000000000",
+              "token": {
+                "tokenType": 0,
+                "tokenAddress": "0x0000000000000000000000000000000000000000",
+                "tokenSubID": 0
+              },
+              "value": 0
+            }
+          }
+        ]
+      }
+    }
+  },
+  "preState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x33",
+    "pool.merkleRoot": "0x1f3184f148d6729211da2df4bda6518b58a3a6c472ecd66e0c1cac5ab2c06da4",
+    "pool.lastEventBlock": "0xb0",
+    "usdc.balanceOf[POOL]": "0x6c61f987",
+    "usdc.balanceOf[ALICE]": "0x211c41d39",
+    "usdc.balanceOf[BOB]": "0x3db0d8c0",
+    "usdc.balanceOf[CAROL]": "0x3b023380",
+    "usdc.balanceOf[TREASURY]": "0x931840",
+    "usdc.balanceOf[DEPLOYER]": "0xf4240",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x2dc6c0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x4c4b40",
+    "mockPause.shieldsPaused": false,
+    "mockPause.withdrawOnlyMode": true,
+    "mockPause.emergencyPaused": false
+  },
+  "result": {
+    "status": 0,
+    "txHash": "0xbf3c9fb41591238f9b83760e1dbfed22c0f90a37653bd31febb3f7a272571c84",
+    "blockNumber": 191,
+    "gasUsed": "0xce62",
+    "returnData": null,
+    "revert": {
+      "kind": "Error(string)",
+      "reason": "TransactModule: withdraw only",
+      "data": "0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000001d5472616e736163744d6f64756c653a207769746864726177206f6e6c79000000"
+    },
+    "events": []
+  },
+  "postState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x33",
+    "pool.merkleRoot": "0x1f3184f148d6729211da2df4bda6518b58a3a6c472ecd66e0c1cac5ab2c06da4",
+    "pool.lastEventBlock": "0xb0",
+    "usdc.balanceOf[POOL]": "0x6c61f987",
+    "usdc.balanceOf[ALICE]": "0x211c41d39",
+    "usdc.balanceOf[BOB]": "0x3db0d8c0",
+    "usdc.balanceOf[CAROL]": "0x3b023380",
+    "usdc.balanceOf[TREASURY]": "0x931840",
+    "usdc.balanceOf[DEPLOYER]": "0xf4240",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x2dc6c0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x4c4b40",
+    "mockPause.shieldsPaused": false,
+    "mockPause.withdrawOnlyMode": true,
+    "mockPause.emergencyPaused": false
+  },
+  "context": {
+    "chainId": 31337,
+    "network": "local fixturenet (Anvil, hub chain only)",
+    "deployments": {
+      "privacyPool": "deployments/privacy-pool-hub.json",
+      "cctp": "deployments/hub-v3.json",
+      "feeModule": "deployments/fee-module-hub.json",
+      "governance": "deployments/governance-hub.json"
+    },
+    "addressBook": {
+      "DEPLOYER": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "ALICE": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "BOB": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "CAROL": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "TREASURY": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+      "POOL": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+      "SHIELD_MODULE": "0xc5a5C42992dECbae36851359345FE25997F5C42d",
+      "TRANSACT_MODULE": "0x67d269191c92Caf3cD7723F116c85e6E9bf55933",
+      "MERKLE_MODULE": "0x7a2088a1bFc9d81c55368AE168C2C02570cB814F",
+      "VERIFIER_MODULE": "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
+      "HOOK_ROUTER": "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
+      "GASLESS_WRAPPER": "0xCD8a1C3ba11CF5ECfa6267617243239504a98d90",
+      "TOKEN_MESSENGER": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+      "MESSAGE_TRANSMITTER": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+      "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "FEE_MODULE": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+      "CLIENT_POOL": "0x0000000000000000000000000000000000C11EA7",
+      "MOCK_PAUSE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+      "MOCK_FEE_MODULE": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f"
+    }
+  },
+  "capturedAt": "2026-09-25T17:02:59.706Z"
+}

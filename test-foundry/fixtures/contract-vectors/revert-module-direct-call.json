@@ -1,0 +1,125 @@
+{
+  "id": "revert-module-direct-call",
+  "category": "edge",
+  "description": "Calling ShieldModule.shield directly (not via router delegatecall) trips the onlyDelegatecall guard (I-9).",
+  "specRefs": [
+    "§1.2",
+    "I-9"
+  ],
+  "proofsBypassed": false,
+  "dependsOn": [],
+  "setup": [
+    "MockUSDCV2.mint(ALICE, 10_000 USDC), mint(BOB, 1_000 USDC), mint(CAROL, 1_000 USDC) by DEPLOYER (minter)",
+    "USDC.approve(POOL, uint256.max) from ALICE, BOB and CAROL"
+  ],
+  "requiresImpersonation": null,
+  "setupTxs": [],
+  "tx": {
+    "from": "ALICE",
+    "fromAddress": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    "to": "SHIELD_MODULE",
+    "toAddress": "0xc5a5C42992dECbae36851359345FE25997F5C42d",
+    "calldata": "0xcd6a3d7f00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000104b091ec6b698100c76f39be300828df1faad717449dde913cd5ef8734796dc000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f42409587baaddb603224d40e56b744f08eea3ec5685dec7cbf87b73476bf17e943d55b253d0c0ea1e4b46e1a309c1244b652fce902f7e21ad15b3c7cefa1d8f71ab5b6ee6b10059fcf62e25074e228c4817a283b9ba07a82a50753d372fab1366502779d92bffed8f38579cc8377f15c703e570cb46997f057921dd5d84accc2377a",
+    "value": "0x0",
+    "decodedCall": {
+      "function": "ShieldModule.shield (direct)",
+      "args": {
+        "requests": [
+          {
+            "preimage": {
+              "npk": "0x04b091ec6b698100c76f39be300828df1faad717449dde913cd5ef8734796dc0",
+              "token": {
+                "tokenType": 0,
+                "tokenAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+                "tokenSubID": 0
+              },
+              "value": "0xf4240"
+            },
+            "ciphertext": {
+              "encryptedBundle": [
+                "0x9587baaddb603224d40e56b744f08eea3ec5685dec7cbf87b73476bf17e943d5",
+                "0x5b253d0c0ea1e4b46e1a309c1244b652fce902f7e21ad15b3c7cefa1d8f71ab5",
+                "0xb6ee6b10059fcf62e25074e228c4817a283b9ba07a82a50753d372fab1366502"
+              ],
+              "shieldKey": "0x779d92bffed8f38579cc8377f15c703e570cb46997f057921dd5d84accc2377a"
+            }
+          }
+        ],
+        "integrator": "0x0000000000000000000000000000000000000000"
+      }
+    }
+  },
+  "preState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x34",
+    "pool.merkleRoot": "0x1ecc034c5d70d7cd14ca0aecea17be30796e51e5fd76d3543eeff8ffbeb9891f",
+    "pool.lastEventBlock": "0xc0",
+    "usdc.balanceOf[POOL]": "0x6c52b747",
+    "usdc.balanceOf[ALICE]": "0x211c41d39",
+    "usdc.balanceOf[BOB]": "0x3dc01b00",
+    "usdc.balanceOf[CAROL]": "0x3b023380",
+    "usdc.balanceOf[TREASURY]": "0x931840",
+    "usdc.balanceOf[DEPLOYER]": "0xf4240",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x2dc6c0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x4c4b40"
+  },
+  "result": {
+    "status": 0,
+    "txHash": "0x7b4caf657700a1ef6fed3c3fcfe614493c312416182f3a7a3c847015298c0f3e",
+    "blockNumber": 198,
+    "gasUsed": "0x7738",
+    "returnData": null,
+    "revert": {
+      "kind": "Error(string)",
+      "reason": "PrivacyPoolStorage: Direct call not allowed",
+      "data": "0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000002b50726976616379506f6f6c53746f726167653a204469726563742063616c6c206e6f7420616c6c6f776564000000000000000000000000000000000000000000"
+    },
+    "events": []
+  },
+  "postState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x34",
+    "pool.merkleRoot": "0x1ecc034c5d70d7cd14ca0aecea17be30796e51e5fd76d3543eeff8ffbeb9891f",
+    "pool.lastEventBlock": "0xc0",
+    "usdc.balanceOf[POOL]": "0x6c52b747",
+    "usdc.balanceOf[ALICE]": "0x211c41d39",
+    "usdc.balanceOf[BOB]": "0x3dc01b00",
+    "usdc.balanceOf[CAROL]": "0x3b023380",
+    "usdc.balanceOf[TREASURY]": "0x931840",
+    "usdc.balanceOf[DEPLOYER]": "0xf4240",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x2dc6c0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x4c4b40"
+  },
+  "context": {
+    "chainId": 31337,
+    "network": "local fixturenet (Anvil, hub chain only)",
+    "deployments": {
+      "privacyPool": "deployments/privacy-pool-hub.json",
+      "cctp": "deployments/hub-v3.json",
+      "feeModule": "deployments/fee-module-hub.json",
+      "governance": "deployments/governance-hub.json"
+    },
+    "addressBook": {
+      "DEPLOYER": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "ALICE": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "BOB": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "CAROL": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "TREASURY": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+      "POOL": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+      "SHIELD_MODULE": "0xc5a5C42992dECbae36851359345FE25997F5C42d",
+      "TRANSACT_MODULE": "0x67d269191c92Caf3cD7723F116c85e6E9bf55933",
+      "MERKLE_MODULE": "0x7a2088a1bFc9d81c55368AE168C2C02570cB814F",
+      "VERIFIER_MODULE": "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
+      "HOOK_ROUTER": "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
+      "GASLESS_WRAPPER": "0xCD8a1C3ba11CF5ECfa6267617243239504a98d90",
+      "TOKEN_MESSENGER": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+      "MESSAGE_TRANSMITTER": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+      "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "FEE_MODULE": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+      "CLIENT_POOL": "0x0000000000000000000000000000000000C11EA7",
+      "MOCK_PAUSE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+      "MOCK_FEE_MODULE": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f"
+    }
+  },
+  "capturedAt": "2026-09-25T17:03:06.706Z"
+}

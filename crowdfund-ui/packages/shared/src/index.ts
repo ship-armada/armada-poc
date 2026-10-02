@@ -331,6 +331,7 @@ export {
   StepBeforeYouStart,
   FlowChrome,
   ParticipateFlowModal,
+  confirmParticipateClose,
   ParticipateFlowInviteSlots,
   MaxOutBanner,
   INVITE_LINK_STEPS,

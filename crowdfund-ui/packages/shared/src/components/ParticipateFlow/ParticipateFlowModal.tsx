@@ -12,6 +12,15 @@ const EXIT_MS = 280
 const CLOSE_CONFIRM_MESSAGE =
   'A transaction is still running. It will continue, and you can reopen Participate to finish the remaining steps. Close?'
 
+/**
+ * Whether the participate flow may close. While a tx pipeline is running, asks
+ * the user first. Shared by the modal's X / Escape and the in-flow FlowChrome X
+ * so every close control asks the same question.
+ */
+export function confirmParticipateClose(running: boolean): boolean {
+  return !running || window.confirm(CLOSE_CONFIRM_MESSAGE)
+}
+
 export interface ParticipateFlowModalProps {
   open: boolean
   onClose: () => void
@@ -61,7 +70,7 @@ export function ParticipateFlowModal({
   // Confirm before closing if a transaction is in flight, so Escape / X can't
   // silently unmount the modal mid-pipeline.
   const requestClose = () => {
-    if (confirmBeforeCloseRef.current && !window.confirm(CLOSE_CONFIRM_MESSAGE)) return
+    if (!confirmParticipateClose(confirmBeforeCloseRef.current)) return
     onCloseRef.current()
   }
 
@@ -123,7 +132,7 @@ export function ParticipateFlowModal({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       // Read refs directly so this effect needn't depend on requestClose.
-      if (confirmBeforeCloseRef.current && !window.confirm(CLOSE_CONFIRM_MESSAGE)) return
+      if (!confirmParticipateClose(confirmBeforeCloseRef.current)) return
       onCloseRef.current()
     }
     window.addEventListener('keydown', onKeyDown)

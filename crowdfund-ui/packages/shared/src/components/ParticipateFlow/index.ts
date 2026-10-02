@@ -32,7 +32,7 @@ export type {
   ParticipateStepBarProps,
 } from './participateFlowSteps'
 
-export { ParticipateFlowModal } from './ParticipateFlowModal'
+export { ParticipateFlowModal, confirmParticipateClose } from './ParticipateFlowModal'
 export type { ParticipateFlowModalProps } from './ParticipateFlowModal'
 
 export { ParticipateFlowInviteSlots } from './ParticipateFlowInviteSlots'

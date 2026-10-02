@@ -16,6 +16,7 @@ import {
   Step4Approve,
   Step5Confirmation,
   StepBeforeYouStart,
+  confirmParticipateClose,
   MaxOutBanner,
   hopPillDotColor,
   truncateAddress,
@@ -245,8 +246,12 @@ export function ParticipateFlowV2({
 
   // Close the flow in place (no page change) — the FlowChrome X on every commit
   // step. Without a parent handler, leaving via the network page is the next
-  // best exit.
-  const handleClose = onClose ?? onGoToNetwork
+  // best exit. Mid-pipeline it asks first, like the modal's own X / Escape.
+  const handleClose = () => {
+    if (!confirmParticipateClose(submitting)) return
+    if (onClose) onClose()
+    else onGoToNetwork()
+  }
 
   // A step only owns the close control when it actually renders a FlowChrome:
   // the eligibility gates below pre-empt the step machine, and the commit step

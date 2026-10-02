@@ -358,6 +358,49 @@ describe('ParticipateFlowV2 finished-pipeline cleanup', () => {
   })
 })
 
+describe('ParticipateFlowV2 in-flow close', () => {
+  it('asks before the step X closes the flow mid-transaction', async () => {
+    // approve stays pending so the pipeline is in flight when X is pressed.
+    approveImpl = () => Promise.resolve({ hash: '0xapprove', wait: () => new Promise(() => {}) })
+    const onClose = vi.fn()
+    const confirmSpy = vi.spyOn(window, 'confirm')
+
+    render(<ParticipateFlowV2 {...makeProps()} onClose={onClose} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Join now' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Commit' }))
+    fireEvent.change(await screen.findByRole('textbox'), { target: { value: '100' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Approve and commit' }))
+    await act(async () => {})
+    expect(approveSpy).toHaveBeenCalledTimes(1)
+
+    // Declining the prompt keeps the flow open.
+    confirmSpy.mockReturnValueOnce(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Close participate flow' }))
+    expect(confirmSpy).toHaveBeenCalledOnce()
+    expect(onClose).not.toHaveBeenCalled()
+
+    // Accepting it closes.
+    confirmSpy.mockReturnValueOnce(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Close participate flow' }))
+    expect(onClose).toHaveBeenCalledOnce()
+    confirmSpy.mockRestore()
+  })
+
+  it('closes without asking when nothing is in flight', async () => {
+    const onClose = vi.fn()
+    const confirmSpy = vi.spyOn(window, 'confirm')
+
+    render(<ParticipateFlowV2 {...makeProps()} onClose={onClose} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Join now' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Close participate flow' }))
+
+    expect(confirmSpy).not.toHaveBeenCalled()
+    expect(onClose).toHaveBeenCalledOnce()
+    confirmSpy.mockRestore()
+  })
+})
+
 describe('ParticipateFlowV2 confirmation invite gate', () => {
   function renderConfirmation(sections: CrowdfundInviteSlotSection[]) {
     getDefaultStore().set(pipelinesAtom, {

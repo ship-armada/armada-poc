@@ -57,6 +57,65 @@ describe('InviteActionScreen link confirmation', () => {
   })
 })
 
+describe('InviteActionScreen dismissed without Done', () => {
+  // A sheet backdrop tap / Escape (or a layout remount) unmounts the screen
+  // without Done. The created invite must still be revealed — never left
+  // hidden, and never discarded (which the live wiring maps to a revoke).
+  it('reveals a created link when the screen unmounts', async () => {
+    const onConfirmCreated = vi.fn()
+    const onDiscardCreated = vi.fn()
+    const { unmount } = render(
+      <InviteActionScreen
+        hop={1}
+        method="link"
+        onBack={vi.fn()}
+        onGenerateLink={vi.fn().mockResolvedValue({
+          id: CREATED_ID,
+          link: 'https://fund.armada.blue/invite?n=1',
+          expiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
+        })}
+        onInviteOnchain={vi.fn()}
+        onConfirmCreated={onConfirmCreated}
+        onDiscardCreated={onDiscardCreated}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Create link' }))
+    await screen.findByText('Link ready to share')
+
+    unmount()
+
+    expect(onConfirmCreated).toHaveBeenCalledWith(CREATED_ID)
+    expect(onDiscardCreated).not.toHaveBeenCalled()
+  })
+
+  it('reveals an invite whose creation finishes after the screen is gone', async () => {
+    let resolveCreate!: (v: unknown) => void
+    const onConfirmCreated = vi.fn()
+    const onDiscardCreated = vi.fn()
+    const { unmount } = render(
+      <InviteActionScreen
+        hop={1}
+        method="link"
+        onBack={vi.fn()}
+        onGenerateLink={vi.fn(() => new Promise((res) => (resolveCreate = res))) as never}
+        onInviteOnchain={vi.fn()}
+        onConfirmCreated={onConfirmCreated}
+        onDiscardCreated={onDiscardCreated}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Create link' }))
+    unmount()
+
+    resolveCreate({
+      id: CREATED_ID,
+      link: 'https://fund.armada.blue/invite?n=1',
+      expiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
+    })
+    await waitFor(() => expect(onConfirmCreated).toHaveBeenCalledWith(CREATED_ID))
+    expect(onDiscardCreated).not.toHaveBeenCalled()
+  })
+})
+
 describe('InviteActionScreen in-flight state', () => {
   const baseProps = {
     hop: 1 as const,

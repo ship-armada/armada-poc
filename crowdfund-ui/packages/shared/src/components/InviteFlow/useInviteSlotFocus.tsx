@@ -341,6 +341,7 @@ export function InviteHopFocusChrome({
       <InviteActionSheet
         open={sheetMode}
         onClose={handleBack}
+        dismissible={loadingHop !== focusHop}
         ariaLabel={sheetLabel}
       >
         {actionScreen}

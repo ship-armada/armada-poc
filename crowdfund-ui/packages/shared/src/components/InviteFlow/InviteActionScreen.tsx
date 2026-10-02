@@ -136,6 +136,23 @@ export function InviteActionScreen({
   const linkMenuId = useId()
   const pendingConfirmIdRef = useRef<number | null>(null)
   const createGenerationRef = useRef(0)
+  // Dismissing without Done (sheet backdrop / Escape, or a layout remount)
+  // unmounts this screen. A created-but-unconfirmed invite is then revealed as
+  // if Done were pressed — never left hidden, and never discarded (which the
+  // live wiring maps to a revoke). `mountedRef` also catches a create that
+  // resolves after the unmount.
+  const mountedRef = useRef(true)
+  const onConfirmCreatedRef = useRef(onConfirmCreated)
+  onConfirmCreatedRef.current = onConfirmCreated
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      const id = pendingConfirmIdRef.current
+      pendingConfirmIdRef.current = null
+      if (id != null && id >= 0) onConfirmCreatedRef.current?.(id)
+    }
+  }, [])
 
   const target = hop ?? slotId
   if (target == null) {
@@ -335,6 +352,10 @@ export function InviteActionScreen({
         if (created) onDiscardCreated?.(created.id)
         return
       }
+      if (!mountedRef.current) {
+        if (created && created.id >= 0) onConfirmCreatedRef.current?.(created.id)
+        return
+      }
       if (created) {
         pendingConfirmIdRef.current = created.id
         setCreatedLink(created)
@@ -360,6 +381,10 @@ export function InviteActionScreen({
       const created = await onInviteOnchain(target, address, ensName)
       if (generation !== createGenerationRef.current) {
         if (created) onDiscardCreated?.(created.id)
+        return
+      }
+      if (!mountedRef.current) {
+        if (created && created.id >= 0) onConfirmCreatedRef.current?.(created.id)
         return
       }
       if (created) {

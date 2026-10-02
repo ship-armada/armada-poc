@@ -16,6 +16,9 @@ export interface InviteActionSheetProps {
   children: ReactNode
   /** Accessible name for the dialog. */
   ariaLabel: string
+  /** When false, a backdrop tap / Escape does nothing — e.g. while an invite is
+   *  being sent, when the screen's own Cancel is disabled too. Default true. */
+  dismissible?: boolean
 }
 
 export function InviteActionSheet({
@@ -23,6 +26,7 @@ export function InviteActionSheet({
   onClose,
   children,
   ariaLabel,
+  dismissible = true,
 }: InviteActionSheetProps) {
   const isMobile = useIsMobileLayout()
   const sheetRef = useRef<HTMLDivElement>(null)
@@ -71,7 +75,7 @@ export function InviteActionSheet({
   }, [mounted, isMobile])
 
   useEffect(() => {
-    if (!open || exiting || !isMobile) return
+    if (!open || exiting || !isMobile || !dismissible) return
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -81,7 +85,7 @@ export function InviteActionSheet({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [open, exiting, isMobile, onClose])
+  }, [open, exiting, isMobile, dismissible, onClose])
 
   useEffect(() => {
     if (!mounted || !isMobile) return
@@ -126,7 +130,7 @@ export function InviteActionSheet({
           .filter(Boolean)
           .join(' ')}
         role="presentation"
-        onClick={exiting ? undefined : onClose}
+        onClick={exiting || !dismissible ? undefined : onClose}
       />
       <div
         ref={sheetRef}

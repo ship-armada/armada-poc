@@ -47,4 +47,11 @@ describe('ParticipateFlowModal close', () => {
     expect(screen.queryByRole('button', { name: 'Close participate flow' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Do it later' })).toBeTruthy()
   })
+
+  it('asks with a caller-supplied message (e.g. the claim flow)', () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderModal({ confirmBeforeClose: true, closeConfirmMessage: 'Claim still running. Close?' })
+    fireEvent.click(screen.getByRole('button', { name: 'Close participate flow' }))
+    expect(window.confirm).toHaveBeenCalledWith('Claim still running. Close?')
+  })
 })

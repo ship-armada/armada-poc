@@ -18,8 +18,11 @@ const CLOSE_CONFIRM_MESSAGE =
  * the user first. Shared by the modal's X / Escape and the in-flow FlowChrome X
  * so every close control asks the same question.
  */
-export function confirmParticipateClose(running: boolean): boolean {
-  return !running || window.confirm(CLOSE_CONFIRM_MESSAGE)
+export function confirmParticipateClose(
+  running: boolean,
+  message: string = CLOSE_CONFIRM_MESSAGE,
+): boolean {
+  return !running || window.confirm(message)
 }
 
 export interface ParticipateFlowModalProps {
@@ -31,6 +34,9 @@ export interface ParticipateFlowModalProps {
   /** When true, Escape / the X button ask for confirmation before closing —
    *  used while an approve/commit pipeline is in flight. */
   confirmBeforeClose?: boolean
+  /** Prompt for `confirmBeforeClose`. Defaults to the participate wording;
+   *  other flows hosted in this shell (e.g. Claim) pass their own. */
+  closeConfirmMessage?: string
   /** When false, hides the top-right close control (e.g. invite uses “Do it later”). */
   showClose?: boolean
   /** Optional content below the step shell (e.g. “Do it later” text link). */
@@ -43,6 +49,7 @@ export function ParticipateFlowModal({
   children,
   ariaLabel,
   confirmBeforeClose = false,
+  closeConfirmMessage,
   showClose = true,
   footer,
 }: ParticipateFlowModalProps) {
@@ -67,11 +74,15 @@ export function ParticipateFlowModal({
   useEffect(() => {
     confirmBeforeCloseRef.current = confirmBeforeClose
   }, [confirmBeforeClose])
+  const closeConfirmMessageRef = useRef(closeConfirmMessage)
+  useEffect(() => {
+    closeConfirmMessageRef.current = closeConfirmMessage
+  }, [closeConfirmMessage])
 
   // Confirm before closing if a transaction is in flight, so Escape / X can't
   // silently unmount the modal mid-pipeline.
   const requestClose = () => {
-    if (!confirmParticipateClose(confirmBeforeCloseRef.current)) return
+    if (!confirmParticipateClose(confirmBeforeCloseRef.current, closeConfirmMessageRef.current)) return
     onCloseRef.current()
   }
 
@@ -141,7 +152,7 @@ export function ParticipateFlowModal({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       // Read refs directly so this effect needn't depend on requestClose.
-      if (!confirmParticipateClose(confirmBeforeCloseRef.current)) return
+      if (!confirmParticipateClose(confirmBeforeCloseRef.current, closeConfirmMessageRef.current)) return
       onCloseRef.current()
     }
     window.addEventListener('keydown', onKeyDown)

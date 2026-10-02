@@ -34,6 +34,7 @@ import { setClaimInFlight, getClaimInFlight, clearClaimInFlight } from '@/lib/cl
 import { TX_WAIT_TIMEOUT_MS, isTxTimeoutError } from '@/lib/txWait'
 import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
 import { submitWrite } from '@/lib/submitWrite'
+import { confirmClaimClose } from '@/lib/claimModal'
 import { getExplorerUrl, getHubChainId, getTxConfirmations } from '@/config/network'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { getHubNetworkLabel } from '@/config/network'
@@ -115,6 +116,9 @@ export interface ClaimFlowV2Props {
   /** Refresh USDC + ARM balance after the tx confirms so the navbar wallet
    *  badge and MyPosition surface the post-claim state right away. */
   refreshAllowance?: () => Promise<void>
+  /** Reports whether a claim tx is in flight, so the hosting modal can ask
+   *  before Escape / its X closes it mid-claim. */
+  onRunningChange?: (running: boolean) => void
 }
 
 export function ClaimFlowV2(props: ClaimFlowV2Props) {
@@ -135,6 +139,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     onGoToNetwork,
     onReceiptLogs,
     refreshAllowance,
+    onRunningChange,
   } = props
 
   const selfRadioId = useId()
@@ -466,7 +471,18 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
           : truncateAddress(resolvedDelegate)
         : null
 
-  const handleClose = onGoToNetwork
+  // In flight while sending, or while a row (incl. one rebuilt from the
+  // in-flight marker after a remount) is still waiting on the chain.
+  const claimInFlight = submitting || (txs?.some((t) => t.status === 'loading') ?? false)
+  useEffect(() => {
+    onRunningChange?.(claimInFlight)
+  }, [claimInFlight, onRunningChange])
+  useEffect(() => () => onRunningChange?.(false), [onRunningChange])
+
+  const handleClose = () => {
+    if (!confirmClaimClose(claimInFlight)) return
+    onGoToNetwork()
+  }
 
   // Submit the claim/refund transaction through the shared single-step engine,
   // so it inherits the two-phase labels, explorer link, and quiet-rejection

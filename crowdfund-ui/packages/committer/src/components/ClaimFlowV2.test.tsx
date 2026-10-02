@@ -261,6 +261,37 @@ describe('ClaimFlowV2 submit step Back', () => {
   })
 })
 
+describe('ClaimFlowV2 close mid-claim', () => {
+  it('reports the claim as running and asks before the in-card X closes', async () => {
+    allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 0n]) // 1 ARM
+    claimImpl = () => Promise.resolve({ hash: '0xclaim', wait: () => new Promise(() => {}) })
+    const provider = { waitForTransaction: () => new Promise(() => {}) } as unknown as JsonRpcProvider
+    const onGoToNetwork = vi.fn()
+    const onRunningChange = vi.fn()
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+    renderClaim(
+      <ClaimFlowV2
+        {...baseProps}
+        signer={{} as never}
+        provider={provider}
+        walletAddress={ADDR_A}
+        onGoToNetwork={onGoToNetwork}
+        onRunningChange={onRunningChange}
+      />,
+    )
+    await startArmToReview()
+    fireEvent.click(screen.getByRole('button', { name: 'Claim ARM' }))
+    expect(await screen.findByText('Submitting…')).toBeTruthy()
+    expect(onRunningChange).toHaveBeenLastCalledWith(true)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close claim flow' }))
+    expect(confirmSpy).toHaveBeenCalledOnce()
+    expect(onGoToNetwork).not.toHaveBeenCalled()
+    confirmSpy.mockRestore()
+  })
+})
+
 describe('ClaimFlowV2 Final commit', () => {
   const USDC = 1_000_000n
   const finalCommit = async () =>

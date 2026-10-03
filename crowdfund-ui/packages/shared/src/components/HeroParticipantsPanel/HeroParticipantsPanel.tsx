@@ -111,7 +111,8 @@ export interface HeroParticipantListProps {
   selectedAddress?: string
   onSelectAddress?: (address: string | undefined) => void
   filter?: HeroHopFilter
-  /** Fires when the empty-state "Participate" CTA is clicked. */
+  /** Fires when the empty-state "Participate" CTA is clicked. Omit to hide
+   *  the CTA (e.g. before the commit window opens). */
   onParticipate?: () => void
 }
 
@@ -162,16 +163,18 @@ export function HeroParticipantList({
               <div className={styles.empty}>
                 <div className={styles.emptyTitle}>No participants yet</div>
                 <div className={styles.emptySub}>Be the first to participate.</div>
-                <div className={styles.emptyCta}>
-                  <Button
-                    variant="gradient"
-                    size="md"
-                    label="Participate"
-                    showIcon
-                    icon="arrow-right-micro"
-                    onClick={onParticipate}
-                  />
-                </div>
+                {onParticipate && (
+                  <div className={styles.emptyCta}>
+                    <Button
+                      variant="gradient"
+                      size="md"
+                      label="Participate"
+                      showIcon
+                      icon="arrow-right-micro"
+                      onClick={onParticipate}
+                    />
+                  </div>
+                )}
               </div>
             ) : noResults ? (
               <div className={styles.empty}>

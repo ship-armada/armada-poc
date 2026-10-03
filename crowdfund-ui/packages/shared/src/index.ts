@@ -271,6 +271,8 @@ export type {
 
 export { Participate } from './components/Participate/index.js'
 export type { ParticipateProps } from './components/Participate/index.js'
+export { PreOpenCard } from './components/PreOpenCard/index.js'
+export type { PreOpenCardProps } from './components/PreOpenCard/index.js'
 
 // Hero media assets — re-exported as URL strings so consuming apps can pass
 // them to <Participate imageSrc=… videoSrc=… /> (e.g. the committer mobile menu).

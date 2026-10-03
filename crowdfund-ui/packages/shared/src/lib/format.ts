@@ -165,6 +165,22 @@ export function formatOpensAtDetail(windowStartUnix: number): string {
   return start ? `Opens ${start}` : ''
 }
 
+/**
+ * Pre-open countdown for the hero's opening card: zero-padded
+ * "02d 04h 12m 33s" so the counter keeps a steady width as it ticks.
+ * Returns '' at or past the opening.
+ */
+export function formatOpensCountdown(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return ''
+  const total = Math.floor(seconds)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const d = Math.floor(total / 86400)
+  const h = Math.floor((total % 86400) / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  return `${pad(d)}d ${pad(h)}h ${pad(m)}m ${pad(s)}s`
+}
+
 /** Get human-readable phase name */
 export function phaseName(phase: number): string {
   switch (phase) {

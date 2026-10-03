@@ -7,6 +7,7 @@ import { InformationCircleIcon } from '@heroicons/react/24/solid'
 import { ensMapAtom } from '../../hooks/useENS'
 import { Button, Header, Progress, Tag, Tooltip } from '@armada/ui'
 import { Participate } from '../Participate/Participate'
+import { PreOpenCard } from '../PreOpenCard/PreOpenCard'
 import { CrowdfundLeftColumn } from '../CrowdfundLeftColumn'
 import {
   HeroParticipantControls,
@@ -1207,7 +1208,9 @@ export function CrowdfundExperience({
                       selectedAddress={selectedAddress}
                       onSelectAddress={setSelectedAddress}
                       filter={filter}
-                      onParticipate={onParticipate}
+                      // Outside the commit window (pre-open, closed) there's
+                      // nothing to participate in — hide the empty-list CTA.
+                      onParticipate={participationEnabled ? onParticipate : undefined}
                     />
                   </div>
                 }
@@ -1400,6 +1403,26 @@ export function CrowdfundExperience({
       </div>
 
       <div className={[heroStyles.rightCorner, shellStyles.rightCorner].join(' ')}>
+        {/* Before the commit window opens, a countdown takes the Participate
+            card's slot; it swaps for Participate once the sale goes live. */}
+        {!participationEnabled && liveReady?.opensAtUnix != null && liveReady.opensAtUnix > 0 && (
+          <div
+            className={[
+              layerClass(crowdfundPanelVisible, motionReady, crowdfundPanelAnimates),
+              shellStyles.rightParticipateLayer,
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            aria-hidden={!crowdfundPanelVisible}
+          >
+            <PreOpenCard
+              className={[heroStyles.enter, heroStyles.enterParticipate, shellStyles.mobileParticipateCard].join(' ')}
+              imageSrc={fleetPng}
+              opensAtUnix={liveReady.opensAtUnix}
+            />
+          </div>
+        )}
+
         {participationEnabled && (
           <div
             className={[

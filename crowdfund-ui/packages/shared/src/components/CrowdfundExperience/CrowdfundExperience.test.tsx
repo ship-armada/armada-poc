@@ -131,3 +131,38 @@ describe('CrowdfundExperience progress card actions', { timeout: 20_000 }, () =>
   })
 })
 
+
+describe('CrowdfundExperience pre-open card', { timeout: 20_000 }, () => {
+  function renderCrowdfund(opensAtUnix: number | undefined) {
+    render(
+      // No header — the showcase default header carries its own demo CTA;
+      // the committer passes its own (window-gated) header.
+      <CrowdfundExperience
+        view="crowdfund"
+        header={null}
+        inviteSlotSections={[]}
+        onParticipate={vi.fn()}
+        participationEnabled={false}
+        liveData={{
+          status: 'ready',
+          dashRows: [],
+          totalCommitted: 0,
+          ...(opensAtUnix !== undefined ? { opensAtUnix } : {}),
+        }}
+      />,
+    )
+  }
+
+  it('shows the opening countdown in place of the Participate card before the window opens', () => {
+    renderCrowdfund(Math.floor(Date.now() / 1000) + 3 * 86400)
+    expect(screen.getByRole('region', { name: 'Sale opens soon' })).toBeTruthy()
+    // Neither the fleet card nor the empty participants list offers Participate
+    // (`hidden` — the collapsed list stays mounted under aria-hidden).
+    expect(screen.queryByRole('button', { name: /Participate/, hidden: true })).toBeNull()
+  })
+
+  it('shows no pre-open card once the window is past opening', () => {
+    renderCrowdfund(undefined)
+    expect(screen.queryByRole('region', { name: 'Sale opens soon' })).toBeNull()
+  })
+})

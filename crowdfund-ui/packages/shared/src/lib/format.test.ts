@@ -12,6 +12,7 @@ import {
   formatTimeLeft,
   formatTimeLeftDetail,
   formatOpensAtDetail,
+  formatOpensCountdown,
   hopLabel,
   phaseName,
   phaseColor,
@@ -222,6 +223,21 @@ describe('formatOpensAtDetail', () => {
 
   it('returns empty when the opening time is unknown', () => {
     expect(formatOpensAtDetail(0)).toBe('')
+  })
+})
+
+describe('formatOpensCountdown', () => {
+  it('shows zero-padded days, hours, minutes and seconds', () => {
+    expect(formatOpensCountdown(2 * 86400 + 4 * 3600 + 12 * 60 + 33)).toBe('02d 04h 12m 33s')
+  })
+
+  it('keeps every unit under a minute so the counter width stays steady', () => {
+    expect(formatOpensCountdown(59)).toBe('00d 00h 00m 59s')
+  })
+
+  it('returns empty at or past the opening', () => {
+    expect(formatOpensCountdown(0)).toBe('')
+    expect(formatOpensCountdown(-5)).toBe('')
   })
 })
 

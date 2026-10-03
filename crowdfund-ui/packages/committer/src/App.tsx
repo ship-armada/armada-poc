@@ -740,8 +740,6 @@ export function App() {
   // the deployment before rendering.
   const isHeroPage = page === 'network' || page === 'my-position'
 
-  // Observe is a placeholder spike (no live data yet), so it renders without
-  // waiting on the deployment / contract-state load gate below.
   if ((!deployment || contractState.loading) && !isHeroPage) {
     const backfillPct =
       backfill && backfill.toBlock > backfill.fromBlock
@@ -893,7 +891,7 @@ export function App() {
             setPage('network')
           }}
           onClose={closeParticipate}
-          inviteSlotSections={inviteSlots.empty ? undefined : inviteSlots.sections}
+          inviteSlotSections={inviteSlots.sections}
           onReceiptLogs={ingestReceiptLogs}
         />
       )}
@@ -985,7 +983,7 @@ export function App() {
               setPage(next === 'myposition' ? 'my-position' : 'network')
             }
             header={null}
-            inviteSlotSections={inviteSlots.empty ? undefined : inviteSlots.sections}
+            inviteSlotSections={inviteSlots.sections}
             liveData={crowdfundLiveData}
             myPositionData={myPositionData}
             connectedAddress={wallet.address ?? undefined}

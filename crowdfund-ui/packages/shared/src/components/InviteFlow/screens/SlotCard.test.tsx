@@ -53,3 +53,17 @@ describe('SlotCard zero-address rejection', () => {
     )
   })
 })
+
+describe('SlotCard without an ENS resolver', () => {
+  it('fails closed instead of inventing an address', async () => {
+    render(<SlotCard slot={emptySlot} {...baseHandlers} isWrongNetwork={false} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Invite onchain' }))
+    fireEvent.change(screen.getByLabelText('Wallet address or ENS name'), {
+      target: { value: 'friend.eth' },
+    })
+
+    expect(await screen.findByText(/ENS lookup unavailable/)).toBeTruthy()
+    expect(screen.queryByText(/^0x[0-9a-f]+/i)).toBeNull()
+  })
+})
+

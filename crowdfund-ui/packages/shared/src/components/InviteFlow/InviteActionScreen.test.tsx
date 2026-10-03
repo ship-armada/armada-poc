@@ -322,3 +322,13 @@ describe('InviteActionScreen reference copy', () => {
   })
 })
 
+describe('InviteActionScreen without an ENS resolver', () => {
+  it('fails closed instead of inventing an address', async () => {
+    render(<InviteActionScreen hop={1} method="onchain" onBack={vi.fn()} onGenerateLink={vi.fn()} onInviteOnchain={vi.fn()} />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'friend.eth' } })
+
+    expect(await screen.findByText(/ENS lookup unavailable/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Send invite' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+})
+

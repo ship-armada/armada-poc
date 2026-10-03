@@ -1,4 +1,5 @@
 // ABOUTME: Demo invite fixtures + available-count helpers for My Position / Stages.
+// ABOUTME: Showcase/preview only — live surfaces get real slots and a real ENS resolver from the app.
 
 import type { SlotData } from '../InviteFlow/screens/SlotCard'
 import type { PinnedNode } from '../NodeSphere/NodeSphere'
@@ -8,6 +9,22 @@ import {
   type InviteAllowance,
   type InviteeHop,
 } from './inviteModel'
+
+/** Obviously-fake but well-formed address the demo ENS resolver returns. */
+export const DEMO_ENS_ADDRESS = '0x1234567890123456789012345678901234567890'
+
+/**
+ * ENS resolver for showcase / preview invite forms only — the invite forms fail
+ * closed without a resolver, so demo surfaces pass this explicitly. Any name
+ * resolves to DEMO_ENS_ADDRESS; 'invalid.eth' shows the error state.
+ */
+export async function demoResolveEns(
+  name: string,
+): Promise<{ address: string } | { error: string }> {
+  await new Promise((r) => setTimeout(r, 600))
+  if (name === 'invalid.eth') return { error: 'ENS name not found' }
+  return { address: DEMO_ENS_ADDRESS }
+}
 
 export const COMMITTED = 4000
 export const CAP = 10000

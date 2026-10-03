@@ -101,7 +101,7 @@ export interface InvitesCardProps {
    * Defaults to true.
    */
   panelActive?: boolean
-  /** Real ENS resolver — omit for showcase mock resolution. */
+  /** Real ENS resolver. Omit and ENS input fails closed (showcase passes `demoResolveEns`). */
   resolveEns?: (
     input: string,
   ) => Promise<import('../InviteFlow/screens/SlotCard').SlotCardEnsResult>

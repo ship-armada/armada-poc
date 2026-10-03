@@ -37,6 +37,7 @@ import {
   FILL_PCT,
   formatArmAllocation,
   formatUsdcCommitted,
+  demoResolveEns,
 } from '../MyPosition/myPositionDemo'
 import { NodeSphere, isWebglForcedOff } from '../NodeSphere/NodeSphere'
 import { hopPillDotColor } from '../../lib/graphHopColors'
@@ -86,9 +87,9 @@ export interface CrowdfundInviteSlotConfig {
     ensName?: string,
   ) => Promise<boolean>
   /**
-   * Real ENS resolver forwarded to each `<SlotCard resolveEns={…} />`. Omit to
-   * let SlotCard use its internal mock (showcase / preview only — returns a
-   * random address per name).
+   * Real ENS resolver forwarded to each `<SlotCard resolveEns={…} />`. Without
+   * one the invite forms fail closed (ENS names can't be used); the showcase
+   * demo mode supplies `demoResolveEns`.
    */
   resolveEns?: (
     input: string,
@@ -1432,7 +1433,7 @@ export function CrowdfundExperience({
               slots={invitesSlots}
               allowance={invitesAllowance}
               selfWalletAddress={selfWalletForInvites}
-              resolveEns={liveSections?.[0]?.config.resolveEns}
+              resolveEns={liveSections ? liveSections[0]?.config.resolveEns : demoResolveEns}
               onGenerateLink={handleGenerateLink}
               onCopy={handleCopy}
               onRevoke={handleRevoke}

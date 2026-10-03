@@ -198,7 +198,7 @@ export interface InviteHopFocusChromeProps {
   /** Issued invites — reserved for future duplicate-address UX. */
   existingInvites?: SlotData[]
   copiedInviteId?: number | null
-  /** Real ENS resolver — omit for showcase mock resolution. */
+  /** Real ENS resolver. Omit and ENS input fails closed (showcase passes `demoResolveEns`). */
   resolveEns?: (input: string) => Promise<SlotCardEnsResult>
   list: ReactNode
 }

@@ -21,6 +21,7 @@ import {
   formatUsdcCommitted,
   GRAPH_PARTICIPANTS,
   GRAPH_SEED,
+  demoResolveEns,
 } from './myPositionDemo'
 import { createDemoInviteLink } from '../../lib/demoInviteLink'
 import type { InviteeHop } from './inviteModel'
@@ -140,6 +141,7 @@ export function MyPosition({ header }: MyPositionProps = {}) {
               slots={DEMO_SLOTS}
               allowance={DEMO_INVITE_ALLOWANCE}
               selfWalletAddress={DEMO_WALLET}
+              resolveEns={demoResolveEns}
               onGenerateLink={handleGenerateLink}
               onCopy={handleCopy}
               onRevoke={handleRevoke}

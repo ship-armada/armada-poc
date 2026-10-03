@@ -1,5 +1,5 @@
 // ABOUTME: Ported from the armada-crowdfund mockup (InviteFlow/screens/SlotCard.tsx).
-// ABOUTME: Extended with optional controlled `resolveEns` prop so consumers can plumb real ENS resolution; the internal mock resolver still runs when the prop is undefined (preview only — returns a random address).
+// ABOUTME: Extended with an optional `resolveEns` prop for real ENS resolution; without it ENS input fails closed (showcase passes `demoResolveEns`).
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
@@ -65,9 +65,9 @@ export interface SlotData {
 }
 
 /**
- * Result of resolving an ENS name. Consumers that don't pass `resolveEns`
- * fall back to the internal mock resolver — fine for showcase but should NOT
- * be used to issue real on-chain invites (mock returns a random address).
+ * Result of resolving an ENS name. Consumers that don't pass `resolveEns` get
+ * a fail-closed "ENS lookup unavailable" error — an invite never goes to a
+ * guessed address. Showcase surfaces pass `demoResolveEns` instead.
  */
 export type SlotCardEnsResult =
   | { address: string }
@@ -88,8 +88,8 @@ interface SlotCardProps {
   defaultExpandedAction?: Exclude<ExpandedAction, null>
   /**
    * Controlled ENS resolver. Called when the user types an ENS-looking input.
-   * Return `{ address }` on success or `{ error }` on failure. Omit to use
-   * the internal mock (random address — preview only).
+   * Return `{ address }` on success or `{ error }` on failure. Omit and ENS
+   * input fails closed (showcase surfaces pass `demoResolveEns`).
    */
   resolveEns?: (input: string) => Promise<SlotCardEnsResult>
   /** Wallet is on a chain other than the hub. Empty slots replace the invite /
@@ -182,6 +182,8 @@ export default function SlotCard({
   }, [useMethodPicker, onInviteButtonRef, slot.id])
 
   const [ensState, setEnsState] = useState<EnsState>('idle')
+  // No resolver supplied — an ENS name can't be looked up (never guess one).
+  const [ensUnavailable, setEnsUnavailable] = useState(false)
   const [resolvedAddress, setResolvedAddress] = useState('')
   const [revokeConfirmOpen, setRevokeConfirmOpen] = useState(false)
   const [revokePopoverPos, setRevokePopoverPos] = useState<{ top: number; left: number } | null>(
@@ -212,6 +214,7 @@ export default function SlotCard({
     const val = sanitizeAddressInput(rawVal)
     setAddressInput(val)
     setResolvedAddress('')
+    setEnsUnavailable(false)
     if (isEnsCandidate(val)) {
       // Strict charset gate before we burn an ENS lookup — uppercase letters,
       // whitespace, IDN / emoji get rejected without an RPC round-trip.
@@ -247,15 +250,10 @@ export default function SlotCard({
         }
         return
       }
-      // Uncontrolled mock — preserved for showcase / preview only.
-      await new Promise(r => setTimeout(r, 900))
-      if (val === 'invalid.eth') {
-        setEnsState('error')
-      } else {
-        const mock = '0x' + Math.random().toString(16).slice(2, 42)
-        setResolvedAddress(mock)
-        setEnsState('resolved')
-      }
+      // No resolver: fail closed. Showcase surfaces pass `demoResolveEns`
+      // explicitly; a live surface must never invite an invented address.
+      setEnsUnavailable(true)
+      setEnsState('error')
     } else {
       // Direct 0x… entry — validate checksum (catches EIP-55 typos), keep the
       // canonical casing for the contract call. Reject the zero address.
@@ -595,7 +593,9 @@ export default function SlotCard({
             <span className={styles.errorMsg}>
               {tryGetChecksumAddress(addressInput) === ZeroAddress
                 ? 'Can’t invite the zero address.'
-                : 'ENS name not found'}
+                : ensUnavailable
+                  ? 'ENS lookup unavailable — paste the 0x address instead.'
+                  : 'ENS name not found'}
             </span>
           )}
           <p className={styles.hint}>

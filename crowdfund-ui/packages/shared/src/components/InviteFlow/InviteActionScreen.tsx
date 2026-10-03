@@ -92,7 +92,7 @@ export interface InviteActionScreenProps {
   /** Connected wallet — when the pasted address matches, CTA / confirm become self-invite. */
   selfWalletAddress?: string
   copiedInviteId?: number | null
-  /** Real ENS resolver — omit to use the internal mock (showcase only). */
+  /** Real ENS resolver. Omit and ENS input fails closed (showcase passes `demoResolveEns`). */
   resolveEns?: (input: string) => Promise<SlotCardEnsResult>
   /**
    * `panel` — fills the parent shell (desktop in-place).
@@ -123,6 +123,8 @@ export function InviteActionScreen({
   const addressInputRef = useRef(addressInput)
   addressInputRef.current = addressInput
   const [ensState, setEnsState] = useState<EnsState>('idle')
+  // No resolver supplied — an ENS name can't be looked up (never guess one).
+  const [ensUnavailable, setEnsUnavailable] = useState(false)
   const [resolvedAddress, setResolvedAddress] = useState('')
   const [createdLink, setCreatedLink] = useState<CreatedInviteLink | null>(null)
   const [createdOnchain, setCreatedOnchain] = useState<CreatedOnchainInvite | null>(
@@ -285,6 +287,7 @@ export function InviteActionScreen({
     const val = sanitizeAddressInput(rawVal)
     setAddressInput(val)
     setResolvedAddress('')
+    setEnsUnavailable(false)
     if (isEns(val)) {
       if (!isValidEnsName(val)) {
         setEnsState('idle')
@@ -301,15 +304,10 @@ export function InviteActionScreen({
           setEnsState('error')
         }
       } else {
-        await new Promise((r) => setTimeout(r, 900))
-        if (addressInputRef.current !== val) return
-        if (val === 'invalid.eth') {
-          setEnsState('error')
-        } else {
-          const mock = '0x' + Math.random().toString(16).slice(2, 42)
-          setResolvedAddress(mock)
-          setEnsState('resolved')
-        }
+        // No resolver: fail closed. Showcase surfaces pass `demoResolveEns`
+        // explicitly; a live surface must never invite an invented address.
+        setEnsUnavailable(true)
+        setEnsState('error')
       }
     } else {
       const checksum = tryGetChecksumAddress(val)
@@ -689,7 +687,11 @@ export function InviteActionScreen({
             )}
             {ensState === 'error' && (
               <span className={styles.errorMsg} role="alert">
-                {isEns(addressInput) ? 'ENS name not found' : 'Could not resolve address'}
+                {ensUnavailable
+                  ? 'ENS lookup unavailable — paste the 0x address instead.'
+                  : isEns(addressInput)
+                    ? 'ENS name not found'
+                    : 'Could not resolve address'}
               </span>
             )}
             <p className={styles.hint}>

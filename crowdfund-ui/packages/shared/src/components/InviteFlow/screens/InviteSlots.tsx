@@ -7,6 +7,7 @@ import { Tooltip } from '@armada/ui'
 import SlotCard, { type SlotData } from './SlotCard'
 import { INVITE_METHOD_PICKER_UX } from '../../../lib/inviteUx'
 import { createDemoInviteLink } from '../../../lib/demoInviteLink'
+import { demoResolveEns } from '../../MyPosition/myPositionDemo'
 import { InviteFocusChrome, useInviteSlotFocus } from '../useInviteSlotFocus'
 
 interface InviteSlotsProps {
@@ -111,6 +112,7 @@ export default function InviteSlots({
           onCopy={handleCopy}
           onRevoke={handleRevoke}
           onInviteOnchain={handleInviteOnchain}
+          resolveEns={demoResolveEns}
           copied={copiedId === slot.id}
           loading={loadingId === slot.id}
           onInviteClick={INVITE_METHOD_PICKER_UX ? focusApi.openPicker : undefined}
@@ -136,6 +138,7 @@ export default function InviteSlots({
           loadingSlotId={loadingId}
           onGenerateLink={handleGenerateLink}
           onInviteOnchain={handleInviteOnchain}
+          resolveEns={demoResolveEns}
           list={listFrame}
         />
       ) : (

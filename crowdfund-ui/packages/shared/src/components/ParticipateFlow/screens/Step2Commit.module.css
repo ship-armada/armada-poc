@@ -66,30 +66,8 @@
   margin-bottom: auto;
 }
 
-/* Hop badge above the amount in the single-hop variant — colored dot + label
- * mirroring the multi-hop variant's row styling so the two paths read the
- * same. */
-.hopBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--primitives-spacing-2);
-}
 
-.hopBadgeDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
 
-.hopBadgeLabel {
-  font-family: var(--primitives-fontFamily-ui);
-  font-size: calc(var(--primitives-fontSize-sm) * 1px);
-  font-weight: var(--primitives-fontWeight-medium);
-  letter-spacing: var(--primitives-letterSpacing-widest);
-  text-transform: uppercase;
-  color: var(--semantic-color-text-primary);
-}
 
 .maxLabel {
   font-family: var(--primitives-fontFamily-ui);
@@ -119,7 +97,7 @@
 
 .amountDisplay,
 .amountInput {
-  font-family: var(--primitives-fontFamily-display);
+  font-family: var(--primitives-fontFamily-mono), monospace;
   font-size: calc(var(--primitives-fontSize-6xl) * 1px);
   font-weight: var(--primitives-fontWeight-regular);
   line-height: 1.1;
@@ -267,7 +245,7 @@
   font-weight: var(--primitives-fontWeight-medium);
   letter-spacing: var(--primitives-letterSpacing-wider);
   text-transform: uppercase;
-  color: var(--semantic-color-brand-lavender);
+  color: var(--semantic-color-text-muted);
 }
 
 .barScaleMax,
@@ -319,7 +297,7 @@
   padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
   box-sizing: border-box;
   background: var(--semantic-color-surface-raised);
-  border: 1px solid var(--semantic-color-border-default);
+  border: none;
   border-radius: calc(var(--semantic-borderRadius-item) * 1px);
 }
 

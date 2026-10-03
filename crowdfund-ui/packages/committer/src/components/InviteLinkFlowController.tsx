@@ -682,7 +682,6 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
               maxArm={Math.round(estimateArmForAmount(remaining))}
               estimateArm={estimateArmForAmount}
               hopLabel={hopLabel(targetHop)}
-              hopColor={hopPillDotColor(targetHop === 2 ? 'hop-2' : 'hop-1')}
               maxOut={maxOutOption ?? undefined}
             />
           </MaxOutFlowStack>

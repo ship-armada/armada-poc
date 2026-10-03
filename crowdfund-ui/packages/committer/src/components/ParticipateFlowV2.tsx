@@ -750,7 +750,6 @@ export function ParticipateFlowV2({
             existingCommittedUsdc={initialCommittedByHop[primaryPosition.hop]}
             initialAmount={amounts[primaryPosition.hop]}
             hopLabel={HOP_LABELS[primaryPosition.hop]}
-            hopColor={hopPillDotColor(HOP_DOT_KEYS[primaryPosition.hop])}
             maxOut={maxOutOption ?? undefined}
           />
         )

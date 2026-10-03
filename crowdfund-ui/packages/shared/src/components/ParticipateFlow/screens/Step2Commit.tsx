@@ -154,12 +154,10 @@ interface Step2CommitProps extends ParticipateStepBarProps {
   /** Single-hop only: prefill when returning from Review (parent-held amount). */
   initialAmount?: number
   /** Single-hop only: label of the hop being committed to (e.g. 'HOP-0',
-   *  'HOP-1', 'HOP-2'). When provided, renders a hop badge above the input.
-   *  Ignored in the multi-hop variant (each row already shows its own hop). */
+   *  'HOP-1', 'HOP-2'). Labels the fill bar ("HOP-0 commit") and names the hop
+   *  in the fully-committed message. Ignored in the multi-hop variant (each
+   *  row already shows its own hop). */
   hopLabel?: string
-  /** Single-hop only: dot color for the hop badge, from the canonical hop
-   *  palette (`graphHopColors.ts`). Omit to render the label without a dot. */
-  hopColor?: string
   /** Single-hop only: pro-rata ARM estimate for a given new USD amount. When
    *  provided, the live "EST. ARM" counter uses it instead of the 1:1 default,
    *  so it agrees with the Review/confirmation screens. */
@@ -190,7 +188,6 @@ export default function Step2Commit({
   existingCommittedUsdc = 0,
   initialAmount = 0,
   hopLabel,
-  hopColor,
   estimateArm,
   showBack = true,
   hopRows,
@@ -220,7 +217,6 @@ export default function Step2Commit({
       existingCommittedUsdc={existingCommittedUsdc}
       initialAmount={initialAmount}
       hopLabel={hopLabel}
-      hopColor={hopColor}
       estimateArm={estimateArm}
       showBack={showBack}
       maxOut={maxOut}
@@ -241,7 +237,6 @@ function SingleHopVariant({
   existingCommittedUsdc,
   initialAmount,
   hopLabel,
-  hopColor,
   estimateArm,
   showBack,
   maxOut,
@@ -256,7 +251,6 @@ function SingleHopVariant({
   existingCommittedUsdc: number
   initialAmount: number
   hopLabel?: string
-  hopColor?: string
   estimateArm?: (newAmountUsd: number) => number
   showBack: boolean
   maxOut?: Step2MaxOutOption
@@ -342,21 +336,9 @@ function SingleHopVariant({
         <div className={styles.content}>
           <div className={styles.inputBlock}>
             <div className={styles.fullyCommittedGroup}>
-              {hopLabel && (
-                <span className={styles.hopBadge}>
-                  {hopColor && (
-                    <span
-                      className={styles.hopBadgeDot}
-                      style={{ background: hopColor }}
-                      aria-hidden
-                    />
-                  )}
-                  <span className={styles.hopBadgeLabel}>{hopLabel}</span>
-                </span>
-              )}
               <p className={styles.maxLabel}>
-                You&apos;ve committed the maximum {maxAmount.toLocaleString('en-US')} USDC for
-                this hop.
+                You&apos;ve committed the maximum {maxAmount.toLocaleString('en-US')} USDC for{' '}
+                {hopLabel ?? 'this hop'}.
               </p>
             </div>
           </div>
@@ -403,18 +385,6 @@ function SingleHopVariant({
       <div className={styles.content}>
         <div className={styles.inputBlock}>
           <div className={styles.amountGroup}>
-            {hopLabel && (
-              <span className={styles.hopBadge}>
-                {hopColor && (
-                  <span
-                    className={styles.hopBadgeDot}
-                    style={{ background: hopColor }}
-                    aria-hidden
-                  />
-                )}
-                <span className={styles.hopBadgeLabel}>{hopLabel}</span>
-              </span>
-            )}
 
             <div className={styles.amountCluster}>
               <label className={styles.amountWrapper} htmlFor="commit-amount">
@@ -489,7 +459,7 @@ function SingleHopVariant({
             </div>
             <div className={styles.barScale}>
               <span className={styles.barScaleMin}>
-                {totalCommitted.toLocaleString('en-US')} USDC
+                {hopLabel ? `${hopLabel} commit` : `${totalCommitted.toLocaleString('en-US')} USDC`}
               </span>
               {/* MAX doubles as a fill-to-cap control (armada-crowdfund
                   ArmAllocationBlock affordance). */}

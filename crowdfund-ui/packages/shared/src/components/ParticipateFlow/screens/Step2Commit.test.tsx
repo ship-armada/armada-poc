@@ -105,3 +105,39 @@ describe('Step2Commit empty-amount CTA (multi hop)', () => {
     expect(btn.getAttribute('aria-disabled')).toBe('true')
   })
 })
+
+describe('Step2Commit hop label (single hop)', () => {
+  it('names the hop under the fill bar, not in a badge above the input', () => {
+    render(
+      <Step2Commit
+        onNext={vi.fn()}
+        onBack={vi.fn()}
+        maxAmount={4000}
+        availableBalance={1000}
+        hopLabel="HOP-0"
+      />,
+    )
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '100' } })
+
+    expect(screen.getByText('HOP-0 commit')).toBeTruthy()
+    expect(screen.queryByText('HOP-0')).toBeNull()
+    // The running total no longer sits under the bar.
+    expect(screen.queryByText('100 USDC')).toBeNull()
+  })
+
+  it('names the hop in the fully-committed message instead of a badge', () => {
+    render(
+      <Step2Commit
+        onNext={vi.fn()}
+        onBack={vi.fn()}
+        maxAmount={4000}
+        existingCommittedUsdc={4000}
+        availableBalance={1000}
+        hopLabel="HOP-0"
+      />,
+    )
+    expect(screen.queryByText('HOP-0')).toBeNull()
+    expect(screen.getByText(/committed the maximum 4,000 USDC for HOP-0\./)).toBeTruthy()
+  })
+})
+

@@ -342,6 +342,20 @@ describe('ClaimFlowV2 close mid-claim', () => {
   })
 })
 
+describe('ClaimFlowV2 review tooltip', () => {
+  it('opens the ARM allocation tooltip below its icon so the card top cannot clip it', async () => {
+    allocationFor = () => Promise.resolve([1_000_000_000_000_000_000n, 0n]) // 1 ARM
+    renderClaim(<ClaimFlowV2 {...baseProps} />)
+    await startArmToReview()
+
+    fireEvent.focus(screen.getByRole('button', { name: 'ARM allocation details' }))
+
+    const tooltip = await screen.findByRole('tooltip')
+    expect(tooltip.textContent).toContain('The ARM tokens delivered to your wallet')
+    expect(tooltip.className).toMatch(/below/)
+  })
+})
+
 describe('ClaimFlowV2 Final commit', () => {
   const USDC = 1_000_000n
   const finalCommit = async () =>

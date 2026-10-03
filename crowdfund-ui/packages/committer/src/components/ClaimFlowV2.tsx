@@ -1247,6 +1247,9 @@ function ClaimFlowScreens(props: ClaimFlowV2Props) {
               <span className={styles.summaryLabel}>ARM allocation</span>
               <Tooltip
                 variant="rich"
+                // Opens downward: this row sits right under the card title, so an
+                // upward popover would be clipped by the scrolling card content.
+                placement="bottom"
                 title="ARM allocation"
                 description="The ARM tokens delivered to your wallet by this transaction."
                 bullets={[

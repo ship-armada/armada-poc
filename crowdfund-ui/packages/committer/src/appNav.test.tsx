@@ -1,5 +1,5 @@
-// ABOUTME: Tests for PageNav — Crowdfund / My position / Claim tabs; Claim gated until open.
-// ABOUTME: Social links no longer sit in the header (see FooterSocials.test.tsx).
+// ABOUTME: Tests for PageNav — Crowdfund / Your position / Claim tabs; Claim gated until open.
+// ABOUTME: Also guards that social links stay out of the header nav.
 
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'

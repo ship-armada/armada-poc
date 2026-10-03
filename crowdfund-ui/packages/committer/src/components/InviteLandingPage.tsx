@@ -12,12 +12,10 @@ import {
   type Step0InviteProps,
 } from '@armada/crowdfund-shared'
 import { InviteLinkFlowController } from '@/components/InviteLinkFlowController'
-import { DiscordIcon, XIcon } from '@/components/SocialIcons'
 import { decodeInviteUrl, type InviteLinkData } from '@/lib/inviteLinks'
 import { hasNoInviteSlots } from '@/lib/inviteSlots'
 import { getHubRpcUrls } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
-import { DISCORD_URL, X_URL } from '@/config/socials'
 import styles from './InviteLanding.module.css'
 
 type HopVariant = Step0InviteProps['hopVariant']
@@ -202,7 +200,7 @@ export function InviteLandingPage() {
   }, [inviteData])
 
   // "Not ready to participate yet?" — centered crowdfund page CTA (hidden once
-  // the user joins the flow). Socials stay under the prompt for brand presence.
+  // the user joins the flow).
   const footer = (
     <footer className={styles.footer}>
       <p className={styles.footerPrompt}>Not ready to participate yet?</p>
@@ -215,26 +213,6 @@ export function InviteLandingPage() {
           className={styles.footerBtn}
           onClick={() => navigate('/')}
         />
-      </div>
-      <div className={styles.socials}>
-        <a
-          className={styles.socialLink}
-          href={DISCORD_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Armada on Discord"
-        >
-          <DiscordIcon className={styles.socialIcon} />
-        </a>
-        <a
-          className={styles.socialLink}
-          href={X_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Armada on X"
-        >
-          <XIcon className={styles.socialIcon} />
-        </a>
       </div>
     </footer>
   )

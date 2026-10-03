@@ -1,4 +1,4 @@
-/* ABOUTME: Layout for the /invite landing page — logo + Step0Invite card + project/crowdfund footer. */
+/* ABOUTME: Layout for the /invite landing page — logo + Step0Invite card + "View crowdfund page" footer. */
 /* ABOUTME: Ported byte-identical from the armada-crowdfund mockup (pages/InviteLanding.module.css). */
 
 .page {
@@ -63,32 +63,9 @@
 
 /* Social links row beneath the project / crowdfund nav. The extra margin-top
    sets it apart from the buttons more than the footer's default gap. */
-.socials {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--primitives-spacing-5);
-  margin-top: var(--primitives-spacing-5);
-}
 
-.socialLink {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--semantic-color-text-muted);
-  opacity: 0.75;
-  transition: color 0.15s, opacity 0.15s;
-}
 
-.socialLink:hover {
-  color: var(--semantic-color-text-primary);
-  opacity: 1;
-}
 
-.socialIcon {
-  width: 20px;
-  height: 20px;
-}
 
 /* Pre-check failure / malformed URL — keeps the 480×500 landing footprint
    so the page composition stays balanced regardless of branch. */

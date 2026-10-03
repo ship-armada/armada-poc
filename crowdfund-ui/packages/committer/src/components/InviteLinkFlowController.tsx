@@ -40,7 +40,6 @@ import {
 // another consumer needs them.
 import inlineStyles from './InviteLinkFlowInline.module.css'
 import stepStyles from './InviteLinkFlowStepTransition.module.css'
-import { FooterSocials } from '@/components/FooterSocials'
 import { getHubRpcUrls, getHubChainId, getHubNetworkLabel, getExplorerUrl, getIndexerUrl, getMaxBlockRange, getPollIntervalMs } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
@@ -798,7 +797,6 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
             onDoItLater={() => navigate('/?view=myposition')}
             onBack={() => transitionTo('confirmation')}
             onClose={handleClose}
-            socials={<FooterSocials />}
           />
         )
 

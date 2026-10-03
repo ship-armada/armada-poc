@@ -7,7 +7,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from 'react'
 import { Button } from '@armada/ui'
 import { FlowChrome } from './FlowChrome'
@@ -51,8 +50,6 @@ export interface ParticipateFlowInviteSlotsProps {
   onConfirmCreated?: (inviteId: number) => void
   /** Free the slot if the create confirmation is abandoned / discarded. */
   onDiscardCreated?: (inviteId: number) => void
-  /** Rendered beneath the "Do it later" button — e.g. social links. */
-  socials?: ReactNode
 }
 
 function whitelistSubtitle(
@@ -87,7 +84,6 @@ export function ParticipateFlowInviteSlots({
   onClose,
   onConfirmCreated,
   onDiscardCreated,
-  socials,
 }: ParticipateFlowInviteSlotsProps) {
   const isMobile = useIsMobileLayout()
   const focusApi = useInviteHopFocus()
@@ -310,7 +306,6 @@ export function ParticipateFlowInviteSlots({
             showIcon={false}
             onClick={onDoItLater}
           />
-          {socials}
         </div>
       )}
     </div>

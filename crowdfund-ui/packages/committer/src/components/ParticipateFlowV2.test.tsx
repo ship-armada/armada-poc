@@ -314,7 +314,7 @@ describe('ParticipateFlowV2 modal close handoff', () => {
     const onModalCloseChange = vi.fn()
     render(<ParticipateFlowV2 {...makeProps()} onModalCloseChange={onModalCloseChange} />)
 
-    // Splash uses the modal's "Do it later" footer — no X either way.
+    // The splash card draws its own X — the modal hides its.
     expect(await screen.findByRole('button', { name: 'Join now' })).toBeTruthy()
     expect(onModalCloseChange).toHaveBeenLastCalledWith(false)
 
@@ -323,6 +323,16 @@ describe('ParticipateFlowV2 modal close handoff', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Commit' }))
     await screen.findByRole('textbox')
     expect(onModalCloseChange).toHaveBeenLastCalledWith(false)
+  })
+
+  it('closes the splash from its own X (the only close control there)', async () => {
+    const onClose = vi.fn()
+    render(<ParticipateFlowV2 {...makeProps()} onClose={onClose} />)
+    expect(await screen.findByRole('button', { name: 'Join now' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close participate flow' }))
+
+    expect(onClose).toHaveBeenCalledOnce()
   })
 
   it('keeps the modal close while the wallet is disconnected', async () => {

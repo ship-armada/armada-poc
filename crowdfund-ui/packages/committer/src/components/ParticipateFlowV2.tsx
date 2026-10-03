@@ -103,9 +103,6 @@ export interface ParticipateFlowV2Props {
   /** Notifies the parent when the approve/commit pipeline starts/stops, so the
    *  enclosing modal can confirm before closing mid-transaction. */
   onRunningChange?: (running: boolean) => void
-  /** True while the splash (invite) step is showing — parent shows a “Do it
-   *  later” footer instead of the step's own CTA row. */
-  onSplashActiveChange?: (active: boolean) => void
   /** Whether the enclosing modal should render its own close (X). False on the
    *  steps that draw a FlowChrome close of their own. */
   onModalCloseChange?: (showClose: boolean) => void
@@ -179,7 +176,6 @@ export function ParticipateFlowV2({
   inviteSlotSections,
   onReceiptLogs,
   onRunningChange,
-  onSplashActiveChange,
   onModalCloseChange,
   eventsLoading,
   secondsLeft,
@@ -204,10 +200,6 @@ export function ParticipateFlowV2({
   const { disconnect } = useDisconnect()
   const { openConnectModal } = useConnectModal()
 
-  useEffect(() => {
-    onSplashActiveChange?.(step === 'splash')
-    return () => onSplashActiveChange?.(false)
-  }, [step, onSplashActiveChange])
   // Surface in-flight status so the modal can confirm before closing. The
   // cleanup resets the parent's flag on unmount — the pipeline keeps running in
   // the store, and reopening the modal re-derives the flag from its phase.

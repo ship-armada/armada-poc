@@ -302,7 +302,6 @@ export function App() {
   // uses the dedicated `?page=participate` page. `openParticipate()` routes
   // based on the active design flag.
   const [participateOpen, setParticipateOpen] = useState(false)
-  const [participateSplash, setParticipateSplash] = useState(false)
   // Whether the participate modal renders its own X. The commit steps draw a
   // FlowChrome close instead, so the flow reports which steps need ours.
   const [participateModalClose, setParticipateModalClose] = useState(true)
@@ -794,7 +793,6 @@ export function App() {
   }
   const closeParticipate = () => {
     setParticipateOpen(false)
-    setParticipateSplash(false)
     setParticipateModalClose(true)
   }
 
@@ -862,24 +860,12 @@ export function App() {
       // The commit steps carry their own FlowChrome close; the flow tells us
       // when to fall back to the modal's X (connect, eligibility, invite slots).
       showClose={participateModalClose}
-      footer={
-        participateSplash ? (
-          <ArmadaButton
-            variant="ghost"
-            size="md"
-            label="Do it later"
-            showIcon={false}
-            onClick={closeParticipate}
-          />
-        ) : null
-      }
     >
       {participateOpen && (
         <ParticipateFlowV2
           // Remount on account switch so mount-frozen baselines can't mix accounts.
           key={wallet.address ?? 'disconnected'}
           onRunningChange={setParticipateRunning}
-          onSplashActiveChange={setParticipateSplash}
           onModalCloseChange={setParticipateModalClose}
           eventsLoading={eventsLoading}
           secondsLeft={secondsLeft}

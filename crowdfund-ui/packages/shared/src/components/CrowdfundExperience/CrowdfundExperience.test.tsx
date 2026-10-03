@@ -82,3 +82,12 @@ describe('CrowdfundExperience My Position participate CTAs', () => {
     expect(card.queryByRole('button', { name: /Participate/ })).toBeNull()
   })
 })
+
+describe('CrowdfundExperience Your position fill bar', () => {
+  it('captions the fill as a share of the hop cap', () => {
+    renderMyPosition(readyPosition(500n * 1_000_000n))
+    const card = within(screen.getByRole('region', { name: 'Your position' }))
+    expect(card.getByText(/% of hop cap$/)).toBeTruthy()
+  })
+})
+

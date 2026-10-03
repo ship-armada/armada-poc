@@ -1327,7 +1327,7 @@ export function CrowdfundExperience({
                 </div>
                 <div className={mpStyles.barLabels}>
                   <span className={mpStyles.barCaption}>
-                    {Math.round(myPositionFillPct)}% of cap
+                    {Math.round(myPositionFillPct)}% of hop cap
                   </span>
                   <span className={mpStyles.barCaption}>
                     Cap {formatUsdcCommitted(myPositionCapUsd)}

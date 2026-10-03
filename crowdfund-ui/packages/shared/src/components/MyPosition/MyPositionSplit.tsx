@@ -140,7 +140,7 @@ export function MyPositionSplit({ header }: MyPositionSplitProps = {}) {
                     />
                   </div>
                   <div className={styles.barLabels}>
-                    <span className={styles.barCaption}>{FILL_PCT}% of cap</span>
+                    <span className={styles.barCaption}>{FILL_PCT}% of hop cap</span>
                     <span className={styles.barCaption}>Cap $10,000</span>
                   </div>
                 </div>

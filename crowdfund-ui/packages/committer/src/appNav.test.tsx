@@ -6,10 +6,10 @@ import { describe, it, expect, vi } from 'vitest'
 import { PageNav } from './appNav'
 
 describe('PageNav', () => {
-  it('renders Crowdfund, My position, and Claim', () => {
+  it('renders Crowdfund, Your position, and Claim', () => {
     render(<PageNav current="network" onChange={vi.fn()} />)
     expect(screen.getByRole('button', { name: 'Crowdfund' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'My position' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Your position' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Claim' })).toBeInTheDocument()
   })
 

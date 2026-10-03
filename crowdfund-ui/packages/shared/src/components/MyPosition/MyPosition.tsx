@@ -87,7 +87,7 @@ export function MyPosition({ header }: MyPositionProps = {}) {
           <div className={styles.topRow}>
             <section className={styles.positionCard} aria-label="Your position">
               <div className={styles.cardHeader}>
-                <h1 className={styles.pageTitle}>My Position</h1>
+                <h1 className={styles.pageTitle}>Your Position</h1>
                 <div className={styles.metaTags}>
                   <Tag label={DEMO_WALLET_DISPLAY} dot="lavender" />
                   <Tag label="HOP-1" dot="lavender" />

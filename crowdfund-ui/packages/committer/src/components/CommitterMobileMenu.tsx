@@ -228,7 +228,7 @@ export function CommitterMobileMenu({
             aria-current={current === 'my-position' ? 'page' : undefined}
             onClick={() => navigate('my-position')}
           >
-            My position
+            Your position
           </button>
           <button
             type="button"

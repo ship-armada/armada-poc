@@ -9,7 +9,7 @@ export type Page = 'network' | 'participate' | 'claim' | 'my-position' | 'observ
 
 const NAV_ITEMS: ReadonlyArray<{ id: Page; label: string }> = [
   { id: 'network', label: 'Crowdfund' },
-  { id: 'my-position', label: 'My position' },
+  { id: 'my-position', label: 'Your position' },
   { id: 'claim', label: 'Claim' },
 ]
 

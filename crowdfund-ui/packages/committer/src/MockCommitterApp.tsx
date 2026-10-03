@@ -212,7 +212,7 @@ export default function MockCommitterApp({ size }: { size: number }) {
             key="mock-page-my-position"
             className="mx-auto max-w-2xl rounded-lg border border-border bg-card p-6 text-muted-foreground shadow-elevated animate-page-enter"
           >
-            <div className="mb-2 text-foreground">My position</div>
+            <div className="mb-2 text-foreground">Your position</div>
             Wallet-scoped dashboard — coming soon. This page will show your committed total,
             remaining invite slots, hop level, and a mini view of your subtree.
           </div>

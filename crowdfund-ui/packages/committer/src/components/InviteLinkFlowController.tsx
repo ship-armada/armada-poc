@@ -628,7 +628,7 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
                 You've already accepted the maximum number of invites at {hopLabel(targetHop)}, so
                 this invite link can't be redeemed.
                 {hasHeadroom
-                  ? ' You can still commit to your existing position from My Position.'
+                  ? ' You can still commit to your existing position from Your position.'
                   : ''}
               </p>
               <div className="flex justify-center gap-3">

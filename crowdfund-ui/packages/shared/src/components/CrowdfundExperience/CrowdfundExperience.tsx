@@ -1197,7 +1197,7 @@ export function CrowdfundExperience({
           <section className={mpStyles.positionCard} aria-label="Your position">
             <div className={mpStyles.cardHeader}>
               <div className={mpStyles.titleRow}>
-                <h1 className={mpStyles.pageTitle}>My Position</h1>
+                <h1 className={mpStyles.pageTitle}>Your Position</h1>
                 {participationEnabled && onParticipate && (
                   <Button
                     className={mpStyles.headerCta}

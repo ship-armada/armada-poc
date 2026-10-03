@@ -162,7 +162,7 @@ export function AppHeader({
         </div>
       </header>
 
-      {/* Hero mobile: Crowdfund · My position · Claim pills under the logo row
+      {/* Hero mobile: Crowdfund · Your position · Claim pills under the logo row
           (in document flow — not sticky). Hidden while a flow modal is open. */}
       {heroMobile && mobileHeaderNav ? (
         <div

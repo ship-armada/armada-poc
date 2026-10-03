@@ -48,6 +48,7 @@ import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
 import { commitTxHashFromRows } from '@/lib/commitTxHash'
 import { commitWindowSecondsLeft } from '@/lib/windowClock'
 import { confirmLeaveInviteFlow } from '@/lib/inviteFlowLeave'
+import { inviteStepNeedsRoom } from '@/lib/inviteFlowLayout'
 import { countFreeInviteSlots, hasFreeInviteSlot } from '@/lib/inviteSlots'
 import { submitWrite } from '@/lib/submitWrite'
 import { useWallet } from '@/hooks/useWallet'
@@ -806,11 +807,9 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
   }
 
   // Steps that can exceed the fixed 480×500 footprint opt into a grow + scroll
-  // override so `.step`'s overflow: hidden doesn't clip their content: the
-  // post-commit 'invites' slot list (many slots), and the 'confirmation' step
-  // once the Max out banner is hoisted above the 500px card.
-  const isInvitesStep = renderStep === 'invites'
-  const isExpandedStep = isInvitesStep || (renderStep === 'confirmation' && !!maxOutOption)
+  // override so `.step`'s overflow: hidden doesn't clip their content (see
+  // `inviteStepNeedsRoom`).
+  const isExpandedStep = inviteStepNeedsRoom(renderStep, !!maxOutOption)
   return (
     <div
       className={[inlineStyles.slot, isExpandedStep && inlineStyles.slotInvites]

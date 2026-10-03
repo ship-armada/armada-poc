@@ -530,8 +530,8 @@ export function App() {
 
   // Per-hop invite-slot sections derived from real eligibility + invite-link
   // state. Multi-hop wallets get a section per eligible hop; single-hop
-  // wallets get one. Same adapter feeds both the inline (CrowdfundExperience
-  // MyPosition view) and standalone (`page === 'invite-slots'`) surfaces.
+  // wallets get one. Same adapter feeds the Your position card (CrowdfundExperience
+  // MyPosition view) and the Participate modal's post-commit invite step.
   const inviteSlots = useInviteSlots(
     eligibility.positions,
     inviteLinks,

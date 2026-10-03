@@ -621,7 +621,7 @@ All write operations (commit, invite, claim) follow a consistent transaction flo
 
 The commitment UI consumes the following events from the `ArmadaCrowdfund` contract:
 
-`Invited` (includes `nonce` — 0 for direct invites, > 0 for link redemptions), `Committed`, `SeedAdded`, `Finalized`, `Allocated` (per-address settlement, emitted at `claim()` time — includes `armTransferred`, `refundUsdc`, `delegate`), `AllocatedHop` (per-hop accepted USDC, emitted at `claim()` time — only emitted when `acceptedUsdc > 0`, success path only), `RefundClaimed`, `Cancelled` (shared with the observer), plus `ArmLoaded` (to distinguish pre-open from open state) and `InviteNonceRevoked` (nonce explicitly revoked by inviter). Together, `Invited.nonce` and `InviteNonceRevoked` make all invite-link lifecycle states (pending, consumed, revoked) fully observable from events. Pre-claim theoretical allocations are available via the `computeAllocation(address)` view function immediately after `Finalized`. In refundMode, neither `Allocated` nor `AllocatedHop` is emitted.
+`Invited` (includes `nonce` — 0 for direct invites, > 0 for link redemptions), `Committed`, `SeedAdded`, `Finalized`, `Allocated` (per-address settlement, emitted at `claim()` time — includes `armTransferred`, `refundUsdc`, `delegate`), `AllocatedHop` (per-hop accepted USDC, emitted at `claim()` time — only emitted when `acceptedUsdc > 0`, success path only), `RefundClaimed`, `Cancelled` (shared with the observer), plus `ArmLoaded` (ARM is loaded at deploy, so pre-open vs open is decided by chain time vs `windowStart`, not by this event) and `InviteNonceRevoked` (nonce explicitly revoked by inviter). Together, `Invited.nonce` and `InviteNonceRevoked` make all invite-link lifecycle states (pending, consumed, revoked) fully observable from events. Pre-claim theoretical allocations are available via the `computeAllocation(address)` view function immediately after `Finalized`. In refundMode, neither `Allocated` nor `AllocatedHop` is emitted.
 
 **Write functions called:**
 
@@ -667,7 +667,7 @@ This is an approximation — it doesn't account for floor rounding, multi-hop de
 
 | Contract state | Commit tab | Invite tab | Claim tab |
 |---|---|---|---|
-| Pre-commitment (ARM not loaded) | Disabled: "Not yet open" | Disabled: "Not yet open" | Disabled: "Not yet open" |
+| Pre-open (chain time < `windowStart`; ARM is already loaded at deploy) | Disabled: "Opens soon" with a countdown to `windowStart` | Disabled: no seeds exist until the window opens | Disabled: "Not yet open" |
 | Commitment window open | Active | Active (if address has invite slots) | Disabled: "Available after finalization" |
 | Deadline passed, not finalized, capped_demand ≥ MIN | Disabled: "Deadline passed" | Disabled: "Deadline passed" | Disabled: "Awaiting finalization" |
 | Deadline passed, not finalized, capped_demand < MIN | Disabled: "Deadline passed" | Disabled: "Deadline passed" | Active: refund available |

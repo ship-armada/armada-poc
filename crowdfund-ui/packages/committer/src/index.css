@@ -1,5 +1,5 @@
 /* ABOUTME: App-level CSS entry. Dark base tokens live in @armada/crowdfund-shared/styles/theme.css; */
-/* ABOUTME: the committer adds an opt-in [data-theme="light"] chrome override below (light mode is committer-only). */
+/* ABOUTME: a [data-theme="light"] chrome override follows — dormant, since index.html pins the committer to dark. */
 
 @import "tailwindcss";
 @source "../../shared/src";

@@ -42,6 +42,8 @@ import { countFreeInviteSlots, hasFreeInviteSlot } from '@/lib/inviteSlots'
 import { commitTxHashFromRows } from '@/lib/commitTxHash'
 import { submitWrite } from '@/lib/submitWrite'
 import { useTxPipeline, type TxStep } from '@/hooks/useTxPipeline'
+import { useStepTransition } from '@/hooks/useStepTransition'
+import stepStyles from './InviteLinkFlowStepTransition.module.css'
 import { useSelfFill } from '@/hooks/useSelfFill'
 import { useResetPipelineOnClose } from '@/hooks/useResetPipelineOnClose'
 import type { HopPosition } from '@/hooks/useEligibility'
@@ -193,6 +195,8 @@ export function ParticipateFlowV2({
   const [step, setStep] = useState<FlowStep>(
     phase === 'success' ? 'confirmation' : submitting ? 'approve' : 'wallet',
   )
+  // Rendered step: lags `step` by the exit animation so steps cross-fade.
+  const { shownStep, exiting } = useStepTransition(step)
   const [amounts, setAmounts] = useState<AmountsByHop>(EMPTY_AMOUNTS)
   // Defensive guard error when the user confirms with no signer/amount — shown
   // as a Step4 error row without involving the pipeline store.
@@ -587,247 +591,265 @@ export function ParticipateFlowV2({
 
   // ── Step renderers ───────────────────────────────────────────────
 
-  if (step === 'wallet') {
-    return (
-      <ConnectButton.Custom>
-        {({ account, chain, openConnectModal, openChainModal }) => {
-          if (!account || !chain) {
-            return (
-              <Step1Connect
-                compact
-                showSteps={false}
-                onConnect={() => openConnectModal()}
-              />
-            )
-          }
-          if (chain.unsupported) {
-            return (
-              <Step1SwitchNetwork
-                compact
-                showSteps={false}
-                networkLabel={getHubNetworkLabel()}
-                onSwitch={() => openChainModal()}
-              />
-            )
-          }
-          // Connected + correct chain: the connect step auto-advances to commit.
-          return null
-        }}
-      </ConnectButton.Custom>
-    )
-  }
-
-  if (!eligible) {
-    // Events still hydrating — don't flash the rejection screen at an eligible
-    // user before their on-chain positions have loaded.
-    if (eventsLoading) {
+  // Content for the shown step; the frame below animates step swaps.
+  const renderStepContent = (): ReactNode => {
+    if (shownStep === 'wallet') {
       return (
-        <div className="flex min-h-[200px] items-center justify-center p-6 text-muted-foreground">
-          Checking eligibility…
-        </div>
+        <ConnectButton.Custom>
+          {({ account, chain, openConnectModal, openChainModal }) => {
+            if (!account || !chain) {
+              return (
+                <Step1Connect
+                  compact
+                  showSteps={false}
+                  onConnect={() => openConnectModal()}
+                />
+              )
+            }
+            if (chain.unsupported) {
+              return (
+                <Step1SwitchNetwork
+                  compact
+                  showSteps={false}
+                  networkLabel={getHubNetworkLabel()}
+                  onSwitch={() => openChainModal()}
+                />
+              )
+            }
+            // Connected + correct chain: the connect step auto-advances to commit.
+            return null
+          }}
+        </ConnectButton.Custom>
       )
     }
-    return (
-      <Step1WalletNotWhitelisted
-        address={walletAddress ?? '0x0000000000000000000000000000000000000000'}
-        onSelectAnother={() => {
-          // The button says "Connect a different wallet" — make it honest:
-          // disconnect the current address and reopen the wallet picker.
-          disconnect()
-          openConnectModal?.()
-        }}
-      />
-    )
-  }
 
-  if (step === 'splash') {
-    return (
-      <Step0Invite
-        hopVariant={splashHopVariant}
-        secondsLeft={secondsLeft}
-        hideConnectEyebrow
-        onJoin={() => setStep('beforeYouStart')}
-        onClose={handleClose}
-      />
-    )
-  }
-
-  if (step === 'beforeYouStart') {
-    return (
-      <StepBeforeYouStart
-        hopVariant={splashHopVariant}
-        capUsdc={totalCapUsd}
-        inviteCount={freeInviteSlots}
-        maxOutCeilingUsdc={maxOutOption?.ceilingUsd}
-        // Empty string rather than undefined — the screen falls back to a demo
-        // address when it gets neither.
-        walletAddress={walletAddress ?? ''}
-        walletDisplayAddress={walletAddress ? truncateAddress(walletAddress) : '—'}
-        windowClosesLabel={formatWindowCloses(windowEndUnix)}
-        contractAddress={crowdfundAddress ?? undefined}
-        explorerBaseUrl={getExplorerUrl()}
-        onBack={() => setStep('splash')}
-        onContinue={() => setStep('commit')}
-        onClose={handleClose}
-      />
-    )
-  }
-
-  if (step === 'commit') {
-    if (!windowOpen) {
-      return (
-        <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-4 text-center">
-          <div className="text-2xl">Commit window isn't open</div>
-          <div className="text-muted-foreground">
-            New commits aren't accepted right now. Check back when the campaign opens.
+    if (!eligible) {
+      // Events still hydrating — don't flash the rejection screen at an eligible
+      // user before their on-chain positions have loaded.
+      if (eventsLoading) {
+        return (
+          <div className="flex min-h-[200px] items-center justify-center p-6 text-muted-foreground">
+            Checking eligibility…
           </div>
-        </div>
-      )
-    }
-    // Already at the cap on every eligible hop — nothing to enter. Skip straight
-    // to the confirmation screen so the stepper, "What's next", and Invite
-    // options render (instead of a dead-end "fully committed" message). When
-    // self-fill headroom remains, that confirmation surfaces the Max out banner.
-    if (isFullyCommitted) {
-      return renderConfirmation()
-    }
-    // The "commit the maximum" banner is hoisted ABOVE the Step2Commit card
-    // (rather than inside it) so it reads as a banner between the modal's close
-    // (X) and the card. ParticipateFlowV2's output lands in the modal's `.step`
-    // slot, directly under the close button.
-    let commitCard: ReactNode = null
-    if (isMulti) {
-      // Multi-hop: stacked per-hop input rows. Single-hop falls through to
-      // the legacy big-number variant below for an unchanged UX.
-      const hopRows: Step2CommitHopRow[] = renderablePositions.map((p) => ({
-        hop: p.hop,
-        hopLabel: HOP_LABELS[p.hop],
-        hopColor: hopPillDotColor(HOP_DOT_KEYS[p.hop]),
-        maxAmount: usdcToNumber(p.effectiveCap),
-        existingCommittedUsdc: initialCommittedByHop[p.hop],
-      }))
-      commitCard = (
-        <Step2Commit
-          hopRows={hopRows}
-          availableBalance={usdcToNumber(balance)}
-          onNext={() => {}}
-          onNextMulti={(next) => {
-            setAmounts({ 0: next[0] ?? 0, 1: next[1] ?? 0, 2: next[2] ?? 0 })
-            setStep('review')
-          }}
-          showBack={showSplash}
-          onBack={() => (showSplash ? setStep('beforeYouStart') : onGoToNetwork())}
-          onClose={handleClose}
-          maxOut={maxOutOption ?? undefined}
-        />
-      )
-    } else if (primaryPosition) {
-      // Single-hop path — identical to pre-multi-hop UX.
-      const effectiveCapUsd = usdcToNumber(primaryPosition.effectiveCap)
-      const availableBalance = usdcToNumber(balance)
-      commitCard = (
-        <Step2Commit
-          onNext={(amt) => {
-            setAmounts({
-              0: primaryPosition.hop === 0 ? amt : 0,
-              1: primaryPosition.hop === 1 ? amt : 0,
-              2: primaryPosition.hop === 2 ? amt : 0,
-            })
-            setStep('review')
-          }}
-          showBack={showSplash}
-          onBack={() => (showSplash ? setStep('beforeYouStart') : onGoToNetwork())}
-          onClose={handleClose}
-          maxAmount={effectiveCapUsd}
-          availableBalance={availableBalance}
-          maxArm={effectiveCapUsd}
-          existingCommittedUsdc={initialCommittedByHop[primaryPosition.hop]}
-          initialAmount={amounts[primaryPosition.hop]}
-          hopLabel={HOP_LABELS[primaryPosition.hop]}
-          hopColor={hopPillDotColor(HOP_DOT_KEYS[primaryPosition.hop])}
-          maxOut={maxOutOption ?? undefined}
-        />
-      )
-    }
-    if (!commitCard) return null
-    return (
-      <MaxOutFlowStack>
-        {maxOutOption ? (
-          <MaxOutBanner maxOut={maxOutOption} placement="aboveShell" />
-        ) : null}
-        {commitCard}
-      </MaxOutFlowStack>
-    )
-  }
-
-  if (step === 'review') {
-    // Max mode: review the bundled self-invite + commit plan.
-    if (maxMode && maxPlan) {
-      const hopCommits: Step3ReviewHopCommit[] = maxPlan.commits.map((c) => ({
-        hop: c.hop,
-        hopLabel: HOP_LABELS[c.hop],
-        hopColor: hopPillDotColor(HOP_DOT_KEYS[c.hop]),
-        amount: usdcToNumber(c.amount),
-      }))
-      const note = (
-        <>
-          {maxPlan.totalInvites > 0 ? (
-            <>
-              <strong>Self-invite bundle.</strong> Issues {maxPlan.totalInvites}{' '}
-              self-invite{maxPlan.totalInvites === 1 ? '' : 's'} to unlock your full
-              ceiling, then commits at every hop — all in one transaction. This spends
-              your own invite slots on yourself, so they won't be available to invite
-              others.
-            </>
-          ) : (
-            <>
-              <strong>Commit the maximum.</strong> Commits your full cap at every hop
-              — all in one transaction.
-            </>
-          )}
-          {maxPlan.balanceLimited && (
-            <div
-              style={{
-                marginTop: 'var(--primitives-spacing-2)',
-                fontWeight: 'var(--primitives-fontWeight-medium)',
-                color: 'var(--semantic-color-status-warning)',
-              }}
-            >
-              Your wallet is short ${usdcToNumber(maxPlan.shortfallUsdc).toLocaleString()} for
-              the full bundle — top up to continue.
-            </div>
-          )}
-        </>
-      )
+        )
+      }
       return (
-        <Step3Review
-          onNext={() => {
-            setStep('approve')
-            void startPipeline()
+        <Step1WalletNotWhitelisted
+          address={walletAddress ?? '0x0000000000000000000000000000000000000000'}
+          onSelectAnother={() => {
+            // The button says "Connect a different wallet" — make it honest:
+            // disconnect the current address and reopen the wallet picker.
+            disconnect()
+            openConnectModal?.()
           }}
-          onBack={() => {
-            resetMax()
-            setStep('commit')
-          }}
-          onClose={handleClose}
-          disabled={submitting || maxPlan.balanceLimited}
-          hopCommits={hopCommits.length > 1 ? hopCommits : undefined}
-          hopLevel={hopCommits.length === 1 ? HOP_LABELS[maxPlan.commits[0]!.hop] : undefined}
-          amount={maxNewCommitUsd}
-          estimatedArm={Math.round(maxEstimatedArm)}
-          note={note}
         />
       )
     }
-    if (isMulti) {
-      const hopCommits: Step3ReviewHopCommit[] = renderablePositions
-        .filter((p) => (amounts[p.hop] ?? 0) > 0)
-        .map((p) => ({
+
+    if (shownStep === 'splash') {
+      return (
+        <Step0Invite
+          hopVariant={splashHopVariant}
+          secondsLeft={secondsLeft}
+          hideConnectEyebrow
+          onJoin={() => setStep('beforeYouStart')}
+          onClose={handleClose}
+        />
+      )
+    }
+
+    if (shownStep === 'beforeYouStart') {
+      return (
+        <StepBeforeYouStart
+          hopVariant={splashHopVariant}
+          capUsdc={totalCapUsd}
+          inviteCount={freeInviteSlots}
+          maxOutCeilingUsdc={maxOutOption?.ceilingUsd}
+          // Empty string rather than undefined — the screen falls back to a demo
+          // address when it gets neither.
+          walletAddress={walletAddress ?? ''}
+          walletDisplayAddress={walletAddress ? truncateAddress(walletAddress) : '—'}
+          windowClosesLabel={formatWindowCloses(windowEndUnix)}
+          contractAddress={crowdfundAddress ?? undefined}
+          explorerBaseUrl={getExplorerUrl()}
+          onBack={() => setStep('splash')}
+          onContinue={() => setStep('commit')}
+          onClose={handleClose}
+        />
+      )
+    }
+
+    if (shownStep === 'commit') {
+      if (!windowOpen) {
+        return (
+          <div className="mx-auto flex max-w-md flex-col items-center justify-center gap-4 text-center">
+            <div className="text-2xl">Commit window isn't open</div>
+            <div className="text-muted-foreground">
+              New commits aren't accepted right now. Check back when the campaign opens.
+            </div>
+          </div>
+        )
+      }
+      // Already at the cap on every eligible hop — nothing to enter. Skip straight
+      // to the confirmation screen so the stepper, "What's next", and Invite
+      // options render (instead of a dead-end "fully committed" message). When
+      // self-fill headroom remains, that confirmation surfaces the Max out banner.
+      if (isFullyCommitted) {
+        return renderConfirmation()
+      }
+      // The "commit the maximum" banner is hoisted ABOVE the Step2Commit card
+      // (rather than inside it) so it reads as a banner between the modal's close
+      // (X) and the card. ParticipateFlowV2's output lands in the modal's `.step`
+      // slot, directly under the close button.
+      let commitCard: ReactNode = null
+      if (isMulti) {
+        // Multi-hop: stacked per-hop input rows. Single-hop falls through to
+        // the legacy big-number variant below for an unchanged UX.
+        const hopRows: Step2CommitHopRow[] = renderablePositions.map((p) => ({
           hop: p.hop,
           hopLabel: HOP_LABELS[p.hop],
           hopColor: hopPillDotColor(HOP_DOT_KEYS[p.hop]),
-          amount: amounts[p.hop],
+          maxAmount: usdcToNumber(p.effectiveCap),
+          existingCommittedUsdc: initialCommittedByHop[p.hop],
         }))
+        commitCard = (
+          <Step2Commit
+            hopRows={hopRows}
+            availableBalance={usdcToNumber(balance)}
+            onNext={() => {}}
+            onNextMulti={(next) => {
+              setAmounts({ 0: next[0] ?? 0, 1: next[1] ?? 0, 2: next[2] ?? 0 })
+              setStep('review')
+            }}
+            showBack={showSplash}
+            onBack={() => (showSplash ? setStep('beforeYouStart') : onGoToNetwork())}
+            onClose={handleClose}
+            maxOut={maxOutOption ?? undefined}
+          />
+        )
+      } else if (primaryPosition) {
+        // Single-hop path — identical to pre-multi-hop UX.
+        const effectiveCapUsd = usdcToNumber(primaryPosition.effectiveCap)
+        const availableBalance = usdcToNumber(balance)
+        commitCard = (
+          <Step2Commit
+            onNext={(amt) => {
+              setAmounts({
+                0: primaryPosition.hop === 0 ? amt : 0,
+                1: primaryPosition.hop === 1 ? amt : 0,
+                2: primaryPosition.hop === 2 ? amt : 0,
+              })
+              setStep('review')
+            }}
+            showBack={showSplash}
+            onBack={() => (showSplash ? setStep('beforeYouStart') : onGoToNetwork())}
+            onClose={handleClose}
+            maxAmount={effectiveCapUsd}
+            availableBalance={availableBalance}
+            maxArm={effectiveCapUsd}
+            existingCommittedUsdc={initialCommittedByHop[primaryPosition.hop]}
+            initialAmount={amounts[primaryPosition.hop]}
+            hopLabel={HOP_LABELS[primaryPosition.hop]}
+            hopColor={hopPillDotColor(HOP_DOT_KEYS[primaryPosition.hop])}
+            maxOut={maxOutOption ?? undefined}
+          />
+        )
+      }
+      if (!commitCard) return null
+      return (
+        <MaxOutFlowStack>
+          {maxOutOption ? (
+            <MaxOutBanner maxOut={maxOutOption} placement="aboveShell" />
+          ) : null}
+          {commitCard}
+        </MaxOutFlowStack>
+      )
+    }
+
+    if (shownStep === 'review') {
+      // Max mode: review the bundled self-invite + commit plan.
+      if (maxMode && maxPlan) {
+        const hopCommits: Step3ReviewHopCommit[] = maxPlan.commits.map((c) => ({
+          hop: c.hop,
+          hopLabel: HOP_LABELS[c.hop],
+          hopColor: hopPillDotColor(HOP_DOT_KEYS[c.hop]),
+          amount: usdcToNumber(c.amount),
+        }))
+        const note = (
+          <>
+            {maxPlan.totalInvites > 0 ? (
+              <>
+                <strong>Self-invite bundle.</strong> Issues {maxPlan.totalInvites}{' '}
+                self-invite{maxPlan.totalInvites === 1 ? '' : 's'} to unlock your full
+                ceiling, then commits at every hop — all in one transaction. This spends
+                your own invite slots on yourself, so they won't be available to invite
+                others.
+              </>
+            ) : (
+              <>
+                <strong>Commit the maximum.</strong> Commits your full cap at every hop
+                — all in one transaction.
+              </>
+            )}
+            {maxPlan.balanceLimited && (
+              <div
+                style={{
+                  marginTop: 'var(--primitives-spacing-2)',
+                  fontWeight: 'var(--primitives-fontWeight-medium)',
+                  color: 'var(--semantic-color-status-warning)',
+                }}
+              >
+                Your wallet is short ${usdcToNumber(maxPlan.shortfallUsdc).toLocaleString()} for
+                the full bundle — top up to continue.
+              </div>
+            )}
+          </>
+        )
+        return (
+          <Step3Review
+            onNext={() => {
+              setStep('approve')
+              void startPipeline()
+            }}
+            onBack={() => {
+              resetMax()
+              setStep('commit')
+            }}
+            onClose={handleClose}
+            disabled={submitting || maxPlan.balanceLimited}
+            hopCommits={hopCommits.length > 1 ? hopCommits : undefined}
+            hopLevel={hopCommits.length === 1 ? HOP_LABELS[maxPlan.commits[0]!.hop] : undefined}
+            amount={maxNewCommitUsd}
+            estimatedArm={Math.round(maxEstimatedArm)}
+            note={note}
+          />
+        )
+      }
+      if (isMulti) {
+        const hopCommits: Step3ReviewHopCommit[] = renderablePositions
+          .filter((p) => (amounts[p.hop] ?? 0) > 0)
+          .map((p) => ({
+            hop: p.hop,
+            hopLabel: HOP_LABELS[p.hop],
+            hopColor: hopPillDotColor(HOP_DOT_KEYS[p.hop]),
+            amount: amounts[p.hop],
+          }))
+        return (
+          <Step3Review
+            onNext={() => {
+              setStep('approve')
+              void startPipeline()
+            }}
+            onBack={() => setStep('commit')}
+            onClose={handleClose}
+            disabled={submitting}
+            hopCommits={hopCommits}
+            amount={totalNewAmountUsd}
+            estimatedArm={estimatedArm}
+          />
+        )
+      }
+      if (!primaryPosition) return null
       return (
         <Step3Review
           onNext={() => {
@@ -837,73 +859,67 @@ export function ParticipateFlowV2({
           onBack={() => setStep('commit')}
           onClose={handleClose}
           disabled={submitting}
-          hopCommits={hopCommits}
+          hopLevel={HOP_LABELS[primaryPosition.hop]}
           amount={totalNewAmountUsd}
           estimatedArm={estimatedArm}
         />
       )
     }
-    if (!primaryPosition) return null
-    return (
-      <Step3Review
-        onNext={() => {
-          setStep('approve')
-          void startPipeline()
-        }}
-        onBack={() => setStep('commit')}
-        onClose={handleClose}
-        disabled={submitting}
-        hopLevel={HOP_LABELS[primaryPosition.hop]}
-        amount={totalNewAmountUsd}
-        estimatedArm={estimatedArm}
-      />
-    )
-  }
 
-  if (step === 'approve') {
-    // Guard error (no signer/amount) renders as a standalone error row; otherwise
-    // the rows come live from the pipeline store.
-    const rows: Step4Transaction[] = attemptError
-      ? [{ label: 'Commit participation', status: 'error', errorMessage: attemptError }]
-      : pipeline.state.rows
-    return (
-      <Step4Approve
-        amount={maxMode ? maxNewCommitUsd : totalNewAmountUsd}
-        txs={rows.length ? rows : undefined}
-        onDone={() => setStep('confirmation')}
-        onBack={() => {
-          // Return to review with entered amounts preserved (amounts state is
-          // untouched). Reset the pipeline so a fresh confirm starts clean.
-          pipeline.reset()
-          setAttemptError(null)
-          setStep('review')
-        }}
-        onClose={handleClose}
-        onRetry={() => {
-          // Resume from the failed row (a succeeded approve isn't repeated).
-          void startPipeline()
-        }}
-      />
-    )
-  }
-
-  if (step === 'invites') {
-    if (inviteSlotSections && inviteSlotSections.length > 0) {
+    if (shownStep === 'approve') {
+      // Guard error (no signer/amount) renders as a standalone error row; otherwise
+      // the rows come live from the pipeline store.
+      const rows: Step4Transaction[] = attemptError
+        ? [{ label: 'Commit participation', status: 'error', errorMessage: attemptError }]
+        : pipeline.state.rows
       return (
-        <ParticipateFlowInviteSlots
-          sections={inviteSlotSections}
-          selfWalletAddress={walletAddress ?? undefined}
-          onDoItLater={onGoToMyPosition}
-          onBack={() => setStep('confirmation')}
+        <Step4Approve
+          amount={maxMode ? maxNewCommitUsd : totalNewAmountUsd}
+          txs={rows.length ? rows : undefined}
+          onDone={() => setStep('confirmation')}
+          onBack={() => {
+            // Return to review with entered amounts preserved (amounts state is
+            // untouched). Reset the pipeline so a fresh confirm starts clean.
+            pipeline.reset()
+            setAttemptError(null)
+            setStep('review')
+          }}
           onClose={handleClose}
-          socials={<FooterSocials />}
+          onRetry={() => {
+            // Resume from the failed row (a succeeded approve isn't repeated).
+            void startPipeline()
+          }}
         />
       )
     }
-    onGoToMyPosition()
-    return null
+
+    if (shownStep === 'invites') {
+      if (inviteSlotSections && inviteSlotSections.length > 0) {
+        return (
+          <ParticipateFlowInviteSlots
+            sections={inviteSlotSections}
+            selfWalletAddress={walletAddress ?? undefined}
+            onDoItLater={onGoToMyPosition}
+            onBack={() => setStep('confirmation')}
+            onClose={handleClose}
+            socials={<FooterSocials />}
+          />
+        )
+      }
+      onGoToMyPosition()
+      return null
+    }
+
+    // shownStep === 'confirmation'
+    return renderConfirmation()
   }
 
-  // step === 'confirmation'
-  return renderConfirmation()
+  return (
+    <div
+      key={shownStep}
+      className={[stepStyles.frame, exiting ? stepStyles.frameExit : stepStyles.frameEnter].join(' ')}
+    >
+      {renderStepContent()}
+    </div>
+  )
 }

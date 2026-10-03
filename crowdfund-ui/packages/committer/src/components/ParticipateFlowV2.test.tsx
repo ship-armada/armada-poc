@@ -158,7 +158,7 @@ describe('ParticipateFlowV2 pipeline detach/resume', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Review' }))
 
     // Review → start the pipeline (approve, then commit).
-    fireEvent.click(screen.getByRole('button', { name: 'Approve and commit' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve and commit' }))
 
     await act(async () => {})
     expect(approveSpy).toHaveBeenCalledTimes(1)
@@ -197,7 +197,7 @@ describe('ParticipateFlowV2 pipeline detach/resume', () => {
     const input = (await screen.findByRole('textbox')) as HTMLInputElement
     fireEvent.change(input, { target: { value: '100' } })
     fireEvent.click(screen.getByRole('button', { name: 'Review' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Approve and commit' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve and commit' }))
     await act(async () => {})
 
     // The pipeline is in flight — the parent was told it is running.
@@ -279,6 +279,20 @@ describe('ParticipateFlowV2 splash card', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
 
     expect(((await screen.findByRole('textbox')) as HTMLInputElement).value).toBe('100')
+  })
+
+  it('cross-fades between steps: the old step exits before the next one shows', async () => {
+    render(<ParticipateFlowV2 {...makeProps()} />)
+    const joinNow = await screen.findByRole('button', { name: 'Join now' })
+    expect(joinNow.closest('[class*="frameEnter"]')).toBeTruthy()
+
+    fireEvent.click(joinNow)
+    // The splash stays up, animating out…
+    expect(joinNow.closest('[class*="frameExit"]')).toBeTruthy()
+    expect(screen.queryByText('How to participate')).toBeNull()
+    // …then Before you start mounts with the enter animation.
+    const heading = await screen.findByText('How to participate')
+    expect(heading.closest('[class*="frameEnter"]')).toBeTruthy()
   })
 
   it('returns from Before you start to the splash on Back', async () => {
@@ -393,7 +407,7 @@ describe('ParticipateFlowV2 in-flow close', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Commit' }))
     fireEvent.change(await screen.findByRole('textbox'), { target: { value: '100' } })
     fireEvent.click(screen.getByRole('button', { name: 'Review' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Approve and commit' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve and commit' }))
     await act(async () => {})
     expect(approveSpy).toHaveBeenCalledTimes(1)
 

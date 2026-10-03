@@ -29,6 +29,10 @@
   margin-top: 0;
 }
 
+.rootSheet .closeBtn {
+  margin: 0;
+}
+
 .rootSheet .title {
   overflow: visible;
   line-height: 1.35;
@@ -53,6 +57,37 @@
   flex-direction: column;
   align-items: stretch;
   gap: var(--primitives-spacing-3);
+}
+
+.closeBtn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--primitives-spacing-8);
+  height: var(--primitives-spacing-8);
+  margin: calc(var(--primitives-spacing-2) * -1);
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--semantic-color-text-primary);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.closeBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--semantic-color-text-primary) 12%, transparent);
+}
+
+.closeBtn:focus-visible {
+  outline: 2px solid var(--semantic-color-border-focus);
+  outline-offset: 2px;
+}
+
+.closeBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .titleBlock {

@@ -2,7 +2,7 @@
 // ABOUTME: Supports hop-based InvitesCard UX and legacy slotId paths (Participate / InviteSlots).
 
 import { useEffect, useId, useRef, useState } from 'react'
-import { EllipsisHorizontalIcon } from '@heroicons/react/24/outline'
+import { EllipsisHorizontalIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { ZeroAddress } from 'ethers'
 import { Button } from '@armada/ui'
 import type { InviteMethod } from '../../lib/inviteUx'
@@ -445,6 +445,20 @@ export function InviteActionScreen({
     .filter(Boolean)
     .join(' ')
 
+  // Top-right close. On the form it is Cancel; once an invite exists it acts as
+  // Done — the live wiring maps a discard to a revoke, so closing must keep it.
+  const closeButton = (onClick: () => void) => (
+    <button
+      type="button"
+      className={styles.closeBtn}
+      onClick={onClick}
+      aria-label="Close invite"
+      disabled={loading || revoking}
+    >
+      <XMarkIcon width={16} height={16} aria-hidden />
+    </button>
+  )
+
   if (createdLink) {
     const copied = copiedInviteId === createdLink.id
     const path = inviteLinkPath(createdLink.link)
@@ -455,8 +469,13 @@ export function InviteActionScreen({
             {hopTag}
             <h3 className={styles.title}>{title}</h3>
           </div>
+          {closeButton(() => finishConfirmation(false))}
         </div>
         <div className={styles.body}>
+          <p className={styles.hint} role="status">
+            Share it privately. The recipient opens the link, connects their wallet, and commits
+            USDC to join the fleet.
+          </p>
           <div className={styles.createdLinkBox}>
             <div className={styles.createdLinkMain}>
               <p className={styles.createdLinkPath} title={createdLink.link}>
@@ -506,7 +525,7 @@ export function InviteActionScreen({
                         })()
                       }}
                     >
-                      {revoking ? 'Revoking…' : 'Revoke link'}
+                      {revoking ? 'Revoking…' : 'Revoke'}
                     </button>
                   </li>
                 </ul>
@@ -548,6 +567,7 @@ export function InviteActionScreen({
             {hopTag}
             <h3 className={styles.title}>{title}</h3>
           </div>
+          {closeButton(() => finishConfirmation(false))}
         </div>
         <div className={styles.body}>
           <p className={styles.hint}>
@@ -589,6 +609,7 @@ export function InviteActionScreen({
           {hopTag}
           <h3 className={styles.title}>{title}</h3>
         </div>
+        {closeButton(handleCancel)}
       </div>
       <div className={styles.body}>
         {method == null && onSelectMethod && (
@@ -664,13 +685,17 @@ export function InviteActionScreen({
                 Could not resolve address
               </span>
             )}
+            <p className={styles.hint}>
+              This sends an onchain transaction. The invitee can then open the crowdfund website
+              and commit. Requires gas.
+            </p>
           </div>
         )}
 
         {method === 'link' && (
           <p className={styles.hint}>
-            Anyone with the link can join at {hopLabel}. You can revoke unused links
-            later.
+            Your wallet will sign a message to generate the link — no gas required. You can
+            revoke the link anytime before someone uses it.
           </p>
         )}
       </div>

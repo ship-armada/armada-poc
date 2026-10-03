@@ -33,7 +33,7 @@ describe('InviteActionScreen link confirmation', () => {
     await screen.findByText('Link ready to share')
 
     fireEvent.click(screen.getByRole('button', { name: 'More link actions' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Revoke link' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Revoke' }))
 
     await waitFor(() => expect(handlers.onBack).toHaveBeenCalledOnce())
     expect(handlers.onRevoke).toHaveBeenCalledOnce()
@@ -41,6 +41,17 @@ describe('InviteActionScreen link confirmation', () => {
     expect(handlers.onRevoke).toHaveBeenCalledWith(CREATED_ID, 'https://fund.armada.blue/invite?n=1')
     expect(handlers.onDiscardCreated).not.toHaveBeenCalled()
     expect(handlers.onConfirmCreated).not.toHaveBeenCalled()
+  })
+
+  it('explains how to use the link once it is ready', async () => {
+    renderLinkScreen()
+    fireEvent.click(screen.getByRole('button', { name: 'Create link' }))
+    await screen.findByText('Link ready to share')
+    expect(
+      screen.getByText(
+        'Share it privately. The recipient opens the link, connects their wallet, and commits USDC to join the fleet.',
+      ),
+    ).toBeTruthy()
   })
 
   it('reveals the link in the list on Done without revoking', async () => {
@@ -143,3 +154,60 @@ describe('InviteActionScreen in-flight state', () => {
     expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(false)
   })
 })
+
+describe('InviteActionScreen explainer and close control', () => {
+  it('explains that an on-chain invite is a gas-paying transaction', () => {
+    render(<InviteActionScreen hop={1} method="onchain" onBack={vi.fn()} onGenerateLink={vi.fn()} onInviteOnchain={vi.fn()} />)
+    expect(
+      screen.getByText(
+        'This sends an onchain transaction. The invitee can then open the crowdfund website and commit. Requires gas.',
+      ),
+    ).toBeTruthy()
+  })
+
+  it('explains that creating a link only needs a signature, no gas', () => {
+    render(<InviteActionScreen hop={1} method="link" onBack={vi.fn()} onGenerateLink={vi.fn()} onInviteOnchain={vi.fn()} />)
+    expect(
+      screen.getByText(
+        'Your wallet will sign a message to generate the link — no gas required. You can revoke the link anytime before someone uses it.',
+      ),
+    ).toBeTruthy()
+  })
+
+  it('closes the form from the top-right X like Cancel', () => {
+    const onBack = vi.fn()
+    const onDiscardCreated = vi.fn()
+    render(
+      <InviteActionScreen
+        hop={1}
+        method="onchain"
+        onBack={onBack}
+        onGenerateLink={vi.fn()}
+        onInviteOnchain={vi.fn()}
+        onDiscardCreated={onDiscardCreated}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Close invite' }))
+    expect(onBack).toHaveBeenCalledOnce()
+    expect(onDiscardCreated).not.toHaveBeenCalled()
+  })
+
+  it('disables the X while the invite is in flight', () => {
+    render(<InviteActionScreen hop={1} method="onchain" loading onBack={vi.fn()} onGenerateLink={vi.fn()} onInviteOnchain={vi.fn()} />)
+    expect((screen.getByRole('button', { name: 'Close invite' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('treats the X on a just-created link as Done — keeps it, never revokes', async () => {
+    const handlers = renderLinkScreen()
+    fireEvent.click(screen.getByRole('button', { name: 'Create link' }))
+    await screen.findByText('Link ready to share')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close invite' }))
+
+    expect(handlers.onConfirmCreated).toHaveBeenCalledWith(CREATED_ID)
+    expect(handlers.onDiscardCreated).not.toHaveBeenCalled()
+    expect(handlers.onRevoke).not.toHaveBeenCalled()
+    expect(handlers.onBack).toHaveBeenCalledOnce()
+  })
+})
+

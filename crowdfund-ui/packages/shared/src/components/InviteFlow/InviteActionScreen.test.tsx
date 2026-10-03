@@ -174,6 +174,67 @@ describe('InviteActionScreen explainer and close control', () => {
     ).toBeTruthy()
   })
 
+  it('tells the inviter what the invitee does next once an on-chain invite is sent', async () => {
+    const invitee = '0x' + 'b'.repeat(40)
+    render(
+      <InviteActionScreen
+        hop={1}
+        method="onchain"
+        onBack={vi.fn()}
+        onGenerateLink={vi.fn()}
+        onInviteOnchain={vi.fn().mockResolvedValue({ id: CREATED_ID, address: invitee })}
+      />,
+    )
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: invitee } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Send invite' }))
+
+    expect(
+      await screen.findByText(
+        'They can open the crowdfund website, connect this wallet, and commit USDC anytime before the deadline.',
+      ),
+    ).toBeTruthy()
+  })
+
+  it('uses the self-invite wording when you invite your own wallet', async () => {
+    const me = '0x' + 'b'.repeat(40)
+    render(
+      <InviteActionScreen
+        hop={1}
+        method="onchain"
+        selfWalletAddress={me}
+        onBack={vi.fn()}
+        onGenerateLink={vi.fn()}
+        onInviteOnchain={vi.fn().mockResolvedValue({ id: CREATED_ID, address: me })}
+      />,
+    )
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: me } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Self invite' }))
+
+    expect(
+      await screen.findByText(
+        'You invited yourself. Open the crowdfund website with this wallet and commit USDC anytime before the deadline.',
+      ),
+    ).toBeTruthy()
+  })
+
+  it('shows the full invited address and that they have not committed yet', async () => {
+    const invitee = '0x' + 'b'.repeat(40)
+    render(
+      <InviteActionScreen
+        hop={1}
+        method="onchain"
+        onBack={vi.fn()}
+        onGenerateLink={vi.fn()}
+        onInviteOnchain={vi.fn().mockResolvedValue({ id: CREATED_ID, address: invitee })}
+      />,
+    )
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: invitee } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Send invite' }))
+
+    expect(await screen.findByText(invitee)).toBeTruthy()
+    expect(screen.getByText('Waiting to commit')).toBeTruthy()
+  })
+
   it('closes the form from the top-right X like Cancel', () => {
     const onBack = vi.fn()
     const onDiscardCreated = vi.fn()

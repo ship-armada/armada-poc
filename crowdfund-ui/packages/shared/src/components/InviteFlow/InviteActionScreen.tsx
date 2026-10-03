@@ -558,8 +558,12 @@ export function InviteActionScreen({
   }
 
   if (createdOnchain) {
-    const display =
-      createdOnchain.ensName ?? truncateAddress(createdOnchain.address)
+    const display = createdOnchain.ensName ?? createdOnchain.address
+    // Shown right after the invite lands, so the invitee can't have committed
+    // yet; the Your invites list tracks their live status from chain state.
+    const status = createdOnchain.ensName
+      ? `Waiting to commit · ${truncateAddress(createdOnchain.address)}`
+      : 'Waiting to commit'
     return (
       <div className={rootClass}>
         <div className={styles.topRow}>
@@ -572,8 +576,8 @@ export function InviteActionScreen({
         <div className={styles.body}>
           <p className={styles.hint}>
             {isSelfInviteConfirm
-              ? 'You invited yourself. On-chain invites cannot be revoked; connect this wallet and commit when ready.'
-              : 'On-chain invites cannot be revoked. The invitee can commit when ready.'}
+              ? 'You invited yourself. Open the crowdfund website with this wallet and commit USDC anytime before the deadline.'
+              : 'They can open the crowdfund website, connect this wallet, and commit USDC anytime before the deadline.'}
           </p>
           <div className={styles.createdLinkBox}>
             <div className={styles.createdLinkMain}>
@@ -585,6 +589,7 @@ export function InviteActionScreen({
               >
                 {display}
               </p>
+              <p className={styles.createdLinkMeta}>{status}</p>
             </div>
           </div>
         </div>

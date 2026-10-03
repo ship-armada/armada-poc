@@ -35,7 +35,6 @@ import {
   type HopStatsData,
   type HopVariant,
 } from '@armada/crowdfund-shared'
-import { FooterSocials } from '@/components/FooterSocials'
 import { getHubNetworkLabel, getExplorerUrl } from '@/config/network'
 import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
 import { countFreeInviteSlots, hasFreeInviteSlot } from '@/lib/inviteSlots'
@@ -60,13 +59,15 @@ type FlowStep =
 
 // Steps whose screen draws its own FlowChrome (back + close). On those the
 // modal drops its X so there is exactly one close control; everywhere else
-// (connect, eligibility, invite slots) the modal keeps it so nobody is trapped.
+// (connect, eligibility) the modal keeps it so nobody is trapped. The splash
+// also draws its own X — see `showModalClose`.
 const CHROME_STEPS: ReadonlySet<FlowStep> = new Set<FlowStep>([
   'beforeYouStart',
   'commit',
   'review',
   'approve',
   'confirmation',
+  'invites',
 ])
 
 export interface ParticipateFlowV2Props {
@@ -901,7 +902,6 @@ export function ParticipateFlowV2({
             onDoItLater={onGoToMyPosition}
             onBack={() => setStep('confirmation')}
             onClose={handleClose}
-            socials={<FooterSocials />}
           />
         )
       }

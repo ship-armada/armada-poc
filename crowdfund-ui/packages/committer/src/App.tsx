@@ -858,7 +858,7 @@ export function App() {
       ariaLabel="Participate in the Armada crowdfund"
       confirmBeforeClose={participateRunning}
       // The commit steps carry their own FlowChrome close; the flow tells us
-      // when to fall back to the modal's X (connect, eligibility, invite slots).
+      // when to fall back to the modal's X (connect, eligibility).
       showClose={participateModalClose}
     >
       {participateOpen && (

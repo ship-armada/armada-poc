@@ -362,18 +362,53 @@ describe('ParticipateFlowV2 modal close handoff', () => {
     expect(onModalCloseChange).toHaveBeenLastCalledWith(true)
   })
 
-  it('keeps the modal close on the invite-slots step', async () => {
+  it('leaves the close to the invite-slots step, which draws its own X', async () => {
     getDefaultStore().set(pipelinesAtom, {
       [ADDR]: { rows: [{ label: 'Commit participation', status: 'done' }], phase: 'success' },
     })
     const onModalCloseChange = vi.fn()
     render(<ParticipateFlowV2 {...makeProps()} onModalCloseChange={onModalCloseChange} />)
 
-    // Confirmation owns its chrome; stepping into invite slots hands the close back.
+    // Confirmation and invite slots both draw a FlowChrome close — the modal
+    // shows none (a second X would sit above the card).
     expect(onModalCloseChange).toHaveBeenLastCalledWith(false)
     fireEvent.click(screen.getByRole('button', { name: 'Whitelist a friend' }))
     await act(async () => {})
-    expect(onModalCloseChange).toHaveBeenLastCalledWith(true)
+    expect(onModalCloseChange).toHaveBeenLastCalledWith(false)
+  })
+
+  it('still shows the commit tx hash after visiting invite slots and coming back', async () => {
+    const COMMIT_HASH = '0x' + 'c0ffee'.repeat(10) + 'beef'
+    getDefaultStore().set(pipelinesAtom, {
+      [ADDR]: {
+        rows: [
+          { label: 'Approve 100 USDC', status: 'done', hash: '0x' + 'a'.repeat(64) },
+          { label: 'Commit participation', status: 'done', hash: COMMIT_HASH },
+        ],
+        phase: 'success',
+      },
+    })
+    render(<ParticipateFlowV2 {...makeProps()} />)
+    const hashLink = () => screen.queryByRole('link', { name: /0xc0ff/ })
+    expect(hashLink()).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Whitelist a friend' }))
+    await screen.findByRole('button', { name: 'Do it later' })
+    fireEvent.click(screen.getByRole('button', { name: 'Back to confirmation' }))
+    await screen.findByRole('button', { name: 'Whitelist a friend' })
+
+    expect(hashLink()).toBeTruthy()
+  })
+
+  it('shows no social links on the invite-slots step', async () => {
+    getDefaultStore().set(pipelinesAtom, {
+      [ADDR]: { rows: [{ label: 'Commit participation', status: 'done' }], phase: 'success' },
+    })
+    render(<ParticipateFlowV2 {...makeProps()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Whitelist a friend' }))
+    expect(await screen.findByRole('button', { name: 'Do it later' })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Armada on Discord' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Armada on X' })).toBeNull()
   })
 })
 

@@ -8,11 +8,16 @@
   align-items: center;
   justify-content: center;
   gap: var(--primitives-spacing-3);
-  min-height: 60vh;
-  max-width: 28rem;
+  min-height: 320px;
+  width: 480px;
+  max-width: 100%;
   margin: 0 auto;
-  padding: 0 var(--primitives-spacing-6);
+  padding: var(--primitives-spacing-8);
   text-align: center;
+  box-sizing: border-box;
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
   font-family: var(--primitives-fontFamily-ui), sans-serif;
   color: var(--semantic-color-text-primary);
 }
@@ -51,12 +56,11 @@
 }
 
 /* Page-centering wrapper around the 480×500 card. */
+/* The Claim modal is 480px wide; the card fills it (no page padding). */
 .flowShell {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: calc(100vh - 12rem);
-  padding: var(--primitives-spacing-4) var(--primitives-spacing-6);
   font-family: var(--primitives-fontFamily-ui), sans-serif;
   color: var(--semantic-color-text-primary);
 }
@@ -726,8 +730,9 @@
 }
 
 @media (max-width: 767px) {
-  .flowShell {
-    padding: var(--primitives-spacing-4) var(--primitives-spacing-5);
+  .gateShell {
+    padding: var(--primitives-spacing-5);
+    overflow: hidden;
   }
 
   .cardShell {

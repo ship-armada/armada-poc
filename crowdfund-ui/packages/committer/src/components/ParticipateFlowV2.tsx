@@ -475,6 +475,9 @@ export function ParticipateFlowV2({
         // still renders the right summary (local maxMode/maxPlan are lost on
         // remount; the pipeline + this snapshot survive).
         confirmation: maxConfirmation,
+        // Confirm via our dedicated RPC too, so a throttled wallet RPC can't
+        // sink a tx that actually landed.
+        readProvider: provider,
       })
       return
     }
@@ -484,6 +487,9 @@ export function ParticipateFlowV2({
       onSuccess: () => {
         void refreshAllowance()
       },
+      // Confirm via our dedicated RPC too, so a throttled wallet RPC can't sink
+      // a tx that actually landed.
+      readProvider: provider,
       // Same snapshot for the normal commit path (amounts are local state, lost
       // on a close/reopen across the tx).
       confirmation: {

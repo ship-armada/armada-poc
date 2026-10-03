@@ -449,10 +449,18 @@ export function InviteLinkFlowController({ inviteData }: InviteLinkFlowControlle
     // Max mode: run the bundled self-invite + commit (the link was already
     // redeemed, so this is plain invite/commit — no commitWithInvite).
     if (maxMode && maxPlan) {
-      pipeline.run(buildMaxSteps(activeSigner), { confirmation: maxConfirmation })
+      pipeline.run(buildMaxSteps(activeSigner), {
+        confirmation: maxConfirmation,
+        // Confirm via our dedicated RPC too, so a throttled wallet RPC can't
+        // sink a tx that actually landed.
+        readProvider: provider,
+      })
       return
     }
     pipeline.run(buildSteps(activeSigner), {
+      // Confirm via our dedicated RPC too, so a throttled wallet RPC can't sink
+      // a tx that actually landed.
+      readProvider: provider,
       // Snapshot the confirmation values so a closed-then-resumed redemption
       // still renders the right summary (the local `amount` state is lost on
       // remount; the pipeline + this snapshot survive). This is a first commit

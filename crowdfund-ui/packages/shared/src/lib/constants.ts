@@ -1,8 +1,8 @@
 // ABOUTME: Crowdfund contract constants, hop configuration, and ABI fragments.
-// ABOUTME: Single source of truth for the magic numbers referenced across the UI apps; selects between `mainnet` (default) and `medi` (Sepolia testnet) profiles via the `VITE_CROWDFUND_PROFILE` build-time env var.
+// ABOUTME: Single source of truth for the magic numbers referenced across the UI apps; selects between `mainnet` (default), `medi`, and `mini` (Sepolia testnet) profiles via the `VITE_CROWDFUND_PROFILE` build-time env var.
 
 /** Deployment profile — selects which set of contract constants the UI uses. */
-export type CrowdfundProfile = 'mainnet' | 'medi'
+export type CrowdfundProfile = 'mainnet' | 'medi' | 'mini'
 
 /** Sale size + lifecycle parameters that vary between deployments. Mirrors
  *  what the contracts were deployed with — must stay in lockstep with the
@@ -73,6 +73,23 @@ const CONSTANTS_BY_PROFILE: Record<CrowdfundProfile, CrowdfundConstants> = {
     GOVERNANCE_QUIET_PERIOD: 1 * 24 * 60 * 60, // 1 day
     HOP2_FLOOR_BPS: 500, // 5%
   },
+  mini: {
+    BASE_SALE: 240n * 10n ** 6n,
+    MAX_SALE: 360n * 10n ** 6n,
+    MIN_SALE: 200n * 10n ** 6n,
+    ELASTIC_TRIGGER: 300n * 10n ** 6n,
+    ARM_PRICE: 1_000_000n,
+    MAX_SEEDS: 25,
+    LAUNCH_TEAM_HOP1_BUDGET: 15,
+    LAUNCH_TEAM_HOP2_BUDGET: 15,
+    // $0.10, matching the mini-Sepolia contract's `MIN_COMMIT = 1e5` constant.
+    MIN_COMMIT: 10n ** 5n,
+    WINDOW_DURATION: 72 * 60 * 60, // 72 hours (3 days)
+    LAUNCH_TEAM_INVITE_PERIOD: 48 * 60 * 60, // 48 hours (shorter than the 72h window on mini-Sepolia)
+    CLAIM_DEADLINE_DURATION: 30 * 24 * 60 * 60, // 30 days
+    GOVERNANCE_QUIET_PERIOD: 6 * 60 * 60, // 6 hours
+    HOP2_FLOOR_BPS: 500, // 5%
+  },
 }
 
 const HOP_CONFIGS_BY_PROFILE: Record<
@@ -89,6 +106,11 @@ const HOP_CONFIGS_BY_PROFILE: Record<
     { ceilingBps: 4500, capUsdc: 20n * 10n ** 6n, maxInvites: 2, maxInvitesReceived: 10 },
     { ceilingBps: 0, capUsdc: 10n * 10n ** 6n, maxInvites: 0, maxInvitesReceived: 20 },
   ],
+  mini: [
+    { ceilingBps: 7000, capUsdc: 15n * 10n ** 6n, maxInvites: 3, maxInvitesReceived: 1 },
+    { ceilingBps: 4500, capUsdc: 4n * 10n ** 6n, maxInvites: 2, maxInvitesReceived: 10 },
+    { ceilingBps: 0, capUsdc: 1n * 10n ** 6n, maxInvites: 0, maxInvitesReceived: 20 },
+  ],
 }
 
 /** Resolve the active profile from the `VITE_CROWDFUND_PROFILE` env var.
@@ -102,6 +124,7 @@ function resolveCrowdfundProfile(): CrowdfundProfile {
   const env = (import.meta as ImportMeta & { env?: { VITE_CROWDFUND_PROFILE?: string } }).env
   const raw = env?.VITE_CROWDFUND_PROFILE
   if (raw === 'medi') return 'medi'
+  if (raw === 'mini') return 'mini'
   return 'mainnet'
 }
 

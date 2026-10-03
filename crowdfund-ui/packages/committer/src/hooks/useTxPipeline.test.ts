@@ -3,6 +3,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { createStore } from 'jotai'
+import type { JsonRpcProvider } from 'ethers'
 import { loadPendingTxs, removePendingTx, clearPendingTxs } from '@/lib/pendingTx'
 import { TX_PENDING_MESSAGE } from '@/lib/txWait'
 import {
@@ -294,5 +295,28 @@ describe('tx pipeline store', () => {
     expect(a.send).toHaveBeenCalledOnce()
     expect(b.send).toHaveBeenCalledTimes(2)
     expect(getPipelineState(store, A).rows.map((r) => r.status)).toEqual(['done', 'done'])
+  })
+
+  it('confirms via the read provider when the wallet wait fails (throttled wallet RPC)', async () => {
+    // The wallet's tx.wait() polls block number through the wallet's own RPC,
+    // which can reject when that endpoint is throttled (e.g. a free-tier node
+    // returning "chain not available"). The tx still landed; the dedicated read
+    // provider confirms it so the commit isn't sunk by the wallet's RPC.
+    const walletWait = () =>
+      Promise.reject(new Error('RPC Request failed: chain is not available on free plan'))
+    const a = makeStep('commit', walletWait)
+    const readProvider = {
+      waitForTransaction: vi.fn().mockResolvedValue({ status: 1, logs: [] }),
+    } as unknown as JsonRpcProvider
+
+    runTxPipeline(store, { address: A, steps: [a.step], readProvider })
+
+    await waitFor(() => getPipelineState(store, A).phase === 'success')
+    expect(getPipelineState(store, A).rows[0].status).toBe('done')
+    expect(readProvider.waitForTransaction).toHaveBeenCalledWith(
+      '0xcommit',
+      expect.any(Number),
+      expect.any(Number),
+    )
   })
 })

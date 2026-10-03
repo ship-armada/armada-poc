@@ -85,6 +85,62 @@
   transition: color 0.15s ease;
 }
 
+/* Progress title-row action group: Details beside Claim (desktop). */
+.progressActions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-4);
+}
+
+.detailsInline {
+  padding: 0;
+  line-height: 1;
+  border: none;
+  background: transparent;
+  color: var(--semantic-color-text-secondary);
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.detailsInline:hover {
+  color: var(--semantic-color-text-primary);
+}
+
+.detailsInline:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--semantic-color-border-focus);
+  border-radius: var(--semantic-component-navitem-radius);
+}
+
+/* With a Claim action the corner Details only shows on mobile, where the
+ * card moves Claim to a footer button and the title row is free. */
+@media (min-width: 768px) {
+  .detailsBtnMobileOnly {
+    display: none;
+  }
+}
+
+/* Mobile: the card's footer copy of the action group is just a full-width
+ * Claim — the corner overlay carries Details there. */
+@media (max-width: 767px) {
+  .progressActions {
+    display: flex;
+    width: 100%;
+  }
+
+  .progressActions > .detailsInline {
+    display: none;
+  }
+
+  .progressActions > :last-child {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
 .detailsBtn:hover {
   color: var(--semantic-color-text-primary);
 }

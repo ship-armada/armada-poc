@@ -579,6 +579,8 @@ export function CrowdfundExperience({
   const myPositionTerminalClaimed = myPositionRefundMode
     ? myPositionRefundClaimed
     : myPositionArmClaimed
+  // The Progress card's Claim action (title row on desktop, footer on mobile).
+  const showProgressClaim = claimAvailable && !myPositionTerminalClaimed && !!onClaim
   const [selectedAddress, setSelectedAddress] = useState<string | undefined>(undefined)
   const [filter, setFilter] = useState<'all' | 'seed' | 'hop1' | 'hop2' | 'multi'>('all')
   const [participantsListOpen, setParticipantsListOpen] = useState(false)
@@ -1144,14 +1146,29 @@ export function CrowdfundExperience({
                         ? { statusDot: liveReady.saleStatusDot }
                         : {})}
                       headerAction={
-                        claimAvailable && !myPositionTerminalClaimed && onClaim ? (
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            label={myPositionRefundMode ? 'Claim refund' : 'Claim'}
-                            showIcon={false}
-                            onClick={onClaim}
-                          />
+                        showProgressClaim ? (
+                          // Details rides beside Claim in the title row (desktop) so
+                          // the corner overlay can't sit on top of it. The card also
+                          // clones this into a mobile footer, where the inline
+                          // Details is hidden and the corner overlay shows instead.
+                          <span className={shellStyles.progressActions}>
+                            {onDetails && (
+                              <button
+                                type="button"
+                                className={shellStyles.detailsInline}
+                                onClick={onDetails}
+                              >
+                                Details
+                              </button>
+                            )}
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              label={myPositionRefundMode ? 'Claim refund' : 'Claim'}
+                              showIcon={false}
+                              onClick={onClaim}
+                            />
+                          </span>
                         ) : undefined
                       }
                     />
@@ -1159,9 +1176,15 @@ export function CrowdfundExperience({
                       // Overlaid on the @armada/ui Progress card's top-right corner
                       // (level with the card title) — we don't modify that primitive,
                       // so the "Details" affordance is positioned over it from here.
+                      // With a Claim action it is mobile-only (see headerAction).
                       <button
                         type="button"
-                        className={shellStyles.detailsBtn}
+                        className={[
+                          shellStyles.detailsBtn,
+                          showProgressClaim ? shellStyles.detailsBtnMobileOnly : undefined,
+                        ]
+                          .filter(Boolean)
+                          .join(' ')}
                         onClick={onDetails}
                       >
                         Details

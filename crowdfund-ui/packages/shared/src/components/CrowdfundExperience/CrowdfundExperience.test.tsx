@@ -91,3 +91,43 @@ describe('CrowdfundExperience Your position fill bar', () => {
   })
 })
 
+// The full crowdfund view is heavy to render (~3–4s in jsdom); allow headroom
+// so a parallel suite run doesn't trip the default 5s timeout.
+describe('CrowdfundExperience progress card actions', { timeout: 20_000 }, () => {
+  function renderCrowdfund(claimAvailable: boolean) {
+    render(
+      <CrowdfundExperience
+        view="crowdfund"
+        inviteSlotSections={[]}
+        onParticipate={vi.fn()}
+        onDetails={vi.fn()}
+        onClaim={vi.fn()}
+        claimAvailable={claimAvailable}
+      />,
+    )
+  }
+
+  it('keeps Details beside Claim (not over it) once Claim is available', () => {
+    renderCrowdfund(true)
+    // Desktop: Details sits in the same action group as Claim (the card also
+    // renders a footer copy of the action for mobile).
+    const group = screen
+      .getAllByRole('button', { name: /^Claim/ })
+      .map((b) => b.parentElement as HTMLElement)
+      .find((g) => within(g).queryByRole('button', { name: 'Details' }))
+    expect(group).toBeTruthy()
+    // The corner overlay is kept for mobile only (Claim moves to the footer there).
+    const overlay = screen
+      .getAllByRole('button', { name: 'Details' })
+      .find((b) => !group!.contains(b) && !b.closest('[class*="footerAction"]'))
+    expect(overlay?.className).toMatch(/detailsBtnMobileOnly/)
+  })
+
+  it('shows only the corner Details when there is no Claim action', () => {
+    renderCrowdfund(false)
+    const details = screen.getAllByRole('button', { name: 'Details' })
+    expect(details).toHaveLength(1)
+    expect(details[0].className).not.toMatch(/detailsBtnMobileOnly/)
+  })
+})
+

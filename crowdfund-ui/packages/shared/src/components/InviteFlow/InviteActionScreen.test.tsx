@@ -2,7 +2,7 @@
 // ABOUTME: Revoke must fire exactly once; discard (which the live wiring maps to a revoke) must not follow it.
 // @vitest-environment jsdom
 
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import { InviteActionScreen } from './InviteActionScreen'
 
@@ -32,7 +32,7 @@ describe('InviteActionScreen link confirmation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create link' }))
     await screen.findByText('Link ready to share')
 
-    fireEvent.click(screen.getByRole('button', { name: 'More link actions' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Invite actions' }))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Revoke' }))
 
     await waitFor(() => expect(handlers.onBack).toHaveBeenCalledOnce())
@@ -269,6 +269,56 @@ describe('InviteActionScreen explainer and close control', () => {
     expect(handlers.onDiscardCreated).not.toHaveBeenCalled()
     expect(handlers.onRevoke).not.toHaveBeenCalled()
     expect(handlers.onBack).toHaveBeenCalledOnce()
+  })
+})
+
+describe('InviteActionScreen reference copy', () => {
+  it('says the ENS name was not found when a lookup fails', async () => {
+    render(
+      <InviteActionScreen
+        hop={1}
+        method="onchain"
+        onBack={vi.fn()}
+        onGenerateLink={vi.fn()}
+        onInviteOnchain={vi.fn()}
+        resolveEns={vi.fn().mockResolvedValue({ error: 'not found' })}
+      />,
+    )
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'nobody.eth' } })
+    expect(await screen.findByText('ENS name not found')).toBeTruthy()
+  })
+
+  it('marks a just-created link as pending alongside its expiry', async () => {
+    renderLinkScreen()
+    fireEvent.click(screen.getByRole('button', { name: 'Create link' }))
+    expect(await screen.findByText(/^Link pending · Expires in \d+ days?$/)).toBeTruthy()
+  })
+
+  it('offers Share link first, with a hint, when choosing a method in the card', () => {
+    render(
+      <InviteActionScreen
+        hop={1}
+        method={null}
+        onSelectMethod={vi.fn()}
+        onBack={vi.fn()}
+        onGenerateLink={vi.fn()}
+        onInviteOnchain={vi.fn()}
+      />,
+    )
+    const group = screen.getByRole('group', { name: 'Invite method' })
+    const labels = within(group).getAllByRole('button').map((b) => b.textContent)
+    expect(labels).toEqual(['Share link', 'Whitelist new address'])
+    expect(
+      screen.getByText(
+        'Share a link (no gas) or whitelist an address onchain. The invitee joins at Hop-1.',
+      ),
+    ).toBeTruthy()
+  })
+
+  it('names the address field for assistive tech without a visible label', () => {
+    render(<InviteActionScreen hop={1} method="onchain" onBack={vi.fn()} onGenerateLink={vi.fn()} onInviteOnchain={vi.fn()} />)
+    expect(screen.queryByText('Wallet address or ENS')).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'Wallet address or ENS name' })).toBeTruthy()
   })
 })
 

@@ -482,14 +482,14 @@ export function InviteActionScreen({
                 {path}
               </p>
               <p className={styles.createdLinkMeta}>
-                {formatExpiryDays(createdLink.expiresAt)}
+                Link pending · {formatExpiryDays(createdLink.expiresAt)}
               </p>
             </div>
             <div className={styles.createdLinkMenu} ref={linkMenuRef}>
               <button
                 type="button"
                 className={styles.moreBtn}
-                aria-label="More link actions"
+                aria-label="Invite actions"
                 aria-haspopup="menu"
                 aria-expanded={linkMenuOpen}
                 aria-controls={linkMenuOpen ? linkMenuId : undefined}
@@ -624,25 +624,26 @@ export function InviteActionScreen({
               variant="secondary"
               size="sm"
               showIcon={false}
-              label="Whitelist new address"
-              onClick={() => onSelectMethod('onchain')}
+              label="Share link"
+              onClick={() => onSelectMethod('link')}
             />
             <Button
               type="button"
               variant="secondary"
               size="sm"
               showIcon={false}
-              label="Share link"
-              onClick={() => onSelectMethod('link')}
+              label="Whitelist new address"
+              onClick={() => onSelectMethod('onchain')}
             />
+            <p className={styles.hint}>
+              Share a link (no gas) or whitelist an address onchain. The invitee joins at{' '}
+              {hopLabel}.
+            </p>
           </div>
         )}
 
         {method === 'onchain' && (
           <div className={styles.field}>
-            <label className={styles.fieldLabel} htmlFor="invite-action-address">
-              Wallet address or ENS
-            </label>
             <div className={styles.inputWrapper}>
               <input
                 ref={addressInputElRef}
@@ -655,6 +656,7 @@ export function InviteActionScreen({
                   void handleAddressChange(e.target.value)
                 }}
                 placeholder="0x… or name.eth"
+                aria-label="Wallet address or ENS name"
                 autoComplete="off"
                 spellCheck={false}
                 maxLength={ADDRESS_INPUT_MAX_LENGTH}
@@ -687,7 +689,7 @@ export function InviteActionScreen({
             )}
             {ensState === 'error' && (
               <span className={styles.errorMsg} role="alert">
-                Could not resolve address
+                {isEns(addressInput) ? 'ENS name not found' : 'Could not resolve address'}
               </span>
             )}
             <p className={styles.hint}>

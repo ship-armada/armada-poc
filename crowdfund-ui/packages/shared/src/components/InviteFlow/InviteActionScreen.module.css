@@ -318,12 +318,6 @@
 
 /* Visible field label — not in the mockup (it uses an aria-label only); kept
  * for clarity and accessibility, styled like the hop label. */
-.fieldLabel {
-  font-family: var(--primitives-fontFamily-ui), sans-serif;
-  font-size: calc(var(--primitives-fontSize-sm) * 1px);
-  font-weight: var(--primitives-fontWeight-regular);
-  color: var(--semantic-color-text-muted);
-}
 
 .input {
   width: 100%;

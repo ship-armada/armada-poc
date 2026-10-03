@@ -20,7 +20,7 @@ export type AppHeaderNetwork = 'local' | 'sepolia' | (string & {})
 export interface AppHeaderProps {
   /** Short label displayed in the mobile sheet header (e.g. "Observer", "Committer"). */
   appName: string
-  /** Network label used for the badge text. */
+  /** Network label used for the badge text. No badge is shown on 'mainnet'. */
   network: AppHeaderNetwork
   /**
    * Desktop-only primary navigation (≥md), rendered inline to the right of the
@@ -115,7 +115,8 @@ export function AppHeader({
         <div className="flex shrink-0 items-center gap-3">
           <div className="hidden items-center gap-3 md:flex">
             {headerStatus && <div className="flex h-full items-center">{headerStatus}</div>}
-            <Tag label={network} />
+            {/* The badge flags non-production networks; mainnet shows none. */}
+            {network !== 'mainnet' && <Tag label={network} />}
             {headerRight}
           </div>
 

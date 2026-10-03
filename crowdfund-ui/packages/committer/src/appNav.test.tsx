@@ -30,6 +30,29 @@ describe('PageNav', () => {
     expect(screen.getByRole('button', { name: 'Claim' })).toBeEnabled()
   })
 
+  it('disables Your position when myPositionEnabled is false (pre-open)', () => {
+    const onChange = vi.fn()
+    const { rerender } = render(
+      <PageNav current="network" onChange={onChange} myPositionEnabled={false} />,
+    )
+    expect(screen.getByRole('button', { name: 'Your position' })).toBeDisabled()
+
+    rerender(<PageNav current="network" onChange={onChange} />)
+    expect(screen.getByRole('button', { name: 'Your position' })).toBeEnabled()
+  })
+
+  it('disables Your position in the vertical (mobile) nav too', () => {
+    render(
+      <PageNav
+        current="network"
+        onChange={vi.fn()}
+        orientation="vertical"
+        myPositionEnabled={false}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Your position' })).toBeDisabled()
+  })
+
   it('never marks Claim as the selected page tab', () => {
     render(<PageNav current="claim" onChange={vi.fn()} claimEnabled />)
     expect(screen.getByRole('button', { name: 'Claim' })).not.toHaveAttribute(

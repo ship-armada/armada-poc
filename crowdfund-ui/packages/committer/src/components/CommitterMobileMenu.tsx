@@ -56,6 +56,9 @@ export interface CommitterMobileMenuProps {
   onParticipate: () => void
   /** When false, Claim stays in the nav but is not navigable. */
   claimAvailable: boolean
+  /** When false (before the sale opens), Your position stays in the nav but
+   *  is not navigable. */
+  myPositionEnabled: boolean
   /** Commit window is open — gates the Participate CTA (mirrors header chrome). */
   participationEnabled: boolean
   /** Connected wallet USDC balance (6 decimals). */
@@ -68,6 +71,7 @@ export function CommitterMobileMenu({
   onNavigate,
   onParticipate,
   claimAvailable,
+  myPositionEnabled,
   participationEnabled,
   usdcBalance,
 }: CommitterMobileMenuProps) {
@@ -224,9 +228,19 @@ export function CommitterMobileMenu({
           </button>
           <button
             type="button"
-            className={navItemClass(current === 'my-position')}
-            aria-current={current === 'my-position' ? 'page' : undefined}
-            onClick={() => navigate('my-position')}
+            className={[
+              navItemClass(myPositionEnabled && current === 'my-position'),
+              !myPositionEnabled && styles.navItemDisabled,
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            aria-current={myPositionEnabled && current === 'my-position' ? 'page' : undefined}
+            aria-disabled={!myPositionEnabled}
+            disabled={!myPositionEnabled}
+            onClick={() => {
+              if (!myPositionEnabled) return
+              navigate('my-position')
+            }}
           >
             Your position
           </button>

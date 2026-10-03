@@ -557,6 +557,14 @@ export function App() {
     contractState.blockTimestamp >= contractState.windowStart &&
     contractState.blockTimestamp <= contractState.windowEnd
 
+  // Before the commit window opens there are no positions yet — Your position
+  // is disabled in the nav (and a deep link to it falls back to Crowdfund).
+  const preOpen = isPreOpen(
+    contractState.phase,
+    contractState.windowStart,
+    contractState.blockTimestamp,
+  )
+
   // Seconds left in the commit window — shown on the participate splash card.
   // Anchored on the chain block timestamp (same source as the Progress tag and
   // stats banner) and formatted by the shared helper, so every "time left"
@@ -699,6 +707,13 @@ export function App() {
       setClaimOpen(false)
     }
   }, [claimOpen, claimReady, claimStateLoading])
+
+  // Leave Your position (e.g. a `?view=myposition` deep link) while the sale
+  // hasn't opened. Sits above the load-gate early returns — hooks must run
+  // every render.
+  useEffect(() => {
+    if (preOpen && page === 'my-position') setPage('network')
+  }, [preOpen, page])
 
   const lifecycleStage = useMemo(
     () =>
@@ -847,6 +862,7 @@ export function App() {
       }}
       onParticipate={openParticipate}
       claimAvailable={claimReady}
+      myPositionEnabled={!preOpen}
       participationEnabled={windowOpen}
       usdcBalance={allowance.balance}
     />
@@ -855,7 +871,12 @@ export function App() {
   const mobileActions = <CommitterMobileWallet usdcBalance={allowance.balance} />
 
   const headerNav = (
-    <PageNav current={page} onChange={handlePageNav} claimEnabled={claimReady} />
+    <PageNav
+      current={page}
+      onChange={handlePageNav}
+      claimEnabled={claimReady}
+      myPositionEnabled={!preOpen}
+    />
   )
 
   const participateModal = (

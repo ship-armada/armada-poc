@@ -1,5 +1,5 @@
 // ABOUTME: Shared page-nav types + component and the dev-only ?mock parser.
-// ABOUTME: Left tabs: Crowdfund, My position, Claim (Claim disabled until claim opens).
+// ABOUTME: Left tabs: Crowdfund, Your position, Claim (Your position disabled pre-open; Claim until claim opens).
 
 import { cn } from '@armada/crowdfund-shared'
 import { NavBar, type NavBarItem } from '@armada/ui'
@@ -18,24 +18,31 @@ const NAV_ITEMS: ReadonlyArray<{ id: Page; label: string }> = [
  *
  *  Tabs: Crowdfund · My position · Claim. Claim opens a modal — never treated
  *  as the selected page tab. Claim stays in the strip but is disabled until
- *  the claim phase opens (`claimEnabled`).
+ *  the claim phase opens (`claimEnabled`). Your position is disabled before
+ *  the commit window opens (`myPositionEnabled`) — there's no position yet.
  */
 export function PageNav({
   current,
   onChange,
   orientation = 'horizontal',
   claimEnabled = false,
+  myPositionEnabled = true,
 }: {
   current: Page
   onChange: (p: Page) => void
   orientation?: 'horizontal' | 'vertical'
   /** When false, Claim is visible but not navigable. */
   claimEnabled?: boolean
+  /** When false, Your position is visible but not navigable. */
+  myPositionEnabled?: boolean
 }) {
+  const isDisabled = (id: Page) =>
+    (id === 'claim' && !claimEnabled) || (id === 'my-position' && !myPositionEnabled)
+
   if (orientation === 'horizontal') {
     const items: NavBarItem[] = NAV_ITEMS.map((item) => {
       const id = item.id
-      const disabled = id === 'claim' && !claimEnabled
+      const disabled = isDisabled(id)
       return {
         label: item.label,
         // Claim opens a modal — never treat it as the selected page tab.
@@ -51,7 +58,7 @@ export function PageNav({
   return (
     <ul className="flex flex-col items-stretch gap-1">
       {NAV_ITEMS.map((item) => {
-        const disabled = item.id === 'claim' && !claimEnabled
+        const disabled = isDisabled(item.id)
         // Claim opens a modal — never treat it as the selected page tab.
         const active = item.id === 'claim' ? false : !disabled && item.id === current
         return (

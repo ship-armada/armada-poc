@@ -22,6 +22,7 @@ export {
   formatCountdown,
   formatTimeLeft,
   formatTimeLeftDetail,
+  formatOpensAtDetail,
   hopLabel,
   phaseName,
   phaseColor,
@@ -93,6 +94,7 @@ export {
   getExpectedCrowdfundAddress,
 } from './lib/network.js'
 export type { NetworkMode, NetworkEnv } from './lib/network.js'
+export { DISCORD_URL, X_URL } from './lib/socials.js'
 
 export { createProvider, fetchLogs, getBlockTimestamp } from './lib/rpc.js'
 export {
@@ -174,6 +176,11 @@ export type { PrefetchedAllocation, UseAllocationsConfig } from './hooks/useAllo
 export { useContractState } from './hooks/useContractState.js'
 export type { ContractState } from './hooks/useContractState.js'
 
+export {
+  useIsMobileLayout,
+  visualViewportBottomInset,
+} from './hooks/useIsMobileLayout.js'
+
 // Components
 export { StatsBar } from './components/StatsBar.js'
 export type { StatsBarProps, HopStatsData, UserAllocation } from './components/StatsBar.js'
@@ -226,13 +233,27 @@ export type {
   ParticipantRow,
 } from './components/ParticipantsTable/index.js'
 
-export { HeroParticipantsPanel, HeroParticipantsMobileStack } from './components/HeroParticipantsPanel/index.js'
+export {
+  HeroParticipantList,
+  HeroParticipantControls,
+  HeroParticipantsMobileStack,
+} from './components/HeroParticipantsPanel/index.js'
 export type {
-  HeroParticipantsPanelProps,
+  HeroParticipantListProps,
+  HeroParticipantControlsProps,
   HeroParticipantsMobileStackProps,
   HeroHopFilter,
   HeroParticipant,
 } from './components/HeroParticipantsPanel/index.js'
+
+export {
+  CrowdfundLeftColumn,
+  useCrowdfundListAnimation,
+} from './components/CrowdfundLeftColumn/index.js'
+export type {
+  CrowdfundLeftColumnProps,
+  CrowdfundListAnimationContextValue,
+} from './components/CrowdfundLeftColumn/index.js'
 
 export { NodeSphere } from './components/NodeSphere/index.js'
 export type { NodeSphereProps, PinnedNode } from './components/NodeSphere/index.js'
@@ -250,6 +271,8 @@ export type {
 
 export { Participate } from './components/Participate/index.js'
 export type { ParticipateProps } from './components/Participate/index.js'
+export { PreOpenCard } from './components/PreOpenCard/index.js'
+export type { PreOpenCardProps } from './components/PreOpenCard/index.js'
 
 // Hero media assets — re-exported as URL strings so consuming apps can pass
 // them to <Participate imageSrc=… videoSrc=… /> (e.g. the committer mobile menu).
@@ -260,6 +283,7 @@ export {
   MyPosition,
   MyPositionHero,
   MyPositionSplit,
+  InvitesCard,
   COMMITTED as MY_POSITION_COMMITTED,
   CAP as MY_POSITION_CAP,
   ARM_ALLOCATION as MY_POSITION_ARM_ALLOCATION,
@@ -271,9 +295,17 @@ export {
   DEMO_WALLET as MY_POSITION_DEMO_WALLET,
   DEMO_WALLET_DISPLAY as MY_POSITION_DEMO_WALLET_DISPLAY,
   DEMO_SLOTS as MY_POSITION_DEMO_SLOTS,
+  DEMO_INVITE_ALLOWANCE as MY_POSITION_DEMO_INVITE_ALLOWANCE,
   buildInvitePinnedNodes,
 } from './components/MyPosition/index.js'
-export type { MyPositionProps, MyPositionSplitProps } from './components/MyPosition/index.js'
+export type {
+  MyPositionProps,
+  MyPositionSplitProps,
+  InvitesCardProps,
+  InvitesCardVariant,
+  InviteAllowance,
+  InviteeHop,
+} from './components/MyPosition/index.js'
 
 export {
   generateCrowdfund,
@@ -292,6 +324,9 @@ export type {
   CrowdfundSnapshot,
 } from './lib/mockParticipants.js'
 
+export { UsefulLinks } from './components/UsefulLinks/UsefulLinks.js'
+export type { UsefulLinksProps } from './components/UsefulLinks/UsefulLinks.js'
+
 export {
   Step0Invite,
   Step1Wallet,
@@ -302,9 +337,13 @@ export {
   Step3Review,
   Step4Approve,
   Step5Confirmation,
+  StepBeforeYouStart,
+  FlowChrome,
   ParticipateFlowModal,
+  confirmParticipateClose,
   ParticipateFlowInviteSlots,
   MaxOutBanner,
+  MaxOutFlowStack,
   INVITE_LINK_STEPS,
   CROWDFUND_MODAL_STEPS,
 } from './components/ParticipateFlow/index.js'
@@ -316,6 +355,8 @@ export type {
   Step4ApproveProps,
   Step4Transaction,
   Step4TransactionStatus,
+  StepBeforeYouStartProps,
+  FlowChromeProps,
   ParticipateFlowModalProps,
   ParticipateFlowInviteSlotsProps,
   ParticipateStepsStatus,
@@ -323,11 +364,47 @@ export type {
 } from './components/ParticipateFlow/index.js'
 
 export {
+  WalletConfirmStep,
+} from './components/WalletConfirm/index.js'
+export type {
+  WalletConfirmStepProps,
+  WalletTransactionItem,
+  WalletTransactionStatus,
+} from './components/WalletConfirm/index.js'
+
+export {
   InviteSlots,
   SlotCard,
   truncateAddress as inviteSlotTruncateAddress,
+  InviteActionScreen,
+  InviteActionSheet,
+  InviteMethodPicker,
+  INVITE_SHEET_EXIT_MS,
+  useInviteHopFocus,
+  InviteHopFocusChrome,
+  INVITE_FOCUS_TRANSITION_MS,
+  INVITE_LIST_ENTER_MS,
+  INVITE_COUNT_ROLL_DELAY_MS,
+  INVITE_COUNT_ROLL_MS,
 } from './components/InviteFlow/index.js'
-export type { SlotData, SlotStatus, SlotCardEnsResult } from './components/InviteFlow/index.js'
+export type {
+  SlotData,
+  SlotStatus,
+  SlotCardEnsResult,
+  InviteActionScreenProps,
+  CreatedInviteLink,
+  CreatedOnchainInvite,
+  InviteActionSheetProps,
+  InviteMethodPickerProps,
+  InviteHopFocus,
+  InviteHopFocusChromeProps,
+  InviteFocusView,
+} from './components/InviteFlow/index.js'
+
+export {
+  createDemoInviteLink,
+  demoInviteLink,
+} from './lib/demoInviteLink.js'
 
 export { CrowdfundToaster } from './components/CrowdfundToaster.js'
 

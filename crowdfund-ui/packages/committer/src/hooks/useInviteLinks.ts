@@ -21,11 +21,19 @@ import {
 import { getHubChainId, getTxConfirmations } from '@/config/network'
 import { TX_WAIT_TIMEOUT_MS, isUserRejection } from '@/lib/txWait'
 import { mapRevertToMessage } from '@/lib/revertMessages'
+import { submitWrite } from '@/lib/submitWrite'
+
+export interface CreatedInviteLink {
+  url: string
+  nonce: number
+  deadline: number
+  fromHop: number
+}
 
 export interface UseInviteLinksResult {
   links: StoredInviteLink[]
   loading: boolean
-  createLink: (fromHop: number, deadlineSeconds?: number) => Promise<string | null>
+  createLink: (fromHop: number, deadlineSeconds?: number) => Promise<CreatedInviteLink | null>
   revokeLink: (nonce: number) => Promise<boolean>
   refreshLinks: () => Promise<void>
 }
@@ -119,7 +127,7 @@ export function useInviteLinks(
     }
   }, [storedLinks, redeemedNonces, lowerAddr])
 
-  const createLink = useCallback(async (fromHop: number, deadlineSeconds?: number): Promise<string | null> => {
+  const createLink = useCallback(async (fromHop: number, deadlineSeconds?: number): Promise<CreatedInviteLink | null> => {
     if (!address || !signer || !crowdfundAddress) return null
 
     try {
@@ -154,7 +162,12 @@ export function useInviteLinks(
       await storeInviteLink(linkData)
       await refreshLinks()
 
-      return encodeInviteUrl(linkData)
+      return {
+        url: encodeInviteUrl(linkData),
+        nonce: linkData.nonce,
+        deadline: linkData.deadline,
+        fromHop: linkData.fromHop,
+      }
     } catch (err) {
       // Quiet on a user-rejected signature; surface real failures.
       if (!isUserRejection(err)) {
@@ -169,7 +182,7 @@ export function useInviteLinks(
 
     try {
       const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, signer)
-      const tx = await crowdfund.revokeInviteNonce(nonce)
+      const tx = await submitWrite(crowdfund, 'revokeInviteNonce', [nonce], signer)
       const receipt = await tx.wait(getTxConfirmations(), TX_WAIT_TIMEOUT_MS)
       if (!receipt || receipt.status === 0) return false
       await updateInviteLinkStatus(address.toLowerCase(), nonce, 'revoked')

@@ -10,6 +10,7 @@
   background: linear-gradient(
     180deg,
     var(--semantic-color-brand-lavender) 0%,
+    var(--semantic-color-brand-gradient-rose) 52%,
     var(--semantic-color-brand-amber) 100%
   );
   box-sizing: border-box;
@@ -54,33 +55,12 @@
   outline-offset: 2px;
 }
 
-/* Right-side cluster in the top bar: theme toggle + close. */
+/* Right-side cluster in the top bar (close). */
 .topBarActions {
   display: flex;
   align-items: center;
   gap: var(--primitives-spacing-3);
   flex-shrink: 0;
-}
-
-.themeToggleBtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--primitives-spacing-12);
-  height: var(--primitives-spacing-12);
-  padding: 0;
-  margin: 0;
-  border: none;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--primitives-color-white-full) 20%, transparent);
-  color: var(--primitives-color-white-full);
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.themeToggleBtn:focus-visible {
-  outline: 2px solid var(--primitives-color-white-full);
-  outline-offset: 2px;
 }
 
 .scroll {
@@ -242,6 +222,17 @@
   color: color-mix(in srgb, var(--primitives-color-white-full) 88%, transparent);
 }
 
+.navItem:disabled,
+.navItemDisabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.navItem:disabled:hover,
+.navItemDisabled:hover {
+  color: var(--primitives-color-white-full);
+}
+
 .navItemActive {
   padding: 0 var(--primitives-spacing-6);
   border-radius: calc(var(--primitives-borderRadius-full) * 1px);
@@ -258,8 +249,4 @@
   max-width: none;
   height: 240px !important;
   flex-shrink: 0;
-}
-
-.claimBtn {
-  align-self: center;
 }

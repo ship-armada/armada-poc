@@ -144,7 +144,7 @@ export function Header({
           <Button
             variant="ghost"
             size="md"
-            label="My position"
+            label="Your position"
             showIcon={false}
             onClick={handleMyPosition}
             className={activeNav === 'myposition' ? styles.myPositionActive : undefined}

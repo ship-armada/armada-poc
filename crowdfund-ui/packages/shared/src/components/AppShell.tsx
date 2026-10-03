@@ -34,8 +34,14 @@ export interface AppShellProps {
    * Mobile menu contents, rendered full-screen when the hamburger is tapped.
    * May be a node, or a render function receiving a `close` callback so menu
    * actions can dismiss the menu. Omit to suppress the hamburger entirely.
+   * On bare/hero pages prefer `mobileActions` (wallet circle) + in-flow nav.
    */
   mobileMenu?: ReactNode | ((close: () => void) => ReactNode)
+  /**
+   * Hero mobile header actions (wallet circle / Connect). Shown instead of the
+   * hamburger when `bare` is set.
+   */
+  mobileActions?: ReactNode
   /** Override the default footer. Pass `null` to hide the footer altogether. */
   footer?: ReactNode
   /**
@@ -100,6 +106,7 @@ headerNav,
 headerStatus,
 headerRight,
 mobileMenu,
+mobileActions,
 footer,
 bare,
 children,
@@ -113,6 +120,8 @@ children,
         headerStatus={headerStatus}
         headerRight={headerRight}
         mobileMenu={mobileMenu}
+        mobileActions={mobileActions}
+        scrollWithPageOnMobile={bare}
       />
 
       {/* pt-20 clears the inset AppHeader (top-6 + h-14 = 24 + 56 = 80px). Bare

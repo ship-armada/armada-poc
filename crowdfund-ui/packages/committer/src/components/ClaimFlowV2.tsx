@@ -1,13 +1,21 @@
-// ABOUTME: v2 Claim flow page-level controller — ARM claim (with mandatory delegate) + USDC refund, dressed in @armada/ui primitives.
-// ABOUTME: Provisional design: no designer mockup exists yet for Claim, so this composes Steps/Button/Tag with v1 ClaimTab behavior. Revisit when the designer ships claim screens.
+// ABOUTME: Claim flow — Intro → Delegate → Review → Submit → Done (ARM), or Intro → Submit → Done (refund).
+// ABOUTME: Crowdfund ClaimFlow UX (FlowChrome) wired to live on-chain claim/refund, ENS resolve, pending-tx, and in-flight reconstruct.
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Contract, ZeroAddress, type Signer, type JsonRpcProvider } from 'ethers'
 import {
-  Step4Approve,
-  type ReceiptLogLike,
+  InformationCircleIcon,
+  MagnifyingGlassIcon,
+} from '@heroicons/react/24/outline'
+import { CheckCircleIcon } from '@heroicons/react/24/solid'
+import {
+  FlowChrome,
+  StaleDataBanner,
+  UsefulLinks,
+  WalletConfirmStep,
   type Step4Transaction,
+  type ReceiptLogLike,
   CROWDFUND_ABI_FRAGMENTS,
   CROWDFUND_CONSTANTS,
   HOP_CONFIGS,
@@ -20,29 +28,62 @@ import {
   truncateAddress,
   ADDRESS_INPUT_MAX_LENGTH,
 } from '@armada/crowdfund-shared'
-import { Steps, Button as ArmadaButton, Tooltip } from '@armada/ui'
-import { InformationCircleIcon } from '@heroicons/react/24/solid'
+import { Button as ArmadaButton, Tooltip } from '@armada/ui'
 import { sendAndWaitTx } from '@/lib/sendAndWaitTx'
 import { savePendingTx, removePendingTx } from '@/lib/pendingTx'
 import { setClaimInFlight, getClaimInFlight, clearClaimInFlight } from '@/lib/claimInFlight'
 import { TX_WAIT_TIMEOUT_MS, isTxTimeoutError } from '@/lib/txWait'
 import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
-import { isMobileBrowser } from '@/lib/isMobileBrowser'
-import { submitTxViaWagmi } from '@/lib/mobileTxSubmit'
+import { submitWrite } from '@/lib/submitWrite'
+import { confirmClaimClose } from '@/lib/claimModal'
 import { getExplorerUrl, getHubChainId, getTxConfirmations } from '@/config/network'
 import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { getHubNetworkLabel } from '@/config/network'
 import styles from './ClaimFlowV2.module.css'
 
 type ClaimMode = 'arm' | 'refund'
-type FlowStep = 'review' | 'submit' | 'done'
+type FlowStep = 'intro' | 'delegate' | 'review' | 'submit' | 'done'
+type DelegateChoice = 'self' | 'other'
+type DelegateScreen = 'choice' | 'picker'
 type DelegateEnsState = 'idle' | 'resolving' | 'resolved' | 'error'
+
+const ARM_CLAIM_STEPS = [
+  { label: 'Delegate', hint: 'Select how to delegate your vote' },
+  { label: 'Review', hint: 'Confirm allocation and delegate' },
+  { label: 'Confirm', hint: 'Approve claim in your wallet' },
+] as const
+
+const ARM_KNOW_ITEMS = [
+  'You’ll need a little ETH in this wallet for gas.',
+  'A single transaction delivers your ARM and sets your delegate.',
+  'Voting power starts once you claim and delegate.',
+  'Any USDC above your final allocation is refunded in the same transaction.',
+] as const
+
+const REFUND_KNOW_ITEMS = [
+  'You’ll need a little ETH in this wallet for gas.',
+  'Your full committed USDC is returned in one transaction.',
+] as const
+
+const ARM_INTRO_LEAD =
+  'The crowdfund completed successfully. It’s time to claim your ARM tokens and set your delegate.'
+
+const REFUND_INTRO_LEAD_MIN_FUND =
+  'The crowdfund ended under the minimum fund, so no ARM was sold. Your full committed USDC is available to claim back.'
+
+const REFUND_INTRO_LEAD_CANCELLED =
+  'The sale was cancelled by the security council. Your full committed USDC is available to claim back.'
 
 /** Loose ENS prefilter — drives the "should we kick off resolution?" branch.
  *  Strict charset validation lives in `isValidEnsName`; this looser check still
  *  treats partial typing like "alice.et" as not-yet-ENS. Mirrors SlotCard. */
 function isEnsCandidate(val: string): boolean {
   return val.endsWith('.eth') && val.length > 4
+}
+
+function truncateMiddle(address: string, head = 6, tail = 4): string {
+  if (address.length <= head + tail + 1) return address
+  return `${address.slice(0, head)}…${address.slice(-tail)}`
 }
 
 export interface ClaimFlowV2Props {
@@ -56,6 +97,8 @@ export interface ClaimFlowV2Props {
   signer: Signer | null
   provider: JsonRpcProvider | null
   crowdfundAddress: string | null
+  /** Optional ARM token address for the done-screen contract row. */
+  armTokenAddress?: string | null
   phase: number
   refundMode: boolean
   blockTimestamp: number
@@ -74,12 +117,29 @@ export interface ClaimFlowV2Props {
   /** Refresh USDC + ARM balance after the tx confirms so the navbar wallet
    *  badge and MyPosition surface the post-claim state right away. */
   refreshAllowance?: () => Promise<void>
+  /** Reports whether a claim tx is in flight, so the hosting modal can ask
+   *  before Escape / its X closes it mid-claim. */
+  onRunningChange?: (running: boolean) => void
+  /** Close the flow in place (e.g. the Claim modal). Without it, the X and
+   *  Done fall back to `onGoToNetwork`. */
+  onClose?: () => void
+  /** Reports whether the hosting modal should show its own X: gate screens
+   *  draw none, every other screen has the in-card FlowChrome X. */
+  onModalCloseChange?: (show: boolean) => void
 }
 
-const ARM_STEPS = ['Review', 'Submit', 'Done']
-const REFUND_STEPS = ['Review', 'Submit', 'Done']
-
+/** The claim flow plus a stale-data warning above it. The Claim modal sits over
+ *  the hero, which has no page-level StaleDataBanner of its own. */
 export function ClaimFlowV2(props: ClaimFlowV2Props) {
+  return (
+    <>
+      <StaleDataBanner />
+      <ClaimFlowScreens {...props} />
+    </>
+  )
+}
+
+function ClaimFlowScreens(props: ClaimFlowV2Props) {
   const {
     walletConnected,
     isWrongNetwork,
@@ -88,6 +148,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     signer,
     provider,
     crowdfundAddress,
+    armTokenAddress,
     phase,
     refundMode,
     claimAvailable,
@@ -96,7 +157,15 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     onGoToNetwork,
     onReceiptLogs,
     refreshAllowance,
+    onRunningChange,
+    onClose,
+    onModalCloseChange,
   } = props
+
+  const selfRadioId = useId()
+  const otherRadioId = useId()
+  const searchId = useId()
+  const radioName = useId()
 
   // Delegate input may be a raw 0x… address or an ENS name. `delegate` holds the
   // raw text; `resolvedDelegate` holds the checksummed address actually sent to
@@ -110,6 +179,8 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   const [delegateEns, setDelegateEns] = useState<DelegateEnsState>(() =>
     walletAddress && tryGetChecksumAddress(walletAddress) ? 'resolved' : 'idle',
   )
+  const [delegateChoice, setDelegateChoice] = useState<DelegateChoice>('self')
+  const [delegateScreen, setDelegateScreen] = useState<DelegateScreen>('choice')
   // Mirror of `delegate` so an in-flight ENS lookup can drop a stale result if
   // the user kept typing while it was resolving.
   const delegateRef = useRef(delegate)
@@ -117,6 +188,10 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   // Set locally the instant a claim confirms, so the done screen shows without
   // waiting for the `claimed` read to refetch.
   const [justClaimed, setJustClaimed] = useState(false)
+  const [claimTxHash, setClaimTxHash] = useState<string | null>(() => {
+    const marker = getClaimInFlight(walletAddress)
+    return marker?.hash ?? null
+  })
   const [submitting, setSubmitting] = useState(false)
   const runningRef = useRef(false)
   // Once the user edits the delegate input, stop auto-filling it from the
@@ -135,23 +210,31 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     }
   }, [])
   const walletAddressRef = useRef(walletAddress)
-  useEffect(() => { walletAddressRef.current = walletAddress }, [walletAddress])
+  useEffect(() => {
+    walletAddressRef.current = walletAddress
+  }, [walletAddress])
   // Warn before a refresh/tab-close drops the user while a claim is broadcasting.
   useBeforeUnloadGuard(submitting)
 
   // Reconstruct in-progress state from a persisted in-flight claim marker, so
   // navigating away and back lands on "Submitting…" (or the eventual outcome)
-  // rather than resetting to the Review form — which looks un-submitted and
+  // rather than resetting to the intro — which looks un-submitted and
   // invites a duplicate claim. The marker is keyed by wallet address.
   const [step, setStep] = useState<FlowStep>(() =>
-    getClaimInFlight(walletAddress) ? 'submit' : 'review',
+    getClaimInFlight(walletAddress) ? 'submit' : 'intro',
   )
   const [txs, setTxs] = useState<Step4Transaction[] | null>(() => {
     const marker = getClaimInFlight(walletAddress)
     if (!marker) return null
     const opLabel = marker.mode === 'arm' ? 'Claim ARM' : 'Claim USDC refund'
     return [
-      { label: opLabel, status: 'loading', phaseLabel: 'Submitting…', hash: marker.hash, explorerUrl: getExplorerUrl() },
+      {
+        label: opLabel,
+        status: 'loading',
+        phaseLabel: 'Submitting…',
+        hash: marker.hash,
+        explorerUrl: getExplorerUrl(),
+      },
     ]
   })
 
@@ -185,6 +268,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
           onReceiptLogs?.(receipt.logs as unknown as readonly ReceiptLogLike[])
           void refreshAllowance?.()
           clearClaimInFlight()
+          setClaimTxHash(marker.hash)
           setJustClaimed(true)
           setStep('done')
           return
@@ -231,14 +315,25 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   // (self-delegate), unless the user has already edited the field.
   useEffect(() => {
     if (hasUserEditedDelegate.current) return
-    if (walletAddress && delegate === '') {
+    if (walletAddress && delegate === '' && delegateChoice === 'self') {
       // Display the raw address; resolve to the checksummed form internally.
       const checksummed = tryGetChecksumAddress(walletAddress)
       setDelegate(walletAddress)
       setResolvedDelegate(checksummed ?? '')
       setDelegateEns(checksummed ? 'resolved' : 'idle')
     }
-  }, [walletAddress, delegate])
+  }, [walletAddress, delegate, delegateChoice])
+
+  // Keep self-delegate resolved address in sync when choice is self.
+  useEffect(() => {
+    if (delegateChoice !== 'self') return
+    if (!walletAddress) return
+    if (hasUserEditedDelegate.current && delegateScreen === 'picker') return
+    const checksummed = tryGetChecksumAddress(walletAddress)
+    setDelegate(walletAddress)
+    setResolvedDelegate(checksummed ?? '')
+    setDelegateEns(checksummed ? 'resolved' : 'idle')
+  }, [delegateChoice, walletAddress, delegateScreen])
 
   // Delegate input handler — mirrors SlotCard's onchain-invite address field:
   // an ENS-looking value is resolved via the hub provider; a raw 0x… value is
@@ -315,20 +410,21 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
         phase === 1
           ? (contract.computeAllocation(walletAddress) as Promise<[bigint, bigint]>)
           : Promise.resolve(null),
-        // A cancelled sale (phase 2) can't `computeAllocation` (it reverts), so sum
-        // the raw per-hop commitments. This makes the refund gate + amount
+        // Sum the raw per-hop commitments. A cancelled sale (phase 2) can't
+        // `computeAllocation` (it reverts), so this makes its refund gate + amount
         // contract-authoritative rather than indexer-derived — the indexer lags on
-        // a cold load and would otherwise flash a false "no refund to claim".
-        phase === 2
-          ? Promise.all(
-              HOP_CONFIGS.map((_, h) => contract.getCommitment(walletAddress, h) as Promise<bigint>),
-            )
-          : Promise.resolve(null),
+        // a cold load and would otherwise flash a false "no refund to claim". In
+        // every phase it is also the "Final commit" the intro screens show.
+        Promise.all(
+          HOP_CONFIGS.map((_, h) => contract.getCommitment(walletAddress, h) as Promise<bigint>),
+        ),
       ])
       const hasClaimed = claimedRes.status === 'fulfilled' ? claimedRes.value : false
       let armAmount = 0n
       let refundAmount = 0n
-      let committedTotal = 0n
+      // Null when the commitment read failed outside phase 2, where it is
+      // display-only — "Final commit" then falls back to the indexer total.
+      let committedTotal: bigint | null = null
       let readError = false
       if (phase === 1) {
         if (allocRes.status === 'fulfilled' && allocRes.value) {
@@ -338,12 +434,10 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
           readError = true
         }
       }
-      if (phase === 2) {
-        if (committedRes.status === 'fulfilled' && committedRes.value) {
-          committedTotal = committedRes.value.reduce((sum, c) => sum + c, 0n)
-        } else if (committedRes.status === 'rejected') {
-          readError = true
-        }
+      if (committedRes.status === 'fulfilled') {
+        committedTotal = committedRes.value.reduce((sum, c) => sum + c, 0n)
+      } else if (phase === 2) {
+        readError = true
       }
       return { hasClaimed, armAmount, refundAmount, committedTotal, readError }
     },
@@ -353,7 +447,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     hasClaimed: false,
     armAmount: 0n,
     refundAmount: 0n,
-    committedTotal: 0n,
+    committedTotal: null,
     readError: false,
   }
   const hasClaimed = reads.hasClaimed || justClaimed
@@ -370,7 +464,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   // this instead of the indexer-derived `totalCommitted` fixes both the false
   // "no refund" flash on a cold load and the over-cap understatement (claimRefund
   // returns the raw deposit, which the capped graph value understates).
-  const refundClaimable = phase === 2 ? reads.committedTotal : refundAmount
+  const refundClaimable = phase === 2 ? (reads.committedTotal ?? 0n) : refundAmount
 
   // What the user actually gets back.
   const armDisplay = useMemo(() => formatArm(armAmount), [armAmount])
@@ -378,19 +472,67 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     () => formatUsdc(mode === 'refund' ? refundClaimable : refundAmount),
     [mode, refundClaimable, refundAmount],
   )
+  // The raw on-chain commitment, so it squares with the ARM + refund shown beside
+  // it. The indexer total is capped and lags on a cold load — fallback only.
+  const finalCommitDisplay = useMemo(
+    () => formatUsdc(reads.committedTotal ?? props.totalCommitted),
+    [reads.committedTotal, props.totalCommitted],
+  )
+
+  const walletDisplay =
+    walletAddress != null ? truncateAddress(walletAddress) : null
+
+  const effectiveDelegateLabel =
+    delegateChoice === 'self'
+      ? walletDisplay
+      : delegateEns === 'resolved' && resolvedDelegate
+        ? isValidEnsName(delegate)
+          ? delegate
+          : truncateAddress(resolvedDelegate)
+        : null
+
+  // In flight while sending, or while a row (incl. one rebuilt from the
+  // in-flight marker after a remount) is still waiting on the chain.
+  const claimInFlight = submitting || (txs?.some((t) => t.status === 'loading') ?? false)
+  useEffect(() => {
+    onRunningChange?.(claimInFlight)
+  }, [claimInFlight, onRunningChange])
+  useEffect(() => () => onRunningChange?.(false), [onRunningChange])
+
+  const handleClose = () => {
+    if (!confirmClaimClose(claimInFlight)) return
+    if (onClose) onClose()
+    else onGoToNetwork()
+  }
+
+  // Mirrors the gate early returns below (a claimed wallet's done screen wins
+  // over a read error). Gate screens have no in-card X, so the modal shows its.
+  const onGateScreen =
+    !walletConnected ||
+    !claimAvailable ||
+    loading ||
+    (!hasClaimed && step !== 'done' && readError)
+  useEffect(() => {
+    onModalCloseChange?.(onGateScreen)
+    return () => onModalCloseChange?.(true)
+  }, [onGateScreen, onModalCloseChange])
 
   // Submit the claim/refund transaction through the shared single-step engine,
   // so it inherits the two-phase labels, explorer link, and quiet-rejection
-  // handling. Updates `txs` so Step4Approve renders controlled status.
+  // handling. Updates `txs` so WalletConfirmStep / Step4Approve renders controlled status.
   const runClaim = async () => {
     if (runningRef.current) return
     // Past the deadline the ARM path claims only the USDC refund — label it honestly.
     const opLabel =
       mode === 'arm' && !armClaimWindowClosed ? 'Claim ARM' : 'Claim USDC refund'
     if (!crowdfundAddress) {
-      // Surface an error row instead of bailing into Step4's neutral state.
+      // Surface an error row instead of bailing into a neutral state.
       setTxs([
-        { label: opLabel, status: 'error', errorMessage: 'Still loading the crowdfund — try again in a moment.' },
+        {
+          label: opLabel,
+          status: 'error',
+          errorMessage: 'Still loading the crowdfund — try again in a moment.',
+        },
       ])
       return
     }
@@ -401,7 +543,11 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     // Past the ARM claim deadline the contract skips delegation entirely (ARM is
     // forfeited), so no delegate is required — the claim returns only the USDC
     // refund. Don't block that refund-only claim on delegate validation.
-    if (mode === 'arm' && !armClaimWindowClosed && (!delegateAddress || delegateAddress === ZeroAddress)) {
+    if (
+      mode === 'arm' &&
+      !armClaimWindowClosed &&
+      (!delegateAddress || delegateAddress === ZeroAddress)
+    ) {
       setTxs([
         { label: opLabel, status: 'error', errorMessage: 'Enter a valid delegate address.' },
       ])
@@ -436,15 +582,12 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     const result = await sendAndWaitTx(
       () => {
         const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, activeSigner)
-        // Mobile: submit via wagmi so MetaMask Mobile surfaces the request (the
-        // ethers signer transport doesn't trigger the WC redirect). Desktop keeps
-        // the ethers path unchanged.
-        if (isMobileBrowser()) {
-          return mode === 'arm'
-            ? submitTxViaWagmi(crowdfund, 'claim', [delegateAddress!])
-            : submitTxViaWagmi(crowdfund, 'claimRefund', [])
-        }
-        return mode === 'arm' ? crowdfund.claim(delegateAddress!) : crowdfund.claimRefund()
+        // submitWrite routes mobile through wagmi (so MetaMask Mobile surfaces the
+        // request) and desktop through ethers after asserting the wallet is on the
+        // hub chain.
+        return mode === 'arm'
+          ? submitWrite(crowdfund, 'claim', [delegateAddress!], activeSigner)
+          : submitWrite(crowdfund, 'claimRefund', [], activeSigner)
       },
       (hash) => {
         // Persist the broadcast so the header tx chip (via usePendingTxWatcher)
@@ -459,7 +602,10 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
         })
         // Page-owned marker so a remount mid-flight reconstructs this tx's state.
         setClaimInFlight({ hash, mode, address: startAddress ?? '', sentAt: Date.now() })
-        setTxs([{ label: opLabel, status: 'loading', phaseLabel: 'Submitting…', hash, explorerUrl }])
+        setClaimTxHash(hash)
+        setTxs([
+          { label: opLabel, status: 'loading', phaseLabel: 'Submitting…', hash, explorerUrl },
+        ])
       },
       // Race the direct read provider against the wallet's tx.wait() so the done
       // screen lands as soon as the chain confirms, instead of waiting on the
@@ -476,6 +622,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     if (result.outcome === 'success') {
       setTxs([{ label: opLabel, status: 'done', hash: result.hash, explorerUrl }])
       clearClaimInFlight()
+      if (result.hash) setClaimTxHash(result.hash)
       setJustClaimed(true)
       // Fast-path the Allocated / RefundClaimed receipt log into the event store
       // and refresh balances.
@@ -487,7 +634,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     if (result.outcome === 'rejected') {
       // Quiet — the user declined; return to review without a red error row.
       setTxs(null)
-      setStep('review')
+      setStep(mode === 'refund' ? 'intro' : 'review')
       return
     }
     // reverted / timeout / error
@@ -511,7 +658,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
     // prompt rather than the misleading "connect your wallet" copy.
     if (isWrongNetwork) {
       return (
-        <CardShell title="Wrong network">
+        <GateShell title="Wrong network">
           <p className={styles.gateBody}>
             Switch to {getHubNetworkLabel()} to claim your ARM tokens or USDC refund.
           </p>
@@ -524,25 +671,25 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
               onClick={() => switchNetwork?.()}
             />
           </div>
-        </CardShell>
+        </GateShell>
       )
     }
     return (
-      <CardShell title="Connect your wallet to claim">
+      <GateShell title="Connect your wallet to claim">
         <p className={styles.gateBody}>
-          Once the campaign finalizes you'll be able to claim ARM tokens (or a USDC refund) from
-          here.
+          Once the campaign finalizes you&apos;ll be able to claim ARM tokens (or a USDC refund)
+          from here.
         </p>
-      </CardShell>
+      </GateShell>
     )
   }
 
   if (!claimAvailable) {
     return (
-      <CardShell title="Claiming isn't open yet">
+      <GateShell title="Claiming isn't open yet">
         <p className={styles.gateBody}>
-          You'll be able to claim ARM tokens (or a USDC refund if the sale ends below the minimum
-          raise) from here.
+          You&apos;ll be able to claim ARM tokens (or a USDC refund if the sale ends below the
+          minimum fund) from here.
         </p>
         {claimCountdownSeconds !== undefined && claimCountdownSeconds > 0 && (
           <p className={styles.gateBodyFootnote}>
@@ -559,21 +706,21 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
             onClick={onGoToNetwork}
           />
         </div>
-      </CardShell>
+      </GateShell>
     )
   }
 
   if (loading) {
     return (
-      <CardShell title="Loading allocation…">
+      <GateShell title="Loading allocation…">
         <p className={styles.gateBody}>Fetching your share of the sale.</p>
-      </CardShell>
+      </GateShell>
     )
   }
 
   // Already-claimed: short-circuit to the done state. Same surface as a
   // freshly-completed claim so the user always sees a coherent end-of-flow.
-  if (hasClaimed) {
+  if (hasClaimed || step === 'done') {
     return (
       <DoneScreen
         mode={mode}
@@ -581,8 +728,10 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
         armDisplay={armDisplay}
         refundDisplay={refundDisplay}
         refundAmount={refundAmount}
-        onGoToMyPosition={onGoToMyPosition}
-        onGoToNetwork={onGoToNetwork}
+        armTokenAddress={armTokenAddress ?? null}
+        claimTxHash={claimTxHash}
+        walletAddress={walletAddress}
+        onClose={handleClose}
       />
     )
   }
@@ -591,16 +740,18 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   // render a misleading "0 ARM" — offer a retry.
   if (readError) {
     return (
-      <CardShell title="Couldn't load your allocation">
+      <GateShell title="Couldn't load your allocation">
         <p className={styles.gateBody}>Something went wrong fetching your share. Try again.</p>
-        <ArmadaButton
-          variant="secondary"
-          size="md"
-          label="Retry"
-          showIcon={false}
-          onClick={() => void claimQuery.refetch()}
-        />
-      </CardShell>
+        <div className={styles.gateActions}>
+          <ArmadaButton
+            variant="secondary"
+            size="md"
+            label="Retry"
+            showIcon={false}
+            onClick={() => void claimQuery.refetch()}
+          />
+        </div>
+      </GateShell>
     )
   }
 
@@ -617,14 +768,15 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
   if (phase === 0 && windowEnded) {
     if (saleBelowMin) {
       return (
-        <CardShell title="Sale ended below minimum">
+        <GateShell title="Sale ended below minimum">
           <p className={styles.gateBody}>
             {props.totalCommitted > 0n
-              ? `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum raise. Once it's finalized, you'll be able to claim a refund of your committed ${formatUsdc(props.totalCommitted)} from here.`
-              : `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum raise. Once it's finalized, all committed USDC will be refundable to the addresses that participated.`}
+              ? `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum fund. Once it's finalized, you'll be able to claim a refund of your committed ${formatUsdc(props.totalCommitted)} from here.`
+              : `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum fund. Once it's finalized, all committed USDC will be refundable to the addresses that participated.`}
           </p>
           <p className={styles.gateBodyFootnote}>
-            Finalization is permissionless — anyone can trigger it. Refresh this page once it's done.
+            Finalization is permissionless — anyone can trigger it. Refresh this page once
+            it&apos;s done.
           </p>
           <div className={styles.gateActions}>
             <ArmadaButton
@@ -635,17 +787,18 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
               onClick={onGoToNetwork}
             />
           </div>
-        </CardShell>
+        </GateShell>
       )
     }
     return (
-      <CardShell title="Awaiting finalization">
+      <GateShell title="Awaiting finalization">
         <p className={styles.gateBody}>
-          The commit window has closed. Once the sale is finalized you'll be able to claim your
-          ARM allocation (and any USDC refund for over-cap commitments) from here.
+          The commit window has closed. Once the sale is finalized you&apos;ll be able to claim
+          your ARM allocation (and any USDC refund for over-cap commitments) from here.
         </p>
         <p className={styles.gateBodyFootnote}>
-          Finalization is permissionless — anyone can trigger it. Refresh this page once it's done.
+          Finalization is permissionless — anyone can trigger it. Refresh this page once
+          it&apos;s done.
         </p>
         <div className={styles.gateActions}>
           <ArmadaButton
@@ -656,42 +809,35 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
             onClick={onGoToNetwork}
           />
         </div>
-      </CardShell>
+      </GateShell>
     )
   }
-
-  const stepsLabels = mode === 'arm' ? ARM_STEPS : REFUND_STEPS
-  const currentStepIndex = step === 'review' ? 1 : step === 'submit' ? 2 : 3
 
   // No allocation: don't show the submit path at all. Reaches here only after
   // the sale has been finalized successfully — the connected address
   // genuinely has nothing to claim (didn't commit, or committed under a
-  // different wallet). Renders in the same shell as the DoneScreen so the
-  // terminal state is visually consistent with a successful claim.
+  // different wallet).
   const armNothing = mode === 'arm' && armAmount === 0n && refundAmount === 0n
   const refundNothing = mode === 'refund' && refundClaimable === 0n
-  if (armNothing || refundNothing) {
+  if ((armNothing || refundNothing) && step !== 'submit') {
     return (
       <NothingToClaimScreen
         mode={mode}
         walletAddress={walletAddress}
-        stepsLabels={stepsLabels}
         onGoToMyPosition={onGoToMyPosition}
         onGoToNetwork={onGoToNetwork}
+        onClose={handleClose}
       />
     )
   }
 
-  // ── Active flow ─────────────────────────────────────────────────
-
   // Past the ARM claim deadline: ARM is forfeited on-chain. Offer only the USDC
-  // refund (if any) rather than the normal ARM review, which would show ARM
-  // numbers the claim won't deliver. Gated on `step === 'review'` so the submit /
-  // done screens still render once a refund claim is in flight.
-  if (step === 'review' && armClaimWindowClosed) {
+  // refund (if any) rather than the normal ARM intro/delegate/review, which would
+  // show ARM numbers the claim won't deliver. Skip while submit is in flight.
+  if (armClaimWindowClosed && step !== 'submit') {
     const hasRefund = refundAmount > 0n
     return (
-      <CardShell title="ARM claim window closed">
+      <GateShell title="ARM claim window closed">
         <p className={styles.gateBody}>
           The window to claim your ARM allocation has closed, so the ARM is forfeited.
           {hasRefund
@@ -701,7 +847,7 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
         <div className={styles.gateActions}>
           {hasRefund && (
             <ArmadaButton
-              variant="gradient"
+              variant="primary"
               size="md"
               label={`Claim ${formatUsdc(refundAmount)} refund`}
               showIcon={false}
@@ -721,110 +867,239 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
             onClick={onGoToNetwork}
           />
         </div>
-      </CardShell>
+      </GateShell>
     )
   }
 
-  if (step === 'review') {
-    const delegateValid = delegateEns === 'resolved' && resolvedDelegate !== ''
-    const armHasRefund = mode === 'arm' && refundAmount > 0n
+  // ── Active flow ─────────────────────────────────────────────────
+
+  if (step === 'submit') {
+    const walletTxs = (txs ?? [
+      {
+        label: mode === 'refund' ? `Claim ${refundDisplay} refund` : 'Claim ARM',
+        status: 'loading' as const,
+        phaseLabel: 'Confirm in your wallet…',
+      },
+    ]).map((t) => ({
+      label: t.label,
+      status: t.status,
+      errorMessage: t.errorMessage,
+      errorDetails: t.errorDetails,
+      phaseLabel: t.phaseLabel,
+      hash: t.hash,
+      explorerUrl: t.explorerUrl,
+    }))
+
     return (
-      <FlowShell stepsLabels={stepsLabels} currentStep={currentStepIndex}>
-        <div className={styles.cardContent}>
-          <h2 className={styles.cardTitle}>
-            {mode === 'arm' ? 'Claim your ARM' : 'Claim your refund'}
-          </h2>
+      <CardFlowShell
+        title="Confirm"
+        // No chrome Back: mid-flight it would hide a later revert/timeout and drop
+        // the in-flight marker. Once a row errors, WalletConfirmStep's footer
+        // offers Back + Retry.
+        showBack={false}
+        onClose={handleClose}
+      >
+        <WalletConfirmStep
+          transactions={walletTxs}
+          onBack={() => {
+            clearClaimInFlight()
+            setTxs(null)
+            setStep(mode === 'refund' ? 'intro' : 'review')
+          }}
+          onRetry={() => {
+            clearClaimInFlight()
+            setTxs(null)
+            void runClaim()
+          }}
+        />
+      </CardFlowShell>
+    )
+  }
 
-          {/* Single summary card with row dividers — matches Step3Review. */}
-          <div className={styles.summaryCard}>
-            {mode === 'arm' && (
-              <>
-                <div className={styles.summaryRow}>
-                  <div className={styles.summaryLabelGroup}>
-                    <span className={styles.summaryLabel}>ARM allocation</span>
-                    <Tooltip
-                      variant="rich"
-                      title="ARM allocation"
-                      description="The ARM tokens delivered to your wallet by this transaction."
-                      bullets={[
-                        'Pro-rata share of the sale, capped at your hop allocation',
-                        'Delegate set below receives your governance voting power',
-                        'Any committed USDC not used to buy ARM is refunded in the same tx',
-                      ]}
-                    >
-                      <button
-                        type="button"
-                        className={styles.infoTrigger}
-                        aria-label="ARM allocation details"
-                      >
-                        <InformationCircleIcon className={styles.infoIcon} aria-hidden />
-                      </button>
-                    </Tooltip>
-                  </div>
-                  <span className={styles.summaryValueAccent}>{armDisplay}</span>
-                </div>
-                {armHasRefund && (
-                  <>
-                    <div className={styles.divider} />
-                    <div className={styles.summaryRow}>
-                      <span className={styles.summaryLabel}>USDC refund</span>
-                      <span className={styles.summaryValue}>{formatUsdc(refundAmount)}</span>
-                    </div>
-                  </>
-                )}
-              </>
-            )}
-            {mode === 'refund' && (
-              <div className={styles.summaryRow}>
-                <span className={styles.summaryLabel}>USDC refund</span>
-                <span className={styles.summaryValue}>{refundDisplay}</span>
+  if (step === 'intro' && mode === 'refund') {
+    const refundLead =
+      phase === 2 ? REFUND_INTRO_LEAD_CANCELLED : REFUND_INTRO_LEAD_MIN_FUND
+
+    return (
+      <CardFlowShell
+        title="Claim your USDC refund"
+        titleId="claim-intro-title"
+        titleAlign="start"
+        showBack={false}
+        onClose={handleClose}
+      >
+        <div className={styles.introWrap}>
+          <div className={styles.introScroll}>
+            <p className={styles.introLead}>{refundLead}</p>
+
+            <div className={styles.factsCard}>
+              <div className={styles.factRow}>
+                <span className={styles.factLabel}>USDC refund</span>
+                <span className={styles.factValueAccent}>{refundDisplay}</span>
               </div>
-            )}
-          </div>
+              <div className={styles.divider} aria-hidden />
+              <div className={styles.factRow}>
+                <span className={styles.factLabel}>Final commit</span>
+                <span className={styles.factValue}>{finalCommitDisplay}</span>
+              </div>
+            </div>
 
-          {/* Lavender-tinted note pinned under the allocation so the user reads
-              "this is what hits your wallet" before any input. Same surface as
-              Step3Review's warning block. */}
-          <div className={styles.warningBlock}>
-            <p className={styles.warningText}>
-              {mode === 'arm'
-                ? armHasRefund
-                  ? 'A single transaction delivers your ARM and your USDC refund.'
-                  : 'A single transaction delivers your ARM and any over-cap USDC refund.'
-                : phase === 2
-                  ? 'The sale was cancelled by the security council. Your full committed USDC is available to claim back.'
-                  : 'The sale ended below the minimum raise, so no ARM was sold. Your full committed USDC is available to claim back.'}
-            </p>
+            <section className={styles.knowBlock} aria-labelledby="claim-intro-know">
+              <h3 id="claim-intro-know" className={styles.knowHeading}>
+                What to know
+              </h3>
+              <ul className={styles.knowList}>
+                {REFUND_KNOW_ITEMS.map((text) => (
+                  <li key={text} className={styles.knowItem}>
+                    <span className={styles.knowBullet} aria-hidden>
+                      ·
+                    </span>
+                    <span>{text}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
           </div>
+          <div className={styles.introFade} aria-hidden />
+        </div>
+        <div className={styles.buttonRow}>
+          <ArmadaButton
+            variant="primary"
+            size="lg"
+            label={`Claim ${refundDisplay} refund`}
+            showIcon={false}
+            disabled={submitting}
+            onClick={() => {
+              setTxs(null)
+              setStep('submit')
+              void runClaim()
+            }}
+          />
+        </div>
+      </CardFlowShell>
+    )
+  }
 
-          {mode === 'arm' && (
-            <div className={styles.delegateBlock}>
-              <label className={styles.delegateLabel}>Delegate address</label>
-              <input
-                type="text"
-                autoComplete="off"
-                spellCheck={false}
-                autoCapitalize="off"
-                autoCorrect="off"
-                maxLength={ADDRESS_INPUT_MAX_LENGTH}
-                value={delegate}
-                onChange={(e) => void handleDelegateChange(e.target.value)}
-                placeholder="0x… or name.eth"
-                className={[
-                  styles.delegateInput,
-                  delegateEns === 'error' ? styles.delegateInputError : '',
-                  delegateEns === 'resolved' ? styles.delegateInputResolved : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-              />
+  if (step === 'intro') {
+    return (
+      <CardFlowShell
+        title="Claim your ARM tokens"
+        titleId="claim-intro-title"
+        titleAlign="start"
+        showBack={false}
+        onClose={handleClose}
+      >
+        <div className={styles.introWrap}>
+          <div className={styles.introScroll}>
+            <p className={styles.introLead}>{ARM_INTRO_LEAD}</p>
+
+            <div className={styles.factsCard}>
+              <div className={styles.factRow}>
+                <span className={styles.factLabel}>ARM allocation</span>
+                <span className={styles.factValueAccent}>{armDisplay}</span>
+              </div>
+              <div className={styles.divider} aria-hidden />
+              <div className={styles.factRow}>
+                <span className={styles.factLabel}>Final commit</span>
+                <span className={styles.factValue}>{finalCommitDisplay}</span>
+              </div>
+            </div>
+
+            <section className={styles.knowBlock} aria-labelledby="claim-intro-how">
+              <h3 id="claim-intro-how" className={styles.knowHeading}>
+                How to claim
+              </h3>
+              <ol className={styles.stepCards} aria-labelledby="claim-intro-how">
+                {ARM_CLAIM_STEPS.map((item, index) => (
+                  <li key={item.label} className={styles.stepCard}>
+                    <span className={styles.stepNumber} aria-hidden>
+                      {index + 1}
+                    </span>
+                    <div className={styles.stepCopy}>
+                      <span className={styles.stepLabel}>{item.label}</span>
+                      <span className={styles.stepHint}>{item.hint}</span>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </section>
+
+            <section className={styles.knowBlock} aria-labelledby="claim-intro-know">
+              <h3 id="claim-intro-know" className={styles.knowHeading}>
+                What to know
+              </h3>
+              <ul className={styles.knowList}>
+                {ARM_KNOW_ITEMS.map((text) => (
+                  <li key={text} className={styles.knowItem}>
+                    <span className={styles.knowBullet} aria-hidden>
+                      ·
+                    </span>
+                    <span>{text}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          </div>
+          <div className={styles.introFade} aria-hidden />
+        </div>
+        <div className={styles.buttonRow}>
+          <ArmadaButton
+            variant="primary"
+            size="lg"
+            label="Start"
+            showIcon={false}
+            onClick={() => {
+              setDelegateScreen('choice')
+              setStep('delegate')
+            }}
+          />
+        </div>
+      </CardFlowShell>
+    )
+  }
+
+  if (step === 'delegate' && mode === 'arm') {
+    if (delegateScreen === 'picker') {
+      const canReview = delegateEns === 'resolved' && resolvedDelegate !== ''
+      return (
+        <CardFlowShell
+          title="Select a delegate"
+          onBack={() => setDelegateScreen('choice')}
+          onClose={handleClose}
+        >
+          <div className={[styles.cardContent, styles.cardContentFill].join(' ')}>
+            <div className={styles.delegatePicker}>
+              <div className={styles.searchField}>
+                <MagnifyingGlassIcon className={styles.searchIcon} aria-hidden />
+                <input
+                  id={searchId}
+                  type="search"
+                  autoComplete="off"
+                  spellCheck={false}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  maxLength={ADDRESS_INPUT_MAX_LENGTH}
+                  placeholder="Name or address"
+                  value={delegate}
+                  onChange={(e) => void handleDelegateChange(e.target.value)}
+                  className={styles.searchInput}
+                  aria-label="Search delegates"
+                />
+              </div>
               {delegateEns === 'resolving' && (
                 <p className={styles.delegateHelp}>Resolving ENS…</p>
               )}
-              {delegateEns === 'resolved' && resolvedDelegate && isValidEnsName(delegate) && (
-                <p className={styles.delegateResolved}>
-                  Resolves to <code>{truncateAddress(resolvedDelegate)}</code>
-                </p>
+              {delegateEns === 'resolved' && resolvedDelegate && (
+                <div className={styles.delegateResolvedCard} role="status">
+                  <span className={styles.delegateResolvedPrimary}>
+                    {isValidEnsName(delegate) ? delegate : truncateAddress(resolvedDelegate)}
+                  </span>
+                  <span className={styles.delegateResolvedSecondary}>
+                    {isValidEnsName(delegate)
+                      ? truncateAddress(resolvedDelegate)
+                      : 'Ready to delegate'}
+                  </span>
+                </div>
               )}
               {delegateEns === 'error' && (
                 <p className={styles.delegateError}>
@@ -836,110 +1111,268 @@ export function ClaimFlowV2(props: ClaimFlowV2Props) {
               {delegateEns === 'idle' && delegate.startsWith('0x') && (
                 <p className={styles.delegateError}>Not a valid 0x address.</p>
               )}
-              <p className={styles.delegateHelp}>
-                Your delegate votes on your behalf in governance. Use your own address to
-                self-delegate. ENS names (name.eth) are supported.
-              </p>
+              {delegateEns === 'idle' && !delegate && (
+                <p className={styles.delegateHelp}>
+                  Enter a 0x address or ENS name (name.eth) to assign your voting power.
+                </p>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+          <div className={styles.buttonRow}>
+            <ArmadaButton
+              variant="primary"
+              size="lg"
+              label="Review"
+              showIcon={false}
+              className={!canReview ? styles.ctaBlocked : undefined}
+              aria-disabled={!canReview || undefined}
+              onClick={() => {
+                if (!canReview) return
+                setStep('review')
+              }}
+            />
+          </div>
+        </CardFlowShell>
+      )
+    }
 
+    return (
+      <CardFlowShell
+        title="Choose your delegate"
+        onBack={() => {
+          setDelegateScreen('choice')
+          setStep('intro')
+        }}
+        onClose={handleClose}
+      >
+        <div className={styles.cardContent}>
+          <fieldset className={styles.radioGroup}>
+            <legend className={styles.visuallyHidden}>Delegation preference</legend>
+
+            <label
+              className={[
+                styles.radioOption,
+                delegateChoice === 'self' && styles.radioOptionSelected,
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              htmlFor={selfRadioId}
+            >
+              <input
+                id={selfRadioId}
+                className={styles.radioInput}
+                type="radio"
+                name={radioName}
+                checked={delegateChoice === 'self'}
+                onChange={() => {
+                  hasUserEditedDelegate.current = false
+                  setDelegateChoice('self')
+                  setSelectedSelf(walletAddress, setDelegate, setResolvedDelegate, setDelegateEns)
+                }}
+              />
+              <span className={styles.radioCopy}>
+                <span className={styles.radioTitle}>Keep voting powers</span>
+                <span className={styles.radioHint}>
+                  Self-delegate — you vote with the ARM claimed to this wallet.
+                </span>
+              </span>
+            </label>
+
+            <label
+              className={[
+                styles.radioOption,
+                delegateChoice === 'other' && styles.radioOptionSelected,
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              htmlFor={otherRadioId}
+            >
+              <input
+                id={otherRadioId}
+                className={styles.radioInput}
+                type="radio"
+                name={radioName}
+                checked={delegateChoice === 'other'}
+                onChange={() => {
+                  setDelegateChoice('other')
+                  hasUserEditedDelegate.current = true
+                  setDelegate('')
+                  setResolvedDelegate('')
+                  setDelegateEns('idle')
+                }}
+              />
+              <span className={styles.radioCopy}>
+                <span className={styles.radioTitle}>Delegate vote</span>
+                <span className={styles.radioHint}>
+                  Assign voting power to another address that can vote on your behalf.
+                </span>
+              </span>
+            </label>
+          </fieldset>
+        </div>
         <div className={styles.buttonRow}>
           <ArmadaButton
-            variant="secondary"
+            variant="primary"
             size="lg"
-            label="Cancel"
+            label={delegateChoice === 'other' ? 'Continue' : 'Review'}
             showIcon={false}
-            onClick={onGoToNetwork}
-          />
-          <ArmadaButton
-            variant="gradient"
-            size="lg"
-            label={mode === 'arm' ? 'Claim ARM' : 'Claim refund'}
-            showIcon={false}
-            disabled={(mode === 'arm' && !delegateValid) || submitting}
             onClick={() => {
-              setTxs(null)
-              setStep('submit')
-              void runClaim()
+              if (delegateChoice === 'other') {
+                setDelegateScreen('picker')
+                return
+              }
+              setStep('review')
             }}
           />
         </div>
-      </FlowShell>
+      </CardFlowShell>
     )
   }
 
-  if (step === 'submit') {
-    return (
-      <div className={styles.submitShell}>
-        {/* Reuse Step4Approve's controlled-tx surface. Single op; the second-row
-            "Commit" slot collapses since we only pass one tx. `steps` /
-            `stepIndex` are forwarded so the inner Steps bar shows the claim's
-            3-step set ('Review / Submit / Done') at index 2, not Step4's
-            commit-flow default ('…/ Confirmation' at index 4). */}
-        <Step4Approve
-          steps={stepsLabels}
-          stepIndex={currentStepIndex}
-          // Singular variant — claim submits a single tx, unlike commit's
-          // Approve + Commit pair. Same two-line shape as the default so the
-          // card height doesn't shift.
-          title={<>Confirm transaction<br />on your wallet</>}
-          amount={mode === 'arm' ? Number(formatArm(armAmount).replace(/[, ARM]/g, '')) : 0}
-          txs={txs ?? undefined}
-          onDone={() => setStep('done')}
-          onBack={() => {
-            clearClaimInFlight()
+  // ARM review (refund skips review — the claim CTA lives on the intro)
+  const armHasRefund = refundAmount > 0n
+  return (
+    <CardFlowShell
+      title="Review claim"
+      onBack={() => {
+        setDelegateScreen(delegateChoice === 'other' ? 'picker' : 'choice')
+        setStep('delegate')
+      }}
+      onClose={handleClose}
+    >
+      <div className={styles.cardContent}>
+        <div className={styles.summaryCard}>
+          <div className={styles.summaryRow}>
+            <div className={styles.summaryLabelGroup}>
+              <span className={styles.summaryLabel}>ARM allocation</span>
+              <Tooltip
+                variant="rich"
+                // Opens downward: this row sits right under the card title, so an
+                // upward popover would be clipped by the scrolling card content.
+                placement="bottom"
+                title="ARM allocation"
+                description="The ARM tokens delivered to your wallet by this transaction."
+                bullets={[
+                  'Pro-rata share of the sale, capped at your hop allocation',
+                  'Delegate set below receives your governance voting power',
+                  'Any committed USDC not used to buy ARM is refunded in the same tx',
+                ]}
+              >
+                <button
+                  type="button"
+                  className={styles.infoTrigger}
+                  aria-label="ARM allocation details"
+                >
+                  <InformationCircleIcon className={styles.infoIcon} aria-hidden />
+                </button>
+              </Tooltip>
+            </div>
+            <span className={styles.summaryValueAccent}>{armDisplay}</span>
+          </div>
+          <div className={styles.divider} />
+          <div className={styles.summaryRow}>
+            <span className={styles.summaryLabel}>
+              {delegateChoice === 'self' ? 'Self-delegate' : 'Delegate'}
+            </span>
+            <span className={styles.summaryValue}>{effectiveDelegateLabel}</span>
+          </div>
+          {armHasRefund ? (
+            <>
+              <div className={styles.divider} />
+              <div className={styles.summaryRow}>
+                <span className={styles.summaryLabel}>USDC refund</span>
+                <span className={styles.summaryValue}>{formatUsdc(refundAmount)}</span>
+              </div>
+            </>
+          ) : null}
+        </div>
+        <div className={styles.warningBlock}>
+          <p className={styles.warningText}>
+            {armHasRefund
+              ? 'A single transaction delivers your ARM and your USDC refund.'
+              : 'A single transaction delivers your ARM and sets your delegate.'}
+          </p>
+        </div>
+      </div>
+      <div className={styles.buttonRow}>
+        <ArmadaButton
+          variant="primary"
+          size="lg"
+          label="Claim ARM"
+          showIcon={false}
+          disabled={
+            submitting ||
+            !(delegateEns === 'resolved' && resolvedDelegate !== '')
+          }
+          onClick={() => {
             setTxs(null)
-            setStep('review')
-          }}
-          onRetry={() => {
-            clearClaimInFlight()
-            setTxs(null)
+            setStep('submit')
             void runClaim()
           }}
         />
       </div>
-    )
-  }
-
-  // step === 'done'
-  return (
-    <DoneScreen
-      mode={mode}
-      armForfeited={armClaimWindowClosed}
-      armDisplay={armDisplay}
-      refundDisplay={refundDisplay}
-      refundAmount={refundAmount}
-      onGoToMyPosition={onGoToMyPosition}
-      onGoToNetwork={onGoToNetwork}
-    />
+    </CardFlowShell>
   )
+}
+
+function setSelectedSelf(
+  walletAddress: string | null,
+  setDelegate: (v: string) => void,
+  setResolvedDelegate: (v: string) => void,
+  setDelegateEns: (v: DelegateEnsState) => void,
+) {
+  if (!walletAddress) {
+    setDelegate('')
+    setResolvedDelegate('')
+    setDelegateEns('idle')
+    return
+  }
+  const checksummed = tryGetChecksumAddress(walletAddress)
+  setDelegate(walletAddress)
+  setResolvedDelegate(checksummed ?? '')
+  setDelegateEns(checksummed ? 'resolved' : 'idle')
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-function CardShell({ title, children }: { title: string; children: React.ReactNode }) {
+function GateShell({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className={styles.gateShell}>
-      <div className={styles.gateTitle}>{title}</div>
-      <div>{children}</div>
+      <h2 className={styles.gateTitle}>{title}</h2>
+      {children}
     </div>
   )
 }
 
-function FlowShell({
-  stepsLabels,
-  currentStep,
+function CardFlowShell({
+  title,
+  titleId,
+  titleAlign = 'center',
+  onBack,
+  onClose,
+  showBack = true,
   children,
 }: {
-  stepsLabels: string[]
-  currentStep: number
-  children: React.ReactNode
+  title?: ReactNode
+  titleId?: string
+  titleAlign?: 'center' | 'start'
+  onBack?: () => void
+  onClose?: () => void
+  showBack?: boolean
+  children: ReactNode
 }) {
   return (
     <div className={styles.flowShell}>
       <div className={styles.cardShell}>
-        <Steps steps={stepsLabels} currentStep={currentStep} />
+        <FlowChrome
+          title={title}
+          titleId={titleId}
+          titleAlign={titleAlign}
+          showBack={showBack && !!onBack}
+          onBack={onBack}
+          onClose={onClose}
+          closeAriaLabel="Close claim flow"
+        />
         {children}
       </div>
     </div>
@@ -949,20 +1382,16 @@ function FlowShell({
 function NothingToClaimScreen({
   mode,
   walletAddress,
-  stepsLabels,
   onGoToMyPosition,
   onGoToNetwork,
+  onClose,
 }: {
   mode: ClaimMode
   walletAddress: string | null
-  stepsLabels: string[]
   onGoToMyPosition: () => void
   onGoToNetwork: () => void
+  onClose: () => void
 }) {
-  // Mirror DoneScreen's terminal-state composition (heroBlock + nextCard +
-  // button row) so the "nothing to claim" outcome reads as a deliberate end
-  // of the flow rather than an error. Stepper sits at step 3 to underline
-  // "you've reached the end" — same as the success path.
   const headline = mode === 'arm' ? 'Nothing to claim.' : 'No refund to claim.'
   const shortAddress = walletAddress
     ? `${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}`
@@ -980,12 +1409,12 @@ function NothingToClaimScreen({
       )
     ) : shortAddress ? (
       <>
-        {shortAddress} didn't commit any USDC to the sale.
+        {shortAddress} didn&apos;t commit any USDC to the sale.
         <br />
         You may have committed with a different wallet.
       </>
     ) : (
-      <>This address didn't commit any USDC to the sale.</>
+      <>This address didn&apos;t commit any USDC to the sale.</>
     )
   const nextText =
     mode === 'arm'
@@ -993,19 +1422,16 @@ function NothingToClaimScreen({
       : 'If you expected a refund here, switch to the wallet you used to commit and reload the claim page.'
 
   return (
-    <FlowShell stepsLabels={stepsLabels} currentStep={3}>
+    <CardFlowShell title="Claim" showBack={false} onClose={onClose}>
       <div className={styles.cardContent}>
         <div className={styles.heroBlock}>
-          <h1 className={styles.headline}>{headline}</h1>
+          <h2 className={styles.headline}>{headline}</h2>
           <p className={styles.subline}>{subline}</p>
         </div>
-
         <div className={styles.nextCard}>
-          <span className={styles.nextEyebrow}>WHAT'S NEXT</span>
           <p className={styles.nextText}>{nextText}</p>
         </div>
       </div>
-
       <div className={styles.buttonRow}>
         <ArmadaButton
           variant="secondary"
@@ -1015,14 +1441,45 @@ function NothingToClaimScreen({
           onClick={onGoToNetwork}
         />
         <ArmadaButton
-          variant="gradient"
+          variant="primary"
           size="lg"
           label="View my position"
           showIcon={false}
           onClick={onGoToMyPosition}
         />
       </div>
-    </FlowShell>
+    </CardFlowShell>
+  )
+}
+
+/** Table value that links to the block explorer when one is configured, else plain text. */
+function ExplorerValue({
+  href,
+  display,
+  fullValue,
+}: {
+  href: string | null
+  display: string
+  fullValue: string
+}) {
+  if (!href) {
+    return (
+      <span className={styles.factValue} title={fullValue}>
+        {display}
+      </span>
+    )
+  }
+  return (
+    <a
+      className={styles.factValueLink}
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={fullValue}
+    >
+      {display}
+      <span className={styles.visuallyHidden}> (opens in a new tab)</span>
+    </a>
   )
 }
 
@@ -1032,8 +1489,10 @@ function DoneScreen({
   armDisplay,
   refundDisplay,
   refundAmount,
-  onGoToMyPosition,
-  onGoToNetwork,
+  armTokenAddress,
+  claimTxHash,
+  walletAddress,
+  onClose,
 }: {
   mode: ClaimMode
   /** The ARM claim deadline has passed — `claim()` delivered no ARM (forfeited),
@@ -1048,8 +1507,11 @@ function DoneScreen({
    *  the "ARM + USDC refund" copy when applicable; ignored for `mode='refund'`
    *  (the refund there is the whole `refundDisplay`). */
   refundAmount: bigint
-  onGoToMyPosition: () => void
-  onGoToNetwork: () => void
+  armTokenAddress: string | null
+  claimTxHash: string | null
+  /** Connected wallet — the destination address row links to the explorer. */
+  walletAddress: string | null
+  onClose: () => void
 }) {
   // Same headline on first-success and on revisit — the action is idempotent
   // from the user's perspective, and "You already claimed" reads like an
@@ -1057,7 +1519,11 @@ function DoneScreen({
   const armHasRefund = mode === 'arm' && refundAmount > 0n
   const armForfeitedPath = mode === 'arm' && armForfeited
   const headline =
-    mode === 'arm' ? (armForfeited ? 'Claim complete.' : 'ARM claimed.') : 'Refund claimed.'
+    mode === 'arm'
+      ? armForfeited
+        ? 'Claim complete.'
+        : 'ARM claimed.'
+      : 'USDC refund claimed'
   const subline = armForfeitedPath ? (
     // Past the deadline: never assert ARM landed. Show the refund if there was one.
     armHasRefund ? (
@@ -1073,53 +1539,118 @@ function DoneScreen({
         {refundDisplay} USDC refund returned too.
       </>
     ) : (
-      <>
-        {armDisplay} is in your wallet.
-        <br />
-        Your delegate now holds your governance voting power.
-      </>
+      <>Your ARM is settled on-chain and your delegate is active.</>
     )
   ) : (
-    <>{refundDisplay} returned to your wallet.</>
+    <>Your USDC refund is settled on-chain.</>
   )
-  const nextText = armForfeitedPath
-    ? 'ARM is delivered only when claimed within the claim window; any USDC refund settles regardless. View your position to confirm your balances, or head back to the crowdfund.'
-    : mode === 'arm'
-      ? armHasRefund
-        ? 'Both transfers are already settled on-chain. View your position to confirm balances, or head back to the crowdfund to see how the rest of the fleet finalized.'
-        : 'Your ARM is settled on-chain and your delegate is active. View your position to confirm the balance, or head back to the crowdfund.'
-      : 'Your USDC refund is settled on-chain. View your position to confirm the balance, or head back to the crowdfund.'
+
+  const explorerBase = getExplorerUrl()
+  const addressHref = (address: string) =>
+    explorerBase ? `${explorerBase}/address/${address}` : null
+  const txHref = (hash: string) => (explorerBase ? `${explorerBase}/tx/${hash}` : null)
+
+  // Single summary table: amount → destination (claim only) → tx hash → ARM contract.
+  const amountRows: Array<{ label: string; value: string }> = []
+  if (armForfeitedPath) {
+    if (armHasRefund) amountRows.push({ label: 'Amount claimed', value: `${refundDisplay} USDC` })
+  } else if (mode === 'arm') {
+    amountRows.push({ label: 'Amount claimed', value: armDisplay })
+    if (armHasRefund) amountRows.push({ label: 'USDC refund', value: `${refundDisplay} USDC` })
+  } else {
+    amountRows.push({ label: 'Amount claimed', value: `${refundDisplay} USDC` })
+  }
+
+  type FactRow = { key: string; label: string; content: ReactNode }
+  const rows: FactRow[] = amountRows.map((r) => ({
+    key: r.label,
+    label: r.label,
+    content: <span className={styles.factValueAccent}>{r.value}</span>,
+  }))
+  if (walletAddress) {
+    rows.push({
+      key: 'destination',
+      label: 'Destination address',
+      content: (
+        <ExplorerValue
+          href={addressHref(walletAddress)}
+          display={truncateMiddle(walletAddress)}
+          fullValue={walletAddress}
+        />
+      ),
+    })
+  }
+  if (claimTxHash) {
+    rows.push({
+      key: 'tx',
+      label: 'Tx hash',
+      content: (
+        <ExplorerValue
+          href={txHref(claimTxHash)}
+          display={truncateMiddle(claimTxHash)}
+          fullValue={claimTxHash}
+        />
+      ),
+    })
+  }
+  if (mode === 'arm' && armTokenAddress && !armForfeitedPath) {
+    rows.push({
+      key: 'arm-contract',
+      label: 'ARM contract address',
+      content: (
+        <ExplorerValue
+          href={addressHref(armTokenAddress)}
+          display={truncateMiddle(armTokenAddress)}
+          fullValue={armTokenAddress}
+        />
+      ),
+    })
+  }
 
   return (
-    <FlowShell stepsLabels={mode === 'arm' ? ARM_STEPS : REFUND_STEPS} currentStep={3}>
-      <div className={styles.cardContent}>
-        <div className={styles.heroBlock}>
-          <h1 className={styles.headline}>{headline}</h1>
-          <p className={styles.subline}>{subline}</p>
-        </div>
+    <CardFlowShell
+      showBack={false}
+      titleAlign="start"
+      titleId="claim-done-title"
+      title={
+        <>
+          <CheckCircleIcon className={styles.successIcon} aria-hidden />
+          {headline}
+        </>
+      }
+      onClose={onClose}
+    >
+      <div className={styles.introWrap}>
+        <div className={styles.introScroll}>
+          <p className={styles.introLead}>{subline}</p>
 
-        <div className={styles.nextCard}>
-          <span className={styles.nextEyebrow}>WHAT'S NEXT</span>
-          <p className={styles.nextText}>{nextText}</p>
+          {rows.length > 0 ? (
+            <div className={styles.factsCard}>
+              {rows.map((row, i) => (
+                <Fragment key={row.key}>
+                  {i > 0 ? <div className={styles.divider} aria-hidden /> : null}
+                  <div className={styles.factRow}>
+                    <span className={styles.factLabel}>{row.label}</span>
+                    {row.content}
+                  </div>
+                </Fragment>
+              ))}
+            </div>
+          ) : null}
+
+          <UsefulLinks headingId="claim-done-useful-links" />
         </div>
+        <div className={styles.introFade} aria-hidden />
       </div>
-
       <div className={styles.buttonRow}>
         <ArmadaButton
-          variant="secondary"
+          variant="primary"
           size="lg"
-          label="Back to crowdfund"
+          label="Done"
           showIcon={false}
-          onClick={onGoToNetwork}
-        />
-        <ArmadaButton
-          variant="gradient"
-          size="lg"
-          label="View my position"
-          showIcon={false}
-          onClick={onGoToMyPosition}
+          onClick={onClose}
         />
       </div>
-    </FlowShell>
+    </CardFlowShell>
   )
 }

@@ -18,14 +18,14 @@
   letter-spacing: 0.02em;
   background:
     linear-gradient(var(--semantic-component-navbar-bg), var(--semantic-component-navbar-bg)) padding-box,
-    linear-gradient(90deg, var(--semantic-color-brand-amber), var(--semantic-color-brand-lavender)) border-box;
+    linear-gradient(90deg, var(--semantic-color-brand-amber), var(--semantic-color-brand-gradient-rose), var(--semantic-color-brand-lavender)) border-box;
   transition: background 0.15s, transform 0.1s, color 0.15s;
 }
 
 .btn:hover {
   background:
     linear-gradient(var(--semantic-component-navitem-default-bg-hover), var(--semantic-component-navitem-default-bg-hover)) padding-box,
-    linear-gradient(90deg, var(--semantic-color-brand-amber), var(--semantic-color-brand-lavender)) border-box;
+    linear-gradient(90deg, var(--semantic-color-brand-amber), var(--semantic-color-brand-gradient-rose), var(--semantic-color-brand-lavender)) border-box;
 }
 
 .btn:active {

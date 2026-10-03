@@ -32,7 +32,7 @@ export type ParticipantRow = {
 
 const FILTERS: Array<{ id: ParticipantsTableFilter; label: string }> = [
   { id: 'all', label: 'All' },
-  { id: 'hop0', label: 'Seed' },
+  { id: 'hop0', label: 'Hop-0' },
   { id: 'hop1', label: 'Hop 1' },
   { id: 'hop2', label: 'Hop 2' },
   { id: 'multi', label: 'Multi-hop' },

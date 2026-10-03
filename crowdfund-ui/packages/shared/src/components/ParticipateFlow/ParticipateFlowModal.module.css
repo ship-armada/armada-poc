@@ -1,19 +1,30 @@
 /* ABOUTME: Styles for the Participate modal backdrop, panel, close button, and step crossfade. */
-/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup (ParticipateFlow/ParticipateFlowModal.module.css). */
+/* ABOUTME: Mobile ≤767px — full-viewport page (not a sheet); shells pin chrome + CTA. */
 
 .backdrop {
   position: fixed;
   inset: 0;
   z-index: 200;
   display: flex;
-  align-items: center;
+  align-items: safe center;
   justify-content: center;
   padding: var(--primitives-spacing-8);
   box-sizing: border-box;
+  /* Backdrop is the scroll surface — panel hugs content; tall steps scroll
+   * the frosted overlay over the app, not an inner card scroller. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   background: color-mix(in srgb, var(--semantic-color-surface-bg) 72%, transparent);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   animation: modalBackdropIn 280ms ease;
+}
+
+.backdrop::-webkit-scrollbar {
+  display: none;
 }
 
 .backdropExit {
@@ -26,8 +37,13 @@
   align-items: flex-end;
   width: 480px;
   max-width: 100%;
+  flex-shrink: 0;
   gap: var(--primitives-spacing-5);
   animation: modalPanelIn 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.panelNoClose {
+  align-items: stretch;
 }
 
 .panelExit {
@@ -43,10 +59,16 @@
   animation: modalStepOut 240ms ease forwards;
 }
 
+.footer {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
 .close {
   flex-shrink: 0;
-  width: var(--primitives-spacing-8);
-  height: var(--primitives-spacing-8);
+  width: var(--primitives-spacing-6);
+  height: var(--primitives-spacing-6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -131,58 +153,114 @@
   }
 }
 
-/* Mobile — full-bleed step, corner mark top-left + fixed close top-right.
- * Ported from the armada-crowdfund mockup mobile rework. */
+@media (prefers-reduced-motion: reduce) {
+  .backdrop,
+  .backdropExit,
+  .panel,
+  .panelExit,
+  .step,
+  .stepExit {
+    animation: none !important;
+  }
+}
+
+/* Mobile — full-viewport page. Shells fill the panel; chrome + CTA stay pinned. */
 @media (max-width: 767px) {
   .backdrop {
-    align-items: flex-start;
-    padding:
-      calc(var(--primitives-spacing-5) + 40px + var(--primitives-spacing-5))
-      var(--primitives-spacing-5)
-      var(--primitives-spacing-5);
+    /* Pin to the visual viewport — 100dvh tracks the browser chrome collapsing. */
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    align-items: stretch;
+    justify-content: stretch;
+    padding: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: none;
+    background: var(--semantic-color-surface-default);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 
   .mobileLogo {
-    display: block;
-    position: fixed;
-    top: var(--primitives-spacing-5);
-    left: var(--primitives-spacing-5);
-    width: 40px;
-    height: 40px;
-    object-fit: contain;
-    z-index: 201;
-    pointer-events: none;
+    display: none;
   }
 
-  /* Floating round control, paired with the corner mark top-left. The desktop
-   * close stays our bordered pill; this round-white treatment is mobile-only. */
   .close {
     position: fixed;
-    top: var(--primitives-spacing-5);
+    top: max(var(--primitives-spacing-5), env(safe-area-inset-top, 0px));
     right: var(--primitives-spacing-5);
     z-index: 201;
-    width: var(--primitives-spacing-12);
-    height: var(--primitives-spacing-12);
-    border: none;
-    border-radius: 50%;
-    background: color-mix(in srgb, var(--semantic-color-text-primary) 20%, transparent);
-    color: var(--semantic-color-text-primary);
-  }
-
-  .close:hover {
-    border-color: transparent;
-    background: color-mix(in srgb, var(--semantic-color-text-primary) 28%, transparent);
+    width: var(--primitives-spacing-8);
+    height: var(--primitives-spacing-8);
+    /* Allow tapping the close control over touch-action: none backdrop. */
+    touch-action: manipulation;
   }
 
   .panel {
     width: 100%;
     max-width: none;
     min-width: 0;
+    height: 100%;
+    min-height: 0;
+    max-height: 100%;
     align-items: stretch;
     gap: 0;
+    overflow: hidden;
+    /* Re-enable touch inside the dialog so step content can scroll. */
+    touch-action: auto;
+    animation: modalPageIn 280ms ease;
+  }
+
+  .panelExit {
+    animation: modalPageOut 240ms ease forwards;
   }
 
   .step {
+    flex: 1;
     min-width: 0;
+    min-height: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overscroll-behavior: contain;
+    touch-action: auto;
+  }
+
+  .step > * {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    border-radius: 0 !important;
+  }
+
+  .footer {
+    flex-shrink: 0;
+    padding: var(--primitives-spacing-4) var(--primitives-spacing-5)
+      max(var(--primitives-spacing-5), env(safe-area-inset-bottom, 0px));
+    touch-action: manipulation;
+  }
+}
+
+@keyframes modalPageIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modalPageOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
   }
 }

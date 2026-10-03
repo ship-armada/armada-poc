@@ -128,9 +128,9 @@
 .ghost:disabled { color: var(--semantic-component-button-secondary-text-disabled); }
 
 /* Gradient */
-.gradient { border: none; background: linear-gradient(to right, #F3D0A0 0%, #C491E5 100%); color: var(--semantic-component-button-gradient-text); }
-.gradient:hover:not(:disabled) { background: linear-gradient(to right, #f5d9ae 0%, #d4aff0 100%); }
-.gradient:active:not(:disabled) { background: linear-gradient(to right, #eab86a 0%, #b06fdf 100%); }
+.gradient { border: none; background: linear-gradient(to right, var(--semantic-component-button-gradient-default-from) 0%, var(--semantic-component-button-gradient-default-mid) 52%, var(--semantic-component-button-gradient-default-to) 100%); color: var(--semantic-component-button-gradient-text); }
+.gradient:hover:not(:disabled) { background: linear-gradient(to right, var(--semantic-component-button-gradient-hover-from) 0%, var(--semantic-component-button-gradient-hover-mid) 52%, var(--semantic-component-button-gradient-hover-to) 100%); }
+.gradient:active:not(:disabled) { background: linear-gradient(to right, var(--semantic-component-button-gradient-active-from) 0%, var(--semantic-component-button-gradient-active-mid) 52%, var(--semantic-component-button-gradient-active-to) 100%); }
 
 /* Icon */
 .iconWrap {

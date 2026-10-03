@@ -1,19 +1,18 @@
-// ABOUTME: Ported byte-identical from the armada-crowdfund mockup (ParticipateFlow/screens/Step3Review.tsx).
-// ABOUTME: Internal default imports of @armada/ui primitives (Steps, Tooltip, WalletItem) were rewritten to named imports from the package barrel.
+// ABOUTME: Review step — per-hop (or single-hop) commit summary, ARM estimate, and the finality warning.
+// ABOUTME: Ported from the armada-crowdfund mockup; FlowChrome replaces the Steps header and absorbs the Back control.
 
 import { Fragment, type ReactNode } from 'react'
-import styles from './Step3Review.module.css'
-import { Steps } from '@armada/ui'
-import { Button } from '@armada/ui'
-import { Tooltip } from '@armada/ui'
 import { InformationCircleIcon } from '@heroicons/react/24/solid'
+import { Button, Tooltip } from '@armada/ui'
+import styles from './Step3Review.module.css'
+import { FlowChrome } from '../FlowChrome'
 import type { ParticipateStepBarProps } from '../participateFlowSteps'
 
 /** Per-hop commit row for the multi-hop review variant. Triggers the
  *  multi-hop layout when `hopCommits.length > 1`. */
 export interface Step3ReviewHopCommit {
   hop: 0 | 1 | 2
-  /** Display label — e.g. 'SEED', 'HOP-1'. */
+  /** Display label — e.g. 'HOP-0', 'HOP-1'. */
   hopLabel: string
   /** Dot color from the canonical hop palette (`graphHopColors.ts`). */
   hopColor: string
@@ -24,6 +23,8 @@ export interface Step3ReviewHopCommit {
 interface Step3ReviewProps extends ParticipateStepBarProps {
   onNext: () => void
   onBack: () => void
+  /** Close control in the top chrome (preferred over the modal-level X). */
+  onClose?: () => void
   /** Disables the "Approve and commit" CTA (e.g. while a pipeline is in flight). */
   disabled?: boolean
   /** Single-hop label (e.g. 'Hop 1'). Ignored when `hopCommits` is provided. */
@@ -40,8 +41,6 @@ interface Step3ReviewProps extends ParticipateStepBarProps {
   note?: ReactNode
 }
 
-const DEFAULT_STEPS = ['Connect', 'Commit', 'Review', 'Confirmation']
-
 function formatUsd(value: number): string {
   return value.toLocaleString('en-US', {
     style: 'currency',
@@ -54,33 +53,34 @@ function formatUsd(value: number): string {
 export default function Step3Review({
   onNext,
   onBack,
+  onClose,
   disabled = false,
   hopLevel = 'Hop 1',
   amount = 1000,
   estimatedArm = 1000,
-  steps = DEFAULT_STEPS,
-  stepIndex = 3,
   hopCommits,
   note,
 }: Step3ReviewProps) {
   const isMulti = !!hopCommits && hopCommits.length > 1
   const totalAmount = isMulti
-    ? hopCommits!.reduce((sum, c) => sum + c.amount, 0)
+    ? hopCommits.reduce((sum, c) => sum + c.amount, 0)
     : amount
   const formattedTotal = formatUsd(totalAmount)
 
   return (
-    <div data-flow-shell className={[styles.shell, isMulti && styles.shellMultiHop].filter(Boolean).join(' ')}>
-      <Steps steps={[...steps]} currentStep={stepIndex} />
+    <div
+      data-flow-shell
+      className={[styles.shell, isMulti ? styles.shellMultiHop : ''].filter(Boolean).join(' ')}
+    >
+      <FlowChrome title="Review" onBack={onBack} onClose={onClose} />
 
       <div className={styles.content}>
-        <h2 className={styles.title}>Review</h2>
         {/* Summary card. Multi-hop replaces the 'Hop level' / 'Committing'
             rows with one row per hop + an aggregate 'Total committing' row. */}
         <div className={styles.summaryCard}>
           {isMulti ? (
             <>
-              {hopCommits!.map((c, i) => (
+              {hopCommits.map((c, i) => (
                 // Fragment, not a wrapping `div`, so each `.summaryRow` is a
                 // direct child of `.summaryCard` and the
                 // `.summaryRow:first-child`/`:last-child` selectors that
@@ -96,11 +96,9 @@ export default function Step3Review({
                       />
                       <span className={styles.summaryLabel}>{c.hopLabel}</span>
                     </div>
-                    <span className={styles.summaryValue}>
-                      {formatUsd(c.amount)} USDC
-                    </span>
+                    <span className={styles.summaryValue}>{formatUsd(c.amount)} USDC</span>
                   </div>
-                  {i < hopCommits!.length - 1 && <div className={styles.divider} />}
+                  {i < hopCommits.length - 1 ? <div className={styles.divider} /> : null}
                 </Fragment>
               ))}
               <div className={styles.divider} />
@@ -155,37 +153,18 @@ export default function Step3Review({
           </div>
         </div>
 
-        {note && (
-          <div
-            style={{
-              padding: '12px 14px',
-              borderRadius: 12,
-              border: '1px solid rgba(168, 130, 255, 0.4)',
-              background: 'rgba(124, 92, 255, 0.08)',
-              fontSize: 13,
-              lineHeight: 1.45,
-            }}
-          >
-            {note}
-          </div>
-        )}
+        {note ? <div className={styles.maxOutNote}>{note}</div> : null}
 
-        {/* Warning block */}
         <div className={styles.warningBlock}>
           <p className={styles.warningText}>
-            Commitments are final. You will not be able to withdraw during the commitment window.
+            <strong className={styles.warningLead}>Commitments are final.</strong>
+            <br />
+            You will not be able to withdraw during the commitment window.
           </p>
         </div>
       </div>
 
       <div className={styles.buttonRow}>
-        <Button
-          variant="secondary"
-          size="lg"
-          label="Back"
-          showIcon={false}
-          onClick={onBack}
-        />
         <Button
           variant="gradient"
           size="lg"

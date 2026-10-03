@@ -1,5 +1,5 @@
 /* ABOUTME: App-level CSS entry. Dark base tokens live in @armada/crowdfund-shared/styles/theme.css; */
-/* ABOUTME: the committer adds an opt-in [data-theme="light"] chrome override below (light mode is committer-only). */
+/* ABOUTME: a [data-theme="light"] chrome override follows — dormant, since index.html pins the committer to dark. */
 
 @import "tailwindcss";
 @source "../../shared/src";
@@ -17,6 +17,25 @@
 @import "@armada/ui/styles/tokens.css";
 @import "@armada/crowdfund-shared/styles/theme.css";
 @import "@armada/crowdfund-shared/styles/mobile-layout.css";
+
+/* Full-view flow modal open — freeze document scroll behind the portal. */
+html[data-flow-modal-open],
+html[data-flow-modal-open] body {
+  overflow: hidden !important;
+  overscroll-behavior: none;
+}
+
+/*
+ * iOS Safari zooms the viewport when a focused field is under 16px.
+ * Floor text inputs at lg (17). Large amount fields keep their own size.
+ */
+@media (max-width: 767px) {
+  input:not([type='button']):not([type='submit']):not([type='reset']):not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='hidden']):not([type='image']):not([class*='amountInput']):not([class*='multiAmountInput']),
+  textarea,
+  select {
+    font-size: calc(var(--primitives-fontSize-lg) * 1px) !important;
+  }
+}
 
 /* Light mode (opt-in, committer-only) — override the shadcn chrome tokens so the
    page + primitives flip with the @armada/ui cards. Values are DERIVED from the

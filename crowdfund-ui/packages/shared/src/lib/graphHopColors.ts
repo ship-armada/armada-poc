@@ -16,10 +16,10 @@ export function graphHopColorToCss(hex: number): string {
   return `#${(hex & 0xffffff).toString(16).padStart(6, '0')}`
 }
 
-/** Crowdfund hero list hop labels (SEED = graph Hop 0, etc.). */
-export function heroListHopColor(hop: 'SEED' | 'HOP-1' | 'HOP-2' | 'MULTI-HOP'): string {
+/** Crowdfund hero list hop labels (HOP-0 = graph Hop 0, etc.). */
+export function heroListHopColor(hop: 'HOP-0' | 'HOP-1' | 'HOP-2' | 'MULTI-HOP'): string {
   switch (hop) {
-    case 'SEED':
+    case 'HOP-0':
       return graphHopColorToCss(GRAPH_HOP_NODE_COLORS['Hop 0'])
     case 'HOP-1':
       return graphHopColorToCss(GRAPH_HOP_NODE_COLORS['Hop 1'])

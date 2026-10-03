@@ -184,7 +184,7 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
                   <div>Est. allocation is lower than effective demand — hop ceilings limit how much each hop can absorb.</div>
                 )}
                 {belowMin && (
-                  <div className="text-destructive">Estimated allocation is below the minimum raise ({formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)}). The sale would enter refund mode if finalized now.</div>
+                  <div className="text-destructive">Estimated allocation is below the minimum fund ({formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)}). The sale would enter refund mode if finalized now.</div>
                 )}
               </div>
             )}

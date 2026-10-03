@@ -53,6 +53,42 @@ describe('Step4Approve showcase gate', () => {
     expect(onRetry).toHaveBeenCalledOnce()
   })
 
+  it('hides Back while a transaction is in flight', () => {
+    // Back resets the pipeline and reopens Review with Confirm enabled — doing
+    // that mid-transaction invites a second approve+commit.
+    const { rerender } = render(
+      <Step4Approve
+        onDone={vi.fn()}
+        onBack={vi.fn()}
+        txs={[
+          { label: 'Approve 1,000 USDC', status: 'done' },
+          { label: 'Commit participation', status: 'loading' },
+        ]}
+      />,
+    )
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull()
+
+    // Still building the pipeline (no rows yet) is in flight too.
+    rerender(<Step4Approve onDone={vi.fn()} onBack={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: 'Back' })).toBeNull()
+  })
+
+  it('offers Back once nothing is in flight', () => {
+    const onBack = vi.fn()
+    render(
+      <Step4Approve
+        onDone={vi.fn()}
+        onBack={onBack}
+        txs={[
+          { label: 'Approve 1,000 USDC', status: 'pending' },
+          { label: 'Commit participation', status: 'pending' },
+        ]}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    expect(onBack).toHaveBeenCalledOnce()
+  })
+
   it('renders controlled tx rows without auto-completing', () => {
     vi.useFakeTimers()
     const onDone = vi.fn()

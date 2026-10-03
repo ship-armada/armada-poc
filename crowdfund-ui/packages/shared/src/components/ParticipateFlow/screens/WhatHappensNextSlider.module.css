@@ -1,0 +1,104 @@
+/* ABOUTME: What happens next FAQ accordion — one expandable topic per row. */
+/* ABOUTME: Ported from the armada-crowdfund mockup (replaces the old carousel styles). */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  min-width: 0;
+}
+
+.sectionLabel {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: var(--primitives-letterSpacing-widest);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-muted);
+}
+
+.faqList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--semantic-color-surface-raised);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  overflow: hidden;
+}
+
+.faqItem {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--semantic-color-border-default);
+}
+
+.faqItem:last-child {
+  border-bottom: none;
+}
+
+.faqToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  margin: 0;
+  padding: var(--primitives-spacing-4) var(--primitives-spacing-5);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  color: var(--semantic-color-text-primary);
+}
+
+.faqToggle:hover:not([aria-expanded='true']) {
+  background: color-mix(in srgb, var(--semantic-color-text-primary) 4%, transparent);
+}
+
+.faqToggle:focus-visible {
+  outline: 2px solid var(--semantic-color-border-focus);
+  outline-offset: -2px;
+}
+
+.faqTitle {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  line-height: 1.4;
+  min-width: 0;
+}
+
+.chevron {
+  width: var(--primitives-spacing-4);
+  height: var(--primitives-spacing-4);
+  flex-shrink: 0;
+  color: var(--semantic-color-text-muted);
+  transition: transform 200ms ease;
+}
+
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+.faqPanel {
+  padding: 0 var(--primitives-spacing-5) var(--primitives-spacing-4);
+}
+
+.faqBody {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-secondary);
+  line-height: 1.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}

@@ -1,0 +1,354 @@
+/* ABOUTME: Pre-commit interstitial — step cards, position table, risks, resource icons.
+   ABOUTME: 480×500 shell; FlowChrome + scroll body with fade; Commit CTA pinned. */
+
+.shell {
+  width: 480px;
+  height: 500px;
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  /* Vertical only — horizontal padding lives on chrome / scroll content. */
+  padding: var(--primitives-spacing-8) 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.chromeRow {
+  flex-shrink: 0;
+  padding-inline: var(--primitives-spacing-8);
+}
+
+.contentWrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-8);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  padding-inline: var(--primitives-spacing-8);
+  padding-bottom: var(--primitives-spacing-8);
+}
+
+.content::-webkit-scrollbar {
+  display: none;
+}
+
+.contentFade {
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--primitives-spacing-10);
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--semantic-color-surface-default)
+  );
+}
+
+.factsCard {
+  display: flex;
+  flex-direction: column;
+  background: var(--semantic-color-surface-raised);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  padding: var(--primitives-spacing-4) var(--primitives-spacing-5);
+  box-sizing: border-box;
+}
+
+.factRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  padding: var(--primitives-spacing-3) 0;
+}
+
+.factRow:first-child {
+  padding-top: 0;
+}
+
+.factRow:last-child {
+  padding-bottom: 0;
+}
+
+.factLabel {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-muted);
+  flex-shrink: 0;
+}
+
+.factValue {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  text-align: right;
+}
+
+.hopTag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+}
+
+.hopDot {
+  width: var(--primitives-spacing-2);
+  height: var(--primitives-spacing-2);
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.divider {
+  width: 100%;
+  height: 1px;
+  background: var(--semantic-color-border-default);
+}
+
+.block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+}
+
+.blockHeading {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  letter-spacing: var(--primitives-letterSpacing-widest);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-muted);
+}
+
+.stepCards {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--primitives-spacing-2);
+}
+
+.stepCard {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: var(--primitives-spacing-6);
+  min-height: 0;
+  padding: var(--primitives-spacing-3);
+  box-sizing: border-box;
+  background: var(--semantic-color-surface-raised);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+}
+
+.stepNumber {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-lg) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-muted);
+  line-height: 1;
+}
+
+.stepCopy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-1);
+}
+
+.stepLabel {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  line-height: 1.3;
+}
+
+.stepHint {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-muted);
+  line-height: 1.4;
+}
+
+.knowList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+}
+
+.knowItem {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--primitives-spacing-2);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-secondary);
+  line-height: 1.5;
+}
+
+.knowBullet {
+  flex-shrink: 0;
+  color: var(--semantic-color-text-muted);
+  line-height: 1.5;
+}
+
+.resourceNav {
+  width: 100%;
+}
+
+.iconLinkList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--primitives-spacing-2);
+  width: 100%;
+}
+
+.iconLinkItem {
+  min-width: 0;
+}
+
+.iconLink {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  text-decoration: none;
+  color: var(--semantic-color-text-secondary);
+}
+
+.iconLink:hover {
+  color: var(--semantic-color-text-primary);
+}
+
+.iconLink:hover .iconTile {
+  background: var(--semantic-component-navitem-default-bg-hover);
+}
+
+.iconLink:hover .brandIcon,
+.iconLink:hover .iconLabel {
+  color: var(--semantic-color-text-primary);
+}
+
+.iconLink:focus-visible {
+  outline: 2px solid var(--semantic-color-border-focus);
+  outline-offset: 2px;
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+}
+
+.iconTile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--primitives-spacing-4);
+  width: 100%;
+  aspect-ratio: 1;
+  padding: var(--primitives-spacing-3);
+  box-sizing: border-box;
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: var(--semantic-color-surface-raised);
+  color: var(--semantic-color-text-secondary);
+}
+
+.brandIcon {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+  flex-shrink: 0;
+  color: var(--semantic-color-text-secondary);
+}
+
+.iconLabel {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-muted);
+  text-align: center;
+  line-height: 1.3;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  margin-top: var(--primitives-spacing-6);
+  padding-inline: var(--primitives-spacing-8);
+}
+
+.buttonRow {
+  display: flex;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+}
+
+.buttonRow > * {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 767px) {
+  .shell {
+    padding: var(--primitives-spacing-5) 0;
+  }
+
+  .chromeRow,
+  .footer {
+    padding-inline: var(--primitives-spacing-5);
+  }
+
+  .content {
+    gap: var(--primitives-spacing-5);
+    padding-inline: var(--primitives-spacing-5);
+    padding-bottom: var(--primitives-spacing-5);
+  }
+
+  .stepCards {
+    grid-template-columns: 1fr;
+  }
+
+  .stepCard {
+    min-height: 0;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: var(--primitives-spacing-3);
+  }
+
+  .buttonRow {
+    flex-direction: column-reverse;
+  }
+
+  .buttonRow > * {
+    flex: none;
+    width: 100%;
+  }
+}

@@ -38,13 +38,13 @@ export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
   const saleLabel = projectedSaleSize > CROWDFUND_CONSTANTS.BASE_SALE ? 'EXPANDED' : 'BASE'
 
   // Sale progress bar — same math as the hero Progress card: a gradient fill up
-  // to the min-raise threshold, an animated "over min" fill beyond it.
+  // to the min-fund threshold, an animated "over min" fill beyond it.
   const filledPct =
     MAX_SALE > 0n ? Math.max(0, Math.min(100, Number((state.totalCommitted * 100n) / MAX_SALE))) : 0
-  const minRaisePct = MAX_SALE > 0n ? Number((MIN_SALE * 100n) / MAX_SALE) : 0
-  const gradientFillPct = Math.min(filledPct, minRaisePct)
-  const overMinFillPct = Math.max(0, filledPct - minRaisePct)
-  const raisedTowardMin =
+  const minFundPct = MAX_SALE > 0n ? Number((MIN_SALE * 100n) / MAX_SALE) : 0
+  const gradientFillPct = Math.min(filledPct, minFundPct)
+  const overMinFillPct = Math.max(0, filledPct - minFundPct)
+  const fundedTowardMin =
     MIN_SALE > 0n ? Math.max(0, Math.min(100, Number((state.totalCommitted * 100n) / MIN_SALE))) : 0
   const leftToMin = state.totalCommitted >= MIN_SALE ? 0n : MIN_SALE - state.totalCommitted
 
@@ -73,26 +73,26 @@ export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
             {overMinFillPct > 0 && (
               <div
                 className={styles.barFillOverMin}
-                style={{ left: `${minRaisePct}%`, width: `${overMinFillPct}%` }}
+                style={{ left: `${minFundPct}%`, width: `${overMinFillPct}%` }}
               />
             )}
-            <div className={styles.threshold} style={{ left: `${minRaisePct}%` }} />
+            <div className={styles.threshold} style={{ left: `${minFundPct}%` }} />
           </div>
           <div className={styles.barLabels}>
             <div className={styles.labelLeft}>
               <span className={styles.stat}>
-                <span className={styles.statValue}>{raisedTowardMin}%</span>
-                <span className={styles.statKey}>RAISED</span>
+                <span className={styles.statValue}>{fundedTowardMin}%</span>
+                <span className={styles.statKey}>FUNDED</span>
               </span>
               <span className={styles.stat}>
                 <span className={styles.statValue}>{formatUsdc(leftToMin)}</span>
                 <span className={styles.statKey}>LEFT</span>
               </span>
             </div>
-            <div className={styles.labelMinRaise} style={{ left: `${minRaisePct}%` }}>
+            <div className={styles.labelMinFund} style={{ left: `${minFundPct}%` }}>
               <span className={styles.stat}>
                 <span className={styles.statValue}>{formatUsdc(MIN_SALE)}</span>
-                <span className={styles.statKey}>MIN RAISE</span>
+                <span className={styles.statKey}>MIN FUND</span>
               </span>
             </div>
           </div>
@@ -132,7 +132,7 @@ export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
                   effCeiling > 0n ? Number((stats.cappedCommitted * 10_000n) / effCeiling) / 100 : 0
                 const fillClass =
                   fillPct <= 100 ? styles.fillOk : fillPct <= 120 ? styles.fillWarn : styles.fillOver
-                const dotColor = heroListHopColor(hop === 0 ? 'SEED' : hop === 1 ? 'HOP-1' : 'HOP-2')
+                const dotColor = heroListHopColor(hop === 0 ? 'HOP-0' : hop === 1 ? 'HOP-1' : 'HOP-2')
                 return (
                   <tr key={hop}>
                     <td>

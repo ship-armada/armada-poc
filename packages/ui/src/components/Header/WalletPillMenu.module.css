@@ -46,8 +46,8 @@
 .menu {
   position: absolute;
   top: calc(100% + var(--primitives-spacing-2));
-  left: 50%;
-  transform: translateX(-50%);
+  right: 0;
+  left: auto;
   z-index: 150;
   min-width: calc(var(--primitives-spacing-16) * 5);
   /* No padding and a card-matching radius so the card fills the menu and the
@@ -71,11 +71,11 @@
 @keyframes menuIn {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(4px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateY(0);
   }
 }
 

@@ -1,18 +1,18 @@
 /* ABOUTME: CSS Module for Step3Review — see Step3Review.tsx for usage. */
-/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup. */
+/* ABOUTME: Ported from the armada-crowdfund mockup; FlowChrome replaces the Steps header. */
 
 /*
   Figma: 480x500px, 32px padding, space-between
   Summary card: surface-raised bg, border-default, 20px padding, 8px radius
   Warning block: amber border, 12px text, centered
-  Button row: Back (secondary) + Approve and commit (gradient), 48px, gap 12px
+  Button row: Approve and commit (gradient), 48px
 */
 
 .shell {
   width: 480px;
   height: 500px;
   background: var(--semantic-color-surface-default);
-  border: 1px solid var(--semantic-color-border-lavender);
+  border: 1px solid var(--semantic-color-border-default);
   border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
   padding: var(--primitives-spacing-8);
   display: flex;
@@ -22,17 +22,12 @@
   overflow: visible;
 }
 
-/* Multi-hop variant: per-hop summary rows push the card past the fixed
- * 500px height when the user is eligible at 2-3 hops. Switch to auto-
- * sized height with a 500px floor (so two-hop cards don't shrink below
- * the designer's original size) and a viewport-relative ceiling so very
- * short viewports still get a scrollable card. Single-hop reviews keep
- * the unmodified 500px shell. */
+/* Multi-hop / max-out: grow past fixed 500px with a viewport ceiling. */
 .shellMultiHop {
+  /* Grow with content — scrolling happens on the modal backdrop, not here. */
   height: auto;
   min-height: 500px;
-  max-height: 80vh;
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .content {
@@ -40,24 +35,14 @@
   flex-direction: column;
   gap: var(--primitives-spacing-5);
   flex: 1;
-  padding-top: var(--primitives-spacing-8);
-}
-
-.title {
-  font-family: var(--primitives-fontFamily-ui);
-  font-size: calc(var(--primitives-fontSize-xl) * 1px);
-  font-weight: var(--primitives-fontWeight-medium);
-  color: var(--semantic-color-text-primary);
-  margin: 0;
-  text-align: center;
-  line-height: 1.4;
-  width: 100%;
+  min-height: 0;
+  padding-top: 0;
 }
 
 /* ── Summary card ── */
 .summaryCard {
   background: var(--semantic-color-surface-raised);
-  border: 1px solid var(--semantic-color-border-default);
+  border: none;
   border-radius: calc(var(--semantic-borderRadius-item) * 1px);
   padding: var(--primitives-spacing-5);
   display: flex;
@@ -91,11 +76,9 @@
   gap: var(--primitives-spacing-2);
 }
 
-/* Colored hop dot for the multi-hop review row labels. Matches the dot in
- * MyPosition meta chips / Step2Commit row headers. */
 .hopDot {
-  width: 8px;
-  height: 8px;
+  width: var(--primitives-spacing-2);
+  height: var(--primitives-spacing-2);
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -144,6 +127,19 @@
   transition: color 150ms ease;
 }
 
+/* Self-fill note — lavender wash (same exception pattern as MaxOutBanner). */
+.maxOutNote {
+  padding: var(--primitives-spacing-3) var(--primitives-spacing-3);
+  border-radius: calc(var(--primitives-borderRadius-xl) * 1px);
+  border: 1px solid color-mix(in srgb, var(--semantic-color-brand-lavender) 40%, transparent);
+  background: color-mix(in srgb, var(--semantic-color-brand-lavender) 8%, transparent);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-secondary);
+  line-height: 1.45;
+}
+
 /* ── Warning block ── */
 .warningBlock {
   background: rgba(196, 145, 229, 0.15);
@@ -157,8 +153,13 @@
   font-weight: var(--primitives-fontWeight-regular);
   color: var(--semantic-color-text-secondary);
   margin: 0;
-  text-align: center;
+  text-align: left;
   line-height: 1.5;
+}
+
+.warningLead {
+  font-weight: var(--primitives-fontWeight-semibold);
+  color: var(--semantic-color-text-primary);
 }
 
 /* ── Button row ── */
@@ -166,10 +167,6 @@
   display: flex;
   gap: var(--primitives-spacing-3);
   width: 100%;
-  /* Guaranteed gap above the row. In single-hop (fixed 500px shell) this
-   * shrinks the inner `space-between` gap by the same amount — no visible
-   * change. In multi-hop (auto-height shell) it adds real breathing room
-   * between the warning block and the buttons. */
   margin-top: var(--primitives-spacing-6);
 }
 
@@ -177,18 +174,31 @@
   flex: 1;
 }
 
-/* Mobile (≤767px) — stack the action buttons full-width, primary on top.
- * Ported from the armada-crowdfund mockup mobile rework. */
 @media (max-width: 767px) {
   .shell {
-    gap: var(--primitives-spacing-8);
+    gap: var(--primitives-spacing-5);
+    overflow: hidden;
+    padding: var(--primitives-spacing-5);
+  }
+
+  .shellMultiHop {
+    height: 100%;
+    min-height: 0;
   }
 
   .content {
     padding-top: 0;
+    overflow-y: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .content::-webkit-scrollbar {
+    display: none;
   }
 
   .buttonRow {
+    flex-shrink: 0;
     flex-direction: column-reverse;
     gap: var(--primitives-spacing-3);
   }

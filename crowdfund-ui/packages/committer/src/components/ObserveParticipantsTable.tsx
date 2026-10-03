@@ -40,7 +40,7 @@ interface Column<T> {
   render: (row: T, name: NameFn) => ReactNode
 }
 
-const HOP_DOT = (hop: number) => heroListHopColor(hop === 0 ? 'SEED' : hop === 1 ? 'HOP-1' : 'HOP-2')
+const HOP_DOT = (hop: number) => heroListHopColor(hop === 0 ? 'HOP-0' : hop === 1 ? 'HOP-1' : 'HOP-2')
 
 function compare(a: bigint | number | string, b: bigint | number | string): number {
   if (typeof a === 'bigint' && typeof b === 'bigint') return a < b ? -1 : a > b ? 1 : 0
@@ -275,7 +275,7 @@ export function ObserveParticipantsTable({ events, phase, provider }: ObservePar
           aria-label="Hop filter"
         >
           <option value="all">All hops</option>
-          <option value="0">Seed (hop-0)</option>
+          <option value="0">Hop-0</option>
           <option value="1">Hop-1</option>
           <option value="2">Hop-2</option>
         </select>

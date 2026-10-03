@@ -25,9 +25,10 @@
  * Some steps render content taller than the 480×500 footprint inherited from
  * Step0Invite, which the `.slot` / `.step` overflow: hidden would otherwise
  * clip: the post-commit invite-slots screen (`ParticipateFlowInviteSlots` —
- * shell + Return-button footer, tall with many slots), and the 'confirmation'
- * step once the Max out banner is hoisted above the 500px card. The controller
- * opts those steps in; every other step keeps the original fixed 480×500. */
+ * shell + Return-button footer, tall with many slots), and the 'commit' and
+ * 'confirmation' steps once the Max out banner is hoisted above the 500px card.
+ * The controller opts those steps in (`inviteStepNeedsRoom`); every other step
+ * keeps the original fixed 480×500. */
 .slotInvites,
 .stepInvites {
   height: auto;

@@ -1,7 +1,7 @@
 // ABOUTME: Pill-shaped button primitive with primary/secondary/ghost/gradient variants and three sizes.
 // ABOUTME: Ported byte-identical from the armada-crowdfund mockup; restyle via tokens, not edits here.
 
-import type { ReactNode } from 'react'
+import { forwardRef, type CSSProperties, type MouseEvent, type ReactNode } from 'react'
 import { ArrowRightIcon as ArrowRightMicroIcon } from '@heroicons/react/16/solid'
 import { ArrowRightIcon } from '@heroicons/react/24/outline'
 import styles from './Button.module.css'
@@ -20,8 +20,8 @@ export interface ButtonProps {
   disabled?: boolean
   /** Keeps the default variant colors and shows a spinner (does not apply muted disabled styles). */
   loading?: boolean
-  onClick?: () => void
-  style?: React.CSSProperties
+  onClick?: (e: MouseEvent<HTMLButtonElement>) => void
+  style?: CSSProperties
   className?: string
   type?: 'button' | 'submit' | 'reset'
   /**
@@ -31,6 +31,10 @@ export interface ButtonProps {
    * `WalletPillMenu.extraSection` and `WalletButton.disabled`. See packages/ui/src/components/CLAUDE.md.
    */
   leadingIcon?: ReactNode
+  'aria-haspopup'?: boolean | 'menu' | 'listbox' | 'tree' | 'grid' | 'dialog'
+  'aria-expanded'?: boolean
+  'aria-label'?: string
+  'aria-disabled'?: boolean
 }
 
 const ICON_PX: Record<ButtonSize, number> = { sm: 14, md: 16, lg: 18 }
@@ -43,20 +47,27 @@ function resolveIcon(label: string, icon: ButtonIcon | undefined, showIcon: bool
   return 'arrow-right'
 }
 
-export function Button({
-  variant = 'primary',
-  size = 'md',
-  label = 'Button',
-  showIcon = true,
-  icon,
-  disabled = false,
-  loading = false,
-  onClick,
-  className,
-  type = 'button',
-  style,
-  leadingIcon,
-}: ButtonProps) {
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  {
+    variant = 'primary',
+    size = 'md',
+    label = 'Button',
+    showIcon = true,
+    icon,
+    disabled = false,
+    loading = false,
+    onClick,
+    className,
+    type = 'button',
+    style,
+    leadingIcon,
+    'aria-haspopup': ariaHasPopup,
+    'aria-expanded': ariaExpanded,
+    'aria-label': ariaLabel,
+    'aria-disabled': ariaDisabled,
+  },
+  ref,
+) {
   const resolvedIcon = resolveIcon(label, icon, showIcon)
   const iconPx = resolvedIcon === 'arrow-right-micro' ? MICRO_ICON_PX : ICON_PX[size]
   // Loading occupies the trailing slot even when showIcon is false, so the spinner has room.
@@ -76,10 +87,15 @@ export function Button({
 
   return (
     <button
+      ref={ref}
       type={type}
       className={cls}
       disabled={disabled && !loading}
       aria-busy={loading || undefined}
+      aria-haspopup={ariaHasPopup}
+      aria-expanded={ariaExpanded}
+      aria-label={ariaLabel}
+      aria-disabled={ariaDisabled}
       onClick={loading ? undefined : onClick}
       style={style}
     >
@@ -102,4 +118,4 @@ export function Button({
       )}
     </button>
   )
-}
+})

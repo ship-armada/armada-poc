@@ -107,3 +107,10 @@
   background: var(--semantic-color-surface-raised);
   border: 1px solid var(--semantic-component-button-secondary-border-hover);
 }
+
+@media (max-width: 767px) {
+  .shell,
+  .shellCompact {
+    padding: var(--primitives-spacing-5);
+  }
+}

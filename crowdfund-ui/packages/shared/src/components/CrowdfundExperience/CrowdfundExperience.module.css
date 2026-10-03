@@ -34,13 +34,6 @@
   display: none;
 }
 
-/* Mobile-only frosted band behind the floating header so content scrolling
- * under the transparent header doesn't bleed through. Hidden on desktop;
- * shown in the ≤767px block below. Mirrors the Observe page's header backdrop. */
-.mobileHeaderBackdrop {
-  display: none;
-}
-
 /* Wraps the @armada/ui Progress card so the "Details" affordance can be
  * absolutely positioned over its top-right corner. Mirrors the card's own
  * responsive width (582px, narrowing to 480px at ≤1440px) so the wrapper stays
@@ -51,6 +44,15 @@
   position: relative;
   width: 582px;
   max-width: 100%;
+}
+
+.participantsListHitArea {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
 }
 
 @media (max-width: 1440px) {
@@ -81,6 +83,62 @@
   white-space: nowrap;
   cursor: pointer;
   transition: color 0.15s ease;
+}
+
+/* Progress title-row action group: Details beside Claim (desktop). */
+.progressActions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--primitives-spacing-4);
+}
+
+.detailsInline {
+  padding: 0;
+  line-height: 1;
+  border: none;
+  background: transparent;
+  color: var(--semantic-color-text-secondary);
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.detailsInline:hover {
+  color: var(--semantic-color-text-primary);
+}
+
+.detailsInline:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--semantic-color-border-focus);
+  border-radius: var(--semantic-component-navitem-radius);
+}
+
+/* With a Claim action the corner Details only shows on mobile, where the
+ * card moves Claim to a footer button and the title row is free. */
+@media (min-width: 768px) {
+  .detailsBtnMobileOnly {
+    display: none;
+  }
+}
+
+/* Mobile: the card's footer copy of the action group is just a full-width
+ * Claim — the corner overlay carries Details there. */
+@media (max-width: 767px) {
+  .progressActions {
+    display: flex;
+    width: 100%;
+  }
+
+  .progressActions > .detailsInline {
+    display: none;
+  }
+
+  .progressActions > :last-child {
+    flex: 1;
+    justify-content: center;
+  }
 }
 
 .detailsBtn:hover {
@@ -181,32 +239,24 @@
 
 /* Mobile — scrollable vertical stack: Progress → Participate → Graph →
  * Participants. The corners drop from absolute to in-flow flex items ordered
- * via `order`; the desktop participants panel is hidden in favor of the
- * mobileParticipantsStack. Adapted from the armada-crowdfund mockup, retargeted
- * to our HeroParticipantsPanel structure (no CrowdfundLeftColumn). */
+ * via `order`; the desktop list/controls are hidden in favor of the
+ * mobileParticipantsStack (CrowdfundLeftColumn middle slots). */
 @media (max-width: 767px) {
+  /* Document/body scrolls (AppHeader is in flow via scrollWithPageOnMobile).
+   * Keep overflow visible so the shell header scrolls away with the stack —
+   * matches armada-crowdfund CrowdfundExperience mobile + Header `.headerHero`. */
   .page {
     height: auto;
     min-height: 100vh;
-    overflow-x: hidden;
-    overflow-y: auto;
+    overflow: visible;
+    box-sizing: border-box;
   }
 
-  /* Frosted band behind the floating header (below it at z-30, above content),
-   * masked to fade out below the header band so it's near-invisible unscrolled. */
-  .mobileHeaderBackdrop {
-    display: block;
-    position: fixed;
-    inset-inline: 0;
-    top: 0;
-    height: 120px;
-    z-index: 30;
-    pointer-events: none;
-    background: color-mix(in srgb, var(--semantic-color-surface-default) 70%, transparent);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    mask-image: linear-gradient(to bottom, black 0%, black 70%, transparent 100%);
-    -webkit-mask-image: linear-gradient(to bottom, black 0%, black 70%, transparent 100%);
+  /* Modal open — freeze the page scroller so the full-view flow stays locked. */
+  :global(html[data-flow-modal-open]) .page {
+    overflow: hidden !important;
+    overscroll-behavior: none;
+    touch-action: none;
   }
 
   .experienceLayout {
@@ -214,13 +264,12 @@
     flex-direction: column;
     gap: var(--primitives-spacing-5);
     min-height: 0;
-    /* Clear the fixed AppHeader (top: spacing-6 inset + 56px tall) so the
-     * stacked content starts below it instead of under it. */
     padding:
-      calc(var(--primitives-spacing-6) + 56px + var(--primitives-spacing-3))
+      var(--primitives-spacing-3)
       var(--primitives-spacing-5)
       var(--primitives-spacing-6);
     box-sizing: border-box;
+    overflow: visible;
   }
 
   .graphHost {
@@ -232,7 +281,7 @@
     min-height: 280px;
     border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
     border: 1px solid var(--semantic-color-border-default);
-    background: var(--semantic-color-surface-raised);
+    background: var(--semantic-color-surface-bg);
     overflow: hidden;
     z-index: 1;
   }
@@ -284,11 +333,29 @@
     transform: none;
   }
 
-  /* The desktop participants list/controls are replaced by the
-   * mobileParticipantsStack below the graph — hide them so only the Progress
-   * card remains in the left column. */
-  .hideOnMobileStack {
+  /* Crowdfund: stats card only — participant list expand deferred on mobile */
+  .mobileCrowdfundColumn [class*='controlsSlot'] {
     display: none;
+  }
+
+  .mobileCrowdfundColumn [class*='listRegion'] {
+    display: none;
+  }
+
+  .mobileCrowdfundColumn {
+    max-height: none !important;
+    min-height: 0 !important;
+    grid-template-rows: auto !important;
+    gap: 0 !important;
+  }
+
+  .mobileCrowdfundColumn [class*='middle'] {
+    display: none;
+  }
+
+  .mobileCrowdfundColumn[class*='shellOpen'] {
+    min-height: 0 !important;
+    max-height: none !important;
   }
 
   /* Summary (Progress) card stretches full-width on mobile — lifts the ≤1440px
@@ -314,8 +381,17 @@
     z-index: 10;
   }
 
-  /* My Position view has no graph on mobile — the position cards stack alone. */
+  /* My Position: position → whitelist → locked invite graph. */
   .experienceLayoutMyPosition .graphHost {
-    display: none;
+    display: block;
+    order: 3;
+  }
+
+  .experienceLayoutMyPosition .leftCorner {
+    order: 1;
+  }
+
+  .experienceLayoutMyPosition .rightCorner {
+    order: 2;
   }
 }

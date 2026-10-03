@@ -7,7 +7,7 @@ export { default as Step1Wallet } from './screens/Step1Wallet'
 export { default as Step1Connect } from './screens/Step1Connect'
 export { default as Step1SwitchNetwork } from './screens/Step1SwitchNetwork'
 export { default as Step1WalletNotWhitelisted } from './screens/Step1WalletNotWhitelisted'
-export { default as Step2Commit, MaxOutBanner } from './screens/Step2Commit'
+export { default as Step2Commit, MaxOutBanner, MaxOutFlowStack } from './screens/Step2Commit'
 export type { Step2CommitHopRow, Step2MaxOutOption } from './screens/Step2Commit'
 export { default as Step3Review } from './screens/Step3Review'
 export type { Step3ReviewHopCommit } from './screens/Step3Review'
@@ -18,6 +18,10 @@ export type {
   TransactionStatus as Step4TransactionStatus,
 } from './screens/Step4Approve'
 export { default as Step5Confirmation } from './screens/Step5Confirmation'
+export { default as StepBeforeYouStart } from './screens/StepBeforeYouStart'
+export type { StepBeforeYouStartProps } from './screens/StepBeforeYouStart'
+export { FlowChrome } from './FlowChrome'
+export type { FlowChromeProps } from './FlowChrome'
 
 export {
   INVITE_LINK_STEPS,
@@ -28,7 +32,7 @@ export type {
   ParticipateStepBarProps,
 } from './participateFlowSteps'
 
-export { ParticipateFlowModal } from './ParticipateFlowModal'
+export { ParticipateFlowModal, confirmParticipateClose } from './ParticipateFlowModal'
 export type { ParticipateFlowModalProps } from './ParticipateFlowModal'
 
 export { ParticipateFlowInviteSlots } from './ParticipateFlowInviteSlots'

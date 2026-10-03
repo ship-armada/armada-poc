@@ -54,7 +54,7 @@ describe('FinalizePanel', () => {
       />,
     )
     expect(
-      screen.getByText(/Capped demand is below the minimum raise/),
+      screen.getByText(/Capped demand is below the minimum fund/),
     ).toBeInTheDocument()
   })
 

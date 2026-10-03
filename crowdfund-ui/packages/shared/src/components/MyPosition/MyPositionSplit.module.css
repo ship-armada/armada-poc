@@ -186,8 +186,9 @@
   border-radius: calc(var(--primitives-borderRadius-full) * 1px);
   background: linear-gradient(
     90deg,
-    var(--primitives-color-purple-300),
-    var(--primitives-color-amber-300)
+    var(--semantic-color-brand-lavender) 0%,
+    var(--semantic-color-brand-gradient-rose) 52%,
+    var(--semantic-color-brand-amber) 100%
   );
 }
 

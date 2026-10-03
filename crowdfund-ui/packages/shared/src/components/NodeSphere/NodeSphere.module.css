@@ -1,0 +1,82 @@
+/* ABOUTME: Node selection / hover tip — docked on mobile to avoid edge clipping. */
+/* ABOUTME: Ported from the armada-crowdfund mockup (pages/NodeSphere.module.css). */
+
+.tip {
+  z-index: 29;
+  padding: var(--primitives-spacing-5);
+  border-radius: calc(var(--semantic-borderRadius-card) * 1px);
+  border: 1px solid color-mix(in srgb, var(--semantic-color-text-primary) 16%, transparent);
+  background: color-mix(in srgb, var(--semantic-color-surface-default) 55%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--semantic-color-text-secondary);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  pointer-events: none;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.tipFloat {
+  position: fixed;
+  width: 272px;
+}
+
+/* Mobile: pin inside the graph host so the card never clips the viewport. */
+.tipDocked {
+  position: absolute;
+  left: var(--primitives-spacing-3);
+  right: var(--primitives-spacing-3);
+  bottom: var(--primitives-spacing-3);
+  width: auto;
+  z-index: 30;
+}
+
+.tipIcon {
+  position: absolute;
+  top: var(--primitives-spacing-4);
+  right: var(--primitives-spacing-4);
+  width: 16px;
+  height: 16px;
+  color: var(--semantic-color-text-dim);
+  opacity: 0.9;
+}
+
+.tipInteractive {
+  pointer-events: auto;
+}
+
+.tipKind {
+  font-size: var(--semantic-component-tag-font-size);
+  letter-spacing: var(--primitives-letterSpacing-widest);
+  text-transform: uppercase;
+  color: var(--semantic-color-text-secondary);
+  margin-bottom: var(--primitives-spacing-2);
+  padding-right: var(--primitives-spacing-6);
+}
+
+.tipAddress {
+  font-family: var(--primitives-fontFamily-mono), monospace;
+  font-size: calc(var(--primitives-fontSize-lg) * 1px);
+  font-weight: 600;
+  color: var(--semantic-color-text-primary);
+}
+
+.tipAddressHover {
+  font-family: var(--primitives-fontFamily-mono), monospace;
+  font-size: calc(var(--primitives-fontSize-2xl) * 1px);
+  letter-spacing: var(--primitives-letterSpacing-tight);
+  color: var(--semantic-color-text-primary);
+  margin-bottom: var(--primitives-spacing-3);
+}
+
+.tipCommitted {
+  margin-top: var(--primitives-spacing-2);
+  color: var(--semantic-color-text-muted);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+}
+
+.tipCommittedHover {
+  font-size: calc(var(--primitives-fontSize-lg) * 1px);
+  opacity: 0.8;
+  margin-bottom: var(--primitives-spacing-2);
+}

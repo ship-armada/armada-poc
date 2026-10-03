@@ -3,7 +3,7 @@
 // @vitest-environment jsdom
 
 import { render } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeAll } from 'vitest'
 import { NodeSphere } from './NodeSphere'
 
 /** True when any element in the tree carries a `background-image: url(...)`.
@@ -14,6 +14,20 @@ function hasBackgroundImage(container: HTMLElement): boolean {
     el.style.backgroundImage.includes('url('),
   )
 }
+
+beforeAll(() => {
+  // jsdom lacks matchMedia; NodeSphere reads it for the mobile layout.
+  window.matchMedia ??= ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as typeof window.matchMedia
+})
 
 describe('NodeSphere WebGL fallback', () => {
   it('renders a static background (not a thrown error) when WebGL is unavailable', () => {

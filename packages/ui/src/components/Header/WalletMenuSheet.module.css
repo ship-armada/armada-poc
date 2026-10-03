@@ -1,0 +1,229 @@
+/* ABOUTME: Dark mobile wallet bottom sheet — copy / disconnect. */
+/* ABOUTME: Ported from the armada-crowdfund mockup (Header/WalletMenuSheet.module.css). */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 270;
+  background: color-mix(in srgb, var(--semantic-color-surface-bg) 72%, transparent);
+  animation: scrimIn 200ms ease;
+}
+
+.sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 271;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-4);
+  max-height: min(92dvh, 92vh);
+  padding:
+    var(--primitives-spacing-3)
+    var(--primitives-spacing-5)
+    max(var(--primitives-spacing-6), env(safe-area-inset-bottom, 0px));
+  background: var(--semantic-color-surface-bg);
+  border: 1px solid var(--semantic-color-border-default);
+  border-bottom: none;
+  border-radius:
+    calc(var(--semantic-borderRadius-modal) * 1px)
+    calc(var(--semantic-borderRadius-modal) * 1px)
+    0 0;
+  box-sizing: border-box;
+  animation: sheetIn 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  overflow: hidden;
+  outline: none;
+  color: var(--semantic-color-text-primary);
+}
+
+.handle {
+  align-self: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--semantic-color-border-default);
+}
+
+.topRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
+  flex-shrink: 0;
+}
+
+.title {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  line-height: var(--primitives-lineHeight-snug);
+  color: var(--semantic-color-text-primary);
+}
+
+.closeBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--primitives-spacing-11);
+  height: var(--primitives-spacing-11);
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--primitives-color-white-full) 12%, transparent);
+  color: var(--semantic-color-text-primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.closeBtn:focus-visible {
+  outline: 2px solid var(--semantic-color-border-focus);
+  outline-offset: 2px;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-6);
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: var(--primitives-spacing-2);
+}
+
+.identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  text-align: center;
+}
+
+.walletIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--primitives-spacing-16);
+  height: var(--primitives-spacing-16);
+}
+
+.address {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: calc(var(--primitives-fontSize-xl) * 1px);
+  font-weight: var(--primitives-fontWeight-semibold);
+  color: var(--semantic-color-text-primary);
+  line-height: var(--primitives-lineHeight-snug);
+  font-variant-numeric: tabular-nums;
+}
+
+.balance {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-muted);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+}
+
+.actionBtn {
+  width: 100%;
+  justify-content: center;
+  gap: var(--primitives-spacing-3);
+}
+
+.actionBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--semantic-color-border-focus);
+}
+
+.actionIcon {
+  width: calc(var(--primitives-fontSize-lg) * 1px);
+  height: calc(var(--primitives-fontSize-lg) * 1px);
+  flex-shrink: 0;
+}
+
+.actionLabel {
+  font-variant-numeric: tabular-nums;
+}
+
+.actionBtnCopied {
+  color: var(--semantic-color-text-primary);
+}
+
+.disconnect {
+  color: var(--semantic-color-status-error);
+}
+
+.disconnect:hover {
+  color: var(--semantic-color-status-error);
+  background: color-mix(in srgb, var(--semantic-color-status-error) 12%, transparent);
+}
+
+.scrimExit {
+  animation: scrimOut 220ms ease forwards;
+  pointer-events: none;
+}
+
+.sheetExit {
+  animation: sheetOut 220ms ease forwards;
+  pointer-events: none;
+}
+
+@keyframes scrimIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scrimOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes sheetIn {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sheetOut {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrim,
+  .sheet,
+  .scrimExit,
+  .sheetExit {
+    animation: none;
+  }
+}

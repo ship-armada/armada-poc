@@ -438,7 +438,7 @@ export function StatsBar(props: StatsBarProps) {
        *  numbers above. */}
       {belowMin && (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive">
-          Estimated allocation is below the minimum raise (
+          Estimated allocation is below the minimum fund (
           {formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)}). The sale would enter
           refund mode if finalized now.
         </div>

@@ -1,81 +1,86 @@
-/* ABOUTME: CSS Module for ClaimFlowV2 — mirrors the commit modal shell (Step3Review / Step5Confirmation) so the claim flow reads as the same aesthetic family. */
-/* ABOUTME: 480px lavender-bordered card centered on the page panel; surface-raised summary card with dividers between rows; lavender-tinted warning block; gradient lg buttons. */
+/* ABOUTME: CSS Module for ClaimFlowV2 — crowdfund ClaimFlow chrome (FlowChrome, intro cards, delegate radios). */
+/* ABOUTME: 480×500 card; content pinned under chrome (flex-start); tokens only — no hardcoded hex/px. */
 
-/* ── Gate-state shells (loading / not-open / nothing-to-claim) ──
- * Same compact centered column as before — these short-circuit panels don't
- * use the full review-modal chrome, just a small text block + CTA. */
+/* ── Gate-state shells (loading / not-open / nothing-to-claim) ── */
 .gateShell {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: var(--primitives-spacing-3);
-  min-height: 60vh;
-  max-width: 28rem;
+  min-height: 320px;
+  width: 480px;
+  max-width: 100%;
   margin: 0 auto;
-  padding: 0 var(--primitives-spacing-6);
+  padding: var(--primitives-spacing-8);
   text-align: center;
-  font-family: var(--primitives-fontFamily-ui);
+  box-sizing: border-box;
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
   color: var(--semantic-color-text-primary);
 }
 
 .gateTitle {
+  margin: 0;
   font-size: calc(var(--primitives-fontSize-2xl) * 1px);
   font-weight: var(--primitives-fontWeight-medium);
   color: var(--semantic-color-text-primary);
 }
 
 .gateBody {
-  font-family: var(--primitives-fontFamily-ui);
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-size: calc(var(--primitives-fontSize-base) * 1px);
   color: var(--semantic-color-text-muted);
   line-height: 1.5;
 }
 
-.gateBody .accent {
+.accent {
   color: var(--semantic-color-text-primary);
 }
 
 .gateBodyFootnote {
+  margin: 0;
+  margin-top: var(--primitives-spacing-3);
   font-size: calc(var(--primitives-fontSize-xs) * 1px);
   color: var(--semantic-color-text-muted);
-  margin-top: 12px;
 }
 
 .gateActions {
-  margin-top: 24px;
+  margin-top: var(--primitives-spacing-6);
   display: flex;
   justify-content: center;
+  gap: var(--primitives-spacing-3);
 }
 
-/* ── Page-centering wrapper ──
- * Same vertical-center math as the gate shell; the inner `.cardShell` is the
- * 480px modal-style card centered inside it. */
+/* Page-centering wrapper around the 480×500 card. */
+/* The Claim modal is 480px wide; the card fills it (no page padding). */
 .flowShell {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: calc(100vh - 12rem);
-  padding: var(--primitives-spacing-4) var(--primitives-spacing-6);
-  font-family: var(--primitives-fontFamily-ui);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
   color: var(--semantic-color-text-primary);
 }
 
-/* ── Card shell — 480px lavender-bordered modal card ──
- * Mirrors Step3Review / Step5Confirmation `.shell`. `min-height` rather than
- * a fixed height so the delegate-input row can grow without clipping. */
+/* Card shell — FlowChrome top, content flex-start, CTAs bottom. */
 .cardShell {
+  position: relative;
   width: 480px;
+  max-width: 100%;
+  height: 500px;
   min-height: 500px;
   background: var(--semantic-color-surface-default);
-  border: 1px solid var(--semantic-color-border-lavender);
+  border: 1px solid var(--semantic-color-border-default);
   border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
   padding: var(--primitives-spacing-8);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   box-sizing: border-box;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .cardContent {
@@ -83,29 +88,26 @@
   flex-direction: column;
   gap: var(--primitives-spacing-5);
   flex: 1;
-  padding-top: var(--primitives-spacing-8);
-  /* Symmetric vertical breathing room — when the warning block (or delegate
-   * block in ARM mode) is the last child, this keeps it from sitting flush
-   * against the button row below. */
-  padding-bottom: var(--primitives-spacing-6);
+  min-height: 0;
+  justify-content: flex-start;
+  overflow-y: auto;
+  scrollbar-width: none;
+  /* Title→content gap lives on FlowChrome.barWithTitle when a title is present. */
+  padding-top: 0;
 }
 
-.cardTitle {
-  font-family: var(--primitives-fontFamily-ui);
-  font-size: calc(var(--primitives-fontSize-xl) * 1px);
-  font-weight: var(--primitives-fontWeight-medium);
-  color: var(--semantic-color-text-primary);
-  margin: 0;
-  text-align: center;
-  line-height: 1.4;
-  width: 100%;
+.cardContent::-webkit-scrollbar {
+  display: none;
 }
 
-/* ── Summary card (one card, label/value rows separated by dividers) ──
- * Identical token set to Step3Review.module.css `.summaryCard`. */
+.cardContentFill {
+  justify-content: flex-start;
+  overflow: visible;
+}
+
 .summaryCard {
   background: var(--semantic-color-surface-raised);
-  border: 1px solid var(--semantic-color-border-default);
+  border: none;
   border-radius: calc(var(--semantic-borderRadius-item) * 1px);
   padding: var(--primitives-spacing-5);
   display: flex;
@@ -140,23 +142,20 @@
 }
 
 .summaryLabel {
-  font-family: var(--primitives-fontFamily-ui);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-size: calc(var(--primitives-fontSize-base) * 1px);
-  font-weight: var(--primitives-fontWeight-regular);
   color: var(--semantic-color-text-muted);
 }
 
-.summaryValue {
-  font-family: var(--primitives-fontFamily-ui);
+.summaryValue,
+.summaryValueAccent {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-size: calc(var(--primitives-fontSize-base) * 1px);
   font-weight: var(--primitives-fontWeight-medium);
   color: var(--semantic-color-text-primary);
 }
 
 .summaryValueAccent {
-  font-family: var(--primitives-fontFamily-ui);
-  font-size: calc(var(--primitives-fontSize-base) * 1px);
-  font-weight: var(--primitives-fontWeight-medium);
   color: var(--semantic-color-brand-lavender);
 }
 
@@ -171,114 +170,48 @@
   line-height: 0;
 }
 
-.infoTrigger:hover .infoIcon {
-  color: var(--semantic-color-brand-lavender);
+.infoTrigger:focus-visible {
+  outline: 2px solid var(--semantic-color-border-focus);
+  outline-offset: 2px;
+  border-radius: 999px;
 }
 
 .infoIcon {
-  width: 20px;
-  height: 20px;
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
   color: var(--semantic-color-text-muted);
   flex-shrink: 0;
-  transition: color 150ms ease;
 }
 
-/* ── Warning block (lavender-tinted) — same tokens as Step3Review. ── */
 .warningBlock {
+  /* Same lavender tint as Step3Review — media/overlay exception for translucent brand wash. */
   background: rgba(196, 145, 229, 0.15);
   border-radius: calc(var(--semantic-borderRadius-item) * 1px);
   padding: var(--primitives-spacing-3) var(--primitives-spacing-4);
 }
 
 .warningText {
-  font-family: var(--primitives-fontFamily-ui);
-  font-size: calc(var(--primitives-fontSize-sm) * 1px);
-  font-weight: var(--primitives-fontWeight-regular);
-  color: var(--semantic-color-text-secondary);
   margin: 0;
-  text-align: center;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-secondary);
+  text-align: left;
   line-height: 1.5;
 }
 
-/* ── Delegate address input ──
- * Sentence-case label + UI font input — sized to sit cleanly below the
- * summary card. The block stacks rather than nesting into a summary row
- * because the address input is too wide to render inline with the value. */
-.delegateBlock {
-  display: flex;
-  flex-direction: column;
-  gap: var(--primitives-spacing-2);
-}
-
-.delegateLabel {
-  font-family: var(--primitives-fontFamily-ui);
-  font-size: calc(var(--primitives-fontSize-base) * 1px);
-  color: var(--semantic-color-text-primary);
-}
-
-.delegateInput {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--semantic-color-border-default);
-  border-radius: calc(var(--primitives-borderRadius-md) * 1px);
-  background: var(--semantic-color-surface-default);
-  color: var(--semantic-color-text-primary);
-  font-family: var(--primitives-fontFamily-ui);
-  font-size: calc(var(--primitives-fontSize-base) * 1px);
-  outline: none;
-  transition: border-color 120ms ease;
-}
-
-.delegateInput:focus {
-  border-color: var(--semantic-color-border-focus);
-}
-
-.delegateInputError {
-  border-color: var(--semantic-color-status-error);
-}
-
-.delegateInputResolved {
-  border-color: var(--semantic-color-status-success);
-}
-
-.delegateError {
-  font-size: calc(var(--primitives-fontSize-xs) * 1px);
-  color: var(--semantic-color-status-error);
-}
-
-.delegateHelp {
-  font-size: calc(var(--primitives-fontSize-xs) * 1px);
-  color: var(--semantic-color-text-muted);
-}
-
-/* "Resolves to 0x1234…abcd" line shown when an ENS name resolves. */
-.delegateResolved {
-  font-size: calc(var(--primitives-fontSize-xs) * 1px);
-  color: var(--semantic-color-text-muted);
-}
-
-.delegateResolved code {
-  color: var(--semantic-color-text-primary);
-  font-family: var(--primitives-fontFamily-mono, ui-monospace, monospace);
-}
-
-/* ── Footer button row (Cancel / Claim, or Back / View position). ── */
 .buttonRow {
   display: flex;
   gap: var(--primitives-spacing-3);
   width: 100%;
   flex-shrink: 0;
+  margin-top: var(--primitives-spacing-6);
 }
 
 .buttonRow > * {
   flex: 1;
+  min-width: 0;
 }
 
-/* Mobile (≤767px) — stack the action buttons full-width, primary on top, so two
- * side-by-side buttons don't overflow the modal. Matches the commit flow's
- * Step5Confirmation button row. Declared after the base `.buttonRow > *` so its
- * `flex: none` wins on mobile and the buttons keep their fixed height (their
- * vertical "padding") instead of shrinking to share the column. */
 @media (max-width: 767px) {
   .buttonRow {
     flex-direction: column-reverse;
@@ -291,47 +224,304 @@
   }
 }
 
-/* ── Done-screen hero block (mirrors Step5Confirmation `.heroBlock`). ── */
 .heroBlock {
   display: flex;
   flex-direction: column;
-  gap: var(--primitives-spacing-2);
-  align-items: center;
+  gap: var(--primitives-spacing-3);
   text-align: center;
+  align-items: center;
+}
+
+.successIcon {
+  width: var(--primitives-spacing-8);
+  height: var(--primitives-spacing-8);
+  flex-shrink: 0;
+  color: var(--semantic-color-status-success);
+}
+
+.contractRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--primitives-spacing-4);
+  background: var(--semantic-color-surface-raised);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+}
+
+.contractRowText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-1);
+  min-width: 0;
+  text-align: left;
+}
+
+.contractRowLabel {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+.contractRowAddress {
+  font-family: var(--primitives-fontFamily-mono), monospace;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contractCopyBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: var(--primitives-spacing-11);
+  height: var(--primitives-spacing-11);
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--semantic-color-border-default);
+  border-radius: calc(var(--semantic-borderRadius-button) * 1px);
+  background: transparent;
+  color: var(--semantic-color-text-secondary);
+  cursor: pointer;
+}
+
+.contractCopyBtn:hover {
+  color: var(--semantic-color-text-primary);
+  background: var(--semantic-component-navitem-default-bg-hover);
+}
+
+.contractCopyBtn:focus-visible {
+  outline: 2px solid var(--semantic-color-border-focus);
+  outline-offset: 2px;
+}
+
+.contractCopyIcon {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
 }
 
 .headline {
-  font-family: var(--primitives-fontFamily-display);
-  font-size: calc(var(--primitives-fontSize-3xl) * 1px);
-  font-weight: var(--primitives-fontWeight-regular);
-  color: var(--semantic-color-text-primary);
   margin: 0;
-  line-height: var(--primitives-lineHeight-snug);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-2xl) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
 }
 
 .subline {
-  font-family: var(--primitives-fontFamily-ui);
-  font-size: calc(var(--primitives-fontSize-md) * 1px);
-  font-weight: var(--primitives-fontWeight-regular);
-  color: var(--semantic-color-text-secondary);
   margin: 0;
-  line-height: 1.6;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-muted);
+  line-height: 1.5;
+}
+
+.nextCard {
+  background: var(--semantic-color-surface-raised);
+  border: none;
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  padding: var(--primitives-spacing-4);
+}
+
+.nextText {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-secondary);
+  line-height: 1.5;
   text-align: center;
 }
 
-/* ── "What happens next" card (mirrors Step5Confirmation `.nextCard`). ── */
-.nextCard {
+/* ── Intro ── */
+.introWrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.introScroll {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-6);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* Title→content gap lives on FlowChrome.barWithTitle so it stays while scrolling. */
+  padding-top: 0;
+  padding-bottom: var(--primitives-spacing-8);
+  scrollbar-width: none;
+}
+
+.introScroll::-webkit-scrollbar {
+  display: none;
+}
+
+.introLead {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-secondary);
+  line-height: 1.5;
+  text-align: left;
+}
+
+.introFade {
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--primitives-spacing-10);
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--semantic-color-surface-default)
+  );
+}
+
+.stepCards {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--primitives-spacing-2);
+}
+
+.stepCardsTwo {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.stepCard {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: var(--primitives-spacing-6);
+  min-height: 0;
+  padding: var(--primitives-spacing-3);
+  box-sizing: border-box;
   background: var(--semantic-color-surface-raised);
-  border: 1px solid var(--semantic-color-border-default);
   border-radius: calc(var(--semantic-borderRadius-item) * 1px);
-  padding: var(--primitives-spacing-5);
+}
+
+.stepNumber {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-lg) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-muted);
+  line-height: 1;
+}
+
+.stepCopy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-1);
+}
+
+.stepLabel {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  line-height: 1.3;
+}
+
+.stepHint {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-muted);
+  line-height: 1.4;
+}
+
+.factsCard {
+  display: flex;
+  flex-direction: column;
+  background: var(--semantic-color-surface-raised);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  padding: var(--primitives-spacing-4) var(--primitives-spacing-5);
+  box-sizing: border-box;
+}
+
+.factRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  padding: var(--primitives-spacing-3) 0;
+}
+
+.factRow:first-child {
+  padding-top: 0;
+}
+
+.factRow:last-child {
+  padding-bottom: 0;
+}
+
+.factLabel {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-muted);
+  flex-shrink: 0;
+}
+
+.factValue {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  text-align: right;
+}
+
+.factValueLink {
+  font-family: var(--primitives-fontFamily-mono), monospace;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  text-align: right;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.factValueLink:hover {
+  color: var(--semantic-color-text-lavender);
+}
+
+.factValueLink:focus-visible {
+  outline: 2px solid var(--semantic-color-border-focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.factValueAccent {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-lavender);
+  text-align: right;
+}
+
+.knowBlock {
   display: flex;
   flex-direction: column;
   gap: var(--primitives-spacing-3);
 }
 
-.nextEyebrow {
-  font-family: var(--primitives-fontFamily-ui);
+.knowHeading {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-size: calc(var(--primitives-fontSize-xs) * 1px);
   font-weight: var(--primitives-fontWeight-medium);
   letter-spacing: var(--primitives-letterSpacing-widest);
@@ -339,33 +529,216 @@
   color: var(--semantic-color-text-muted);
 }
 
-.nextText {
-  font-family: var(--primitives-fontFamily-ui);
-  font-size: calc(var(--primitives-fontSize-base) * 1px);
-  font-weight: var(--primitives-fontWeight-regular);
-  color: var(--semantic-color-text-secondary);
+.knowList {
   margin: 0;
-  line-height: 1.6;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
 }
 
-/* ── Submit-step wrapper — Step4Approve handles its own surface. ── */
-.submitShell {
+.knowItem {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--primitives-spacing-2);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-secondary);
+  line-height: 1.5;
+}
+
+.knowBullet {
+  flex-shrink: 0;
+  color: var(--semantic-color-text-muted);
+  line-height: 1.5;
+}
+
+@media (max-width: 767px) {
+  .stepCards,
+  .stepCardsTwo {
+    grid-template-columns: 1fr;
+  }
+
+  .stepCard {
+    min-height: 0;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: var(--primitives-spacing-3);
+  }
+}
+
+/* ── Delegate radios + picker ── */
+.radioGroup {
+  margin: 0;
+  padding: var(--primitives-spacing-1);
+  border: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+}
+
+.radioOption {
   display: flex;
   align-items: center;
-  justify-content: center;
-  min-height: calc(100vh - 12rem);
+  gap: var(--primitives-spacing-3);
+  padding: var(--primitives-spacing-4);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: var(--semantic-color-surface-raised);
+  box-shadow: inset 0 0 0 1px transparent;
+  cursor: pointer;
+  box-sizing: border-box;
 }
 
-/* Mobile (≤767px) — the 480px modal-style card fills the page width and sizes
- * to content, matching the commit-flow step screens on small viewports. */
+.radioOptionSelected {
+  box-shadow: inset 0 0 0 2px var(--semantic-color-brand-lavender);
+}
+
+.radioInput {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--semantic-color-brand-lavender);
+  cursor: pointer;
+}
+
+.radioInput:focus-visible {
+  outline: 2px solid var(--semantic-color-border-focus);
+  outline-offset: 2px;
+}
+
+.radioCopy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-1);
+  min-width: 0;
+}
+
+.radioTitle {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+}
+
+.radioHint {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-muted);
+  line-height: 1.4;
+}
+
+.delegatePicker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+  flex: 1;
+  min-height: 0;
+}
+
+.searchField {
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-2);
+  padding: var(--primitives-spacing-3);
+  border-radius: calc(var(--primitives-borderRadius-md) * 1px);
+  background: var(--semantic-color-surface-raised);
+  flex-shrink: 0;
+}
+
+.searchIcon {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+  color: var(--semantic-color-text-muted);
+  flex-shrink: 0;
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--semantic-color-text-primary);
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  outline: none;
+}
+
+.searchInput::placeholder {
+  color: var(--semantic-color-text-muted);
+}
+
+.searchField:focus-within {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--semantic-color-border-focus);
+}
+
+.delegateResolvedCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-1);
+  padding: var(--primitives-spacing-3);
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: var(--semantic-color-surface-hover);
+}
+
+.delegateResolvedPrimary {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  line-height: 1.25;
+}
+
+.delegateResolvedSecondary {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  line-height: 1.35;
+  color: var(--semantic-color-text-muted);
+}
+
+.delegateHelp {
+  margin: 0;
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+.delegateError {
+  margin: 0;
+  font-size: calc(var(--primitives-fontSize-xs) * 1px);
+  color: var(--semantic-color-status-error);
+}
+
+.ctaBlocked {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 @media (max-width: 767px) {
-  .flowShell {
-    padding: var(--primitives-spacing-4) var(--primitives-spacing-5);
+  .gateShell {
+    padding: var(--primitives-spacing-5);
+    overflow: hidden;
   }
 
   .cardShell {
     width: 100%;
     max-width: none;
+    height: auto;
     min-height: 0;
   }
 }

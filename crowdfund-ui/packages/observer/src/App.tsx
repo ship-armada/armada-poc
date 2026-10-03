@@ -431,7 +431,7 @@ export function App() {
         {/* Refund mode banner */}
         {contractState.phase === 1 && contractState.refundMode && (
           <ErrorAlert variant="warning" title="Refund Mode">
-            Total allocation after hop ceilings did not meet the minimum raise. All participants can claim a full USDC refund.
+            Total allocation after hop ceilings did not meet the minimum fund. All participants can claim a full USDC refund.
           </ErrorAlert>
         )}
 

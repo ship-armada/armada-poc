@@ -115,8 +115,13 @@ async function drive(store: Store, address: string): Promise<void> {
   const rec = records.get(address)
   if (!rec || rec.running) return
   rec.running = true
+  // A reset (or a fresh run after one) replaces this address's record while this
+  // loop may still be awaiting a tx. A superseded loop must neither send nor
+  // write render state — the address's rows now belong to the replacing run.
+  const superseded = () => records.get(address) !== rec
   try {
     while (rec.cursor < rec.steps.length) {
+      if (superseded()) return
       // Skip any row already completed out-of-band (e.g. confirmed by the
       // background watcher while this step sat timed-out). Keeps the cursor
       // self-healing so a resumed/retried pipeline never re-sends — or stomps —
@@ -172,11 +177,15 @@ async function drive(store: Store, address: string): Promise<void> {
 
       const result = await sendAndWaitTx(step.send, (hash) => {
         // Phase 2: broadcast — show the explorer link and persist for resume-watch.
-        setRow(store, address, i, {
-          phaseLabel: 'Submitting…',
-          hash,
-          explorerUrl: getExplorerUrl(),
-        })
+        // A superseded loop's tx is still real, so it stays persisted for the
+        // pending-tx watcher; only the row write is skipped.
+        if (!superseded()) {
+          setRow(store, address, i, {
+            phaseLabel: 'Submitting…',
+            hash,
+            explorerUrl: getExplorerUrl(),
+          })
+        }
         savePendingTx({
           chainId: getHubChainId(),
           address,
@@ -193,6 +202,7 @@ async function drive(store: Store, address: string): Promise<void> {
       if (result.hash && (result.outcome === 'success' || result.outcome === 'reverted')) {
         removePendingTx(result.hash)
       }
+      if (superseded()) return
       if (result.outcome === 'success') {
         setRow(store, address, i, { status: 'done', phaseLabel: undefined })
         step.onReceipt?.(result.logs ?? [])
@@ -224,6 +234,7 @@ async function drive(store: Store, address: string): Promise<void> {
       setPhase(store, address, 'error')
       return
     }
+    if (superseded()) return
     setPhase(store, address, 'success')
     await rec.onSuccess?.()
   } finally {

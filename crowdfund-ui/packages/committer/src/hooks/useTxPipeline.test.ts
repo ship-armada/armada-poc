@@ -11,6 +11,7 @@ import {
   abortPipelinesForOtherAddress,
   retryTxPipeline,
   applyWatchedTxResult,
+  resetTxPipeline,
   clearAllPipelines,
   getPipelineState,
   type TxStep,
@@ -146,6 +147,67 @@ describe('tx pipeline store', () => {
 
     await waitFor(() => getPipelineState(store, A).phase === 'aborted')
     expect(b.send).not.toHaveBeenCalled()
+  })
+
+  it('a reset mid-run stops the old run, so re-confirming commits exactly once', async () => {
+    // The user confirms, then taps Back (reset) while the approve is mining,
+    // and confirms again from review. The contract accepts over-cap commits, so
+    // if the reset run carried on it would pull USDC a second time.
+    const d1 = deferred<unknown>()
+    const a1 = makeStep('approve', () => d1.promise)
+    const b1 = makeStep('commit1', () => Promise.resolve({ status: 1, logs: [] }))
+    runTxPipeline(store, { address: A, steps: [a1.step, b1.step] })
+    await waitFor(() => a1.send.mock.calls.length === 1)
+
+    resetTxPipeline(store, A)
+
+    const d2 = deferred<unknown>()
+    const a2 = makeStep('approve', () => d2.promise)
+    const b2 = makeStep('commit1', () => Promise.resolve({ status: 1, logs: [] }))
+    runTxPipeline(store, { address: A, steps: [a2.step, b2.step] })
+    await waitFor(() => a2.send.mock.calls.length === 1)
+
+    // Both approves land; only the second run may go on to commit.
+    d1.resolve({ status: 1, logs: [] })
+    d2.resolve({ status: 1, logs: [] })
+    await waitFor(() => b2.send.mock.calls.length === 1)
+    await flush()
+
+    expect(b1.send).not.toHaveBeenCalled()
+    expect(b2.send).toHaveBeenCalledOnce()
+  })
+
+  it('a reset run never writes over the rows of the run that replaced it', async () => {
+    const d1 = deferred<unknown>()
+    // Distinct label → distinct mock hash (0xoldApprove), so a stray write shows.
+    const a1 = makeStep('oldApprove', () => d1.promise)
+    const b1 = makeStep('commit1', () => Promise.resolve({ status: 1, logs: [] }))
+    runTxPipeline(store, { address: A, steps: [a1.step, b1.step] })
+    await waitFor(() => a1.send.mock.calls.length === 1)
+
+    resetTxPipeline(store, A)
+
+    const d2 = deferred<unknown>()
+    const a2 = makeStep('approve', () => d2.promise)
+    const b2 = makeStep('commit1', () => Promise.resolve({ status: 1, logs: [] }))
+    runTxPipeline(store, { address: A, steps: [a2.step, b2.step] })
+    await waitFor(() => a2.send.mock.calls.length === 1)
+
+    // Only the old approve lands. The new run's approve is still mining, so its
+    // row must not flip to done (or carry the old tx hash).
+    d1.resolve({ status: 1, logs: [] })
+    await flush()
+    await flush()
+
+    const { rows, phase } = getPipelineState(store, A)
+    expect(phase).toBe('running')
+    expect(rows[0].status).toBe('loading')
+    expect(rows[0].hash).toBe('0xapprove')
+    expect(rows[1].status).toBe('pending')
+
+    d2.resolve({ status: 1, logs: [] })
+    await waitFor(() => getPipelineState(store, A).phase === 'success')
+    expect(b1.send).not.toHaveBeenCalled()
   })
 
   it('persists a broadcast tx and clears it once confirmed', async () => {

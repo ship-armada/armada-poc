@@ -12,12 +12,10 @@ import {
   type Step0InviteProps,
 } from '@armada/crowdfund-shared'
 import { InviteLinkFlowController } from '@/components/InviteLinkFlowController'
-import { DiscordIcon, XIcon } from '@/components/SocialIcons'
 import { decodeInviteUrl, type InviteLinkData } from '@/lib/inviteLinks'
 import { hasNoInviteSlots } from '@/lib/inviteSlots'
 import { getHubRpcUrls } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
-import { DISCORD_URL, X_URL } from '@/config/socials'
 import styles from './InviteLanding.module.css'
 
 type HopVariant = Step0InviteProps['hopVariant']
@@ -28,6 +26,8 @@ type PreCheckError =
   | 'nonce_revoked'
   | 'no_slots'
   | 'deadline_passed'
+  | 'not_open'
+  | 'cancelled'
 
 const PRE_CHECK_MESSAGES: Record<PreCheckError, string> = {
   expired: 'This invite link has expired. Ask the inviter for a new link.',
@@ -35,10 +35,14 @@ const PRE_CHECK_MESSAGES: Record<PreCheckError, string> = {
   nonce_revoked: 'This invite link has been revoked by the inviter.',
   no_slots: 'The inviter has no remaining invite slots.',
   deadline_passed: 'The commitment deadline has passed.',
+  not_open: "The crowdfund hasn't opened yet. Come back once it opens.",
+  cancelled: 'This crowdfund was cancelled, so no new commitments can be made.',
 }
 
+/** `Phase.Canceled` in IArmadaCrowdfund (Active = 0, Finalized = 1, Canceled = 2). */
+const PHASE_CANCELED = 2
+
 const DEFAULT_DAYS_LEFT = 3
-const PROJECT_URL = 'https://armada.wtf'
 
 function parseHopVariant(fromHop: number): HopVariant {
   // The invite carries the inviter's hop; the invitee joins at the next hop.
@@ -103,9 +107,9 @@ export function InviteLandingPage() {
     return Math.max(0, inviteData.deadline - nowSec)
   }, [inviteData, blockTimestampSec])
 
-  // Pre-redemption nonce + slot + deadline validation. Mirrors the legacy
-  // InviteLinkRedemption useEffect — surfaces the same four failure modes so
-  // an invalid invite is communicated before the user clicks Join.
+  // Pre-redemption sale-state + nonce + slot + deadline validation. Extends the
+  // legacy InviteLinkRedemption useEffect's four failure modes with a cancelled
+  // or not-yet-open sale, so an unusable invite is communicated before Join.
   useEffect(() => {
     if (!inviteData) {
       setPreCheckLoading(false)
@@ -133,6 +137,23 @@ export function InviteLandingPage() {
         // Stash the chain block time so the days-left label is anchored on the
         // same clock as the main crowdfund page (not the browser's local clock).
         if (!cancelled && block) setBlockTimestampSec(Number(block.timestamp))
+
+        // commitWithInvite only succeeds in an Active, ARM-loaded sale inside
+        // [windowStart, windowEnd] — catch a cancelled or not-yet-open sale here,
+        // before the invitee pays for an approve that can't be followed by a commit.
+        const [salePhase, armLoaded, windowStart] = (await Promise.all([
+          contract.phase(),
+          contract.armLoaded(),
+          contract.windowStart(),
+        ])) as [bigint, boolean, bigint]
+        if (Number(salePhase) === PHASE_CANCELED) {
+          if (!cancelled) setPreCheckError('cancelled')
+          return
+        }
+        if (!armLoaded || (block && BigInt(block.timestamp) < windowStart)) {
+          if (!cancelled) setPreCheckError('not_open')
+          return
+        }
 
         const nonceUsed = (await contract.usedNonces(
           inviteData.inviter,
@@ -202,8 +223,8 @@ export function InviteLandingPage() {
     return () => { cancelled = true }
   }, [inviteData])
 
-  // "Not ready to participate yet?" nav + socials, shown on the landing/error
-  // states (hidden once the user joins the flow).
+  // "Not ready to participate yet?" — centered crowdfund page CTA (hidden once
+  // the user joins the flow).
   const footer = (
     <footer className={styles.footer}>
       <p className={styles.footerPrompt}>Not ready to participate yet?</p>
@@ -211,39 +232,11 @@ export function InviteLandingPage() {
         <Button
           variant="secondary"
           size="lg"
-          label="The project"
-          showIcon={false}
-          className={styles.footerBtn}
-          onClick={() => window.open(PROJECT_URL, '_blank', 'noopener,noreferrer')}
-        />
-        <Button
-          variant="secondary"
-          size="lg"
-          label="Crowdfund"
+          label="View crowdfund page"
           showIcon={false}
           className={styles.footerBtn}
           onClick={() => navigate('/')}
         />
-      </div>
-      <div className={styles.socials}>
-        <a
-          className={styles.socialLink}
-          href={DISCORD_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Armada on Discord"
-        >
-          <DiscordIcon className={styles.socialIcon} />
-        </a>
-        <a
-          className={styles.socialLink}
-          href={X_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Armada on X"
-        >
-          <XIcon className={styles.socialIcon} />
-        </a>
       </div>
     </footer>
   )

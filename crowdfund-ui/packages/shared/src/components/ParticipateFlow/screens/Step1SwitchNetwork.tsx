@@ -22,7 +22,10 @@ export default function Step1SwitchNetwork({
   compact = false,
 }: Step1SwitchNetworkProps) {
   return (
-    <div className={[styles.shell, compact && styles.shellCompact].filter(Boolean).join(' ')}>
+    <div
+      data-flow-shell
+      className={[styles.shell, compact && styles.shellCompact].filter(Boolean).join(' ')}
+    >
       {showSteps && <Steps steps={STEPS} currentStep={1} />}
       <div className={[styles.content, compact && styles.contentCompact].filter(Boolean).join(' ')}>
         <div className={styles.titleBlock}>

@@ -127,7 +127,7 @@ function hopBadgeClasses(hop: number): string {
 
 /** Pill copy for the Hop(s) column. The wider table chrome already names the
  *  participation context, so the badge can use a tight "Hop N" form rather
- *  than the verbose `hopLabel()` output ("Seed (hop-0)"). */
+ *  than the verbose `hopLabel()` output ("Hop-0"). */
 function hopBadgeLabel(hop: number): string {
   return `Hop ${hop}`
 }

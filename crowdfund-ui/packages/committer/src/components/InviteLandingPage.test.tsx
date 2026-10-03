@@ -1,4 +1,4 @@
-// ABOUTME: Tests for the /invite landing page footer — "Not ready to participate yet?" nav + social links.
+// ABOUTME: Tests for the /invite landing page footer — "Not ready to participate yet?" prompt + crowdfund link.
 // ABOUTME: Uses the malformed-link branch so the on-chain pre-check (deployment/provider) never runs.
 
 import { render, screen, waitFor } from '@testing-library/react'
@@ -22,7 +22,7 @@ function LocationProbe() {
 }
 
 describe('InviteLandingPage footer', () => {
-  it('shows the "not ready" nav + social links on a malformed invite link', () => {
+  it('shows the "not ready" prompt and crowdfund link, with no social row', () => {
     render(
       <MemoryRouter initialEntries={['/invite']}>
         <InviteLandingPage />
@@ -30,16 +30,13 @@ describe('InviteLandingPage footer', () => {
     )
 
     expect(screen.getByText('Not ready to participate yet?')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'The project' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Crowdfund' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'View crowdfund page' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'The project' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Crowdfund' })).toBeNull()
 
-    const discord = screen.getByRole('link', { name: 'Armada on Discord' })
-    expect(discord).toHaveAttribute('href', 'https://discord.gg/QcpeNenwhj')
-    expect(discord).toHaveAttribute('target', '_blank')
-
-    const x = screen.getByRole('link', { name: 'Armada on X' })
-    expect(x).toHaveAttribute('href', 'https://x.com/ship_armada')
-    expect(x).toHaveAttribute('target', '_blank')
+    // Matches the reference landing footer — no Discord / X row.
+    expect(screen.queryByRole('link', { name: 'Armada on Discord' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Armada on X' })).toBeNull()
   })
 })
 

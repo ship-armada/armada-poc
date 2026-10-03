@@ -1,16 +1,14 @@
-// ABOUTME: Invite landing card — full-bleed fleet video + hop pill + Join CTA. Supports `default` (modal) and `landing` (full-page invite) variants.
-// ABOUTME: Ported from the armada-crowdfund mockup; fleet assets are ESM-imported so they bundle with crowdfund-shared (no public-folder dependency in the consuming app).
+// ABOUTME: Invite landing card — full-bleed fleet image + hop pill + Join CTA. Supports `default` (modal) and `landing` (full-page invite) variants.
+// ABOUTME: Ported from the armada-crowdfund demo (brand eyebrow, left-aligned time-left tag); fleet asset is ESM-imported so it bundles with crowdfund-shared.
 
-import { useEffect, useState } from 'react'
+import { Tag } from '@armada/ui'
 import HopPill, { type HopVariant } from '../../../HopPill/HopPill'
 import hopPillStyles from '../../../HopPill/HopPill.module.css'
 import JoinButton from '../../../JoinButton/JoinButton'
 import { formatTimeLeft } from '../../../../lib/format.js'
-import fleetMp4 from '../../../../assets/fleet.mp4'
 import fleetPng from '../../../../assets/fleet.png'
+import { FlowChrome } from '../../FlowChrome'
 import styles from './Step0Invite.module.css'
-
-const HOVER_EXPAND_QUERY = '(hover: hover) and (pointer: fine)'
 
 export interface Step0InviteProps {
   hopVariant?: HopVariant
@@ -23,7 +21,12 @@ export interface Step0InviteProps {
    *  `secondsLeft` countdown in the meta row. Omit in the modal variants. */
   inviteExpiresInSeconds?: number
   onJoin: () => void
-  /** Path 2/3 modal: wallet already connected — hide pre-connect eyebrow. */
+  /** Close the participate flow (top-right X on the fleet intro). */
+  onClose?: () => void
+  /**
+   * @deprecated Wallet connect is RainbowKit before this screen — eyebrow removed.
+   * Kept so existing callers keep compiling.
+   */
   hideConnectEyebrow?: boolean
   /** Path 1 invite landing page layout and sizing. */
   variant?: 'default' | 'landing'
@@ -35,21 +38,11 @@ export default function Step0Invite({
   secondsLeft = 3 * 86400,
   inviteExpiresInSeconds,
   onJoin,
-  hideConnectEyebrow = false,
+  onClose,
   variant = 'default',
   className,
 }: Step0InviteProps) {
-  const [joinExpanded, setJoinExpanded] = useState(false)
-  const [canHoverExpand, setCanHoverExpand] = useState(false)
   const isLanding = variant === 'landing'
-
-  useEffect(() => {
-    const media = window.matchMedia(HOVER_EXPAND_QUERY)
-    const sync = () => setCanHoverExpand(media.matches)
-    sync()
-    media.addEventListener('change', sync)
-    return () => media.removeEventListener('change', sync)
-  }, [])
 
   // Uppercase to match the designer's tag styling; "ENDS TODAY" once the
   // window has closed (formatTimeLeft returns '' at <= 0).
@@ -75,44 +68,43 @@ export default function Step0Invite({
       ]
         .filter(Boolean)
         .join(' ')}
-      onMouseEnter={() => {
-        if (canHoverExpand) setJoinExpanded(true)
-      }}
-      onMouseLeave={() => {
-        if (canHoverExpand) setJoinExpanded(false)
-      }}
     >
-      <video
+      <img
         className={styles.media}
-        src={fleetMp4}
-        poster={fleetPng}
-        autoPlay
-        loop
-        muted
-        playsInline
+        src={fleetPng}
+        alt=""
         aria-hidden
       />
       <div className={styles.overlay} />
+      {onClose ? (
+        <FlowChrome
+          variant="overlay"
+          showBack={false}
+          onClose={onClose}
+          closeAriaLabel="Close participate flow"
+        />
+      ) : null}
       <div className={[styles.content, isLanding && styles.contentLanding].filter(Boolean).join(' ')}>
-        <div className={styles.meta}>
-          <span className={styles.metaLabel}>ARMADA CROWDFUND</span>
-          <span className={styles.metaLabel}>{timeLeftLabel}</span>
+        <div className={styles.top}>
+          <p className={styles.brandEyebrow}>Armada Crowdfund</p>
+          <h1 className={styles.headline}>
+            You are{' '}
+            <br className={styles.headlineBreak} />
+            invited to{' '}
+            <br className={styles.headlineBreak} />
+            join the fleet
+          </h1>
+          {inviteExpiryLabel && <p className={styles.inviteExpiry}>{inviteExpiryLabel}</p>}
+          <div className={styles.metaTag}>
+            <Tag label={timeLeftLabel} />
+          </div>
         </div>
-        <div className={styles.bottom}>
-          <div className={styles.copy}>
-            {!hideConnectEyebrow && (
-              <p className={styles.eyebrow}>CONNECT YOUR WALLET</p>
-            )}
-            <h1 className={styles.headline}>You are invited to join the fleet</h1>
-            {inviteExpiryLabel && <p className={styles.inviteExpiry}>{inviteExpiryLabel}</p>}
-          </div>
-          <div className={[styles.footer, isLanding && styles.footerLanding].filter(Boolean).join(' ')}>
-            <HopPill
-              variant={hopVariant}
-              className={isLanding ? hopPillStyles.landing : undefined}
-            />
-            <JoinButton onClick={onJoin} expanded={joinExpanded} size={isLanding ? 'lg' : 'md'} />
-          </div>
+        <div className={[styles.footer, isLanding && styles.footerLanding].filter(Boolean).join(' ')}>
+          <HopPill
+            variant={hopVariant}
+            className={isLanding ? hopPillStyles.landing : undefined}
+          />
+          <JoinButton onClick={onJoin} size={isLanding ? 'lg' : 'md'} />
         </div>
       </div>
     </div>

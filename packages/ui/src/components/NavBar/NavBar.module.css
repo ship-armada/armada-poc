@@ -2,11 +2,13 @@
 /* ABOUTME: Sources dimensions and bg from --semantic-component-navbar-* tokens. */
 
 .navBar {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--semantic-component-navbar-gap);
   height: var(--semantic-component-navbar-height);
-  padding: 0 var(--semantic-component-navbar-padding-x);
+  padding: var(--semantic-component-navbar-padding-x);
+  box-sizing: border-box;
   background: var(--semantic-component-navbar-bg);
   border-radius: 100px;
   /* Frosted-glass effect — visible only when --semantic-component-navbar-bg is translucent
@@ -15,4 +17,30 @@
      a no-op since there's nothing to see through. */
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+}
+
+.thumb {
+  position: absolute;
+  top: var(--semantic-component-navbar-padding-x);
+  left: 0;
+  height: var(--semantic-component-navitem-height);
+  border-radius: var(--semantic-component-navitem-radius);
+  background: var(--semantic-color-brand-lavender);
+  pointer-events: none;
+  opacity: 0;
+  transition:
+    transform 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 280ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms ease;
+  will-change: transform, width;
+}
+
+.thumbVisible {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .thumb {
+    transition: none;
+  }
 }

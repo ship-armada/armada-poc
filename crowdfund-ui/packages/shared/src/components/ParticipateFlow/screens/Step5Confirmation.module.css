@@ -1,73 +1,188 @@
-/* ABOUTME: CSS Module for Step5Confirmation — see Step5Confirmation.tsx for usage. */
-/* ABOUTME: Ported byte-identical from the armada-crowdfund mockup. */
+/* ABOUTME: Confirmation shell — pinned FlowChrome title + close; scroll body; pinned CTAs. */
+/* ABOUTME: Ported from the armada-crowdfund demo (ParticipateFlow/screens/Step5Confirmation.module.css). */
 
 .shell {
+  position: relative;
   width: 480px;
   height: 500px;
   background: var(--semantic-color-surface-default);
-  border: 1px solid var(--semantic-color-border-lavender);
+  border: 1px solid var(--semantic-color-border-default);
   border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
-  padding: var(--primitives-spacing-8);
+  padding: var(--primitives-spacing-8) 0;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
   box-sizing: border-box;
   overflow: hidden;
+}
+
+.chromeRow {
+  flex-shrink: 0;
+  padding-inline: var(--primitives-spacing-8);
+}
+
+.checkIcon {
+  width: var(--primitives-spacing-8);
+  height: var(--primitives-spacing-8);
+  flex-shrink: 0;
+  color: var(--semantic-color-status-success);
+}
+
+.contentWrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .content {
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: var(--primitives-spacing-6);
   flex: 1;
   min-height: 0;
-  justify-content: center;
   overflow-y: auto;
+  scrollbar-width: none;
+  justify-content: flex-start;
+  padding-inline: var(--primitives-spacing-8);
+  padding-bottom: var(--primitives-spacing-8);
 }
 
-/* ── Hero block ── */
-.heroBlock {
-  display: flex;
-  flex-direction: column;
-  gap: var(--primitives-spacing-2);
-  align-items: center;
-  text-align: center;
+.content::-webkit-scrollbar {
+  display: none;
 }
 
-/* Figma: display/lg — 32px Charis SIL, color/text/primary */
-.headline {
-  font-family: var(--primitives-fontFamily-display);
-  font-size: calc(var(--primitives-fontSize-3xl) * 1px);
-  font-weight: var(--primitives-fontWeight-regular);
-  color: var(--semantic-color-text-primary);
-  margin: 0;
-  line-height: var(--primitives-lineHeight-snug);
+.contentFade {
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--primitives-spacing-10);
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--semantic-color-surface-default)
+  );
 }
 
-/* Figma: ui/body-lg — 15px Geist Regular, color/text/secondary (70% white) */
 .subline {
-  font-family: var(--primitives-fontFamily-ui);
-  font-size: calc(var(--primitives-fontSize-md) * 1px);
-  font-weight: var(--primitives-fontWeight-regular);
-  color: var(--semantic-color-text-secondary);
   margin: 0;
-  line-height: 1.6;
-  text-align: center;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-muted);
+  line-height: 1.5;
+  text-align: left;
 }
 
-/* ── What happens next card ── */
-.nextCard {
+/* ── Summary table ── */
+.summaryCard {
   background: var(--semantic-color-surface-raised);
-  border: 1px solid var(--semantic-color-border-default);
+  border: none;
   border-radius: calc(var(--semantic-borderRadius-item) * 1px);
   padding: var(--primitives-spacing-5);
   display: flex;
   flex-direction: column;
-  gap: var(--primitives-spacing-3);
+  width: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
-.nextEyebrow {
-  font-family: var(--primitives-fontFamily-ui);
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--primitives-spacing-3);
+  padding: var(--primitives-spacing-3) 0;
+}
+
+.summaryRow:first-child {
+  padding-top: 0;
+}
+
+.summaryRow:last-child {
+  padding-bottom: 0;
+}
+
+.divider {
+  width: 100%;
+  height: 1px;
+  background: var(--semantic-color-border-default);
+}
+
+.summaryLabel {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-muted);
+  flex-shrink: 0;
+}
+
+.summaryValue {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  text-align: right;
+}
+
+.summaryValueAccent {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-brand-lavender);
+  text-align: right;
+}
+
+.summaryValueLink {
+  font-family: var(--primitives-fontFamily-mono), monospace;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+  text-align: right;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summaryValueLink:hover {
+  color: var(--semantic-color-brand-lavender);
+}
+
+.summaryValueLink:focus-visible {
+  outline: 2px solid var(--semantic-color-border-focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Useful links ── */
+.resourceBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.sectionEyebrow {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
   font-size: calc(var(--primitives-fontSize-xs) * 1px);
   font-weight: var(--primitives-fontWeight-medium);
   letter-spacing: var(--primitives-letterSpacing-widest);
@@ -75,31 +190,131 @@
   color: var(--semantic-color-text-muted);
 }
 
-/* Figma: ui/body-sm — 13px Geist Regular, color/text/muted */
-.nextText {
-  font-family: var(--primitives-fontFamily-ui);
-  font-size: calc(var(--primitives-fontSize-base) * 1px);
-  font-weight: var(--primitives-fontWeight-regular);
-  color: var(--semantic-color-text-secondary);
-  margin: 0;
-  line-height: 1.6;
-}
-
-/* ── Button row ── */
-.buttonRow {
-  display: flex;
-  gap: var(--primitives-spacing-3);
+.resourceNav {
   width: 100%;
   flex-shrink: 0;
 }
 
-.buttonRow > * {
-  flex: 1;
+.iconLinkList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--primitives-spacing-2);
+  width: 100%;
 }
 
-/* Mobile (≤767px) — stack the action buttons full-width, primary on top.
- * Ported from the armada-crowdfund mockup mobile rework. */
+.iconLinkItem {
+  min-width: 0;
+}
+
+.iconLink {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  text-decoration: none;
+  color: var(--semantic-color-text-secondary);
+}
+
+.iconLink:hover {
+  color: var(--semantic-color-text-primary);
+}
+
+.iconLink:hover .iconTile {
+  background: var(--semantic-component-navitem-default-bg-hover);
+}
+
+.iconLink:hover .brandIcon,
+.iconLink:hover .iconLabel {
+  color: var(--semantic-color-text-primary);
+}
+
+.iconLink:focus-visible {
+  outline: 2px solid var(--semantic-color-border-focus);
+  outline-offset: 2px;
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+}
+
+.iconTile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--primitives-spacing-4);
+  width: 100%;
+  aspect-ratio: 1;
+  padding: var(--primitives-spacing-3);
+  box-sizing: border-box;
+  border-radius: calc(var(--semantic-borderRadius-item) * 1px);
+  background: var(--semantic-color-surface-raised);
+  color: var(--semantic-color-text-secondary);
+}
+
+.brandIcon {
+  width: var(--primitives-spacing-5);
+  height: var(--primitives-spacing-5);
+  flex-shrink: 0;
+  color: var(--semantic-color-text-secondary);
+}
+
+.iconLabel {
+  font-family: var(--primitives-fontFamily-ui), sans-serif;
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-muted);
+  text-align: center;
+  line-height: 1.3;
+}
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Footer CTAs ── */
+.footer {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  margin-top: var(--primitives-spacing-6);
+  padding-inline: var(--primitives-spacing-8);
+}
+
+.buttonRow {
+  display: flex;
+  gap: var(--primitives-spacing-3);
+  width: 100%;
+}
+
+.buttonRow > * {
+  flex: 1;
+  min-width: 0;
+}
+
 @media (max-width: 767px) {
+  .shell {
+    padding: var(--primitives-spacing-5) 0;
+  }
+
+  .chromeRow,
+  .footer {
+    padding-inline: var(--primitives-spacing-5);
+  }
+
+  .content {
+    padding-inline: var(--primitives-spacing-5);
+    padding-bottom: var(--primitives-spacing-5);
+  }
+
   .buttonRow {
     flex-direction: column-reverse;
     gap: var(--primitives-spacing-3);

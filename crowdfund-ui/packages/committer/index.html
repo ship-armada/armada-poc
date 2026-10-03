@@ -3,19 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <script>
-      // Set data-theme before first paint to avoid a flash. Light mode is
-      // opt-in: default to dark and honor only an explicit saved light choice
-      // (we intentionally do not follow the OS prefers-color-scheme).
+      // Set data-theme before first paint to avoid a flash. The committer is
+      // dark-only (no theme toggle, and the OS prefers-color-scheme is not
+      // followed). An older build could save a light choice under
+      // 'armada-theme'; clear it so it can never apply.
       (function () {
-        var saved = null;
         try {
-          saved = localStorage.getItem('armada-theme');
+          localStorage.removeItem('armada-theme');
         } catch (e) {}
-        document.documentElement.setAttribute('data-theme', saved === 'light' ? 'light' : 'dark');
+        document.documentElement.setAttribute('data-theme', 'dark');
       })();
     </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Charis+SIL:wght@400;700&family=Geist:wght@100..900&display=swap" rel="stylesheet" />

@@ -1,12 +1,11 @@
 // ABOUTME: Step 2 of the Participate flow — USDC amount entry. Single-hop path keeps the designer's big centered input; multi-hop path stacks one input row per eligible hop with shared balance / allocation footer.
-// ABOUTME: Ported from the armada-crowdfund mockup (ParticipateFlow/screens/Step2Commit.tsx); @armada/ui primitive imports rewritten to named imports from the package barrel. Multi-hop variant is local extension (designer-silent).
+// ABOUTME: Ported from the armada-crowdfund mockup; FlowChrome replaces the Steps header and carries the screen title. MaxOutBanner + the multi-hop variant are POC extensions (designer-silent).
 
 import { useEffect, useMemo, useState } from 'react'
-import styles from './Step2Commit.module.css'
-import { Steps } from '@armada/ui'
-import { Button } from '@armada/ui'
-import { Tooltip } from '@armada/ui'
 import { InformationCircleIcon } from '@heroicons/react/24/solid'
+import { Button, Tooltip } from '@armada/ui'
+import styles from './Step2Commit.module.css'
+import { FlowChrome } from '../FlowChrome'
 import {
   hasActiveAmount,
   parseActiveAmount,
@@ -15,6 +14,7 @@ import {
 } from '../../../lib/amountInput'
 import { CROWDFUND_CONSTANTS } from '../../../lib/constants'
 import type { ParticipateStepBarProps } from '../participateFlowSteps'
+import maxOutStyles from './MaxOutBanner.module.css'
 
 /** Per-commit minimum (USD), from the active profile's MIN_COMMIT. The contract
  *  reverts a commit below this, so each hop's commit must individually clear it. */
@@ -44,8 +44,17 @@ export interface Step2MaxOutOption {
 
 /** Banner CTA for the self-fill ("max out") path. Can render inside the commit
  *  card (via the `maxOut` prop) or be hoisted above the card by a flow
- *  controller (Option A spike's "banner between the X and the modal"). */
-export function MaxOutBanner({ maxOut }: { maxOut: Step2MaxOutOption }) {
+ *  controller (desktop `aboveShell`; mobile uses `inShell` inside Step2Commit). */
+export function MaxOutBanner({
+  maxOut,
+  className,
+  placement,
+}: {
+  maxOut: Step2MaxOutOption
+  className?: string
+  /** Desktop hoist (`aboveShell`) vs mobile in-shell (`inShell`) visibility. */
+  placement?: 'aboveShell' | 'inShell'
+}) {
   const { ceilingUsd, newCommitUsd, inviteCount, onMaxOut, loading, balanceLimited, error } = maxOut
   // When the plan needs no self-invites (no slots available, or already spent),
   // "max out" is just a one-click commit-to-cap — drop the self-invite framing.
@@ -58,64 +67,57 @@ export function MaxOutBanner({ maxOut }: { maxOut: Step2MaxOutOption }) {
     : inviteCount > 0
       ? `Bundle ${invitePhrase} + per-hop commits (${commitUsd}) into one transaction.`
       : `Commit ${commitUsd} across all your hops in one transaction.`
+
+  const placementClass =
+    placement === 'aboveShell'
+      ? maxOutStyles.aboveShell
+      : placement === 'inShell'
+        ? maxOutStyles.inShell
+        : undefined
+
+  const button = (
+    <Button
+      className={maxOutStyles.cta}
+      variant="gradient"
+      size="md"
+      label={loading ? 'Preparing…' : 'Max out'}
+      showIcon={false}
+      disabled={loading || balanceLimited}
+      onClick={onMaxOut}
+    />
+  )
+
   return (
     <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 16,
-        padding: '14px 16px',
-        marginBottom: 18,
-        borderRadius: 14,
-        border: '1px solid rgba(168, 130, 255, 0.45)',
-        background:
-          'linear-gradient(120deg, rgba(124, 92, 255, 0.18), rgba(124, 92, 255, 0.06))',
-      }}
+      className={[maxOutStyles.banner, placementClass, className].filter(Boolean).join(' ')}
+      role="region"
+      aria-label="Commit the maximum"
     >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-        <span style={{ fontWeight: 600, fontSize: 14 }}>
+      <div className={maxOutStyles.copy}>
+        <p className={maxOutStyles.title}>
           Commit the maximum — up to ${ceilingUsd.toLocaleString()}
-        </span>
-        <span style={{ fontSize: 12, opacity: 0.75, lineHeight: 1.35 }}>{subtitle}</span>
-        {error && (
-          <span
-            style={{
-              fontSize: 12,
-              lineHeight: 1.35,
-              fontWeight: 600,
-              color: 'var(--semantic-color-status-warning)',
-            }}
-          >
+        </p>
+        <p className={maxOutStyles.subtitle}>{subtitle}</p>
+        {error ? (
+          <p className={maxOutStyles.error} role="alert">
             {error}
-          </span>
-        )}
+          </p>
+        ) : null}
       </div>
-      {(() => {
-        const button = (
-          <Button
-            variant="gradient"
-            size="md"
-            label={loading ? 'Preparing…' : 'Max out'}
-            showIcon={false}
-            disabled={loading || balanceLimited}
-            onClick={onMaxOut}
-          />
-        )
-        // Explain why the button is dead when it's disabled for balance. The
-        // Tooltip listens on its wrapper div, so hover works over the disabled
-        // button. Only wrap in the balance case so an enabled / loading button
-        // keeps its normal (no-tooltip) behavior.
-        return balanceLimited && !loading ? (
-          <Tooltip variant="centered" content="Insufficient balance">
-            {button}
-          </Tooltip>
-        ) : (
-          button
-        )
-      })()}
+      {balanceLimited && !loading ? (
+        <Tooltip variant="centered" content="Insufficient balance">
+          {button}
+        </Tooltip>
+      ) : (
+        button
+      )}
     </div>
   )
+}
+
+/** Layout wrapper for desktop max-out banner + step shell (mobile fills the panel). */
+export function MaxOutFlowStack({ children }: { children: React.ReactNode }) {
+  return <div className={maxOutStyles.stack}>{children}</div>
 }
 
 /** One per-hop input row for the multi-hop variant. The single-hop path is
@@ -124,7 +126,7 @@ export function MaxOutBanner({ maxOut }: { maxOut: Step2MaxOutOption }) {
  *  for that case (cleaner visual). */
 export interface Step2CommitHopRow {
   hop: 0 | 1 | 2
-  /** Display label — e.g. 'SEED', 'HOP-1', 'HOP-2'. */
+  /** Display label — e.g. 'HOP-0', 'HOP-1', 'HOP-2'. */
   hopLabel: string
   /** Dot color from the canonical hop palette (`graphHopColors.ts`). */
   hopColor: string
@@ -142,18 +144,20 @@ interface Step2CommitProps extends ParticipateStepBarProps {
    *  Map keyed by hop (0/1/2) with the per-hop amount the user entered. */
   onNextMulti?: (amounts: Record<0 | 1 | 2, number>) => void
   onBack: () => void
+  /** Close control in the top chrome (preferred over the modal-level X). */
+  onClose?: () => void
   maxAmount?: number
   availableBalance?: number
   maxArm?: number
   /** Already committed USDC — bar shows this before new input. */
   existingCommittedUsdc?: number
-  /** Single-hop only: label of the hop being committed to (e.g. 'SEED',
-   *  'HOP-1', 'HOP-2'). When provided, renders a hop badge above the title.
-   *  Ignored in the multi-hop variant (each row already shows its own hop). */
+  /** Single-hop only: prefill when returning from Review (parent-held amount). */
+  initialAmount?: number
+  /** Single-hop only: label of the hop being committed to (e.g. 'HOP-0',
+   *  'HOP-1', 'HOP-2'). Labels the fill bar ("HOP-0 commit") and names the hop
+   *  in the fully-committed message. Ignored in the multi-hop variant (each
+   *  row already shows its own hop). */
   hopLabel?: string
-  /** Single-hop only: dot color for the hop badge, from the canonical hop
-   *  palette (`graphHopColors.ts`). Omit to render the label without a dot. */
-  hopColor?: string
   /** Single-hop only: pro-rata ARM estimate for a given new USD amount. When
    *  provided, the live "EST. ARM" counter uses it instead of the 1:1 default,
    *  so it agrees with the Review/confirmation screens. */
@@ -165,9 +169,9 @@ interface Step2CommitProps extends ParticipateStepBarProps {
   hopRows?: ReadonlyArray<Step2CommitHopRow>
   /** Optional "max out" self-fill banner shown above the amount entry. */
   maxOut?: Step2MaxOutOption
+  /** Secondary CTA on the fully-committed card (replaces plain Back). */
+  onViewPosition?: () => void
 }
-
-const DEFAULT_STEPS = ['Connect', 'Commit', 'Review', 'Confirmation']
 
 function formatBalance(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -177,18 +181,18 @@ export default function Step2Commit({
   onNext,
   onNextMulti,
   onBack,
+  onClose,
   maxAmount = 4000,
   availableBalance = 215154.14,
   maxArm = 4000,
   existingCommittedUsdc = 0,
+  initialAmount = 0,
   hopLabel,
-  hopColor,
   estimateArm,
   showBack = true,
-  steps = DEFAULT_STEPS,
-  stepIndex = 2,
   hopRows,
   maxOut,
+  onViewPosition,
 }: Step2CommitProps) {
   const isMulti = !!hopRows && hopRows.length > 1
   return isMulti ? (
@@ -196,70 +200,73 @@ export default function Step2Commit({
       hopRows={hopRows!}
       onNextMulti={onNextMulti}
       onBack={onBack}
+      onClose={onClose}
       availableBalance={availableBalance}
       showBack={showBack}
-      steps={steps}
-      stepIndex={stepIndex}
       maxOut={maxOut}
+      onViewPosition={onViewPosition}
     />
   ) : (
     <SingleHopVariant
       onNext={onNext}
       onBack={onBack}
+      onClose={onClose}
       maxAmount={maxAmount}
       availableBalance={availableBalance}
       maxArm={maxArm}
       existingCommittedUsdc={existingCommittedUsdc}
+      initialAmount={initialAmount}
       hopLabel={hopLabel}
-      hopColor={hopColor}
       estimateArm={estimateArm}
       showBack={showBack}
-      steps={steps}
-      stepIndex={stepIndex}
       maxOut={maxOut}
+      onViewPosition={onViewPosition}
     />
   )
 }
 
-// ── Single-hop variant (designer-faithful, byte-equivalent to original) ──
+// ── Single-hop variant (designer-faithful) ──
 
 function SingleHopVariant({
   onNext,
   onBack,
+  onClose,
   maxAmount,
   availableBalance,
-  maxArm,
+  maxArm: _maxArm,
   existingCommittedUsdc,
+  initialAmount,
   hopLabel,
-  hopColor,
   estimateArm,
   showBack,
-  steps,
-  stepIndex,
   maxOut,
+  onViewPosition,
 }: {
   onNext: (amount: number) => void
   onBack: () => void
+  onClose?: () => void
   maxAmount: number
   availableBalance: number
   maxArm: number
   existingCommittedUsdc: number
+  initialAmount: number
   hopLabel?: string
-  hopColor?: string
   estimateArm?: (newAmountUsd: number) => number
   showBack: boolean
-  steps: readonly string[]
-  stepIndex: number
   maxOut?: Step2MaxOutOption
+  onViewPosition?: () => void
 }) {
+  const remainingCap = Math.max(0, maxAmount - existingCommittedUsdc)
   // Free-form string state so the input can hold mid-decimal entries ("0.",
   // "1.") without flickering the bar / ARM allocation numbers. Parsed via
-  // `parseActiveAmount` to a capped numeric for downstream math. Ported from
-  // the armada-crowdfund mockup's Step2Commit (commit 214b972).
-  const [amountInput, setAmountInput] = useState('')
+  // `parseActiveAmount` to a capped numeric for downstream math.
+  const [amountInput, setAmountInput] = useState(() => {
+    if (initialAmount <= 0) return ''
+    const capped = Math.min(initialAmount, remainingCap)
+    return hasActiveAmount(String(capped)) ? String(capped) : ''
+  })
   const [commaError, setCommaError] = useState(false)
 
-  const remainingCap = Math.max(0, maxAmount - existingCommittedUsdc)
   const showActiveAmount = hasActiveAmount(amountInput)
   const amount = parseActiveAmount(amountInput, remainingCap)
   const existingRatio = Math.min(existingCommittedUsdc / maxAmount, 1)
@@ -279,6 +286,14 @@ function SingleHopVariant({
   // $100 of USDC could enter $4,000 and click Review. Mirrors the
   // `overBalance` gate in `MultiHopVariant`.
   const overBalance = amount > availableBalance
+  const canFillMax = remainingCap > 0 && amount < remainingCap
+
+  const inShellBanner =
+    maxOut != null ? (
+      <div className={styles.maxOutSlot}>
+        <MaxOutBanner maxOut={maxOut} placement="inShell" />
+      </div>
+    ) : null
 
   function handleInput(raw: string) {
     setCommaError(isInvalidCommaInput(raw))
@@ -310,134 +325,158 @@ function SingleHopVariant({
   if (fullyCommitted) {
     return (
       <div className={styles.shell} data-flow-shell>
-        <Steps steps={[...steps]} currentStep={stepIndex} />
+        <FlowChrome
+          title="Fully committed"
+          showBack={showBack}
+          onBack={onBack}
+          onClose={onClose}
+        />
+        {inShellBanner}
 
         <div className={styles.content}>
           <div className={styles.inputBlock}>
-            <div className={styles.titleBlock}>
-              {hopLabel && (
-                <span className={styles.hopBadge}>
-                  {hopColor && (
-                    <span
-                      className={styles.hopBadgeDot}
-                      style={{ background: hopColor }}
-                      aria-hidden
-                    />
-                  )}
-                  <span className={styles.hopBadgeLabel}>{hopLabel}</span>
-                </span>
-              )}
-              <h2 className={styles.title}>You're fully committed</h2>
+            <div className={styles.fullyCommittedGroup}>
               <p className={styles.maxLabel}>
-                You've committed the maximum {maxAmount.toLocaleString()} USDC for this hop.
+                You&apos;ve committed the maximum {maxAmount.toLocaleString('en-US')} USDC for{' '}
+                {hopLabel ?? 'this hop'}.
               </p>
             </div>
           </div>
         </div>
 
-        <div className={styles.buttonRow}>
-          {showBack && (
-            <Button variant="secondary" size="lg" label="Back" showIcon={false} onClick={onBack} />
-          )}
+        <div className={styles.bottomDock}>
+          <div className={styles.buttonRow}>
+            {onViewPosition ? (
+              <Button
+                variant="secondary"
+                size="lg"
+                label="View your position"
+                showIcon={false}
+                onClick={onViewPosition}
+              />
+            ) : (
+              showBack && (
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  label="Back"
+                  showIcon={false}
+                  onClick={onBack}
+                />
+              )
+            )}
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className={styles.shell}>
-      <Steps steps={[...steps]} currentStep={stepIndex} />
+    <div className={styles.shell} data-flow-shell>
+      <FlowChrome
+        title="How much USDC?"
+        titleId="commit-title"
+        showBack={showBack}
+        onBack={onBack}
+        onClose={onClose}
+      />
+      {inShellBanner}
 
       <div className={styles.content}>
-        {maxOut && <MaxOutBanner maxOut={maxOut} />}
         <div className={styles.inputBlock}>
-          <div className={styles.titleBlock}>
-            {hopLabel && (
-              <span className={styles.hopBadge}>
-                {hopColor && (
+          <div className={styles.amountGroup}>
+
+            <div className={styles.amountCluster}>
+              <label className={styles.amountWrapper} htmlFor="commit-amount">
+                <span className={styles.visuallyHidden}>Amount in USDC</span>
+                <span
+                  className={[styles.amountField, showActiveAmount && styles.amountFieldHasValue]
+                    .filter(Boolean)
+                    .join(' ')}
+                >
                   <span
-                    className={styles.hopBadgeDot}
-                    style={{ background: hopColor }}
-                    aria-hidden
+                    className={[
+                      styles.amountDisplay,
+                      showActiveAmount ? styles.amountDisplayActive : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    aria-hidden="true"
+                  >
+                    {showActiveAmount ? amountInput : '0'}
+                  </span>
+                  <input
+                    id="commit-amount"
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={amountInput}
+                    onChange={(e) => handleInput(e.target.value)}
+                    className={styles.amountInput}
+                    aria-labelledby="commit-title"
+                    aria-describedby="commit-balance"
                   />
-                )}
-                <span className={styles.hopBadgeLabel}>{hopLabel}</span>
-              </span>
-            )}
-            <h2 className={styles.title} id="commit-title">How much USDC?</h2>
-            <p className={styles.maxLabel} id="commit-max">
-              {hasExisting
-                ? `${remainingCap.toLocaleString()} remaining · ${maxAmount.toLocaleString()} cap`
-                : `Max ${maxAmount.toLocaleString()}`}
-            </p>
+                </span>
+              </label>
+
+              <p className={styles.balanceLabel} id="commit-balance">
+                Balance {formatBalance(availableBalance)}
+              </p>
+              {overBalance && hasNewAmount && (
+                <p className={styles.overBalance}>Amount exceeds your wallet balance.</p>
+              )}
+              {belowMin && !overBalance && (
+                <p className={styles.overBalance}>
+                  Minimum {MIN_COMMIT_USD.toLocaleString()} USDC per commit.
+                </p>
+              )}
+              {commaError && <p className={styles.overBalance}>Use a period for decimals.</p>}
+            </div>
           </div>
-
-          <label className={styles.amountWrapper} htmlFor="commit-amount">
-            <span className={styles.visuallyHidden}>Amount in USDC</span>
-            <span className={styles.amountField}>
-              <span
-                className={[
-                  styles.amountDisplay,
-                  showActiveAmount ? styles.amountDisplayActive : '',
-                ]
-                  .filter(Boolean)
-                  .join(' ')}
-                aria-hidden="true"
-              >
-                {showActiveAmount ? amountInput : '0'}
-              </span>
-              <input
-                id="commit-amount"
-                type="text"
-                inputMode="decimal"
-                autoComplete="off"
-                value={amountInput}
-                onChange={(e) => handleInput(e.target.value)}
-                className={styles.amountInput}
-                aria-labelledby="commit-title"
-                aria-describedby="commit-max commit-available"
-              />
-            </span>
-          </label>
-
-          <p className={styles.availableLabel} id="commit-available">
-            Available {formatBalance(availableBalance)}
-          </p>
-          {overBalance && hasNewAmount && (
-            <p className={styles.overBalance}>Amount exceeds your wallet balance.</p>
-          )}
-          {belowMin && !overBalance && (
-            <p className={styles.overBalance}>
-              Minimum {MIN_COMMIT_USD.toLocaleString()} USDC per commit.
-            </p>
-          )}
-          {commaError && (
-            <p className={styles.overBalance}>Use a period for decimals.</p>
-          )}
         </div>
+      </div>
 
+      <div className={styles.bottomDock}>
         <div className={styles.allocationBlock}>
-          <div
-            className={styles.barTrack}
-            role="progressbar"
-            aria-valuenow={Math.round((existingRatio + newRatio) * 100)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label="Committed amount progress"
-          >
-            {hasExisting && (
-              <div
-                className={styles.barFillExisting}
-                style={{ width: `${existingRatio * 100}%` }}
-              />
-            )}
-            {hasNewAmount && (
-              <div className={styles.barFillNew} style={{ width: `${newRatio * 100}%` }} />
-            )}
+          <div className={styles.barSection}>
+            <div
+              className={styles.barTrack}
+              role="progressbar"
+              aria-valuenow={Math.round((existingRatio + newRatio) * 100)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Committed amount toward your maximum"
+            >
+              {hasExisting && (
+                <div
+                  className={styles.barFillExisting}
+                  style={{ width: `${existingRatio * 100}%` }}
+                />
+              )}
+              {hasNewAmount && (
+                <div className={styles.barFillNew} style={{ width: `${newRatio * 100}%` }} />
+              )}
+            </div>
+            <div className={styles.barScale}>
+              <span className={styles.barScaleMin}>
+                {hopLabel ? `${hopLabel} commit` : `${totalCommitted.toLocaleString('en-US')} USDC`}
+              </span>
+              {/* MAX doubles as a fill-to-cap control (armada-crowdfund
+                  ArmAllocationBlock affordance). */}
+              <button
+                type="button"
+                className={styles.barScaleMaxBtn}
+                onClick={() => setAmountInput(String(remainingCap))}
+                disabled={!canFillMax}
+                aria-label={`Fill maximum ${maxAmount.toLocaleString('en-US')} USDC`}
+              >
+                MAX {maxAmount.toLocaleString('en-US')} USDC
+              </button>
+            </div>
           </div>
-          <div className={styles.allocationRow}>
+          <div className={styles.armCard}>
             <div className={styles.allocationLeft}>
-              <span className={styles.allocationLabel}>EST. ARM ALLOCATION</span>
+              <span className={styles.allocationLabel}>EST. ARM allocation</span>
               <Tooltip
                 variant="rich"
                 title="EST. ARM Allocation"
@@ -457,35 +496,30 @@ function SingleHopVariant({
                 </button>
               </Tooltip>
             </div>
-            <div className={styles.allocationRight}>
-              <span
-                className={
-                  hasNewAmount || hasExisting ? styles.allocationValueActive : styles.allocationValue
-                }
-              >
-                {totalArm.toLocaleString()}
-              </span>
-              <span className={styles.allocationDivider} aria-hidden="true">
-                /
-              </span>
-              <span className={styles.allocationMax}>{maxArm.toLocaleString()} ARM</span>
-            </div>
+            <span
+              className={
+                hasNewAmount || hasExisting ? styles.allocationValueActive : styles.allocationValue
+              }
+            >
+              {totalArm.toLocaleString()}
+            </span>
           </div>
         </div>
-      </div>
 
-      <div className={styles.buttonRow}>
-        {showBack && (
-          <Button variant="secondary" size="lg" label="Back" showIcon={false} onClick={onBack} />
-        )}
-        <Button
-          variant="primary"
-          size="lg"
-          label="Review"
-          showIcon={false}
-          onClick={() => onNext(amount)}
-          disabled={amount < MIN_COMMIT_USD || overBalance}
-        />
+        <div className={styles.buttonRow}>
+          <Button
+            variant="primary"
+            size="lg"
+            label={hasNewAmount ? 'Review' : 'Input amount'}
+            showIcon={false}
+            className={amount < MIN_COMMIT_USD || overBalance ? styles.ctaBlocked : undefined}
+            aria-disabled={amount < MIN_COMMIT_USD || overBalance || undefined}
+            onClick={() => {
+              if (amount < MIN_COMMIT_USD || overBalance) return
+              onNext(amount)
+            }}
+          />
+        </div>
       </div>
     </div>
   )
@@ -497,20 +531,20 @@ function MultiHopVariant({
   hopRows,
   onNextMulti,
   onBack,
+  onClose,
   availableBalance,
   showBack,
-  steps,
-  stepIndex,
   maxOut,
+  onViewPosition,
 }: {
   hopRows: ReadonlyArray<Step2CommitHopRow>
   onNextMulti: ((amounts: Record<0 | 1 | 2, number>) => void) | undefined
   onBack: () => void
+  onClose?: () => void
   availableBalance: number
   showBack: boolean
-  steps: readonly string[]
-  stepIndex: number
   maxOut?: Step2MaxOutOption
+  onViewPosition?: () => void
 }) {
   // Amounts are tracked as strings so the user can clear a field without it
   // collapsing to "0" mid-typing. Numeric conversion happens for sums + the
@@ -617,44 +651,75 @@ function MultiHopVariant({
       (row) => row.existingCommittedUsdc > 0 && row.maxAmount - row.existingCommittedUsdc <= 0,
     )
 
+  const inShellBanner =
+    maxOut != null ? (
+      <div className={styles.maxOutSlot}>
+        <MaxOutBanner maxOut={maxOut} placement="inShell" />
+      </div>
+    ) : null
+
   if (allFullyCommitted) {
     return (
       <div className={styles.shell} data-flow-shell>
-        <Steps steps={[...steps]} currentStep={stepIndex} />
+        <FlowChrome
+          title="Fully committed"
+          showBack={showBack}
+          onBack={onBack}
+          onClose={onClose}
+        />
+        {inShellBanner}
 
         <div className={styles.content}>
           <div className={styles.inputBlock}>
-            <div className={styles.titleBlock}>
-              <h2 className={styles.title}>You're fully committed</h2>
+            <div className={styles.fullyCommittedGroup}>
               <p className={styles.maxLabel}>
-                You've committed the maximum {totalCap.toLocaleString()} USDC across your hops.
+                You&apos;ve committed the maximum {totalCap.toLocaleString()} USDC across your
+                hops.
               </p>
             </div>
           </div>
         </div>
 
-        <div className={styles.buttonRow}>
-          {showBack && (
-            <Button variant="secondary" size="lg" label="Back" showIcon={false} onClick={onBack} />
-          )}
+        <div className={styles.bottomDock}>
+          <div className={styles.buttonRow}>
+            {onViewPosition ? (
+              <Button
+                variant="secondary"
+                size="lg"
+                label="View your position"
+                showIcon={false}
+                onClick={onViewPosition}
+              />
+            ) : (
+              showBack && (
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  label="Back"
+                  showIcon={false}
+                  onClick={onBack}
+                />
+              )
+            )}
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className={styles.shell}>
-      <Steps steps={[...steps]} currentStep={stepIndex} />
+    <div className={styles.shell} data-flow-shell>
+      <FlowChrome
+        title="How much USDC?"
+        showBack={showBack}
+        onBack={onBack}
+        onClose={onClose}
+      />
+      {inShellBanner}
 
       <div className={styles.content}>
-        {maxOut && <MaxOutBanner maxOut={maxOut} />}
         <div className={styles.multiList}>
-          <div>
-            <h2 className={styles.multiTitle}>How much USDC?</h2>
-            <p className={styles.multiAvailableLabel}>
-              Available {formatBalance(availableBalance)}
-            </p>
-          </div>
+          <p className={styles.multiAvailableLabel}>Balance {formatBalance(availableBalance)}</p>
 
           {hopRows.map((row) => {
             const remaining = Math.max(0, row.maxAmount - row.existingCommittedUsdc)
@@ -676,9 +741,7 @@ function MultiHopVariant({
                     ? `${remaining.toLocaleString()} remaining`
                     : `Max ${row.maxAmount.toLocaleString()}`}
                 </span>
-                <span className={styles.visuallyHidden}>
-                  USDC amount for {row.hopLabel}
-                </span>
+                <span className={styles.visuallyHidden}>USDC amount for {row.hopLabel}</span>
                 <input
                   id={inputId}
                   type="text"
@@ -693,29 +756,41 @@ function MultiHopVariant({
             )
           })}
         </div>
+      </div>
 
+      <div className={styles.bottomDock}>
         <div className={styles.allocationBlock}>
-          <div
-            className={styles.barTrack}
-            role="progressbar"
-            aria-valuenow={Math.round((existingRatio + newRatio) * 100)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label="Total committed amount progress"
-          >
-            {existingRatio > 0 && (
-              <div
-                className={styles.barFillExisting}
-                style={{ width: `${existingRatio * 100}%` }}
-              />
-            )}
-            {newRatio > 0 && (
-              <div className={styles.barFillNew} style={{ width: `${newRatio * 100}%` }} />
-            )}
+          <div className={styles.barSection}>
+            <div
+              className={styles.barTrack}
+              role="progressbar"
+              aria-valuenow={Math.round((existingRatio + newRatio) * 100)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Total committed amount toward your maximum"
+            >
+              {existingRatio > 0 && (
+                <div
+                  className={styles.barFillExisting}
+                  style={{ width: `${existingRatio * 100}%` }}
+                />
+              )}
+              {newRatio > 0 && (
+                <div className={styles.barFillNew} style={{ width: `${newRatio * 100}%` }} />
+              )}
+            </div>
+            <div className={styles.barScale}>
+              <span className={styles.barScaleMin}>
+                {(totalExisting + totalNew).toLocaleString('en-US')} USDC
+              </span>
+              <span className={styles.barScaleMax}>
+                MAX {totalCap.toLocaleString('en-US')} USDC
+              </span>
+            </div>
           </div>
-          <div className={styles.allocationRow}>
+          <div className={styles.armCard}>
             <div className={styles.allocationLeft}>
-              <span className={styles.allocationLabel}>EST. ARM ALLOCATION</span>
+              <span className={styles.allocationLabel}>EST. ARM allocation</span>
               <Tooltip
                 variant="rich"
                 title="EST. ARM Allocation"
@@ -735,50 +810,41 @@ function MultiHopVariant({
                 </button>
               </Tooltip>
             </div>
-            <div className={styles.allocationRight}>
-              <span
-                className={
-                  totalNew > 0 || totalExisting > 0
-                    ? styles.allocationValueActive
-                    : styles.allocationValue
-                }
-              >
-                {totalArm.toLocaleString()}
-              </span>
-              <span className={styles.allocationDivider} aria-hidden="true">
-                /
-              </span>
-              <span className={styles.allocationMax}>{totalCap.toLocaleString()} ARM</span>
-            </div>
+            <span
+              className={
+                totalNew > 0 || totalExisting > 0
+                  ? styles.allocationValueActive
+                  : styles.allocationValue
+              }
+            >
+              {totalArm.toLocaleString()}
+            </span>
           </div>
           {overBalance && (
-            <p className={styles.overBalance}>
-              Total exceeds your wallet balance.
-            </p>
+            <p className={styles.overBalance}>Total exceeds your wallet balance.</p>
           )}
           {anyBelowMin && !overBalance && (
             <p className={styles.overBalance}>
               Each hop you commit to must be at least {MIN_COMMIT_USD.toLocaleString()} USDC.
             </p>
           )}
-          {commaError && (
-            <p className={styles.overBalance}>Use a period for decimals.</p>
-          )}
+          {commaError && <p className={styles.overBalance}>Use a period for decimals.</p>}
         </div>
-      </div>
 
-      <div className={styles.buttonRow}>
-        {showBack && (
-          <Button variant="secondary" size="lg" label="Back" showIcon={false} onClick={onBack} />
-        )}
-        <Button
-          variant="primary"
-          size="lg"
-          label="Review"
-          showIcon={false}
-          onClick={handleNext}
-          disabled={!canReview}
-        />
+        <div className={styles.buttonRow}>
+          <Button
+            variant="primary"
+            size="lg"
+            label={totalNew > 0 ? 'Review' : 'Input amount'}
+            showIcon={false}
+            className={!canReview ? styles.ctaBlocked : undefined}
+            aria-disabled={!canReview || undefined}
+            onClick={() => {
+              if (!canReview) return
+              handleNext()
+            }}
+          />
+        </div>
       </div>
     </div>
   )

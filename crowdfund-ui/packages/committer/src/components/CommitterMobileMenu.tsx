@@ -1,43 +1,24 @@
 // ABOUTME: Committer full-screen mobile menu — gradient panel with RainbowKit wallet block, nav, and Participate/Claim.
 // ABOUTME: Mobile equivalent of the designer's HeaderMobileMenu, hosted inside AppHeader's full-screen Sheet.
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ArrowRightOnRectangleIcon,
   CheckIcon,
   ClipboardDocumentIcon,
-  MoonIcon,
-  SunIcon,
   WalletIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 import { WalletMetamask, WalletPhantom, WalletWalletConnect } from '@web3icons/react'
 import { useAccount, useDisconnect } from 'wagmi'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { ArmadaLogo, Button as ArmadaButton, getAppliedTheme, setTheme, type Theme } from '@armada/ui'
+import { ArmadaLogo, Button as ArmadaButton } from '@armada/ui'
 import { Participate, fleetPng, fleetMp4 } from '@armada/crowdfund-shared'
 import type { Page } from '@/appNav'
 import styles from './CommitterMobileMenu.module.css'
 
 const ACTION_ICON_PX = 20
 const WALLET_ICON_PX = 48
-const PROJECT_URL = 'https://armada.wtf'
-
-function subscribeToTheme(onStoreChange: () => void) {
-  const observer = new MutationObserver(onStoreChange)
-  observer.observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['data-theme'],
-  })
-  return () => observer.disconnect()
-}
-
-/** Current applied theme, reactive to <html data-theme> changes. */
-function useTheme() {
-  const theme = useSyncExternalStore(subscribeToTheme, getAppliedTheme, () => 'dark' as Theme)
-  const applyTheme = useCallback((next: Theme) => setTheme(next), [])
-  return [theme, applyTheme] as const
-}
 
 /** Map a wagmi connector id to the designer's `@web3icons` provider switch. */
 function detectWalletProvider(connectorId?: string): string | undefined {
@@ -73,9 +54,11 @@ export interface CommitterMobileMenuProps {
   current: Page
   onNavigate: (page: Page) => void
   onParticipate: () => void
-  onClaim: () => void
-  /** Wallet has a claimable ARM/refund position — swaps Participate for Claim. */
+  /** When false, Claim stays in the nav but is not navigable. */
   claimAvailable: boolean
+  /** When false (before the sale opens), Your position stays in the nav but
+   *  is not navigable. */
+  myPositionEnabled: boolean
   /** Commit window is open — gates the Participate CTA (mirrors header chrome). */
   participationEnabled: boolean
   /** Connected wallet USDC balance (6 decimals). */
@@ -87,15 +70,14 @@ export function CommitterMobileMenu({
   current,
   onNavigate,
   onParticipate,
-  onClaim,
   claimAvailable,
+  myPositionEnabled,
   participationEnabled,
   usdcBalance,
 }: CommitterMobileMenuProps) {
   const { connector } = useAccount()
   const { disconnect } = useDisconnect()
   const [copied, setCopied] = useState(false)
-  const [theme, applyTheme] = useTheme()
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -117,18 +99,6 @@ export function CommitterMobileMenu({
       <div className={styles.topBar}>
         <ArmadaLogo variant="mark" markTone="white" className={styles.logoMark} />
         <div className={styles.topBarActions}>
-          <button
-            type="button"
-            className={styles.themeToggleBtn}
-            onClick={() => applyTheme(theme === 'light' ? 'dark' : 'light')}
-            aria-label={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
-          >
-            {theme === 'light' ? (
-              <MoonIcon width={ACTION_ICON_PX} height={ACTION_ICON_PX} aria-hidden />
-            ) : (
-              <SunIcon width={ACTION_ICON_PX} height={ACTION_ICON_PX} aria-hidden />
-            )}
-          </button>
           <button type="button" className={styles.closeBtn} onClick={onClose} aria-label="Close menu">
             <XMarkIcon width={ACTION_ICON_PX} height={ACTION_ICON_PX} aria-hidden />
           </button>
@@ -250,16 +220,6 @@ export function CommitterMobileMenu({
         <nav className={[styles.nav, styles.sectionSpacing].join(' ')} aria-label="Main">
           <button
             type="button"
-            className={styles.navItem}
-            onClick={() => {
-              window.open(PROJECT_URL, '_blank', 'noopener,noreferrer')
-              onClose()
-            }}
-          >
-            The project
-          </button>
-          <button
-            type="button"
             className={navItemClass(current === 'network')}
             aria-current={current === 'network' ? 'page' : undefined}
             onClick={() => navigate('network')}
@@ -268,29 +228,45 @@ export function CommitterMobileMenu({
           </button>
           <button
             type="button"
-            className={navItemClass(current === 'my-position')}
-            aria-current={current === 'my-position' ? 'page' : undefined}
-            onClick={() => navigate('my-position')}
+            className={[
+              navItemClass(myPositionEnabled && current === 'my-position'),
+              !myPositionEnabled && styles.navItemDisabled,
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            aria-current={myPositionEnabled && current === 'my-position' ? 'page' : undefined}
+            aria-disabled={!myPositionEnabled}
+            disabled={!myPositionEnabled}
+            onClick={() => {
+              if (!myPositionEnabled) return
+              navigate('my-position')
+            }}
           >
-            My Position
+            Your position
+          </button>
+          <button
+            type="button"
+            className={[
+              styles.navItem,
+              !claimAvailable && styles.navItemDisabled,
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            aria-disabled={!claimAvailable}
+            disabled={!claimAvailable}
+            onClick={() => {
+              if (!claimAvailable) return
+              // Claim opens a modal — never mark Claim as the selected page tab.
+              navigate('claim')
+            }}
+          >
+            Claim
           </button>
         </nav>
 
         <hr className={styles.separator} aria-hidden />
 
-        {claimAvailable ? (
-          <ArmadaButton
-            variant="ghost"
-            size="md"
-            label="Claim"
-            showIcon={false}
-            className={styles.claimBtn}
-            onClick={() => {
-              onClaim()
-              onClose()
-            }}
-          />
-        ) : participationEnabled ? (
+        {!claimAvailable && participationEnabled ? (
           <Participate
             className={styles.participateCard}
             imageSrc={fleetPng}

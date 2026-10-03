@@ -2,11 +2,14 @@
 /* ABOUTME: Sources colors and dimensions from --semantic-component-navitem-* tokens. */
 
 .navItem {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   height: var(--semantic-component-navitem-height);
-  padding: 0 var(--semantic-component-navitem-padding-x);
+  padding: var(--semantic-component-navitem-padding-y) var(--semantic-component-navitem-padding-x);
+  box-sizing: border-box;
   border-radius: var(--semantic-component-navitem-radius);
   background: transparent;
   color: var(--semantic-component-navitem-default-text);
@@ -16,26 +19,51 @@
   letter-spacing: 0.01em;
   cursor: pointer;
   border: none;
-  transition: background 0.15s, color 0.15s;
+  transition: color 0.15s;
   white-space: nowrap;
   outline: none;
 }
-.navItem:hover:not(.active) { background: var(--semantic-component-navitem-default-bg-hover); color: var(--semantic-component-navitem-default-text-hover); }
+.navItem:hover:not(.active):not(:disabled) { background: var(--semantic-component-navitem-default-bg-hover); color: var(--semantic-component-navitem-default-text-hover); }
 .navItem:focus-visible { box-shadow: 0 0 0 2px var(--semantic-color-border-focus); }
-.active { background: var(--semantic-component-navitem-active-bg); color: var(--semantic-component-navitem-active-text); }
+.active {
+  background: transparent;
+  color: #291433;
+}
+.active:hover {
+  background: transparent;
+  color: #291433;
+}
+.navItem:disabled,
+.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
 
-/* Light theme — muted default text, lavender active pill with dark text. The
-   mockup applied these to the base rule; we scope to light so dark stays
-   token-driven and byte-identical. */
+/* Light theme — muted default text; active pill fill comes from NavBar's sliding thumb. */
 :global([data-theme='light']) .navItem {
   color: var(--semantic-color-text-muted);
 }
-:global([data-theme='light']) .navItem:hover:not(.active) {
+:global([data-theme='light']) .navItem:hover:not(.active):not(:disabled) {
   background: transparent;
   color: var(--semantic-color-text-secondary);
 }
 :global([data-theme='light']) .active,
 :global([data-theme='light']) .active:hover {
-  background: var(--semantic-color-brand-lavender);
+  background: transparent;
   color: #291433;
+}
+
+/* Brand gradient on the label only — sliding thumb provides the pill fill. */
+.brandLabel {
+  background-image: linear-gradient(
+    to right,
+    var(--semantic-component-button-gradient-default-from) 0%,
+    var(--semantic-component-button-gradient-default-mid) 52%,
+    var(--semantic-component-button-gradient-default-to) 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
 }

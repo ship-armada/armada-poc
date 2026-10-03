@@ -207,7 +207,7 @@ export const ruleA7: AlertRule = (ctx) => {
   }]
 }
 
-// A8 — Minimum raise at risk late in sale (P2)
+// A8 — Minimum fund at risk late in sale (P2)
 export const ruleA8: AlertRule = (ctx) => {
   if (!isSnapshotTrustworthy(ctx)) return []
   const capped = cappedDemandTotal(ctx.snapshot.graph)
@@ -224,7 +224,7 @@ export const ruleA8: AlertRule = (ctx) => {
     id: 'A8',
     severity: 'P2',
     dedupeKey: `A8:${band}`,
-    title: `Minimum raise at risk with ${band} remaining`,
+    title: `Minimum fund at risk with ${band} remaining`,
     body: `cappedDemand=${capped.toString()} below MIN_SALE=${CROWDFUND_CONSTANTS.MIN_SALE.toString()} with ${band} until commitmentDeadline.`,
     runbook: 'OPERATIONS.md §5 Weeks 2–3 cadence; §11 Checkpoint 3',
     context: { cappedDemand: capped.toString(), band },

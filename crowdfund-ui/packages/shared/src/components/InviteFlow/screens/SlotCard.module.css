@@ -179,6 +179,13 @@
   color: var(--semantic-color-text-secondary);
 }
 
+.addressPrimaryBright {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  font-weight: var(--primitives-fontWeight-regular);
+  color: var(--semantic-color-text-primary);
+}
+
 .addressSecondary {
   font-family: var(--primitives-fontFamily-ui);
   font-size: calc(var(--primitives-fontSize-sm) * 1px);

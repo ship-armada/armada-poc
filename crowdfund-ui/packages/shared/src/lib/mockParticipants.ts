@@ -87,7 +87,7 @@ export type HeroParticipantRow = {
    *  of the truncated address when present; search/selection still keys off
    *  the raw `address`. */
   displayName?: string
-  hop: 'SEED' | 'HOP-1' | 'HOP-2'
+  hop: 'HOP-0' | 'HOP-1' | 'HOP-2'
   amountUsd: number
   multiHop?: boolean
 }
@@ -323,7 +323,7 @@ export function toDashboardParticipants(cf: CrowdfundSnapshot): DashboardPartici
 export function toHeroParticipants(rows: DashboardParticipant[]): HeroParticipantRow[] {
   return rows.map((r) => ({
     address: r.address,
-    hop: r.hop === 'Hop 0' ? 'SEED' : r.hop === 'Hop 1' ? 'HOP-1' : 'HOP-2',
+    hop: r.hop === 'Hop 0' ? 'HOP-0' : r.hop === 'Hop 1' ? 'HOP-1' : 'HOP-2',
     amountUsd: r.amountUsd,
     multiHop: r.multiHop,
   }))

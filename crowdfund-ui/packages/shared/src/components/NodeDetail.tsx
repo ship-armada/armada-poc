@@ -42,7 +42,7 @@ export function NodeDetail(props: NodeDetailProps) {
       hop: node.hop,
       inviter,
       label: isSeed
-        ? 'Armada (seed)'
+        ? 'Armada (hop-0)'
         : isSelfInvite
           ? 'self-invited'
           : inviter

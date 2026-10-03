@@ -94,29 +94,38 @@ export function formatCountdown(seconds: number): string {
   return `${minutes}m`
 }
 
+/** Threshold under which the Progress / stats "time left" becomes a live HH:MM:SS counter. */
+export const TIME_LEFT_COUNTER_THRESHOLD_S = 48 * 60 * 60
+
+/** Live HH:MM:SS counter (hours may exceed 24). */
+export function formatTimeLeftCounter(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '00:00:00'
+  const total = Math.floor(seconds)
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
 /**
  * Crowdfund "time left" countdown shared by the stats banner, the hero progress
- * tag, and the invite splash so they always agree. Shows whole days until under
- * one day remains, then drops to hours + minutes. Floors throughout so the value
- * only ever ticks down. Returns '' at or past the deadline — callers supply their
- * own terminal wording (StatsBar → "Closed", the splash → "ENDS TODAY").
+ * tag, and the invite splash so they always agree.
  *
- *   2 * 86400 + 16 * 3600  → "2 days"
- *   1 * 86400              → "1 day"
- *   13 * 3600 + 24 * 60    → "13h 24m"
- *   9 * 60                 → "9m"
- *   0                      → ""
+ * - ≥ 48h → whole days ("2 days", "1 day")
+ * - &lt; 48h → HH:MM:SS counter (live-ticked by consumers)
+ * - ≤ 0 → ''
  */
 export function formatTimeLeft(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return ''
+  if (seconds < TIME_LEFT_COUNTER_THRESHOLD_S) return formatTimeLeftCounter(seconds)
   const days = Math.floor(seconds / 86400)
-  if (days >= 1) return `${days} ${days === 1 ? 'day' : 'days'}`
-  const hours = Math.floor((seconds % 86400) / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  if (hours >= 1) return `${hours}h ${minutes}m`
-  // Never show "0m left" while time genuinely remains — round the final
-  // sub-minute sliver up to one minute.
-  return `${Math.max(1, minutes)}m`
+  return `${days} ${days === 1 ? 'day' : 'days'}`
+}
+
+/** Remaining whole seconds until an absolute deadline (unix ms or Date), floored at 0. */
+export function endsAtToRemainingSeconds(endsAt: number | Date, nowMs = Date.now()): number {
+  const endMs = typeof endsAt === 'number' ? endsAt : endsAt.getTime()
+  return Math.max(0, Math.floor((endMs - nowMs) / 1000))
 }
 
 /** "May 28, 2:42 PM" (local) from a unix timestamp (seconds) — no year, so the
@@ -146,6 +155,32 @@ export function formatTimeLeftDetail(seconds: number, windowEndUnix: number): st
   return end ? `Ends ${end}` : ''
 }
 
+/**
+ * Hover-tooltip detail for the pre-open countdown: the local opening timestamp,
+ * e.g. "Opens Oct 14, 6:00 PM" (no year, fits on one line). `windowStartUnix`
+ * is the absolute opening time (unix seconds). Returns '' when unknown.
+ */
+export function formatOpensAtDetail(windowStartUnix: number): string {
+  const start = formatEndDateTime(windowStartUnix)
+  return start ? `Opens ${start}` : ''
+}
+
+/**
+ * Pre-open countdown for the hero's opening card: zero-padded
+ * "02d 04h 12m 33s" so the counter keeps a steady width as it ticks.
+ * Returns '' at or past the opening.
+ */
+export function formatOpensCountdown(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return ''
+  const total = Math.floor(seconds)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const d = Math.floor(total / 86400)
+  const h = Math.floor((total % 86400) / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  return `${pad(d)}d ${pad(h)}h ${pad(m)}m ${pad(s)}s`
+}
+
 /** Get human-readable phase name */
 export function phaseName(phase: number): string {
   switch (phase) {
@@ -169,7 +204,7 @@ export function phaseColor(phase: number): string {
 /** Get hop label for display */
 export function hopLabel(hop: number): string {
   switch (hop) {
-    case 0: return 'Seed (hop-0)'
+    case 0: return 'Hop-0'
     case 1: return 'Hop-1'
     case 2: return 'Hop-2'
     default: return `Hop-${hop}`

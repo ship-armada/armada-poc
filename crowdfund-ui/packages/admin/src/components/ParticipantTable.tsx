@@ -356,7 +356,7 @@ value={hopFilter ??'all'}
           onChange={(e) => setHopFilter(e.target.value === 'all'? null : Number(e.target.value))}
 >
 <option value="all">All Hops</option>
-<option value="0">Seed (hop-0)</option>
+<option value="0">Hop-0</option>
 <option value="1">Hop-1</option>
 <option value="2">Hop-2</option>
 </select>

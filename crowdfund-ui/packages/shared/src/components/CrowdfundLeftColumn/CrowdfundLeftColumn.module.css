@@ -1,0 +1,206 @@
+/* ABOUTME: Crowdfund left column — shell max-height open; 20px gap card→filter; list + controls in middle. */
+
+.column {
+  --crowdfund-column-gap: var(--primitives-spacing-5);
+  width: 582px;
+  max-width: 100%;
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.shell {
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: var(--crowdfund-column-gap);
+  min-height: 0;
+  overflow: hidden;
+  max-height: var(--hero-stack-collapsed-height, 520px);
+  transition:
+    max-height var(--hero-expand-duration, 380ms) var(--hero-expand-ease, cubic-bezier(0.32, 0, 0.15, 1)),
+    min-height var(--hero-expand-duration, 380ms) var(--hero-expand-ease, cubic-bezier(0.32, 0, 0.15, 1));
+}
+
+.shellOpen {
+  max-height: var(--hero-stack-expanded-max);
+  min-height: var(--hero-stack-expanded-max);
+  grid-template-rows: auto 1fr;
+}
+
+/* Close: shrink shell height; middle row stays auto so filter row is never clipped */
+.shellOpen.shellLayoutClosing {
+  max-height: var(--hero-stack-collapsed-height, 520px);
+  min-height: var(--hero-stack-collapsed-height, 520px);
+  grid-template-rows: auto auto;
+}
+
+.progressSlot {
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.progressSlot > * {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.middle {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.shellOpen .middle {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: var(--crowdfund-column-gap);
+  align-content: stretch;
+}
+
+.shellOpen.shellLayoutClosing .middle {
+  display: grid;
+  grid-template-rows: 0fr auto;
+  gap: 0;
+  align-content: end;
+}
+
+.listRegion {
+  min-height: 0;
+  max-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.shellOpen .listRegion {
+  max-height: none;
+}
+
+.shellOpen.shellLayoutClosing .listRegion {
+  max-height: 0;
+}
+
+.controlsSlot {
+  flex: 0 0 auto;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+/* ≤1440px */
+@media (max-width: 1440px) {
+  .column,
+  .shell,
+  .progressSlot,
+  .middle,
+  .listRegion,
+  .controlsSlot {
+    width: 100%;
+    max-width: 480px;
+  }
+}
+
+/*
+ * LOCKED — short viewport (≤799px height). Filter+toggle row must stay at the bottom,
+ * never clipped, through close retract and card re-enter.
+ * Card re-enter: progressSlot is position:absolute (do not use auto auto grid — pushes filter).
+ */
+@media (max-height: 799px) {
+  .shellOpen.shellShortCardDone .progressSlot {
+    display: none;
+  }
+
+  .shellShortCardExiting .progressSlot {
+    display: block;
+    opacity: 1;
+    transform: translateY(0);
+    transition:
+      opacity var(--hero-expand-duration, 380ms) var(--hero-expand-ease, cubic-bezier(0.32, 0, 0.15, 1)),
+      transform var(--hero-expand-duration, 380ms) var(--hero-expand-ease, cubic-bezier(0.32, 0, 0.15, 1));
+  }
+
+  .shellShortCardExiting.shellShortCardExitingActive .progressSlot {
+    opacity: 0;
+    transform: translateY(var(--primitives-spacing-11));
+  }
+
+  /* Card re-enter: overlay progress so middle/filter layout matches end of collapse */
+  .shellOpen.shellShortCardEntering {
+    position: relative;
+    grid-template-rows: 1fr;
+    max-height: var(--hero-stack-collapsed-height, 520px);
+    min-height: var(--hero-stack-collapsed-height, 520px);
+  }
+
+  .shellOpen.shellShortCardEntering .progressSlot {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1;
+  }
+
+  .shellOpen.shellShortCardEntering .middle {
+    display: grid;
+    grid-template-rows: 0fr auto;
+    align-content: end;
+    min-height: 0;
+    height: 100%;
+  }
+
+  .shellOpen.shellShortCardEntering .listRegion {
+    max-height: 0;
+  }
+
+  .shellShortCardEntering .progressSlot {
+    display: block;
+    opacity: 0;
+    transform: translateY(var(--primitives-spacing-11));
+    transition:
+      opacity var(--hero-expand-duration, 380ms) var(--hero-expand-ease, cubic-bezier(0.32, 0, 0.15, 1)),
+      transform var(--hero-expand-duration, 380ms) var(--hero-expand-ease, cubic-bezier(0.32, 0, 0.15, 1));
+  }
+
+  .shellShortCardEntering.shellShortCardEnteringActive .progressSlot {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .shellOpen.shellShortCardDone {
+    grid-template-rows: 1fr;
+  }
+
+  .shellOpen.shellShortCardDone .middle {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .shellOpen:not(.shellShortCardDone) .listRegion {
+    max-height: 0;
+  }
+
+  .shellOpen.shellLayoutClosing {
+    grid-template-rows: 1fr;
+  }
+
+  .shellOpen.shellLayoutClosing .middle {
+    grid-template-rows: 0fr auto;
+    align-content: end;
+    transition: grid-template-rows var(--hero-expand-duration, 380ms)
+      var(--hero-expand-ease, cubic-bezier(0.32, 0, 0.15, 1));
+  }
+
+  /* Let 0fr row animate retract; global max-height: 0 snaps the list shut */
+  .shellOpen.shellLayoutClosing .listRegion {
+    max-height: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell,
+  .middle {
+    transition: none;
+  }
+}

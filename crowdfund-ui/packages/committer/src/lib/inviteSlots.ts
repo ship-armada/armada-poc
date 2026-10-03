@@ -9,3 +9,35 @@
 export function hasNoInviteSlots(remaining: bigint): boolean {
   return remaining === 0n
 }
+
+type InviteSlotSectionLike = { config: { slots: ReadonlyArray<{ status: string }> } }
+
+/**
+ * Whether any invite section still has a free (empty) slot — the same
+ * condition the invite send path needs. Hop-2 sections carry no slots, so a
+ * Hop-2-only wallet (or one that has used every slot) has nothing to invite.
+ */
+export function hasFreeInviteSlot(
+  sections: ReadonlyArray<InviteSlotSectionLike> | undefined,
+): boolean {
+  return Boolean(
+    sections?.some((section) => section.config.slots.some((slot) => slot.status === 'empty')),
+  )
+}
+
+/**
+ * How many invite slots are still free across every hop section. Drives the
+ * "your position has N invites" bullet on the Before you start screen, which
+ * needs the count rather than the boolean {@link hasFreeInviteSlot} gate.
+ */
+export function countFreeInviteSlots(
+  sections: ReadonlyArray<InviteSlotSectionLike> | undefined,
+): number {
+  return (
+    sections?.reduce(
+      (total, section) =>
+        total + section.config.slots.filter((slot) => slot.status === 'empty').length,
+      0,
+    ) ?? 0
+  )
+}

@@ -11,10 +11,10 @@ Monorepo containing the Armada crowdfund frontend, split into four npm workspace
 
 ## Specs
 
-Each app implements a spec in the project `.context/` directory. **Read the spec before modifying the corresponding package:**
+Each app implements a spec (the committer's is committed under `specs/`; the observer and admin specs are local `.context/` files). **Read the spec before modifying the corresponding package:**
 
 - Observer: `../../.context/CROWDFUND_OBSERVER.md`
-- Committer: `../../.context/CROWDFUND_COMMITTER.md`
+- Committer: `../specs/CROWDFUND_COMMITTER.md` (predates the hero redesign — see the committer's CLAUDE.md for the current UI structure)
 - Admin: `../../.context/CROWDFUND_ADMIN.md`
 
 ## Architecture
@@ -25,7 +25,7 @@ The three apps import from shared via `@armada/crowdfund-shared`. npm workspaces
 
 **Observer** is both a standalone app and a component library. Its view components (StatsBar, TreeView, TableView) live in shared so the Committer can embed them. The Observer app wires these components into a standalone layout with its own data fetching. The standalone app is **deprecated** (not part of the mainnet launch — only committer + admin ship); the components in shared remain active.
 
-**Committer** embeds the Observer's view components as a read-only left panel and adds a wallet-connected action panel on the right.
+**Committer** renders a full-bleed hero (`CrowdfundExperience` from shared — network graph, participants, progress) with the commit, invite and claim actions in modals and cards over it; the observer-style status, participants and event log live in its Details modal.
 
 **Admin** does NOT embed Observer components. It has its own simpler participant table and event log, focused on launch-team operations.
 

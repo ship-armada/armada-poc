@@ -155,6 +155,16 @@ export function formatTimeLeftDetail(seconds: number, windowEndUnix: number): st
   return end ? `Ends ${end}` : ''
 }
 
+/**
+ * Hover-tooltip detail for the pre-open countdown: the local opening timestamp,
+ * e.g. "Opens Oct 14, 6:00 PM" (no year, fits on one line). `windowStartUnix`
+ * is the absolute opening time (unix seconds). Returns '' when unknown.
+ */
+export function formatOpensAtDetail(windowStartUnix: number): string {
+  const start = formatEndDateTime(windowStartUnix)
+  return start ? `Opens ${start}` : ''
+}
+
 /** Get human-readable phase name */
 export function phaseName(phase: number): string {
   switch (phase) {

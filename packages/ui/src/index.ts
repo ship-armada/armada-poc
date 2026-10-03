@@ -31,7 +31,7 @@ export type { HeaderProps, WalletPillMenuProps, WalletMenuSheetProps } from './c
 export { BarTrackTicks } from './components/BarTrackTicks'
 
 export { Progress } from './components/Progress'
-export type { ProgressProps } from './components/Progress'
+export type { ProgressCountdown, ProgressProps } from './components/Progress'
 
 export { WalletButton } from './components/WalletButton'
 export type { WalletButtonProps } from './components/WalletButton'

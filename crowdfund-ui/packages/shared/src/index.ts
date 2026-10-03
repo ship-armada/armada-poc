@@ -22,6 +22,7 @@ export {
   formatCountdown,
   formatTimeLeft,
   formatTimeLeftDetail,
+  formatOpensAtDetail,
   hopLabel,
   phaseName,
   phaseColor,

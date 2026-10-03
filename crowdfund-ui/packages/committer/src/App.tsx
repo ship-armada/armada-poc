@@ -19,6 +19,7 @@ import {
   CROWDFUND_CONSTANTS,
   formatTimeLeft,
   formatTimeLeftDetail,
+  formatOpensAtDetail,
   truncateAddress,
   useContractState,
   estimateUserArmAllocation,
@@ -50,6 +51,7 @@ import { useBeforeUnloadGuard } from '@/hooks/useBeforeUnloadGuard'
 import { abortPipelinesForOtherAddress, applyWatchedTxResult, pipelinesAtom } from '@/hooks/useTxPipeline'
 import { usePendingTxWatcher } from '@/hooks/usePendingTxWatcher'
 import { localWindowEndUnix, commitWindowSecondsLeft } from '@/lib/windowClock'
+import { formatSaleStatusLabel, isPreOpen } from '@/lib/saleStatus'
 import { shouldDismissClaimModal, CLAIM_CLOSE_CONFIRM_MESSAGE } from '@/lib/claimModal'
 import { PageNav, type Page } from '@/appNav'
 
@@ -187,22 +189,6 @@ function formatRemainingLabel(seconds: number): string | null {
   // (no "LEFT" suffix) so it reads as a timer rather than a static tag.
   if (seconds < 48 * 60 * 60) return label
   return `${label.toUpperCase()} LEFT`
-}
-
-/** Derive the Progress card's lifecycle status pill from the contract phase
- *  plus window-open state. The "Active" badge in the mockup was hardcoded;
- *  here we map the four real states ('ACTIVE' during the open commit window,
- *  'CLOSED' after the window ends but before finalization, then 'FINALIZED' /
- *  'CANCELLED' once the launch team rules) so the user can tell at a glance
- *  which phase the sale is in. */
-function formatSaleStatusLabel(
-  phase: number,
-  windowOpen: boolean,
-): { label: string; dot: 'active' | 'lavender' | 'neutral' | 'warning' } {
-  if (phase === 1) return { label: 'FINALIZED', dot: 'lavender' }
-  if (phase === 2) return { label: 'CANCELLED', dot: 'warning' }
-  if (!windowOpen) return { label: 'CLOSED', dot: 'neutral' }
-  return { label: 'ACTIVE', dot: 'active' }
 }
 
 type ClaimAvailability =
@@ -414,7 +400,30 @@ export function App() {
       contractState.armLoaded &&
       contractState.blockTimestamp >= contractState.windowStart &&
       contractState.blockTimestamp <= contractState.windowEnd
-    const saleStatus = formatSaleStatusLabel(contractState.phase, liveWindowOpen)
+    const preOpen = isPreOpen(
+      contractState.phase,
+      contractState.windowStart,
+      contractState.blockTimestamp,
+    )
+    const saleStatus = formatSaleStatusLabel(contractState.phase, liveWindowOpen, preOpen)
+    // Before the window opens the countdown targets the opening, not the close.
+    // Same chain-to-device-clock anchoring as the close countdown, so it hits
+    // zero when chain time reaches windowStart.
+    if (preOpen) {
+      return {
+        status: 'ready',
+        dashRows,
+        totalCommitted,
+        opensAtUnix: localWindowEndUnix(
+          contractState.windowStart,
+          contractState.blockTimestamp,
+          blockObservedAtMs,
+        ),
+        daysLeftTooltip: formatOpensAtDetail(contractState.windowStart) || undefined,
+        saleStatusLabel: saleStatus.label,
+        saleStatusDot: saleStatus.dot,
+      }
+    }
     return {
       status: 'ready',
       dashRows,

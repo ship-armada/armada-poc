@@ -11,6 +11,7 @@ import {
   formatCountdown,
   formatTimeLeft,
   formatTimeLeftDetail,
+  formatOpensAtDetail,
   hopLabel,
   phaseName,
   phaseColor,
@@ -208,6 +209,19 @@ describe('formatTimeLeftDetail', () => {
 
   it('returns empty when the deadline is unknown', () => {
     expect(formatTimeLeftDetail(22 * 60, 0)).toBe('')
+  })
+})
+
+describe('formatOpensAtDetail', () => {
+  it('shows the local opening timestamp, prefixed with "Opens" and no year', () => {
+    const detail = formatOpensAtDetail(1_700_000_000)
+    expect(detail.startsWith('Opens ')).toBe(true)
+    expect(detail).not.toMatch(/\b\d{4}\b/)
+    expect(detail).not.toContain('\n')
+  })
+
+  it('returns empty when the opening time is unknown', () => {
+    expect(formatOpensAtDetail(0)).toBe('')
   })
 })
 

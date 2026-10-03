@@ -147,6 +147,11 @@ export type CrowdfundExperienceLiveData =
        *  doesn't desync the counter from chain-time gating. When set, Progress
        *  owns a live HH:MM:SS counter for remaining &lt; 48h. */
       windowEndUnix?: number
+      /** Commit-window start on the device clock (unix seconds), set only
+       *  before the window opens. Progress then counts down to the opening
+       *  ("OPENS IN …") instead of the close; takes precedence over
+       *  `windowEndUnix` / `daysLeftLabel`. */
+      opensAtUnix?: number
       /** Exact-time detail for the Progress countdown tag's hover tooltip
        *  (e.g. "Ends Jun 14, 2:42 PM"). Omit for no tooltip. */
       daysLeftTooltip?: string
@@ -1132,11 +1137,13 @@ export function CrowdfundExperience({
                       committedAmount={committedAmount}
                       minFundAmount={Number(CROWDFUND_CONSTANTS.MIN_SALE / 1_000_000n)}
                       maxAmount={Number(CROWDFUND_CONSTANTS.MAX_SALE / 1_000_000n)}
-                      {...(liveReady?.windowEndUnix != null && liveReady.windowEndUnix > 0
-                        ? { endsAt: liveReady.windowEndUnix * 1000 }
-                        : liveReady?.daysLeftLabel !== undefined
-                          ? { daysLeft: liveReady.daysLeftLabel }
-                          : {})}
+                      {...(liveReady?.opensAtUnix != null && liveReady.opensAtUnix > 0
+                        ? { endsAt: liveReady.opensAtUnix * 1000, countdown: 'opens' as const }
+                        : liveReady?.windowEndUnix != null && liveReady.windowEndUnix > 0
+                          ? { endsAt: liveReady.windowEndUnix * 1000 }
+                          : liveReady?.daysLeftLabel !== undefined
+                            ? { daysLeft: liveReady.daysLeftLabel }
+                            : {})}
                       {...(liveReady?.daysLeftTooltip
                         ? { daysLeftTooltip: liveReady.daysLeftTooltip }
                         : {})}

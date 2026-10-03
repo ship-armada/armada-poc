@@ -26,17 +26,27 @@ function formatTimeLeftCounter(seconds: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 }
 
-function formatTimeLeftTag(seconds: number): string | null {
+function formatTimeLeftTag(seconds: number, countdown: ProgressCountdown): string | null {
   if (!Number.isFinite(seconds) || seconds <= 0) return null
-  if (seconds < TIME_LEFT_COUNTER_THRESHOLD_S) return formatTimeLeftCounter(seconds)
+  // 'opens' (pre-open) mode is a deviation from the mockup, which has no
+  // pre-open state: the tag counts down to the window opening instead.
+  if (seconds < TIME_LEFT_COUNTER_THRESHOLD_S) {
+    const counter = formatTimeLeftCounter(seconds)
+    return countdown === 'opens' ? `OPENS IN ${counter}` : counter
+  }
   const days = Math.floor(seconds / 86400)
-  return `${days} ${days === 1 ? 'DAY' : 'DAYS'} LEFT`
+  const dayLabel = `${days} ${days === 1 ? 'DAY' : 'DAYS'}`
+  return countdown === 'opens' ? `OPENS IN ${dayLabel}` : `${dayLabel} LEFT`
 }
 
 function endsAtToRemainingSeconds(endsAt: number | Date, nowMs = Date.now()): number {
   const endMs = typeof endsAt === 'number' ? endsAt : endsAt.getTime()
   return Math.max(0, Math.floor((endMs - nowMs) / 1000))
 }
+
+/** What `endsAt` counts down to: the window closing ('ends', the default) or,
+ *  before the sale starts, the window opening ('opens'). */
+export type ProgressCountdown = 'ends' | 'opens'
 
 export interface ProgressProps {
   title?: string
@@ -54,6 +64,9 @@ export interface ProgressProps {
    * the tag becomes a live HH:MM:SS counter; at ≥ 48h it shows "N DAYS LEFT".
    */
   endsAt?: number | Date | null
+  /** Countdown wording for `endsAt` — "N DAYS LEFT" ('ends') or
+   *  "OPENS IN N DAYS" ('opens'). Defaults to 'ends'. */
+  countdown?: ProgressCountdown
   participants?: string
   className?: string
   animateOnMount?: boolean
@@ -76,7 +89,10 @@ function easeOutCubic(t: number) {
   return 1 - Math.pow(1 - t, 3)
 }
 
-function useEndsAtLabel(endsAt: number | Date | null | undefined): string | null | undefined {
+function useEndsAtLabel(
+  endsAt: number | Date | null | undefined,
+  countdown: ProgressCountdown,
+): string | null | undefined {
   const endMs =
     endsAt == null ? null : typeof endsAt === 'number' ? endsAt : endsAt.getTime()
 
@@ -90,7 +106,7 @@ function useEndsAtLabel(endsAt: number | Date | null | undefined): string | null
   }, [endMs])
 
   if (endMs == null) return undefined
-  return formatTimeLeftTag(endsAtToRemainingSeconds(endMs, nowMs))
+  return formatTimeLeftTag(endsAtToRemainingSeconds(endMs, nowMs), countdown)
 }
 
 export function Progress({
@@ -102,6 +118,7 @@ export function Progress({
   daysLeft = '3 DAYS LEFT',
   daysLeftTooltip,
   endsAt = null,
+  countdown = 'ends',
   participants = '85 PARTICIPANTS',
   className,
   animateOnMount = true,
@@ -110,7 +127,7 @@ export function Progress({
   statusDot = 'active',
   headerAction,
 }: ProgressProps) {
-  const endsAtLabel = useEndsAtLabel(endsAt)
+  const endsAtLabel = useEndsAtLabel(endsAt, countdown)
   const timeLeftLabel = endsAt != null ? (endsAtLabel ?? null) : daysLeft
 
   const endMsForMode =

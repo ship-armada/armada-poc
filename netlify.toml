@@ -38,6 +38,21 @@
 #   VITE_CROWDFUND_INDEXER_URL     required — indexer API base URL for the active
 #                                  instance (e.g. https://api.knowable.run). Startup
 #                                  validateEnv hard-fails a PROD build when it is missing.
+#   VITE_PRELAUNCH_OPENS_AT        pre-launch mode: the announced sale opening as ISO 8601
+#                                  UTC, e.g. 2026-10-08T17:00:00Z (same value as the deploy's
+#                                  CROWDFUND_OPEN_TIME). When set, the build fetches
+#                                  NO manifest and ships a countdown-only committer (the
+#                                  hero's pre-open state, no wallet/RPC/indexer), so the
+#                                  URL can go live before the contracts exist. The build
+#                                  fails if it is malformed or already past, or if
+#                                  DEPLOYMENT_REF / VITE_EXPECTED_CROWDFUND_ADDRESS are also
+#                                  set (a half-done switch-over). Leave unset
+#                                  for the live app; unsetting it + setting the manifest
+#                                  vars above + redeploying is the launch switch-over.
+#                                  In this mode DEPLOYMENT_INSTANCE / DEPLOYMENT_REF /
+#                                  VITE_EXPECTED_CROWDFUND_ADDRESS / VITE_CROWDFUND_INDEXER_URL
+#                                  are not needed; VITE_NETWORK, VITE_CROWDFUND_PROFILE and
+#                                  VITE_WALLETCONNECT_PROJECT_ID still are.
 #   VITE_SENTRY_DSN                error monitoring DSN; silent no-op if unset.
 #   VITE_SENTRY_RELEASE            release tag used to group events.
 #   VITE_SENTRY_ENVIRONMENT        deploy environment, e.g. "production".
@@ -54,6 +69,9 @@
   #      <NETWORK>/<instance>/<VITE_NETWORK>/crowdfund.json into the committer's
   #      public/api/deployments/instances/<name>/<VITE_NETWORK>/ so the prod build
   #      serves it under the same path the dev server's serveDeployments() exposes.
+  #      Skipped in pre-launch mode (VITE_PRELAUNCH_OPENS_AT set), which instead
+  #      checks the opening time is well-formed and still in the future, and that
+  #      no live manifest vars are set alongside it.
   #   3. Install workspace deps with --legacy-peer-deps (Railgun SDK peer-dep conflict).
   #   4. Build the committer.
   # TODO: confirm the armada-deployments mainnet layout matches
@@ -62,16 +80,22 @@
     NETWORK="${NETWORK:-testnet}" && \
     export VITE_NETWORK="${VITE_NETWORK:-sepolia}" && \
     export VITE_CROWDFUND_PROFILE="${VITE_CROWDFUND_PROFILE:-medi}" && \
-    INSTANCE="${DEPLOYMENT_INSTANCE:-medi2}" && \
-    export VITE_DEPLOYMENT_INSTANCE="${INSTANCE}" && \
-    REF="${DEPLOYMENT_REF:-main}" && \
-    if [ "${VITE_NETWORK}" = "mainnet" ] && ! echo "${REF}" | grep -Eq '^[0-9a-f]{40}$'; then echo "FATAL: DEPLOYMENT_REF must be a full 40-char commit SHA on mainnet (got: ${REF}) — pinning to a branch defeats the supply-chain guard"; exit 1; fi && \
-    BASE="https://raw.githubusercontent.com/ship-armada/armada-deployments/${REF}/${NETWORK}/${INSTANCE}" && \
-    echo "Fetching ${NETWORK}/${INSTANCE}@${REF} (VITE_NETWORK=${VITE_NETWORK}, profile=${VITE_CROWDFUND_PROFILE})" && \
-    mkdir -p "crowdfund-ui/packages/committer/public/api/deployments/instances/${INSTANCE}/${VITE_NETWORK}" && \
-    export CF_MANIFEST_PATH="crowdfund-ui/packages/committer/public/api/deployments/instances/${INSTANCE}/${VITE_NETWORK}/crowdfund.json" && \
-    curl -sfL -o "${CF_MANIFEST_PATH}" "${BASE}/${VITE_NETWORK}/crowdfund.json" && \
-    node -e "const fs=require('fs');const p=process.env.CF_MANIFEST_PATH;const exp=process.env.VITE_EXPECTED_CROWDFUND_ADDRESS;if(exp){const d=JSON.parse(fs.readFileSync(p,'utf8'));const got=(d.contracts&&d.contracts.crowdfund||'').toLowerCase();if(got!==exp.toLowerCase()){console.error('FATAL: fetched crowdfund '+got+' != expected '+exp.toLowerCase());process.exit(1);}console.log('crowdfund address verified against VITE_EXPECTED_CROWDFUND_ADDRESS');}else{console.log('VITE_EXPECTED_CROWDFUND_ADDRESS unset — skipping build-time address check');}" && \
+    if [ -n "${VITE_PRELAUNCH_OPENS_AT}" ]; then \
+      if [ -n "${DEPLOYMENT_REF}" ] || [ -n "${VITE_EXPECTED_CROWDFUND_ADDRESS}" ]; then echo "FATAL: VITE_PRELAUNCH_OPENS_AT is set alongside the live manifest vars (DEPLOYMENT_REF / VITE_EXPECTED_CROWDFUND_ADDRESS) — unset VITE_PRELAUNCH_OPENS_AT to ship the live committer"; exit 1; fi && \
+      node -e "const v=process.env.VITE_PRELAUNCH_OPENS_AT;const ms=Date.parse(v);if(Number.isNaN(ms)||new Date(ms).toISOString()!==v.replace('Z','.000Z')){console.error('FATAL: VITE_PRELAUNCH_OPENS_AT must be ISO 8601 UTC with whole seconds, like 2026-10-08T17:00:00Z (got: '+v+')');process.exit(1);}if(ms<=Date.now()){console.error('FATAL: VITE_PRELAUNCH_OPENS_AT ('+v+') is not in the future: unset it and configure the live manifest instead');process.exit(1);}" && \
+      echo "Pre-launch build: countdown to ${VITE_PRELAUNCH_OPENS_AT} (VITE_NETWORK=${VITE_NETWORK}, profile=${VITE_CROWDFUND_PROFILE}) — no deployment manifest fetched"; \
+    else \
+      INSTANCE="${DEPLOYMENT_INSTANCE:-medi2}" && \
+      export VITE_DEPLOYMENT_INSTANCE="${INSTANCE}" && \
+      REF="${DEPLOYMENT_REF:-main}" && \
+      if [ "${VITE_NETWORK}" = "mainnet" ] && ! echo "${REF}" | grep -Eq '^[0-9a-f]{40}$'; then echo "FATAL: DEPLOYMENT_REF must be a full 40-char commit SHA on mainnet (got: ${REF}) — pinning to a branch defeats the supply-chain guard"; exit 1; fi && \
+      BASE="https://raw.githubusercontent.com/ship-armada/armada-deployments/${REF}/${NETWORK}/${INSTANCE}" && \
+      echo "Fetching ${NETWORK}/${INSTANCE}@${REF} (VITE_NETWORK=${VITE_NETWORK}, profile=${VITE_CROWDFUND_PROFILE})" && \
+      mkdir -p "crowdfund-ui/packages/committer/public/api/deployments/instances/${INSTANCE}/${VITE_NETWORK}" && \
+      export CF_MANIFEST_PATH="crowdfund-ui/packages/committer/public/api/deployments/instances/${INSTANCE}/${VITE_NETWORK}/crowdfund.json" && \
+      curl -sfL -o "${CF_MANIFEST_PATH}" "${BASE}/${VITE_NETWORK}/crowdfund.json" && \
+      node -e "const fs=require('fs');const p=process.env.CF_MANIFEST_PATH;const exp=process.env.VITE_EXPECTED_CROWDFUND_ADDRESS;if(exp){const d=JSON.parse(fs.readFileSync(p,'utf8'));const got=(d.contracts&&d.contracts.crowdfund||'').toLowerCase();if(got!==exp.toLowerCase()){console.error('FATAL: fetched crowdfund '+got+' != expected '+exp.toLowerCase());process.exit(1);}console.log('crowdfund address verified against VITE_EXPECTED_CROWDFUND_ADDRESS');}else{console.log('VITE_EXPECTED_CROWDFUND_ADDRESS unset — skipping build-time address check');}"; \
+    fi && \
     rm -rf node_modules package-lock.json && \
     npm install --legacy-peer-deps && \
     npm run build --workspace=@armada/crowdfund-committer

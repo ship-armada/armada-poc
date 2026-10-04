@@ -67,6 +67,25 @@ VITE_NETWORK=sepolia VITE_DEPLOYMENT_INSTANCE=medi2 npm run dev
 
 The committer's `getDeploymentFileName()` resolves to `instances/<name>/sepolia/crowdfund.json` when `VITE_DEPLOYMENT_INSTANCE` is set; otherwise it falls back to the legacy `crowdfund-hub-sepolia.json`. Pulled instance files are gitignored — re-run `fetch-deployment` to refresh them.
 
+### Pre-launch mode
+
+Set `VITE_PRELAUNCH_OPENS_AT=<ISO 8601 UTC, e.g. 2026-10-08T17:00:00Z>` to build a countdown-only
+committer for publishing the URL before the contracts exist. `main.tsx` then
+renders `PreLaunchApp` on every path instead of the routes: the hero's pre-open
+state (OPENS SOON, the opening countdown, an empty network) from that fixed
+time, with no wallet button or sale actions and no manifest / RPC / indexer
+reads. Once the time passes the page reloads every minute so open tabs pick up
+the live deploy. `validateEnv` drops the indexer and expected-address
+requirements in this mode and rejects a malformed value (whole seconds, explicit
+`Z`). Use the same value as the deploy's `CROWDFUND_OPEN_TIME` — it becomes the
+crowdfund's `windowStart`. Netlify setup and switch-over: `netlify.toml` header
+and `specs/OPERATIONS.md` §3 Step 8.
+
+```bash
+# Preview locally
+VITE_PRELAUNCH_OPENS_AT=2026-10-08T17:00:00Z npm run dev
+```
+
 ## Dependencies
 
 Most data-layer and view-component deps live in

@@ -84,6 +84,7 @@ Complete every item before calling the deploy script. Sign off with initials and
 | Observer URL is live and loading events | ☐ |
 | Committer URL is live and wallet connection works | ☐ |
 | Committer `DEPLOYMENT_REF` (commit SHA) and `VITE_EXPECTED_CROWDFUND_ADDRESS` set on the mainnet Netlify site (see §3 Step 8) | ☐ |
+| If the committer URL went live early in pre-launch mode: its `VITE_PRELAUNCH_OPENS_AT` is identical to `CROWDFUND_OPEN_TIME` in `config/mainnet.env` | ☐ |
 | RPC fallback providers configured and tested | ☐ |
 | Monitoring alerts configured (see §8) | ☐ |
 | Security Council members confirmed reachable | ☐ |
@@ -174,6 +175,15 @@ repo at build time. Two per-site Netlify env vars pin and verify that fetch so a
 later push to the deployments repo cannot silently redirect the approve target.
 This step may be performed as soon as the contract address (Step 1) and the
 published manifest exist — it does not depend on `openTimestamp`.
+
+If the site is serving the pre-launch countdown (`VITE_PRELAUNCH_OPENS_AT` set),
+this step is also the switch-over to the live committer: unset
+`VITE_PRELAUNCH_OPENS_AT` and set `DEPLOYMENT_INSTANCE`, `NETWORK=mainnet` and
+`VITE_CROWDFUND_INDEXER_URL` (plus `VITE_HUB_RPC`) in the same change. The build
+refuses to run with both the pre-launch var and the manifest vars set. Do this
+before `openTimestamp` so the live app's chain-read countdown can be checked
+against the announced time; pre-launch tabs reload to the live app once the
+opening passes.
 
 | | |
 |---|---|

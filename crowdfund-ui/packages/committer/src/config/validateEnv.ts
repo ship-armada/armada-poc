@@ -1,6 +1,8 @@
 // ABOUTME: Startup environment validation for the committer.
 // ABOUTME: Hard-fails production builds that are missing critical VITE_* config.
 
+import { isValidPrelaunchOpensAt } from './prelaunch'
+
 /** The subset of the Vite env we validate. All fields optional so the pure
  *  function can be exercised with plain records in tests. */
 export interface EnvRecord {
@@ -11,6 +13,7 @@ export interface EnvRecord {
   VITE_CROWDFUND_PROFILE?: string
   VITE_DEPLOYMENT_INSTANCE?: string
   VITE_EXPECTED_CROWDFUND_ADDRESS?: string
+  VITE_PRELAUNCH_OPENS_AT?: string
 }
 
 export type EnvValidationResult = { ok: true } | { ok: false; errors: string[] }
@@ -26,10 +29,27 @@ function missing(value?: string): boolean {
  * unset is itself a misconfiguration we want to surface loudly rather than let
  * silently fall back to a local/localhost config). Dev builds always pass: they
  * default to local and tolerate absent vars.
+ *
+ * Pre-launch mode (VITE_PRELAUNCH_OPENS_AT set) renders only a countdown and
+ * reads no chain data, so it drops the indexer and expected-crowdfund-address
+ * requirements; everything else still applies. A malformed opening time fails
+ * in every build, dev included, so a typo surfaces before it is deployed.
  */
 export function validateEnv(env: EnvRecord): EnvValidationResult {
   const isProd = env.PROD === true
   const network = env.VITE_NETWORK?.trim()
+  const prelaunch = !missing(env.VITE_PRELAUNCH_OPENS_AT)
+
+  if (prelaunch && !isValidPrelaunchOpensAt(env.VITE_PRELAUNCH_OPENS_AT!)) {
+    return {
+      ok: false,
+      errors: [
+        `VITE_PRELAUNCH_OPENS_AT is "${env.VITE_PRELAUNCH_OPENS_AT!.trim()}" — expected the ` +
+          'sale opening as ISO 8601 UTC with whole seconds, e.g. 2026-10-08T17:00:00Z ' +
+          '(the same value as CROWDFUND_OPEN_TIME in the deploy config).',
+      ],
+    }
+  }
 
   if (!isProd || network === 'local') {
     return { ok: true }
@@ -45,7 +65,7 @@ export function validateEnv(env: EnvRecord): EnvValidationResult {
       'VITE_WALLETCONNECT_PROJECT_ID is not set — wallet connection will not work.',
     )
   }
-  if (missing(env.VITE_CROWDFUND_INDEXER_URL)) {
+  if (!prelaunch && missing(env.VITE_CROWDFUND_INDEXER_URL)) {
     errors.push(
       'VITE_CROWDFUND_INDEXER_URL is not set — no event indexer is configured.',
     )
@@ -72,7 +92,8 @@ export function validateEnv(env: EnvRecord): EnvValidationResult {
   // The crowdfund address is the USDC approve/commit target. On mainnet it must be
   // pinned to a trusted out-of-band value so the app can reject a compromised/wrong
   // manifest fetched from armada-deployments; refuse to build without the anchor.
-  if (network === 'mainnet' && missing(env.VITE_EXPECTED_CROWDFUND_ADDRESS)) {
+  // A pre-launch build fetches no manifest, so there is nothing to verify.
+  if (!prelaunch && network === 'mainnet' && missing(env.VITE_EXPECTED_CROWDFUND_ADDRESS)) {
     errors.push(
       'VITE_EXPECTED_CROWDFUND_ADDRESS is not set on a mainnet build — the committer cannot ' +
         'verify the fetched crowdfund (USDC approve target) address against a trusted value.',

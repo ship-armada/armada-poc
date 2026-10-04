@@ -166,6 +166,62 @@ describe('validateEnv', () => {
     expect(withoutInstance).toEqual({ ok: true })
   })
 
+  describe('pre-launch mode (VITE_PRELAUNCH_OPENS_AT)', () => {
+    // What the fund.armada.blue site sets before the contracts exist: no
+    // indexer, no manifest, no expected crowdfund address.
+    const PRELAUNCH_MAINNET = {
+      PROD: true,
+      VITE_NETWORK: 'mainnet',
+      VITE_WALLETCONNECT_PROJECT_ID: 'wc-id',
+      VITE_CROWDFUND_PROFILE: 'mainnet',
+      VITE_PRELAUNCH_OPENS_AT: '2026-10-08T17:00:00Z',
+    }
+
+    it('passes a mainnet pre-launch build without indexer or expected crowdfund address', () => {
+      expect(validateEnv(PRELAUNCH_MAINNET)).toEqual({ ok: true })
+    })
+
+    it('still enforces the network, WalletConnect id and mainnet profile', () => {
+      const result = validateEnv({
+        ...PRELAUNCH_MAINNET,
+        VITE_WALLETCONNECT_PROJECT_ID: undefined,
+        VITE_CROWDFUND_PROFILE: 'medi',
+      })
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.errors.some((e) => e.includes('VITE_WALLETCONNECT_PROJECT_ID'))).toBe(true)
+        expect(result.errors.some((e) => e.includes('mainnet must use the "mainnet" profile'))).toBe(true)
+      }
+      const noNetwork = validateEnv({ ...PRELAUNCH_MAINNET, VITE_NETWORK: undefined })
+      expect(noNetwork.ok).toBe(false)
+    })
+
+    it('rejects a malformed opening time in PROD', () => {
+      const result = validateEnv({ ...PRELAUNCH_MAINNET, VITE_PRELAUNCH_OPENS_AT: '1791478800' })
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.errors.some((e) => e.includes('VITE_PRELAUNCH_OPENS_AT'))).toBe(true)
+      }
+    })
+
+    it('rejects a malformed opening time in dev too, so a typo surfaces before deploy', () => {
+      const result = validateEnv({ PROD: false, VITE_PRELAUNCH_OPENS_AT: '2026-10-08' })
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.errors.some((e) => e.includes('VITE_PRELAUNCH_OPENS_AT'))).toBe(true)
+      }
+    })
+
+    it('treats a blank value as pre-launch off (live requirements apply)', () => {
+      const result = validateEnv({ ...PRELAUNCH_MAINNET, VITE_PRELAUNCH_OPENS_AT: '  ' })
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.errors.some((e) => e.includes('VITE_CROWDFUND_INDEXER_URL'))).toBe(true)
+        expect(result.errors.some((e) => e.includes('VITE_EXPECTED_CROWDFUND_ADDRESS'))).toBe(true)
+      }
+    })
+  })
+
   it('reports every missing var at once for an empty PROD build', () => {
     const result = validateEnv({ PROD: true })
     expect(result.ok).toBe(false)

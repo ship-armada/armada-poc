@@ -13,6 +13,7 @@ import { wagmiConfig } from '@/config/wagmi'
 import { getMockSizeFromUrl } from '@/appNav'
 import { initSentry, SentryErrorBoundary, isSentryEnabled } from '@/lib/sentry'
 import { validateEnv } from '@/config/validateEnv'
+import { getPrelaunchOpensAt } from '@/config/prelaunch'
 import { DISCORD_URL } from '@/config/socials'
 import '@rainbow-me/rainbowkit/styles.css'
 import './index.css'
@@ -25,6 +26,9 @@ const InviteLandingPage = lazy(() =>
   import('@/components/InviteLandingPage').then((m) => ({ default: m.InviteLandingPage })),
 )
 const MockCommitterApp = lazy(() => import('@/MockCommitterApp'))
+const PreLaunchApp = lazy(() =>
+  import('@/PreLaunchApp').then((m) => ({ default: m.PreLaunchApp })),
+)
 
 // Crash-help footer for the Sentry error fallbacks: a copyable event reference
 // (only when Sentry actually captured + sent the event, so the user can quote
@@ -116,6 +120,9 @@ if (!envCheck.ok) {
 
   // Dev-only stress harness selection (0 in production).
   const mockSize = getMockSizeFromUrl()
+  // Pre-launch build (VITE_PRELAUNCH_OPENS_AT): the countdown hero on every
+  // path, published before the contracts exist.
+  const prelaunchOpensAt = getPrelaunchOpensAt()
   const suspenseFallback = (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6 text-muted-foreground">
       Loading…
@@ -132,7 +139,9 @@ if (!envCheck.ok) {
                 <BrowserRouter>
                   <MotionConfig reducedMotion="user">
                     <Suspense fallback={suspenseFallback}>
-                      {mockSize > 0 ? (
+                      {prelaunchOpensAt !== null ? (
+                        <PreLaunchApp opensAtUnix={prelaunchOpensAt} />
+                      ) : mockSize > 0 ? (
                         <MockCommitterApp size={mockSize} />
                       ) : (
                         <Routes>

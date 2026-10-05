@@ -1,0 +1,113 @@
+{
+  "id": "admin-set-testing-mode-true",
+  "category": "admin",
+  "description": "Owner enables the testingMode proof bypass. Emits TestingModeSet TWICE per call (module delegatecall + router — OQ-8). All subsequent transact/unshield vectors run with proofs bypassed (spec §5.6 step 1).",
+  "specRefs": [
+    "§5.4",
+    "§5.6",
+    "OQ-8",
+    "OQ-11"
+  ],
+  "proofsBypassed": false,
+  "dependsOn": [],
+  "setup": [],
+  "requiresImpersonation": null,
+  "setupTxs": [],
+  "tx": {
+    "from": "DEPLOYER",
+    "fromAddress": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "to": "POOL",
+    "toAddress": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+    "calldata": "0x596d7a680000000000000000000000000000000000000000000000000000000000000001",
+    "value": "0x0",
+    "decodedCall": {
+      "function": "setTestingMode",
+      "args": {
+        "enabled": true
+      }
+    }
+  },
+  "preState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x0",
+    "pool.merkleRoot": "0x14fceeac99eb8419a2796d1958fc2050d489bf5a3eb170ef16a667060344ba90",
+    "pool.lastEventBlock": "0x0"
+  },
+  "result": {
+    "status": 1,
+    "txHash": "0x63e9c67ab5ce76307032f9a377c5b2c426ffe058a9110b433dba13c2c3b5089a",
+    "blockNumber": 130,
+    "gasUsed": "0xd280",
+    "returnData": null,
+    "revert": null,
+    "events": [
+      {
+        "logIndex": 0,
+        "address": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+        "topics": [
+          "0x21f67800fb06e35b87566708fd49f2a7cc96bf3a74ca56e175b23e6f35b10248"
+        ],
+        "data": "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "decoded": {
+          "name": "TestingModeSet",
+          "args": {
+            "enabled": true
+          }
+        }
+      },
+      {
+        "logIndex": 1,
+        "address": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+        "topics": [
+          "0x21f67800fb06e35b87566708fd49f2a7cc96bf3a74ca56e175b23e6f35b10248"
+        ],
+        "data": "0x0000000000000000000000000000000000000000000000000000000000000001",
+        "decoded": {
+          "name": "TestingModeSet",
+          "args": {
+            "enabled": true
+          }
+        }
+      }
+    ]
+  },
+  "postState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x0",
+    "pool.merkleRoot": "0x14fceeac99eb8419a2796d1958fc2050d489bf5a3eb170ef16a667060344ba90",
+    "pool.lastEventBlock": "0x0",
+    "pool.testingMode": true
+  },
+  "context": {
+    "chainId": 31337,
+    "network": "local fixturenet (Anvil, hub chain only)",
+    "deployments": {
+      "privacyPool": "deployments/privacy-pool-hub.json",
+      "cctp": "deployments/hub-v3.json",
+      "feeModule": "deployments/fee-module-hub.json",
+      "governance": "deployments/governance-hub.json"
+    },
+    "addressBook": {
+      "DEPLOYER": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "ALICE": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "BOB": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "CAROL": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "TREASURY": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+      "POOL": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+      "SHIELD_MODULE": "0xc5a5C42992dECbae36851359345FE25997F5C42d",
+      "TRANSACT_MODULE": "0x67d269191c92Caf3cD7723F116c85e6E9bf55933",
+      "MERKLE_MODULE": "0x7a2088a1bFc9d81c55368AE168C2C02570cB814F",
+      "VERIFIER_MODULE": "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
+      "HOOK_ROUTER": "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
+      "GASLESS_WRAPPER": "0xCD8a1C3ba11CF5ECfa6267617243239504a98d90",
+      "TOKEN_MESSENGER": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+      "MESSAGE_TRANSMITTER": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+      "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "FEE_MODULE": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+      "CLIENT_POOL": "0x0000000000000000000000000000000000C11EA7",
+      "MOCK_PAUSE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+      "MOCK_FEE_MODULE": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f"
+    }
+  },
+  "capturedAt": "2026-09-25T17:01:58.708Z"
+}

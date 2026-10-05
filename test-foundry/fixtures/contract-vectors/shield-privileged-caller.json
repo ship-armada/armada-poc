@@ -1,0 +1,181 @@
+{
+  "id": "shield-privileged-caller",
+  "category": "shield",
+  "description": "Privileged caller (CAROL) shields 10 USDC: full value committed, zero fee (spec §7.3 privileged branch).",
+  "specRefs": [
+    "§7.3"
+  ],
+  "proofsBypassed": false,
+  "dependsOn": [
+    "admin-set-privileged-shield-caller"
+  ],
+  "setup": [
+    "MockUSDCV2.mint(ALICE, 10_000 USDC), mint(BOB, 1_000 USDC), mint(CAROL, 1_000 USDC) by DEPLOYER (minter)",
+    "USDC.approve(POOL, uint256.max) from ALICE, BOB and CAROL"
+  ],
+  "requiresImpersonation": null,
+  "setupTxs": [],
+  "tx": {
+    "from": "CAROL",
+    "fromAddress": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+    "to": "POOL",
+    "toAddress": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+    "calldata": "0xcd6a3d7f00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000101708378830349813e3619fed084c9597370804230bc709febabb73793f1ad5300000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000009896804860a541e02b32cb6a628a7d4baa679de701250a752df50a635832f8b0dcb901d5d4036ebaaa12a6bd118daa6c5513e6f950e8fa5c467a131369c6877329a7f354df852b380a6b0c23ae82cfe73d487fe1e77a3da8906a2678eda35e3d6eea01aeedd1a3d9fa4f917f6e73edb60f2fbccdcfa704f926b5da3ebcf701730483e8",
+    "value": "0x0",
+    "decodedCall": {
+      "function": "shield",
+      "args": {
+        "requests": [
+          {
+            "preimage": {
+              "npk": "0x01708378830349813e3619fed084c9597370804230bc709febabb73793f1ad53",
+              "token": {
+                "tokenType": 0,
+                "tokenAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+                "tokenSubID": 0
+              },
+              "value": "0x989680"
+            },
+            "ciphertext": {
+              "encryptedBundle": [
+                "0x4860a541e02b32cb6a628a7d4baa679de701250a752df50a635832f8b0dcb901",
+                "0xd5d4036ebaaa12a6bd118daa6c5513e6f950e8fa5c467a131369c6877329a7f3",
+                "0x54df852b380a6b0c23ae82cfe73d487fe1e77a3da8906a2678eda35e3d6eea01"
+              ],
+              "shieldKey": "0xaeedd1a3d9fa4f917f6e73edb60f2fbccdcfa704f926b5da3ebcf701730483e8"
+            }
+          }
+        ],
+        "integrator": "0x0000000000000000000000000000000000000000"
+      }
+    }
+  },
+  "preState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x4",
+    "pool.merkleRoot": "0x0fd7423a95dc2a00b20e863326e07b909aaa0981a7b77bf4cf5c0bd25cd591b1",
+    "pool.lastEventBlock": "0x88",
+    "usdc.balanceOf[POOL]": "0x6a47147",
+    "usdc.balanceOf[ALICE]": "0x24d5ee739",
+    "usdc.balanceOf[BOB]": "0x3b9aca00",
+    "usdc.balanceOf[CAROL]": "0x3b9aca00",
+    "usdc.balanceOf[TREASURY]": "0x88b80",
+    "usdc.balanceOf[DEPLOYER]": "0x0",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x0"
+  },
+  "result": {
+    "status": 1,
+    "txHash": "0xaf41c9b992f45bde9e6371e68c8eb2e5a8256e2e6991ae66e46ef6871f4692f7",
+    "blockNumber": 137,
+    "gasUsed": "0xbc9f1",
+    "returnData": null,
+    "revert": null,
+    "events": [
+      {
+        "logIndex": 0,
+        "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+        "topics": [
+          "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "0x00000000000000000000000090f79bf6eb2c4f870365e785982e1f101e93b906",
+          "0x000000000000000000000000e6e340d132b5f46d1e472debcd681b2abc16e57e"
+        ],
+        "data": "0x0000000000000000000000000000000000000000000000000000000000989680",
+        "decoded": {
+          "name": "Transfer",
+          "args": {
+            "from": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+            "to": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+            "value": "0x989680"
+          }
+        }
+      },
+      {
+        "logIndex": 1,
+        "address": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+        "topics": [
+          "0x3a5b9dc26075a3801a6ddccf95fec485bb7500a91b44cec1add984c21ee6db3b"
+        ],
+        "data": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000001600000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000101708378830349813e3619fed084c9597370804230bc709febabb73793f1ad5300000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa30000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000098968000000000000000000000000000000000000000000000000000000000000000014860a541e02b32cb6a628a7d4baa679de701250a752df50a635832f8b0dcb901d5d4036ebaaa12a6bd118daa6c5513e6f950e8fa5c467a131369c6877329a7f354df852b380a6b0c23ae82cfe73d487fe1e77a3da8906a2678eda35e3d6eea01aeedd1a3d9fa4f917f6e73edb60f2fbccdcfa704f926b5da3ebcf701730483e800000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": {
+          "name": "Shield",
+          "args": {
+            "treeNumber": "0x0",
+            "startPosition": "0x4",
+            "commitments": [
+              {
+                "npk": "0x01708378830349813e3619fed084c9597370804230bc709febabb73793f1ad53",
+                "token": {
+                  "tokenType": "0x0",
+                  "tokenAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+                  "tokenSubID": "0x0"
+                },
+                "value": "0x989680"
+              }
+            ],
+            "shieldCiphertext": [
+              {
+                "encryptedBundle": [
+                  "0x4860a541e02b32cb6a628a7d4baa679de701250a752df50a635832f8b0dcb901",
+                  "0xd5d4036ebaaa12a6bd118daa6c5513e6f950e8fa5c467a131369c6877329a7f3",
+                  "0x54df852b380a6b0c23ae82cfe73d487fe1e77a3da8906a2678eda35e3d6eea01"
+                ],
+                "shieldKey": "0xaeedd1a3d9fa4f917f6e73edb60f2fbccdcfa704f926b5da3ebcf701730483e8"
+              }
+            ],
+            "fees": [
+              "0x0"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "postState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x5",
+    "pool.merkleRoot": "0x09010a420644f9e6952dce0eea002b40ef63d59146401fefaf3ac8bd9ec9ca97",
+    "pool.lastEventBlock": "0x89",
+    "usdc.balanceOf[POOL]": "0x73d07c7",
+    "usdc.balanceOf[ALICE]": "0x24d5ee739",
+    "usdc.balanceOf[BOB]": "0x3b9aca00",
+    "usdc.balanceOf[CAROL]": "0x3b023380",
+    "usdc.balanceOf[TREASURY]": "0x88b80",
+    "usdc.balanceOf[DEPLOYER]": "0x0",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x0",
+    "pool.rootHistory[postTree][postRoot]": true
+  },
+  "context": {
+    "chainId": 31337,
+    "network": "local fixturenet (Anvil, hub chain only)",
+    "deployments": {
+      "privacyPool": "deployments/privacy-pool-hub.json",
+      "cctp": "deployments/hub-v3.json",
+      "feeModule": "deployments/fee-module-hub.json",
+      "governance": "deployments/governance-hub.json"
+    },
+    "addressBook": {
+      "DEPLOYER": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "ALICE": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "BOB": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "CAROL": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "TREASURY": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+      "POOL": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+      "SHIELD_MODULE": "0xc5a5C42992dECbae36851359345FE25997F5C42d",
+      "TRANSACT_MODULE": "0x67d269191c92Caf3cD7723F116c85e6E9bf55933",
+      "MERKLE_MODULE": "0x7a2088a1bFc9d81c55368AE168C2C02570cB814F",
+      "VERIFIER_MODULE": "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
+      "HOOK_ROUTER": "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
+      "GASLESS_WRAPPER": "0xCD8a1C3ba11CF5ECfa6267617243239504a98d90",
+      "TOKEN_MESSENGER": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+      "MESSAGE_TRANSMITTER": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+      "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "FEE_MODULE": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+      "CLIENT_POOL": "0x0000000000000000000000000000000000C11EA7",
+      "MOCK_PAUSE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+      "MOCK_FEE_MODULE": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f"
+    }
+  },
+  "capturedAt": "2026-09-25T17:02:05.720Z"
+}

@@ -1,0 +1,867 @@
+{
+  "version": 1,
+  "generatedAt": "2026-09-25T17:03:13.711Z",
+  "generator": "scripts/contract-vectors/capture.ts",
+  "network": {
+    "name": "local fixturenet (Anvil hub chain, mock CCTP)",
+    "chainId": 31337,
+    "rpc": "http://localhost:8545",
+    "hubDomain": 100
+  },
+  "proofPolicy": {
+    "summary": "All transact/unshield vectors captured with testingMode proof bypass active (spec §5.6 step 1): proofs are zero structs and calldata is replayable without circuit artifacts. Shield/admin/shield-in vectors need no proofs.",
+    "bypassEnabledByVector": "admin-set-testing-mode-true",
+    "bypassDisabledByVector": "admin-set-testing-mode-false"
+  },
+  "bootCommands": [
+    "npm run chains",
+    "source config/local.env",
+    "npm run compile",
+    "npm run deploy:cctp:hub",
+    "npm run deploy:aave:hub",
+    "npm run deploy:governance",
+    "npm run deploy:privacy-pool:hub",
+    "npm run deploy:gasless-wrapper:hub",
+    "npm run deploy:yield:hub",
+    "npm run deploy:fee-module",
+    "npx hardhat run scripts/contract-vectors/capture.ts --network hub"
+  ],
+  "addressBook": {
+    "DEPLOYER": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "ALICE": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    "BOB": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+    "CAROL": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+    "TREASURY": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+    "POOL": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+    "SHIELD_MODULE": "0xc5a5C42992dECbae36851359345FE25997F5C42d",
+    "TRANSACT_MODULE": "0x67d269191c92Caf3cD7723F116c85e6E9bf55933",
+    "MERKLE_MODULE": "0x7a2088a1bFc9d81c55368AE168C2C02570cB814F",
+    "VERIFIER_MODULE": "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
+    "HOOK_ROUTER": "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
+    "GASLESS_WRAPPER": "0xCD8a1C3ba11CF5ECfa6267617243239504a98d90",
+    "TOKEN_MESSENGER": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+    "MESSAGE_TRANSMITTER": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+    "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+    "FEE_MODULE": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+    "CLIENT_POOL": "0x0000000000000000000000000000000000C11EA7",
+    "MOCK_PAUSE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+    "MOCK_FEE_MODULE": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f"
+  },
+  "notes": [
+    "Replay order: topologically sort `vectors` by dependsOn (the array order below is already a valid execution order).",
+    "Address substitution: calldata embeds capture-time addresses; replay on a new deployment must re-encode decodedCall.args with the new addressBook (labels in tx.from/to + addressBook).",
+    "Vectors with requiresImpersonation must be sent from an impersonated account (hardhat_impersonateAccount / anvil_impersonateAccount).",
+    "Merkle rollover (treeNumber > 0) is NOT covered: reaching it needs >65,536 leaf insertions (~100+ full blocks of batch inserts) — see OQ-1 and README 'Uncovered'."
+  ],
+  "vectors": [
+    {
+      "id": "admin-set-hook-router",
+      "file": "admin-set-hook-router.json",
+      "category": "admin",
+      "dependsOn": [],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner wires the CCTPHookRouter into the pool (required for inbound cross-chain shields; deploy script leaves this unset)."
+    },
+    {
+      "id": "cctp-set-mock-relayer",
+      "file": "cctp-set-mock-relayer.json",
+      "category": "cctp-config",
+      "dependsOn": [],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Mock-CCTP wiring (not a pool call): point the hub MockMessageTransmitterV2's relayer at the CCTPHookRouter so relayWithHook can call receiveMessage. Recorded for replay completeness; identical in old/new deployments."
+    },
+    {
+      "id": "admin-set-remote-pool",
+      "file": "admin-set-remote-pool.json",
+      "category": "admin",
+      "dependsOn": [],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner registers a remote pool for CCTP domain 101 (dummy client-pool address; required by atomicCrossChainUnshield). Emits RemotePoolSet."
+    },
+    {
+      "id": "admin-set-default-finality-threshold",
+      "file": "admin-set-default-finality-threshold.json",
+      "category": "admin",
+      "dependsOn": [],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner sets defaultFinalityThreshold to 1000 (FAST). Emits DefaultFinalityThresholdSet. Affects atomicCrossChainUnshield's depositForBurnWithHook finality argument."
+    },
+    {
+      "id": "admin-set-shield-fee-100",
+      "file": "admin-set-shield-fee-100.json",
+      "category": "admin",
+      "dependsOn": [],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner raises the flat shield fee 50 -> 100 bps. No event is emitted (spec §5.4)."
+    },
+    {
+      "id": "admin-set-shield-fee-too-high-revert",
+      "file": "admin-set-shield-fee-too-high-revert.json",
+      "category": "admin",
+      "dependsOn": [
+        "admin-set-shield-fee-100"
+      ],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "revertReason": "PrivacyPool: Fee too high",
+      "description": "setShieldFee(10001) exceeds the 10000 bps cap and reverts (I-10, OQ-10)."
+    },
+    {
+      "id": "admin-set-shield-fee-50",
+      "file": "admin-set-shield-fee-50.json",
+      "category": "admin",
+      "dependsOn": [
+        "admin-set-shield-fee-100"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner restores the flat shield fee to 50 bps for the shield vectors."
+    },
+    {
+      "id": "admin-set-fee-module-zero",
+      "file": "admin-set-fee-module-zero.json",
+      "category": "admin",
+      "dependsOn": [],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner detaches ArmadaFeeModule (deploy_fee_module.ts wired it in) so flat-fee shield paths can be captured. Emits FeeModuleSet."
+    },
+    {
+      "id": "admin-set-testing-mode-true",
+      "file": "admin-set-testing-mode-true.json",
+      "category": "admin",
+      "dependsOn": [],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner enables the testingMode proof bypass. Emits TestingModeSet TWICE per call (module delegatecall + router — OQ-8). All subsequent transact/unshield vectors run with proofs bypassed (spec §5.6 step 1)."
+    },
+    {
+      "id": "admin-set-verifying-key",
+      "file": "admin-set-verifying-key.json",
+      "category": "admin",
+      "dependsOn": [],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner registers a dummy verifying key for the unused (9,9) shape via the VerifierModule delegatecall. Emits VerifyingKeySet; no structural validation (spec §9.1)."
+    },
+    {
+      "id": "admin-set-privileged-shield-caller",
+      "file": "admin-set-privileged-shield-caller.json",
+      "category": "admin",
+      "dependsOn": [],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner marks CAROL as a privileged shield caller (fee-free shields, spec §7.3). No event."
+    },
+    {
+      "id": "admin-only-owner-revert",
+      "file": "admin-only-owner-revert.json",
+      "category": "admin",
+      "dependsOn": [],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "revertReason": "PrivacyPool: Only owner",
+      "description": "Non-owner (ALICE) calling an admin setter reverts with the router-level owner guard."
+    },
+    {
+      "id": "shield-direct-erc20",
+      "file": "shield-direct-erc20.json",
+      "category": "shield",
+      "dependsOn": [
+        "admin-set-fee-module-zero",
+        "admin-set-shield-fee-50"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Direct ERC20 shield of 100 USDC with the flat 50 bps fee: base 99.5 USDC to pool, 0.5 USDC fee to treasury (I-5, I-10)."
+    },
+    {
+      "id": "shield-fee-below-threshold",
+      "file": "shield-fee-below-threshold.json",
+      "category": "shield",
+      "dependsOn": [
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Shield of 199 base units at 50 bps: floor division makes the fee exactly 0 (I-10, Lean fee_zero_below_threshold)."
+    },
+    {
+      "id": "shield-batch-two-requests",
+      "file": "shield-batch-two-requests.json",
+      "category": "shield",
+      "dependsOn": [
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Two shield requests in one call (5 + 7 USDC): single Shield event with two entries, two leaves inserted atomically."
+    },
+    {
+      "id": "shield-privileged-caller",
+      "file": "shield-privileged-caller.json",
+      "category": "shield",
+      "dependsOn": [
+        "admin-set-privileged-shield-caller"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Privileged caller (CAROL) shields 10 USDC: full value committed, zero fee (spec §7.3 privileged branch)."
+    },
+    {
+      "id": "shield-gasless-wrapper",
+      "file": "shield-gasless-wrapper.json",
+      "category": "shield",
+      "dependsOn": [
+        "admin-set-fee-module-zero"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Gasless shield: BOB signs an EIP-2612 permit for 20 USDC; the relayer (DEPLOYER) calls GaslessShieldWrapper.gaslessShield, which pulls 1 USDC relayer fee and shields 19 USDC into the pool (flat 50 bps pool fee applies)."
+    },
+    {
+      "id": "admin-set-fee-module-restore",
+      "file": "admin-set-fee-module-restore.json",
+      "category": "admin",
+      "dependsOn": [
+        "admin-set-fee-module-zero"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner re-attaches ArmadaFeeModule so the fee-module shield path (spec §7.3) can be captured. Emits FeeModuleSet."
+    },
+    {
+      "id": "shield-fee-module-active",
+      "file": "shield-fee-module-active.json",
+      "category": "shield",
+      "dependsOn": [
+        "admin-set-fee-module-restore"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Shield of 1000 USDC with ArmadaFeeModule active (integrator=0): base tier 50 bps armadaTake to treasury, recordShieldFee bookkeeping call (spec §7.3 fee-module branch)."
+    },
+    {
+      "id": "shield-npk-boundary-revert",
+      "file": "shield-npk-boundary-revert.json",
+      "category": "shield",
+      "dependsOn": [
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "revertReason": "ShieldModule: Invalid npk",
+      "description": "npk exactly equal to SNARK_SCALAR_FIELD is rejected (I-7 boundary: npk must be < field)."
+    },
+    {
+      "id": "shield-erc721-revert",
+      "file": "shield-erc721-revert.json",
+      "category": "shield",
+      "dependsOn": [
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "revertReason": "ShieldModule: Only ERC20 supported",
+      "description": "ERC721 token type passes preimage validation (value==1, npk valid) but the token pull requires ERC20 (OQ-6 dead NFT path)."
+    },
+    {
+      "id": "shield-zero-value-revert",
+      "file": "shield-zero-value-revert.json",
+      "category": "shield",
+      "dependsOn": [
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "revertReason": "ShieldModule: Invalid value",
+      "description": "Zero-value shield is rejected before any token movement."
+    },
+    {
+      "id": "shield-no-requests-revert",
+      "file": "shield-no-requests-revert.json",
+      "category": "shield",
+      "dependsOn": [
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "revertReason": "ShieldModule: No requests",
+      "description": "Empty request batch is rejected."
+    },
+    {
+      "id": "transact-1x1",
+      "file": "transact-1x1.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Transact shape (1,1): 1 nullifier(s), 1 commitment(s) inserted; Nullified + Transact events. Dummy proof — testingMode bypass active."
+    },
+    {
+      "id": "transact-1x2",
+      "file": "transact-1x2.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Transact shape (1,2): 1 nullifier(s), 2 commitment(s) inserted; Nullified + Transact events. Dummy proof — testingMode bypass active."
+    },
+    {
+      "id": "transact-2x2",
+      "file": "transact-2x2.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Transact shape (2,2): 2 nullifier(s), 2 commitment(s) inserted; Nullified + Transact events. Dummy proof — testingMode bypass active."
+    },
+    {
+      "id": "transact-2x3",
+      "file": "transact-2x3.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Transact shape (2,3): 2 nullifier(s), 3 commitment(s) inserted; Nullified + Transact events. Dummy proof — testingMode bypass active."
+    },
+    {
+      "id": "transact-8x4",
+      "file": "transact-8x4.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Transact shape (8,4): 8 nullifier(s), 4 commitment(s) inserted; Nullified + Transact events. Dummy proof — testingMode bypass active."
+    },
+    {
+      "id": "transact-2x1",
+      "file": "transact-2x1.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Transact shape (2,1): 2 nullifier(s), 1 commitment(s) inserted; Nullified + Transact events. Dummy proof — testingMode bypass active."
+    },
+    {
+      "id": "transact-3x1",
+      "file": "transact-3x1.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Transact shape (3,1): 3 nullifier(s), 1 commitment(s) inserted; Nullified + Transact events. Dummy proof — testingMode bypass active."
+    },
+    {
+      "id": "transact-4x1",
+      "file": "transact-4x1.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Transact shape (4,1): 4 nullifier(s), 1 commitment(s) inserted; Nullified + Transact events. Dummy proof — testingMode bypass active."
+    },
+    {
+      "id": "transact-5x1",
+      "file": "transact-5x1.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Transact shape (5,1): 5 nullifier(s), 1 commitment(s) inserted; Nullified + Transact events. Dummy proof — testingMode bypass active."
+    },
+    {
+      "id": "transact-6x1",
+      "file": "transact-6x1.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Transact shape (6,1): 6 nullifier(s), 1 commitment(s) inserted; Nullified + Transact events. Dummy proof — testingMode bypass active."
+    },
+    {
+      "id": "transact-7x1",
+      "file": "transact-7x1.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Transact shape (7,1): 7 nullifier(s), 1 commitment(s) inserted; Nullified + Transact events. Dummy proof — testingMode bypass active."
+    },
+    {
+      "id": "transact-8x1",
+      "file": "transact-8x1.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Transact shape (8,1): 8 nullifier(s), 1 commitment(s) inserted; Nullified + Transact events. Dummy proof — testingMode bypass active."
+    },
+    {
+      "id": "transact-3x2",
+      "file": "transact-3x2.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Transact shape (3,2): 3 nullifier(s), 2 commitment(s) inserted; Nullified + Transact events. Dummy proof — testingMode bypass active."
+    },
+    {
+      "id": "transact-4x2",
+      "file": "transact-4x2.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Transact shape (4,2): 4 nullifier(s), 2 commitment(s) inserted; Nullified + Transact events. Dummy proof — testingMode bypass active."
+    },
+    {
+      "id": "transact-5x2",
+      "file": "transact-5x2.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Transact shape (5,2): 5 nullifier(s), 2 commitment(s) inserted; Nullified + Transact events. Dummy proof — testingMode bypass active."
+    },
+    {
+      "id": "transact-6x2",
+      "file": "transact-6x2.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Transact shape (6,2): 6 nullifier(s), 2 commitment(s) inserted; Nullified + Transact events. Dummy proof — testingMode bypass active."
+    },
+    {
+      "id": "transact-1x3",
+      "file": "transact-1x3.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Transact shape (1,3): 1 nullifier(s), 3 commitment(s) inserted; Nullified + Transact events. Dummy proof — testingMode bypass active."
+    },
+    {
+      "id": "transact-3x3",
+      "file": "transact-3x3.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Transact shape (3,3): 3 nullifier(s), 3 commitment(s) inserted; Nullified + Transact events. Dummy proof — testingMode bypass active."
+    },
+    {
+      "id": "transact-4x3",
+      "file": "transact-4x3.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Transact shape (4,3): 4 nullifier(s), 3 commitment(s) inserted; Nullified + Transact events. Dummy proof — testingMode bypass active."
+    },
+    {
+      "id": "transact-batch-1x1-plus-1x1",
+      "file": "transact-batch-1x1-plus-1x1.json",
+      "category": "transact",
+      "dependsOn": [
+        "transact-1x1"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Two 1x1 transactions in one transact call: two Nullified events, single batched Transact event with both commitments (spec §8.1 steps 5-7)."
+    },
+    {
+      "id": "transact-double-spend-revert",
+      "file": "transact-double-spend-revert.json",
+      "category": "transact",
+      "dependsOn": [
+        "transact-1x1"
+      ],
+      "proofsBypassed": true,
+      "outcome": "revert",
+      "revertReason": "TransactModule: Note already spent",
+      "description": "Replaying the exact calldata of transact-1x1 reverts: its nullifier is already marked (I-4). The old merkle root remains valid in rootHistory (I-2), so validation reaches the nullifier check."
+    },
+    {
+      "id": "transact-invalid-merkle-root-revert",
+      "file": "transact-invalid-merkle-root-revert.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "revert",
+      "revertReason": "TransactModule: Invalid Merkle Root",
+      "description": "Transaction over a root that was never inserted reverts at validation step 4 (spec §8.3)."
+    },
+    {
+      "id": "transact-chainid-mismatch-revert",
+      "file": "transact-chainid-mismatch-revert.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "revert",
+      "revertReason": "TransactModule: ChainID mismatch",
+      "description": "boundParams.chainID != block.chainid reverts at validation step 3 (spec §8.3)."
+    },
+    {
+      "id": "transact-no-transactions-revert",
+      "file": "transact-no-transactions-revert.json",
+      "category": "transact",
+      "dependsOn": [
+        "admin-set-testing-mode-true",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "revert",
+      "revertReason": "TransactModule: No transactions",
+      "description": "Empty transaction batch is rejected (spec §8.1 step 1)."
+    },
+    {
+      "id": "unshield-local-normal",
+      "file": "unshield-local-normal.json",
+      "category": "unshield",
+      "dependsOn": [
+        "transact-1x2",
+        "shield-direct-erc20"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Local unshield of 25 USDC to BOB (1x2 shape, unshield=NORMAL): last commitment is the unshield-output note hash (not inserted); Unshield event with fee=0 (D-2)."
+    },
+    {
+      "id": "unshield-local-redirect",
+      "file": "unshield-local-redirect.json",
+      "category": "unshield",
+      "dependsOn": [
+        "unshield-local-normal"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Local unshield with unshield=REDIRECT: hash check binds msg.sender (DEPLOYER), but the 30 USDC payout goes to the npk-encoded address (BOB) — spec §8.3 step 6 note."
+    },
+    {
+      "id": "unshield-to-contract-recipient",
+      "file": "unshield-to-contract-recipient.json",
+      "category": "unshield",
+      "dependsOn": [
+        "unshield-local-normal"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Local unshield of 5 USDC to a contract recipient (GASLESS_WRAPPER): plain ERC20 transfer, no callback expected or attempted (D-4)."
+    },
+    {
+      "id": "unshield-atomic-crosschain",
+      "file": "unshield-atomic-crosschain.json",
+      "category": "unshield",
+      "dependsOn": [
+        "admin-set-remote-pool",
+        "admin-set-default-finality-threshold",
+        "unshield-local-normal"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Atomic cross-chain unshield of 50 USDC to BOB on domain 101 via mock CCTP depositForBurnWithHook (maxFee 1 USDC, finality from defaultFinalityThreshold=1000). Burns pool USDC, emits CrossChainUnshieldInitiated + Unshield, returns nonce=0 (spec §8.2)."
+    },
+    {
+      "id": "unshield-crosschain-unknown-dest-revert",
+      "file": "unshield-crosschain-unknown-dest-revert.json",
+      "category": "unshield",
+      "dependsOn": [
+        "unshield-atomic-crosschain"
+      ],
+      "proofsBypassed": true,
+      "outcome": "revert",
+      "revertReason": "TransactModule: Unknown destination",
+      "description": "atomicCrossChainUnshield to unregistered domain 199 reverts before proof validation (spec §8.2 check 4)."
+    },
+    {
+      "id": "shieldin-finalized-fee-module",
+      "file": "shieldin-finalized-fee-module.json",
+      "category": "shield-in",
+      "dependsOn": [
+        "admin-set-hook-router",
+        "cctp-set-mock-relayer",
+        "admin-set-fee-module-restore",
+        "shield-fee-module-active"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Inbound cross-chain shield at STANDARD finality (2000) routed to handleReceiveFinalizedMessage, fee module active: 500 USDC gross, 2 USDC CCTP fee minted to hookRouter, 498 USDC minted to pool; armadaTake (50 bps of 498) paid to treasury OUT OF the pool's own balance (spec §7.2 note)."
+    },
+    {
+      "id": "admin-set-fee-module-zero-2",
+      "file": "admin-set-fee-module-zero-2.json",
+      "category": "admin",
+      "dependsOn": [
+        "shieldin-finalized-fee-module"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner detaches the fee module again so the fast-finality shield-in vector exercises the flat-fee path."
+    },
+    {
+      "id": "shieldin-fast-flat-fee",
+      "file": "shieldin-fast-flat-fee.json",
+      "category": "shield-in",
+      "dependsOn": [
+        "admin-set-hook-router",
+        "cctp-set-mock-relayer",
+        "admin-set-fee-module-zero-2"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Inbound cross-chain shield at FAST finality (1000) routed to handleReceiveUnfinalizedMessage, flat 50 bps fee: 300 USDC gross, 1 USDC CCTP fee to hookRouter, 299 USDC minted to pool; shield fee paid from the pool's own balance to treasury."
+    },
+    {
+      "id": "shieldin-insufficient-finality-revert",
+      "file": "shieldin-insufficient-finality-revert.json",
+      "category": "shield-in",
+      "dependsOn": [
+        "admin-set-hook-router"
+      ],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "revertReason": "PrivacyPool: Insufficient finality",
+      "description": "handleReceiveFinalizedMessage with finalityThresholdExecuted=1000 (< STANDARD 2000) reverts (spec §5.3 step 2)."
+    },
+    {
+      "id": "shieldin-unauthorized-caller-revert",
+      "file": "shieldin-unauthorized-caller-revert.json",
+      "category": "shield-in",
+      "dependsOn": [
+        "admin-set-hook-router"
+      ],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "revertReason": "PrivacyPool: Unauthorized caller",
+      "description": "handleReceiveUnfinalizedMessage from an EOA that is neither hookRouter nor tokenMessenger reverts (spec §5.3 step 1)."
+    },
+    {
+      "id": "shieldin-invalid-message-type-revert",
+      "file": "shieldin-invalid-message-type-revert.json",
+      "category": "shield-in",
+      "dependsOn": [
+        "admin-set-hook-router"
+      ],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "revertReason": "PrivacyPool: Invalid message type",
+      "description": "Inbound CCTP payload with messageType=UNSHIELD reverts on the hub — it only accepts SHIELD payloads (spec §5.3 step 5)."
+    },
+    {
+      "id": "admin-set-shield-pause-contract",
+      "file": "admin-set-shield-pause-contract.json",
+      "category": "admin",
+      "dependsOn": [],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner points shieldPauseContract at a MockShieldPauseController (capture-only mock with permissionless flag setters; the real ShieldPauseController is security-council gated). Emits ShieldPauseContractSet."
+    },
+    {
+      "id": "shield-paused-revert",
+      "file": "shield-paused-revert.json",
+      "category": "pause",
+      "dependsOn": [
+        "admin-set-shield-pause-contract"
+      ],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "revertReason": "ShieldModule: shields paused",
+      "description": "Shield while shieldsPaused()=true reverts before any token movement (spec §7.1 step 1)."
+    },
+    {
+      "id": "transact-withdraw-only-revert",
+      "file": "transact-withdraw-only-revert.json",
+      "category": "pause",
+      "dependsOn": [
+        "admin-set-shield-pause-contract"
+      ],
+      "proofsBypassed": true,
+      "outcome": "revert",
+      "revertReason": "TransactModule: withdraw only",
+      "description": "Transact with unshield=NONE while withdrawOnlyMode()=true reverts (spec §8.1 step 3)."
+    },
+    {
+      "id": "transact-withdraw-only-unshield-ok",
+      "file": "transact-withdraw-only-unshield-ok.json",
+      "category": "pause",
+      "dependsOn": [
+        "transact-withdraw-only-revert"
+      ],
+      "proofsBypassed": true,
+      "outcome": "success",
+      "description": "Unshield transaction SUCCEEDS while withdrawOnlyMode()=true — the mode only blocks unshield=NONE (spec §8.1 step 3)."
+    },
+    {
+      "id": "transact-emergency-paused-revert",
+      "file": "transact-emergency-paused-revert.json",
+      "category": "pause",
+      "dependsOn": [
+        "admin-set-shield-pause-contract"
+      ],
+      "proofsBypassed": true,
+      "outcome": "revert",
+      "revertReason": "TransactModule: emergency paused",
+      "description": "Any transact — including unshields — reverts while emergencyPaused()=true (spec §8.1 step 2)."
+    },
+    {
+      "id": "admin-clear-shield-pause-contract",
+      "file": "admin-clear-shield-pause-contract.json",
+      "category": "admin",
+      "dependsOn": [
+        "shield-paused-revert",
+        "transact-withdraw-only-revert",
+        "transact-emergency-paused-revert"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner clears shieldPauseContract back to address(0), disabling all three pause checks (spec §10)."
+    },
+    {
+      "id": "revert-insert-leaves-only-self",
+      "file": "revert-insert-leaves-only-self.json",
+      "category": "edge",
+      "dependsOn": [],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "revertReason": "Only self",
+      "description": "Direct external call to the router's insertLeaves reverts — tree mutation is self-call gated (I-9)."
+    },
+    {
+      "id": "revert-module-direct-call",
+      "file": "revert-module-direct-call.json",
+      "category": "edge",
+      "dependsOn": [],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "revertReason": "PrivacyPoolStorage: Direct call not allowed",
+      "description": "Calling ShieldModule.shield directly (not via router delegatecall) trips the onlyDelegatecall guard (I-9)."
+    },
+    {
+      "id": "admin-set-fee-module-malformed",
+      "file": "admin-set-fee-module-malformed.json",
+      "category": "admin",
+      "dependsOn": [
+        "admin-clear-shield-pause-contract"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner points feeModule at the capture-only MockConfigurableFeeModule (mode=1: totalFee = amount + 1)."
+    },
+    {
+      "id": "revert-fee-module-malformed-overflow",
+      "file": "revert-fee-module-malformed-overflow.json",
+      "category": "edge",
+      "dependsOn": [
+        "admin-set-fee-module-malformed"
+      ],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "description": "Fee module returning totalFee > amount: base = value - totalFee underflows → Panic(0x11) bubbled verbatim through the router (spec §7.3, §5.7). No tokens move (I-8)."
+    },
+    {
+      "id": "revert-fee-module-reverting",
+      "file": "revert-fee-module-reverting.json",
+      "category": "edge",
+      "dependsOn": [
+        "admin-set-fee-module-malformed"
+      ],
+      "proofsBypassed": false,
+      "outcome": "revert",
+      "revertReason": "MockFeeModule: boom",
+      "description": "Fee module whose calculateShieldFee reverts: the module's revert string bubbles verbatim through the router's delegatecall helper (spec §5.7)."
+    },
+    {
+      "id": "admin-set-fee-module-zero-3",
+      "file": "admin-set-fee-module-zero-3.json",
+      "category": "admin",
+      "dependsOn": [
+        "revert-fee-module-malformed-overflow",
+        "revert-fee-module-reverting"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner detaches the malformed mock fee module (cleanup; end state feeModule = 0)."
+    },
+    {
+      "id": "admin-set-testing-mode-false",
+      "file": "admin-set-testing-mode-false.json",
+      "category": "admin",
+      "dependsOn": [
+        "admin-set-testing-mode-true"
+      ],
+      "proofsBypassed": false,
+      "outcome": "success",
+      "description": "Owner disables testingMode (cleanup): real SNARK verification restored; double TestingModeSet emission again (OQ-8). Final state matches the deployed fixturenet plus captured history."
+    }
+  ]
+}

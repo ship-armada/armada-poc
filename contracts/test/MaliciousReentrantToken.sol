@@ -6,7 +6,7 @@ pragma solidity ^0.8.17;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IPrivacyPool} from "../privacy-pool/interfaces/IPrivacyPool.sol";
-import {ShieldRequest, Transaction} from "../railgun/logic/Globals.sol";
+import {ShieldRequest, Transaction} from "../privacy-pool/types/PoolTypes.sol";
 
 /**
  * @title MaliciousReentrantToken

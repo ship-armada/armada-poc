@@ -1,0 +1,182 @@
+{
+  "id": "shield-fee-below-threshold",
+  "category": "shield",
+  "description": "Shield of 199 base units at 50 bps: floor division makes the fee exactly 0 (I-10, Lean fee_zero_below_threshold).",
+  "specRefs": [
+    "§7.1",
+    "I-5"
+  ],
+  "proofsBypassed": false,
+  "dependsOn": [
+    "shield-direct-erc20"
+  ],
+  "setup": [
+    "MockUSDCV2.mint(ALICE, 10_000 USDC), mint(BOB, 1_000 USDC), mint(CAROL, 1_000 USDC) by DEPLOYER (minter)",
+    "USDC.approve(POOL, uint256.max) from ALICE, BOB and CAROL"
+  ],
+  "requiresImpersonation": null,
+  "setupTxs": [],
+  "tx": {
+    "from": "ALICE",
+    "fromAddress": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    "to": "POOL",
+    "toAddress": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+    "calldata": "0xcd6a3d7f0000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010e0a1bc419d8b988fb2c54ddf2b5d59757d75d654caba95bf3ffd9602dec50b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c7fb1d0360a03b3f425408328517571879be6925782c20c3ec8dd5ea3dd91882634c1fdd40c66a72dc7f20fb22490e3748c5f25e305e324f1e692c9d42b504c484f0fc8418ae3e0d8b5ab61f457c497559c132fb359e57ba878dc329f8b55c03baac6c54b363257c0d7dbce895356e1f31735e28a14992c15b5d46ce60a9f62182",
+    "value": "0x0",
+    "decodedCall": {
+      "function": "shield",
+      "args": {
+        "requests": [
+          {
+            "preimage": {
+              "npk": "0x0e0a1bc419d8b988fb2c54ddf2b5d59757d75d654caba95bf3ffd9602dec50b0",
+              "token": {
+                "tokenType": 0,
+                "tokenAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+                "tokenSubID": 0
+              },
+              "value": "0xc7"
+            },
+            "ciphertext": {
+              "encryptedBundle": [
+                "0xfb1d0360a03b3f425408328517571879be6925782c20c3ec8dd5ea3dd9188263",
+                "0x4c1fdd40c66a72dc7f20fb22490e3748c5f25e305e324f1e692c9d42b504c484",
+                "0xf0fc8418ae3e0d8b5ab61f457c497559c132fb359e57ba878dc329f8b55c03ba"
+              ],
+              "shieldKey": "0xac6c54b363257c0d7dbce895356e1f31735e28a14992c15b5d46ce60a9f62182"
+            }
+          }
+        ],
+        "integrator": "0x0000000000000000000000000000000000000000"
+      }
+    }
+  },
+  "preState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x1",
+    "pool.merkleRoot": "0x29edb50ea30d996ee7605b6c86f78c4e2a6d2bc8b8e5ad913149e5d3c6564ad6",
+    "pool.lastEventBlock": "0x86",
+    "usdc.balanceOf[POOL]": "0x5ee3fe0",
+    "usdc.balanceOf[ALICE]": "0x24e160300",
+    "usdc.balanceOf[BOB]": "0x3b9aca00",
+    "usdc.balanceOf[CAROL]": "0x3b9aca00",
+    "usdc.balanceOf[TREASURY]": "0x7a120",
+    "usdc.balanceOf[DEPLOYER]": "0x0",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x0"
+  },
+  "result": {
+    "status": 1,
+    "txHash": "0x3c7a3547a4e2d1f5cf34bae6a7de722428f6dc4f85b900bf58423803bbc953f2",
+    "blockNumber": 135,
+    "gasUsed": "0xbdc37",
+    "returnData": null,
+    "revert": null,
+    "events": [
+      {
+        "logIndex": 0,
+        "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+        "topics": [
+          "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "0x00000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c8",
+          "0x000000000000000000000000e6e340d132b5f46d1e472debcd681b2abc16e57e"
+        ],
+        "data": "0x00000000000000000000000000000000000000000000000000000000000000c7",
+        "decoded": {
+          "name": "Transfer",
+          "args": {
+            "from": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+            "to": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+            "value": "0xc7"
+          }
+        }
+      },
+      {
+        "logIndex": 1,
+        "address": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+        "topics": [
+          "0x3a5b9dc26075a3801a6ddccf95fec485bb7500a91b44cec1add984c21ee6db3b"
+        ],
+        "data": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000160000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000010e0a1bc419d8b988fb2c54ddf2b5d59757d75d654caba95bf3ffd9602dec50b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c70000000000000000000000000000000000000000000000000000000000000001fb1d0360a03b3f425408328517571879be6925782c20c3ec8dd5ea3dd91882634c1fdd40c66a72dc7f20fb22490e3748c5f25e305e324f1e692c9d42b504c484f0fc8418ae3e0d8b5ab61f457c497559c132fb359e57ba878dc329f8b55c03baac6c54b363257c0d7dbce895356e1f31735e28a14992c15b5d46ce60a9f6218200000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": {
+          "name": "Shield",
+          "args": {
+            "treeNumber": "0x0",
+            "startPosition": "0x1",
+            "commitments": [
+              {
+                "npk": "0x0e0a1bc419d8b988fb2c54ddf2b5d59757d75d654caba95bf3ffd9602dec50b0",
+                "token": {
+                  "tokenType": "0x0",
+                  "tokenAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+                  "tokenSubID": "0x0"
+                },
+                "value": "0xc7"
+              }
+            ],
+            "shieldCiphertext": [
+              {
+                "encryptedBundle": [
+                  "0xfb1d0360a03b3f425408328517571879be6925782c20c3ec8dd5ea3dd9188263",
+                  "0x4c1fdd40c66a72dc7f20fb22490e3748c5f25e305e324f1e692c9d42b504c484",
+                  "0xf0fc8418ae3e0d8b5ab61f457c497559c132fb359e57ba878dc329f8b55c03ba"
+                ],
+                "shieldKey": "0xac6c54b363257c0d7dbce895356e1f31735e28a14992c15b5d46ce60a9f62182"
+              }
+            ],
+            "fees": [
+              "0x0"
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "postState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x2",
+    "pool.merkleRoot": "0x25699c654e2adc45fa87f2b86f3e303b2e610e32064280edefe74c6c3c93fcab",
+    "pool.lastEventBlock": "0x87",
+    "usdc.balanceOf[POOL]": "0x5ee40a7",
+    "usdc.balanceOf[ALICE]": "0x24e160239",
+    "usdc.balanceOf[BOB]": "0x3b9aca00",
+    "usdc.balanceOf[CAROL]": "0x3b9aca00",
+    "usdc.balanceOf[TREASURY]": "0x7a120",
+    "usdc.balanceOf[DEPLOYER]": "0x0",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x0",
+    "pool.rootHistory[postTree][postRoot]": true
+  },
+  "context": {
+    "chainId": 31337,
+    "network": "local fixturenet (Anvil, hub chain only)",
+    "deployments": {
+      "privacyPool": "deployments/privacy-pool-hub.json",
+      "cctp": "deployments/hub-v3.json",
+      "feeModule": "deployments/fee-module-hub.json",
+      "governance": "deployments/governance-hub.json"
+    },
+    "addressBook": {
+      "DEPLOYER": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "ALICE": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "BOB": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "CAROL": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "TREASURY": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+      "POOL": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+      "SHIELD_MODULE": "0xc5a5C42992dECbae36851359345FE25997F5C42d",
+      "TRANSACT_MODULE": "0x67d269191c92Caf3cD7723F116c85e6E9bf55933",
+      "MERKLE_MODULE": "0x7a2088a1bFc9d81c55368AE168C2C02570cB814F",
+      "VERIFIER_MODULE": "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
+      "HOOK_ROUTER": "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
+      "GASLESS_WRAPPER": "0xCD8a1C3ba11CF5ECfa6267617243239504a98d90",
+      "TOKEN_MESSENGER": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+      "MESSAGE_TRANSMITTER": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+      "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "FEE_MODULE": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+      "CLIENT_POOL": "0x0000000000000000000000000000000000C11EA7",
+      "MOCK_PAUSE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+      "MOCK_FEE_MODULE": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f"
+    }
+  },
+  "capturedAt": "2026-09-25T17:02:03.691Z"
+}

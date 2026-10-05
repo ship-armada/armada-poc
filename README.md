@@ -1,6 +1,6 @@
 # Armada
 
-**Cross-chain privacy with shielded yield** — a Railgun-style ZK shielded pool combined with Circle's CCTP for cross-chain USDC bridging and DeFi yield integration.
+**Cross-chain privacy with shielded yield** — an in-house ZK shielded pool (clean-room rewrite) combined with Circle's CCTP for cross-chain USDC bridging and DeFi yield integration.
 
 The project is transitioning from POC to production and ships in two launches:
 

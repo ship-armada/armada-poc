@@ -13,7 +13,7 @@ import {
     TokenData,
     TokenType,
     ShieldCiphertext
-} from "../../contracts/railgun/logic/Globals.sol";
+} from "../../contracts/privacy-pool/types/PoolTypes.sol";
 
 /// @dev Minimal PrivacyPool stub. Implements the `shield` entry the wrapper calls, pulling the sum of
 /// all note values from the caller (the wrapper) via transferFrom — mirroring the real pool's pull

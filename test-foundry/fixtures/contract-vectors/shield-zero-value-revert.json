@@ -1,0 +1,127 @@
+{
+  "id": "shield-zero-value-revert",
+  "category": "shield",
+  "description": "Zero-value shield is rejected before any token movement.",
+  "specRefs": [
+    "§7.1"
+  ],
+  "proofsBypassed": false,
+  "dependsOn": [
+    "shield-direct-erc20"
+  ],
+  "setup": [
+    "MockUSDCV2.mint(ALICE, 10_000 USDC), mint(BOB, 1_000 USDC), mint(CAROL, 1_000 USDC) by DEPLOYER (minter)",
+    "USDC.approve(POOL, uint256.max) from ALICE, BOB and CAROL"
+  ],
+  "requiresImpersonation": null,
+  "setupTxs": [],
+  "tx": {
+    "from": "ALICE",
+    "fromAddress": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    "to": "POOL",
+    "toAddress": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+    "calldata": "0xcd6a3d7f000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001183b398973fce1217754a23bcc6b7033c65b89ae901933a16aa224fccb606aed00000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa300000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e0c31a17327518a0ca7b7be34cad4b0f179316d6caf070d9d3f70c32f9ed045bbf292a08e4179626c3203e96dd36707b16edb32e30ef120b185dfb086f323e5fdccb36376c3de1636e122aafcb17ebccd3a28844e471a0d4381eda84532583126df9a21b7760e98e6b9188aeaa2fdfa3d029b9973facc52078442b8b4f59698d",
+    "value": "0x0",
+    "decodedCall": {
+      "function": "shield",
+      "args": {
+        "requests": [
+          {
+            "preimage": {
+              "npk": "0x183b398973fce1217754a23bcc6b7033c65b89ae901933a16aa224fccb606aed",
+              "token": {
+                "tokenType": 0,
+                "tokenAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+                "tokenSubID": 0
+              },
+              "value": "0x0"
+            },
+            "ciphertext": {
+              "encryptedBundle": [
+                "0xe0c31a17327518a0ca7b7be34cad4b0f179316d6caf070d9d3f70c32f9ed045b",
+                "0xbf292a08e4179626c3203e96dd36707b16edb32e30ef120b185dfb086f323e5f",
+                "0xdccb36376c3de1636e122aafcb17ebccd3a28844e471a0d4381eda8453258312"
+              ],
+              "shieldKey": "0x6df9a21b7760e98e6b9188aeaa2fdfa3d029b9973facc52078442b8b4f59698d"
+            }
+          }
+        ],
+        "integrator": "0x0000000000000000000000000000000000000000"
+      }
+    }
+  },
+  "preState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x7",
+    "pool.merkleRoot": "0x1ac2e5004d50e6833e9172e2b25cb23b630fb14d7cc150ae63dc323e10b9b70a",
+    "pool.lastEventBlock": "0x8c",
+    "usdc.balanceOf[POOL]": "0x43abfe2f",
+    "usdc.balanceOf[ALICE]": "0x211c41d39",
+    "usdc.balanceOf[BOB]": "0x3a699d00",
+    "usdc.balanceOf[CAROL]": "0x3b023380",
+    "usdc.balanceOf[TREASURY]": "0x5649d8",
+    "usdc.balanceOf[DEPLOYER]": "0xf4240",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x0"
+  },
+  "result": {
+    "status": 0,
+    "txHash": "0x3e3f46decbd9e1073e9080a01f561a0bd06a9b89c0a8fa7a455979882f1d9f33",
+    "blockNumber": 143,
+    "gasUsed": "0x8e9e",
+    "returnData": null,
+    "revert": {
+      "kind": "Error(string)",
+      "reason": "ShieldModule: Invalid value",
+      "data": "0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000001b536869656c644d6f64756c653a20496e76616c69642076616c75650000000000"
+    },
+    "events": []
+  },
+  "postState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x7",
+    "pool.merkleRoot": "0x1ac2e5004d50e6833e9172e2b25cb23b630fb14d7cc150ae63dc323e10b9b70a",
+    "pool.lastEventBlock": "0x8c",
+    "usdc.balanceOf[POOL]": "0x43abfe2f",
+    "usdc.balanceOf[ALICE]": "0x211c41d39",
+    "usdc.balanceOf[BOB]": "0x3a699d00",
+    "usdc.balanceOf[CAROL]": "0x3b023380",
+    "usdc.balanceOf[TREASURY]": "0x5649d8",
+    "usdc.balanceOf[DEPLOYER]": "0xf4240",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x0",
+    "pool.rootHistory[postTree][postRoot]": true
+  },
+  "context": {
+    "chainId": 31337,
+    "network": "local fixturenet (Anvil, hub chain only)",
+    "deployments": {
+      "privacyPool": "deployments/privacy-pool-hub.json",
+      "cctp": "deployments/hub-v3.json",
+      "feeModule": "deployments/fee-module-hub.json",
+      "governance": "deployments/governance-hub.json"
+    },
+    "addressBook": {
+      "DEPLOYER": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "ALICE": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "BOB": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "CAROL": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "TREASURY": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+      "POOL": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+      "SHIELD_MODULE": "0xc5a5C42992dECbae36851359345FE25997F5C42d",
+      "TRANSACT_MODULE": "0x67d269191c92Caf3cD7723F116c85e6E9bf55933",
+      "MERKLE_MODULE": "0x7a2088a1bFc9d81c55368AE168C2C02570cB814F",
+      "VERIFIER_MODULE": "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
+      "HOOK_ROUTER": "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
+      "GASLESS_WRAPPER": "0xCD8a1C3ba11CF5ECfa6267617243239504a98d90",
+      "TOKEN_MESSENGER": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+      "MESSAGE_TRANSMITTER": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+      "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "FEE_MODULE": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+      "CLIENT_POOL": "0x0000000000000000000000000000000000C11EA7",
+      "MOCK_PAUSE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+      "MOCK_FEE_MODULE": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f"
+    }
+  },
+  "capturedAt": "2026-09-25T17:02:11.699Z"
+}

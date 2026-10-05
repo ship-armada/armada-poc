@@ -1,195 +1,138 @@
 // SPDX-License-Identifier: MIT
+// ABOUTME: Incremental Poseidon Merkle tree module for the privacy pool.
+// ABOUTME: Executes exclusively via delegatecall from the PrivacyPool router, so all
+// ABOUTME: tree state lives in the router's storage (see PrivacyPoolStorage).
 pragma solidity ^0.8.17;
 
 import "../storage/PrivacyPoolStorage.sol";
 import "../interfaces/IMerkleModule.sol";
-import "../../railgun/logic/Poseidon.sol";
+import "../types/PoseidonLibs.sol";
 
-/**
- * @title MerkleModule
- * @notice Handles merkle tree operations for the privacy pool
- * @dev Called via delegatecall from PrivacyPool router.
- *      Based on Railgun's Commitments.sol implementation.
- *
- *      This module manages a batch incremental merkle tree:
- *      - 16 levels deep (65,536 leaves per tree)
- *      - Uses Poseidon hash function
- *      - Supports tree rollover when full
- *      - Maintains root history for proof validation
- */
+/// @title MerkleModule
+/// @notice Append-only incremental binary Merkle tree over Poseidon (behavior spec section 6).
+/// @dev Trees are 16 levels deep (65,536 leaves). A batch of leaves always lands in a
+///      single tree: when a batch would overflow the current tree, the module rolls over
+///      to a fresh tree whose root is pre-cached at initialization. Every post-insertion
+///      root is recorded in `rootHistory` and never removed, so historical roots remain
+///      usable for proofs indefinitely.
 contract MerkleModule is PrivacyPoolStorage, IMerkleModule {
-    /**
-     * @notice Initialize the merkle tree with zero values
-     * @dev Must be called once during PrivacyPool initialization.
-     *      Calculates the zero values for each level and sets the initial root.
-     */
+    /// @notice Seeds the per-level zero nodes and the empty-tree root.
+    /// @dev Runs exactly once, from `PrivacyPool.initialize`. The level-0 zero leaf is the
+    ///      pinned consensus constant `ZERO_VALUE`; each subsequent level's zero node is the
+    ///      Poseidon node hash of the previous level's zero node paired with itself. The
+    ///      right-sibling cache (`filledSubTrees`) starts at the zero node for every level,
+    ///      and the resulting root of the fully empty tree is recorded as a valid root of
+    ///      tree 0 and cached for later rollovers.
     function initializeMerkle() external override onlyDelegatecall {
-        // Calculate zero values for each level
-        // zeros[0] = H("Railgun") % SNARK_SCALAR_FIELD
-        // zeros[i] = H(zeros[i-1], zeros[i-1])
-        zeros[0] = ZERO_VALUE;
         bytes32 currentZero = ZERO_VALUE;
 
-        for (uint256 i = 0; i < TREE_DEPTH; i++) {
-            // Store zero value for this level
-            zeros[i] = currentZero;
-
-            // Initialize filledSubTrees to avoid storage allocation costs later
-            filledSubTrees[i] = currentZero;
-
-            // Calculate zero value for next level
+        for (uint256 level = 0; level < TREE_DEPTH; level++) {
+            zeros[level] = currentZero;
+            filledSubTrees[level] = currentZero;
             currentZero = hashLeftRight(currentZero, currentZero);
         }
 
-        // Set initial merkle root (root of empty tree)
-        // Also cache it for quick tree rollover
         newTreeRoot = currentZero;
         merkleRoot = currentZero;
         rootHistory[treeNumber][currentZero] = true;
     }
 
-    /**
-     * @notice Hash two values together using Poseidon
-     * @param _left Left side of hash
-     * @param _right Right side of hash
-     * @return Poseidon hash of the two values
-     */
-    function hashLeftRight(bytes32 _left, bytes32 _right) public pure override returns (bytes32) {
-        return PoseidonT3.poseidon([_left, _right]);
+    /// @notice Poseidon node hash of two children.
+    /// @param left Left child node.
+    /// @param right Right child node.
+    /// @return Parent node digest.
+    function hashLeftRight(bytes32 left, bytes32 right) public pure override returns (bytes32) {
+        return PoseidonT3.poseidon([left, right]);
     }
 
-    /**
-     * @notice Insert leaves into the merkle tree
-     * @dev Updates the merkle root and root history.
-     *      Creates a new tree if current one is full.
-     *
-     *      IMPORTANT: This function INTENTIONALLY causes side effects on the
-     *      _leafHashes array to save gas. The array should not be reused after calling.
-     *
-     * @param _leafHashes Array of leaf hashes to insert
-     */
-    function insertLeaves(bytes32[] memory _leafHashes) external override onlyDelegatecall {
-        // Get initial count
-        uint256 count = _leafHashes.length;
+    /// @notice Appends a batch of leaves to the current tree and publishes the new root.
+    /// @dev The batch is folded level by level, hashing pairs into the FRONT of the input
+    ///      array. This deliberately mutates `leafHashes` in place to save gas — callers
+    ///      MUST NOT reuse the array afterwards. At each level, `filledSubTrees` tracks the
+    ///      rightmost incomplete node so a later batch can resume hashing against it.
+    /// @param leafHashes Leaf digests to append.
+    function insertLeaves(bytes32[] memory leafHashes) external override onlyDelegatecall {
+        uint256 count = leafHashes.length;
 
-        // No-op if no leaves
+        // Empty batch: no state change, no root-history write.
         if (count == 0) {
             return;
         }
 
-        // Create new tree if current one can't contain new leaves
-        // We insert all commitments into a new tree to ensure they can be spent in the same tx
-        if ((nextLeafIndex + count) > (2 ** TREE_DEPTH)) {
-            _newTree();
+        // Rollover: only when the batch cannot fit (an exactly-full tree does NOT roll
+        // over). The whole batch then lands in the new tree at index 0. `filledSubTrees`
+        // is intentionally NOT cleared: a fresh tree's insertion path never reads stale
+        // left-sibling entries, so resetting them would only waste gas.
+        if (nextLeafIndex + count > 2 ** TREE_DEPTH) {
+            merkleRoot = newTreeRoot;
+            nextLeafIndex = 0;
+            treeNumber += 1;
         }
 
-        // Current index is the index at each level to insert the hash
         uint256 levelInsertionIndex = nextLeafIndex;
-
-        // Update nextLeafIndex
         nextLeafIndex += count;
 
-        // Variables for starting point at next tree level
         uint256 nextLevelHashIndex;
-        uint256 nextLevelStartIndex;
-
-        // Loop through each level of the merkle tree and update
         for (uint256 level = 0; level < TREE_DEPTH; level++) {
-            // Calculate the index to start at for the next level
-            // >> is equivalent to / 2 rounded down
-            nextLevelStartIndex = levelInsertionIndex >> 1;
+            uint256 nextLevelStartIndex = levelInsertionIndex >> 1;
+            uint256 pending = 0;
 
-            uint256 insertionElement = 0;
-
-            // If we're on the right (odd index), hash with left sibling and move to left
+            // Odd insertion index: the first pending element already has a left sibling
+            // from a previously completed subtree. Absorb that pair first so the pairwise
+            // loop below always starts on an even (left-side) boundary.
             if (levelInsertionIndex % 2 == 1) {
-                // Calculate index to insert hash into _leafHashes[]
                 nextLevelHashIndex = (levelInsertionIndex >> 1) - nextLevelStartIndex;
-
-                // Hash with the filled subtree on the left
-                _leafHashes[nextLevelHashIndex] = hashLeftRight(
-                    filledSubTrees[level],
-                    _leafHashes[insertionElement]
-                );
-
-                // Increment
-                insertionElement += 1;
+                leafHashes[nextLevelHashIndex] = hashLeftRight(filledSubTrees[level], leafHashes[pending]);
+                pending = 1;
                 levelInsertionIndex += 1;
             }
 
-            // We're now on the left side, process pairs
-            for (; insertionElement < count; insertionElement += 2) {
+            // Fold the remaining pending elements pairwise into the front of the array.
+            for (; pending < count; pending += 2) {
                 bytes32 right;
-
-                // Calculate right value
-                if (insertionElement < count - 1) {
-                    // Use the next element
-                    right = _leafHashes[insertionElement + 1];
+                if (pending < count - 1) {
+                    // Pair with the next pending element.
+                    right = leafHashes[pending + 1];
                 } else {
-                    // Use zero value for this level
+                    // No sibling remains: pair with this level's zero node.
                     right = zeros[level];
                 }
 
-                // If we've created a new subtree at this level, update filledSubTrees
-                if (insertionElement == count - 1 || insertionElement == count - 2) {
-                    filledSubTrees[level] = _leafHashes[insertionElement];
+                // The last and second-to-last pending elements are the frontier of the
+                // tree at this level; remember the current one as the right sibling for
+                // the next batch.
+                if (pending == count - 1 || pending == count - 2) {
+                    filledSubTrees[level] = leafHashes[pending];
                 }
 
-                // Calculate index to insert hash into _leafHashes[]
                 nextLevelHashIndex = (levelInsertionIndex >> 1) - nextLevelStartIndex;
-
-                // Calculate the hash for the next level
-                _leafHashes[nextLevelHashIndex] = hashLeftRight(_leafHashes[insertionElement], right);
-
-                // Increment level insertion index
+                leafHashes[nextLevelHashIndex] = hashLeftRight(leafHashes[pending], right);
                 levelInsertionIndex += 2;
             }
 
-            // Get starting levelInsertionIndex value for next level
+            // Carry the folded elements up: they become the pending set one level higher.
             levelInsertionIndex = nextLevelStartIndex;
-
-            // Get count of elements for next level
             count = nextLevelHashIndex + 1;
         }
 
-        // Update the merkle root
-        merkleRoot = _leafHashes[0];
+        // After the final level, slot 0 holds the new root.
+        merkleRoot = leafHashes[0];
         rootHistory[treeNumber][merkleRoot] = true;
     }
 
-    /**
-     * @notice Get the tree number and starting index for new commitments
-     * @param _newCommitments Number of commitments to be inserted
-     * @return treeNum Tree number where commitments will be inserted
-     * @return startIndex Starting leaf index within that tree
-     */
+    /// @notice Predicts where a future batch would be inserted.
+    /// @dev Reachable only via delegatecall, which the router never performs for this
+    ///      function (the router serves its own rollover-ignoring view); retained because
+    ///      it is part of the deployed module surface. See spec OQ-1.
+    /// @param newCommitments Size of the hypothetical batch.
+    /// @return treeNum Tree the batch would land in.
+    /// @return startIndex First leaf index the batch would occupy.
     function getInsertionTreeNumberAndStartingIndex(
-        uint256 _newCommitments
+        uint256 newCommitments
     ) external view override onlyDelegatecall returns (uint256 treeNum, uint256 startIndex) {
-        // New tree will be created if current one can't contain new leaves
-        if ((nextLeafIndex + _newCommitments) > (2 ** TREE_DEPTH)) {
+        if (nextLeafIndex + newCommitments > 2 ** TREE_DEPTH) {
             return (treeNumber + 1, 0);
         }
-
-        // Else return current state
         return (treeNumber, nextLeafIndex);
-    }
-
-    /**
-     * @notice Create a new merkle tree
-     * @dev Called when current tree is full. Resets to empty tree state.
-     */
-    function _newTree() internal {
-        // Restore merkleRoot to the cached empty tree root
-        merkleRoot = newTreeRoot;
-
-        // Reset next leaf index to 0
-        nextLeafIndex = 0;
-
-        // Increment tree number
-        treeNumber += 1;
-
-        // Note: filledSubTrees values from old tree will never be used,
-        // so we don't need to reset them (saves gas)
     }
 }

@@ -1,0 +1,113 @@
+{
+  "id": "v2-shield-reentrancy-revert",
+  "category": "edge",
+  "description": "Shield with MaliciousReentrantToken: the token's transferFrom re-enters pool.shield mid-deposit; the router's nonReentrant guard fires (D-18).",
+  "specRefs": [
+    "§5.2",
+    "D-18"
+  ],
+  "proofsBypassed": false,
+  "dependsOn": [
+    "v2-admin-set-shield-fee-50"
+  ],
+  "setup": [
+    "MockUSDCV2 mints (ALICE 10_000, BOB 1_000, CAROL 1_000 USDC) + max approvals to POOL",
+    "MaliciousReentrantToken mint(ALICE, 100) + approve(POOL, max)",
+    "Genesis mocks: MockShieldPauseController, MockConfigurableFeeModule, MockAdapterRegistry, MaliciousReentrantToken (deploy order is load-bearing for address determinism)",
+    "MaliciousReentrantToken.setAttack(POOL, 1=shield)"
+  ],
+  "requiresImpersonation": null,
+  "setupTxs": [
+    {
+      "from": "DEPLOYER",
+      "to": "MALICIOUS_TOKEN",
+      "toAddress": "0xdbC43Ba45381e02825b14322cDdd15eC4B3164E6",
+      "calldata": "0x860fb2e2000000000000000000000000e6e340d132b5f46d1e472debcd681b2abc16e57e0000000000000000000000000000000000000000000000000000000000000001",
+      "description": "arm the reentrancy attack against pool.shield"
+    }
+  ],
+  "tx": {
+    "from": "ALICE",
+    "fromAddress": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+    "to": "POOL",
+    "toAddress": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+    "calldata": "0xcd6a3d7f000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001169c0e9023b41efddc1a0929a067227ede09d848ae10564b35c11812f6abdae40000000000000000000000000000000000000000000000000000000000000000000000000000000000000000dbc43ba45381e02825b14322cddd15ec4b3164e6000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f424008f63e031362aabd4f58d4cbe939471e00f87a58446eae0aafbeb6af53d9e69dd6a6344e78406a574dff65654186bca8a62a22ca8c45acc6533abec825a1f6ac62252e45762451456e743352042604d7257cfce72fd137b06c3a7b78671a8464583692bcc208b841c2252437e356680f494cd6abe7e8be307601feda5b9f6621",
+    "value": "0x0",
+    "decodedCall": {
+      "function": "shield",
+      "args": {
+        "note": "single 1-token shield of MALICIOUS_TOKEN",
+        "integrator": "0x0000000000000000000000000000000000000000"
+      }
+    }
+  },
+  "preState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x5",
+    "pool.merkleRoot": "0x15df4ba4a293eadda3959502fcc393468f5ca56f638d7b392856b1cac3e30f0e",
+    "pool.lastEventBlock": "0x84",
+    "usdc.balanceOf[POOL]": "0x1f511ed0",
+    "usdc.balanceOf[ALICE]": "0x2540be400",
+    "usdc.balanceOf[BOB]": "0x3a699d00",
+    "usdc.balanceOf[CAROL]": "0x3a699d00",
+    "usdc.balanceOf[TREASURY]": "0x278530",
+    "usdc.balanceOf[DEPLOYER]": "0x0",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x1e8480"
+  },
+  "result": {
+    "status": 0,
+    "txHash": "0x6415a7c81466705908c58fefc3aed07ff1870b4ff3e71497041bba5464894da7",
+    "blockNumber": 139,
+    "gasUsed": "0x189c1",
+    "returnData": null,
+    "revert": {
+      "kind": "Error(string)",
+      "reason": "PrivacyPool: reentrant call",
+      "data": "0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000001b50726976616379506f6f6c3a207265656e7472616e742063616c6c0000000000"
+    },
+    "events": []
+  },
+  "postState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x5",
+    "pool.merkleRoot": "0x15df4ba4a293eadda3959502fcc393468f5ca56f638d7b392856b1cac3e30f0e",
+    "pool.lastEventBlock": "0x84",
+    "usdc.balanceOf[POOL]": "0x1f511ed0",
+    "usdc.balanceOf[ALICE]": "0x2540be400",
+    "usdc.balanceOf[BOB]": "0x3a699d00",
+    "usdc.balanceOf[CAROL]": "0x3a699d00",
+    "usdc.balanceOf[TREASURY]": "0x278530",
+    "usdc.balanceOf[DEPLOYER]": "0x0",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x1e8480"
+  },
+  "context": {
+    "chainId": 31337,
+    "network": "local fixturenet (Anvil, hub chain only)",
+    "deployments": {
+      "privacyPool": "deployments/privacy-pool-hub.json",
+      "cctp": "deployments/hub-v3.json",
+      "feeModule": "deployments/fee-module-hub.json",
+      "governance": "deployments/governance-hub.json"
+    },
+    "addressBook": {
+      "DEPLOYER": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "ALICE": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "BOB": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "CAROL": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "TREASURY": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+      "POOL": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+      "VERIFIER_MODULE": "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
+      "HOOK_ROUTER": "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
+      "TOKEN_MESSENGER": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+      "MESSAGE_TRANSMITTER": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+      "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "FEE_MODULE": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+      "CLIENT_POOL": "0x0000000000000000000000000000000000C11EA7",
+      "MOCK_PAUSE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+      "MOCK_FEE_MODULE": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f",
+      "MOCK_ADAPTER_REGISTRY": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d",
+      "MALICIOUS_TOKEN": "0xdbC43Ba45381e02825b14322cDdd15eC4B3164E6"
+    }
+  },
+  "capturedAt": "2026-10-01T11:34:02.208Z"
+}

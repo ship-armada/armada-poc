@@ -1,0 +1,263 @@
+{
+  "id": "transact-withdraw-only-unshield-ok",
+  "category": "pause",
+  "description": "Unshield transaction SUCCEEDS while withdrawOnlyMode()=true — the mode only blocks unshield=NONE (spec §8.1 step 3).",
+  "specRefs": [
+    "§8.1"
+  ],
+  "proofsBypassed": true,
+  "dependsOn": [
+    "transact-withdraw-only-revert"
+  ],
+  "setup": [
+    "MockShieldPauseController.setWithdrawOnlyMode(true)",
+    "testingMode = true"
+  ],
+  "requiresImpersonation": null,
+  "setupTxs": [],
+  "tx": {
+    "from": "DEPLOYER",
+    "fromAddress": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+    "to": "POOL",
+    "toAddress": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+    "calldata": "0xd8ae136a000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001f3184f148d6729211da2df4bda6518b58a3a6c472ecd66e0c1cac5ab2c06da40000000000000000000000000000000000000000000000000000000000000220000000000000000000000000000000000000000000000000000000000000026000000000000000000000000000000000000000000000000000000000000002c00000000000000000000000003c44cdddb6a900fa2b585dd299e03d12fa4293bc00000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f42400000000000000000000000000000000000000000000000000000000000000001223d156f472e472ee97c3279caa8a4c3a6d8def3dce5b770d688ae32ff481f51000000000000000000000000000000000000000000000000000000000000000220803ee17477a67b85ea911151df3e14390ad2717e286b0f5c53e959418ba0491e9fed7a77bf7833e193bbe8c4133fe2e6eb9715a7f7def5433a098835921ed40000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000007a690000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000205e25227d9e1eb192b603ba363e664b3f38d15a447a68f4f4a55688bcedc6cda5d71d8758aa817ef372e917602400320433cd725267e59c5b3a911257d118103e10c721994b0d08d92404c735723768fe309cb06d9d2cb514cdf12ab1e7a7e342b3e005f2a5ba6ff40177a5525dc4499e9e36ee8dbcaf96629af6b74a3086369bf77cfda89feaae158451117f4e88cf49997512a3ccff14b1b14e7749908044de763546672940f189db215038ed2653e36f5b485f9e9dd1fc4a3112c8b0a360210000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "value": "0x0",
+    "decodedCall": {
+      "function": "transact",
+      "args": {
+        "txs": [
+          {
+            "proof": {
+              "a": {
+                "x": 0,
+                "y": 0
+              },
+              "b": {
+                "x": [
+                  0,
+                  0
+                ],
+                "y": [
+                  0,
+                  0
+                ]
+              },
+              "c": {
+                "x": 0,
+                "y": 0
+              }
+            },
+            "merkleRoot": "0x1f3184f148d6729211da2df4bda6518b58a3a6c472ecd66e0c1cac5ab2c06da4",
+            "nullifiers": [
+              "0x223d156f472e472ee97c3279caa8a4c3a6d8def3dce5b770d688ae32ff481f51"
+            ],
+            "commitments": [
+              "0x20803ee17477a67b85ea911151df3e14390ad2717e286b0f5c53e959418ba049",
+              "0x1e9fed7a77bf7833e193bbe8c4133fe2e6eb9715a7f7def5433a098835921ed4"
+            ],
+            "boundParams": {
+              "treeNumber": 0,
+              "minGasPrice": 0,
+              "unshield": 1,
+              "chainID": 31337,
+              "adaptContract": "0x0000000000000000000000000000000000000000",
+              "adaptParams": "0x0000000000000000000000000000000000000000000000000000000000000000",
+              "commitmentCiphertext": [
+                {
+                  "ciphertext": [
+                    "0x5e25227d9e1eb192b603ba363e664b3f38d15a447a68f4f4a55688bcedc6cda5",
+                    "0xd71d8758aa817ef372e917602400320433cd725267e59c5b3a911257d118103e",
+                    "0x10c721994b0d08d92404c735723768fe309cb06d9d2cb514cdf12ab1e7a7e342",
+                    "0xb3e005f2a5ba6ff40177a5525dc4499e9e36ee8dbcaf96629af6b74a3086369b"
+                  ],
+                  "blindedSenderViewingKey": "0xf77cfda89feaae158451117f4e88cf49997512a3ccff14b1b14e7749908044de",
+                  "blindedReceiverViewingKey": "0x763546672940f189db215038ed2653e36f5b485f9e9dd1fc4a3112c8b0a36021",
+                  "annotationData": "0x",
+                  "memo": "0x"
+                }
+              ]
+            },
+            "unshieldPreimage": {
+              "npk": "0x0000000000000000000000003c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+              "token": {
+                "tokenType": 0,
+                "tokenAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+                "tokenSubID": 0
+              },
+              "value": "0xf4240"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "preState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x33",
+    "pool.merkleRoot": "0x1f3184f148d6729211da2df4bda6518b58a3a6c472ecd66e0c1cac5ab2c06da4",
+    "pool.lastEventBlock": "0xb0",
+    "usdc.balanceOf[POOL]": "0x6c61f987",
+    "usdc.balanceOf[ALICE]": "0x211c41d39",
+    "usdc.balanceOf[BOB]": "0x3db0d8c0",
+    "usdc.balanceOf[CAROL]": "0x3b023380",
+    "usdc.balanceOf[TREASURY]": "0x931840",
+    "usdc.balanceOf[DEPLOYER]": "0xf4240",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x2dc6c0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x4c4b40",
+    "mockPause.shieldsPaused": false,
+    "mockPause.withdrawOnlyMode": true,
+    "mockPause.emergencyPaused": false,
+    "pool.rootHistory[0][0x1f3184f148d6729211da2df4bda6518b58a3a6c472ecd66e0c1cac5ab2c06da4]": true,
+    "pool.nullifiers[0][0x223d156f472e472ee97c3279caa8a4c3a6d8def3dce5b770d688ae32ff481f51]": false
+  },
+  "result": {
+    "status": 1,
+    "txHash": "0x1761c65352c867a4c218e61e6b0a7839f195ae9728b32c0515e22fa4aa1c061a",
+    "blockNumber": 192,
+    "gasUsed": "0xc5c20",
+    "returnData": null,
+    "revert": null,
+    "events": [
+      {
+        "logIndex": 0,
+        "address": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+        "topics": [
+          "0x781745c57906dc2f175fec80a9c691744c91c48a34a83672c41c2604774eb11f"
+        ],
+        "data": "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000001223d156f472e472ee97c3279caa8a4c3a6d8def3dce5b770d688ae32ff481f51",
+        "decoded": {
+          "name": "Nullified",
+          "args": {
+            "treeNumber": "0x0",
+            "nullifier": [
+              "0x223d156f472e472ee97c3279caa8a4c3a6d8def3dce5b770d688ae32ff481f51"
+            ]
+          }
+        }
+      },
+      {
+        "logIndex": 1,
+        "address": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+        "topics": [
+          "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "0x000000000000000000000000e6e340d132b5f46d1e472debcd681b2abc16e57e",
+          "0x0000000000000000000000003c44cdddb6a900fa2b585dd299e03d12fa4293bc"
+        ],
+        "data": "0x00000000000000000000000000000000000000000000000000000000000f4240",
+        "decoded": {
+          "name": "Transfer",
+          "args": {
+            "from": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+            "to": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+            "value": "0xf4240"
+          }
+        }
+      },
+      {
+        "logIndex": 2,
+        "address": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+        "topics": [
+          "0xd93cf895c7d5b2cd7dc7a098b678b3089f37d91f48d9b83a0800a91cbdf05284"
+        ],
+        "data": "0x0000000000000000000000003c44cdddb6a900fa2b585dd299e03d12fa4293bc00000000000000000000000000000000000000000000000000000000000000000000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f42400000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": {
+          "name": "Unshield",
+          "args": {
+            "to": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+            "token": {
+              "tokenType": "0x0",
+              "tokenAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+              "tokenSubID": "0x0"
+            },
+            "amount": "0xf4240",
+            "fee": "0x0"
+          }
+        }
+      },
+      {
+        "logIndex": 3,
+        "address": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+        "topics": [
+          "0x56a618cda1e34057b7f849a5792f6c8587a2dbe11c83d0254e72cb3daffda7d1"
+        ],
+        "data": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000033000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000c0000000000000000000000000000000000000000000000000000000000000000120803ee17477a67b85ea911151df3e14390ad2717e286b0f5c53e959418ba049000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000205e25227d9e1eb192b603ba363e664b3f38d15a447a68f4f4a55688bcedc6cda5d71d8758aa817ef372e917602400320433cd725267e59c5b3a911257d118103e10c721994b0d08d92404c735723768fe309cb06d9d2cb514cdf12ab1e7a7e342b3e005f2a5ba6ff40177a5525dc4499e9e36ee8dbcaf96629af6b74a3086369bf77cfda89feaae158451117f4e88cf49997512a3ccff14b1b14e7749908044de763546672940f189db215038ed2653e36f5b485f9e9dd1fc4a3112c8b0a360210000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "decoded": {
+          "name": "Transact",
+          "args": {
+            "treeNumber": "0x0",
+            "startPosition": "0x33",
+            "hash": [
+              "0x20803ee17477a67b85ea911151df3e14390ad2717e286b0f5c53e959418ba049"
+            ],
+            "ciphertext": [
+              {
+                "ciphertext": [
+                  "0x5e25227d9e1eb192b603ba363e664b3f38d15a447a68f4f4a55688bcedc6cda5",
+                  "0xd71d8758aa817ef372e917602400320433cd725267e59c5b3a911257d118103e",
+                  "0x10c721994b0d08d92404c735723768fe309cb06d9d2cb514cdf12ab1e7a7e342",
+                  "0xb3e005f2a5ba6ff40177a5525dc4499e9e36ee8dbcaf96629af6b74a3086369b"
+                ],
+                "blindedSenderViewingKey": "0xf77cfda89feaae158451117f4e88cf49997512a3ccff14b1b14e7749908044de",
+                "blindedReceiverViewingKey": "0x763546672940f189db215038ed2653e36f5b485f9e9dd1fc4a3112c8b0a36021",
+                "annotationData": "0x",
+                "memo": "0x"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "postState": {
+    "pool.treeNumber": "0x0",
+    "pool.nextLeafIndex": "0x34",
+    "pool.merkleRoot": "0x1ecc034c5d70d7cd14ca0aecea17be30796e51e5fd76d3543eeff8ffbeb9891f",
+    "pool.lastEventBlock": "0xc0",
+    "usdc.balanceOf[POOL]": "0x6c52b747",
+    "usdc.balanceOf[ALICE]": "0x211c41d39",
+    "usdc.balanceOf[BOB]": "0x3dc01b00",
+    "usdc.balanceOf[CAROL]": "0x3b023380",
+    "usdc.balanceOf[TREASURY]": "0x931840",
+    "usdc.balanceOf[DEPLOYER]": "0xf4240",
+    "usdc.balanceOf[HOOK_ROUTER]": "0x2dc6c0",
+    "usdc.balanceOf[GASLESS_WRAPPER]": "0x4c4b40",
+    "mockPause.shieldsPaused": false,
+    "mockPause.withdrawOnlyMode": true,
+    "mockPause.emergencyPaused": false,
+    "pool.rootHistory[0][0x1f3184f148d6729211da2df4bda6518b58a3a6c472ecd66e0c1cac5ab2c06da4]": true,
+    "pool.nullifiers[0][0x223d156f472e472ee97c3279caa8a4c3a6d8def3dce5b770d688ae32ff481f51]": true,
+    "pool.rootHistory[postTree][postRoot]": true
+  },
+  "context": {
+    "chainId": 31337,
+    "network": "local fixturenet (Anvil, hub chain only)",
+    "deployments": {
+      "privacyPool": "deployments/privacy-pool-hub.json",
+      "cctp": "deployments/hub-v3.json",
+      "feeModule": "deployments/fee-module-hub.json",
+      "governance": "deployments/governance-hub.json"
+    },
+    "addressBook": {
+      "DEPLOYER": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "ALICE": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      "BOB": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "CAROL": "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+      "TREASURY": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+      "POOL": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+      "SHIELD_MODULE": "0xc5a5C42992dECbae36851359345FE25997F5C42d",
+      "TRANSACT_MODULE": "0x67d269191c92Caf3cD7723F116c85e6E9bf55933",
+      "MERKLE_MODULE": "0x7a2088a1bFc9d81c55368AE168C2C02570cB814F",
+      "VERIFIER_MODULE": "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
+      "HOOK_ROUTER": "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB",
+      "GASLESS_WRAPPER": "0xCD8a1C3ba11CF5ECfa6267617243239504a98d90",
+      "TOKEN_MESSENGER": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+      "MESSAGE_TRANSMITTER": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+      "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+      "FEE_MODULE": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+      "CLIENT_POOL": "0x0000000000000000000000000000000000C11EA7",
+      "MOCK_PAUSE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+      "MOCK_FEE_MODULE": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f"
+    }
+  },
+  "capturedAt": "2026-09-25T17:03:00.708Z"
+}

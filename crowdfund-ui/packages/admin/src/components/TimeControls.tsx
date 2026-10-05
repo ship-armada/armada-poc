@@ -120,7 +120,7 @@ export function TimeControls({ timeControls, state, onMintUsdc }: TimeControlsPr
             onClick={() => week1.run(() => timeControls.skipToWeek1End(state.launchTeamInviteEnd, state.blockTimestamp))}
             disabled={state.blockTimestamp >= state.launchTeamInviteEnd || week1.status === 'busy'}
           >
-            {statusLabel(week1.status, 'Skip to Week-1 End')}
+            {statusLabel(week1.status, 'Skip to Launch-Team Invite End')}
           </button>
           <button
             className={`px-2 py-1 rounded bg-muted hover:bg-muted/80 disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${statusClass(windowEnd.status)}`}

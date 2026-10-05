@@ -123,11 +123,11 @@ export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
                 // Hops 0/1 have a ceiling; hop-2 is the floor hop (no ceiling — it
                 // absorbs leftover allocation from the other hops), so "fill vs
                 // ceiling" doesn't apply and the Fill cell shows "Floor" instead.
-                // The ceiling is projected off the *projected* sale size (BASE/MAX
-                // until finalized) so the % is meaningful pre-finalization, since
-                // `state.saleSize` is 0 until finalize() (matches Est. alloc).
-                const effCeiling =
-                  (estimate.effectiveSaleSize * BigInt(cfg?.ceilingBps ?? 0)) / 10_000n
+                // The ceiling is the waterfall's effective ceiling (incl. rollover),
+                // computed off the *projected* sale size (BASE/MAX until finalized) so
+                // the % is meaningful pre-finalization, since `state.saleSize` is 0
+                // until finalize() (matches Est. alloc).
+                const effCeiling = estimate.perHopCeiling[hop] ?? 0n
                 const fillPct =
                   effCeiling > 0n ? Number((stats.cappedCommitted * 10_000n) / effCeiling) / 100 : 0
                 const fillClass =

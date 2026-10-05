@@ -7,7 +7,7 @@ import {
   estimateUserArmAllocation,
   type UserHopPosition,
 } from './allocation.js'
-import { HOP_CONFIGS } from './constants.js'
+import { CROWDFUND_CONSTANTS, HOP_CONFIGS } from './constants.js'
 import type { HopStatsData } from '../components/StatsBar.js'
 
 const ARM_FROM_USDC = 10n ** 12n // 1 USDC (6 dec) → 1 ARM (18 dec)
@@ -19,6 +19,119 @@ function emptyHopStats(): HopStatsData[] {
     { totalCommitted: 0n, cappedCommitted: 0n, whitelistCount: 0, uniqueCommitters: 0 },
   ]
 }
+
+const USDC = 10n ** 6n
+
+function estimateForDemands(
+  hop0: bigint,
+  hop1: bigint,
+  hop2: bigint,
+  saleSize = 0n,
+) {
+  const stats = emptyHopStats()
+  stats[0].cappedCommitted = hop0
+  stats[1].cappedCommitted = hop1
+  stats[2].cappedCommitted = hop2
+  return estimateAllocation(stats, hop0 + hop1 + hop2, saleSize)
+}
+
+describe('estimateAllocation', () => {
+  it('matches the July 2026 base and expanded ceiling anchors', () => {
+    const base = estimateForDemands(0n, 0n, 0n, CROWDFUND_CONSTANTS.BASE_SALE)
+    expect(base.perHopCeiling[0]).toBe(564_000n * USDC)
+    expect(base.perHopCeiling[1]).toBe(1_020_000n * USDC)
+    expect(base.perHopCeiling[2]).toBe(1_200_000n * USDC)
+
+    const expanded = estimateForDemands(0n, 0n, 0n, CROWDFUND_CONSTANTS.MAX_SALE)
+    expect(expanded.perHopCeiling[0]).toBe(846_000n * USDC)
+    expect(expanded.perHopCeiling[1]).toBe(1_530_000n * USDC)
+    expect(expanded.perHopCeiling[2]).toBe(1_800_000n * USDC)
+  })
+
+  it('conserves allocations over empty, partial, rollover-heavy, and saturated demands', () => {
+    const levels = [0n, 100_000n * USDC, 600_000n * USDC, 2_000_000n * USDC]
+    for (const saleSize of [CROWDFUND_CONSTANTS.BASE_SALE, CROWDFUND_CONSTANTS.MAX_SALE]) {
+      const hop2Floor = (saleSize * 1500n) / 10_000n
+      const available = saleSize - hop2Floor
+      for (const hop0 of levels) for (const hop1 of levels) for (const hop2 of levels) {
+        const result = estimateForDemands(hop0, hop1, hop2, saleSize)
+        const totalAllocated = result.totalAllocUsdc
+        const totalCommitted = hop0 + hop1 + hop2
+        const totalRefunded = totalCommitted - totalAllocated
+        expect(totalAllocated).toBeGreaterThanOrEqual(0n)
+        expect(totalAllocated).toBeLessThanOrEqual(saleSize)
+        expect(totalAllocated + totalRefunded).toBe(totalCommitted)
+        expect(result.perHopAlloc[0]).toBeLessThanOrEqual(result.perHopCeiling[0])
+        expect(result.perHopAlloc[1]).toBeLessThanOrEqual(available - result.perHopAlloc[0])
+        expect(result.perHopAlloc[2]).toBeGreaterThanOrEqual(hop2 < hop2Floor ? hop2 : hop2Floor)
+      }
+    }
+  })
+
+  it('preserves forward-only rollover and full-sale allocation under saturation', () => {
+    const saturatedBase = estimateForDemands(2_000_000n * USDC, 2_000_000n * USDC, 2_000_000n * USDC, CROWDFUND_CONSTANTS.BASE_SALE)
+    const saturatedExpanded = estimateForDemands(2_000_000n * USDC, 2_000_000n * USDC, 2_000_000n * USDC, CROWDFUND_CONSTANTS.MAX_SALE)
+    expect(saturatedBase.totalAllocUsdc).toBe(CROWDFUND_CONSTANTS.BASE_SALE)
+    expect(saturatedExpanded.totalAllocUsdc).toBe(CROWDFUND_CONSTANTS.MAX_SALE)
+
+    const hop1Rollover = estimateForDemands(0n, 2_000_000n * USDC, 0n, CROWDFUND_CONSTANTS.BASE_SALE)
+    expect(hop1Rollover.perHopAlloc[1]).toBe(1_020_000n * USDC)
+
+    const hop2Rollover = estimateForDemands(564_000n * USDC, 0n, 2_000_000n * USDC, CROWDFUND_CONSTANTS.BASE_SALE)
+    expect(hop2Rollover.perHopAlloc[2]).toBe(636_000n * USDC)
+  })
+
+  it('keeps hop-0-only demand below the minimum at both sale sizes', () => {
+    const base = estimateForDemands(2_000_000n * USDC, 0n, 0n, CROWDFUND_CONSTANTS.BASE_SALE)
+    const expanded = estimateForDemands(2_000_000n * USDC, 0n, 0n, CROWDFUND_CONSTANTS.MAX_SALE)
+    expect(base.totalAllocUsdc).toBe(564_000n * USDC)
+    expect(expanded.totalAllocUsdc).toBe(846_000n * USDC)
+    expect(base.totalAllocUsdc).toBeLessThan(CROWDFUND_CONSTANTS.MIN_SALE)
+    expect(expanded.totalAllocUsdc).toBeLessThan(CROWDFUND_CONSTANTS.MIN_SALE)
+  })
+})
+
+describe('estimateAllocation — cross-language differential vectors', () => {
+  // WHY: this is the off-chain mirror of the contract's _computeHopAllocations, which drives the
+  // committer/admin/indexer refund projection. This SAME (saleSize, demand) → total table is
+  // asserted against the Solidity source of truth in test-foundry/CrowdfundWaterfallMath.t.sol.
+  // Any drift between the two implementations fails one side. Keep the two tables in lockstep.
+  const K = 1_000n * USDC
+  const B = CROWDFUND_CONSTANTS.BASE_SALE
+  const M = CROWDFUND_CONSTANTS.MAX_SALE
+  const cases: Array<[bigint, bigint, bigint, bigint, bigint]> = [
+    // saleSize, d0, d1, d2, expectedTotal
+    [B, 2_000n * K, 0n, 0n, 564n * K],
+    [M, 2_000n * K, 0n, 0n, 846n * K],
+    [B, 2_000n * K, 2_000n * K, 2_000n * K, 1_200n * K],
+    [M, 2_000n * K, 2_000n * K, 2_000n * K, 1_800n * K],
+    [B, 564n * K, 0n, 2_000n * K, 1_200n * K],
+    [B, 0n, 2_000n * K, 0n, 1_020n * K],
+    [B, 1_050n * K, 436n * K, 0n, 1_000n * K],
+    [B, 1_050n * K, 435n * K, 0n, 999n * K],
+    [M, 1_500n * K, 0n, 0n, 846n * K],
+  ]
+  it.each(cases)('saleSize=%s d=(%s,%s,%s) → %s', (saleSize, d0, d1, d2, expected) => {
+    expect(estimateForDemands(d0, d1, d2, saleSize).totalAllocUsdc).toBe(expected)
+  })
+})
+
+describe('estimateAllocation — economic thresholds', () => {
+  it('selects BASE below the elastic trigger and MAX at/above it (matches contract `capped >= ELASTIC_TRIGGER`)', () => {
+    // saleSize 0 → estimateAllocation picks the sale size from capped demand vs ELASTIC_TRIGGER.
+    const below = estimateForDemands(CROWDFUND_CONSTANTS.ELASTIC_TRIGGER - 1n, 0n, 0n)
+    const at = estimateForDemands(CROWDFUND_CONSTANTS.ELASTIC_TRIGGER, 0n, 0n)
+    expect(below.effectiveSaleSize).toBe(CROWDFUND_CONSTANTS.BASE_SALE)
+    expect(at.effectiveSaleSize).toBe(CROWDFUND_CONSTANTS.MAX_SALE)
+  })
+
+  it('projected allocation straddles MIN_SALE at the refund boundary (finalize uses `< MIN_SALE`)', () => {
+    const atMin = estimateForDemands(1_050_000n * USDC, 436_000n * USDC, 0n, CROWDFUND_CONSTANTS.BASE_SALE)
+    const belowMin = estimateForDemands(1_050_000n * USDC, 435_000n * USDC, 0n, CROWDFUND_CONSTANTS.BASE_SALE)
+    expect(atMin.totalAllocUsdc).toBe(CROWDFUND_CONSTANTS.MIN_SALE) // == $1M → finalize() succeeds
+    expect(belowMin.totalAllocUsdc).toBeLessThan(CROWDFUND_CONSTANTS.MIN_SALE) // < $1M → refund mode
+  })
+})
 
 describe('estimateUserArmAllocation', () => {
   it('returns 0 for empty positions', () => {

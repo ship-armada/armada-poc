@@ -42,7 +42,7 @@ export interface CrowdfundParams {
   treasuryAddress: string
   /** Unix seconds; matches contract windowStart. */
   openTimestamp: number
-  /** Unix seconds; openTimestamp + 7 days. */
+  /** Unix seconds; launch-team invite deadline (openTimestamp + 14 days). Name predates the 14-day window. */
   week1Deadline: number
   /** Unix seconds; openTimestamp + 21 days. */
   commitmentDeadline: number

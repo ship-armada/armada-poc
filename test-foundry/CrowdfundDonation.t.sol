@@ -95,7 +95,8 @@ contract CrowdfundDonationTest is Test {
     /// @notice Direct ARM transfer after finalization does not change allocation math
     function test_directArmTransfer_doesNotAffectAllocationMath() public {
         // Need a successful (non-refundMode) finalization for allocations to exist.
-        // Use 53 seeds at hop-0 + 53 hop-1 participants to exceed MIN_SALE.
+        // Use 53 seeds at hop-0 + 109 hop-1 participants to exceed MIN_SALE
+        // after the hop-0 and hop-1 waterfall ceilings.
         for (uint256 i = 0; i < 53; i++) {
             uint256 amount = 15_000 * 1e6;
             usdc.mint(seeds[i], amount);
@@ -106,14 +107,14 @@ contract CrowdfundDonationTest is Test {
         }
 
         // Create hop-1 participants via seed invites
-        address[] memory hop1Addrs = new address[](53);
-        for (uint256 i = 0; i < 53; i++) {
+        address[] memory hop1Addrs = new address[](109);
+        for (uint256 i = 0; i < hop1Addrs.length; i++) {
             hop1Addrs[i] = address(uint160(0xB000 + i));
-            vm.prank(seeds[i]);
+            vm.prank(seeds[i % seeds.length]);
             crowdfund.invite(hop1Addrs[i], 0);
         }
 
-        for (uint256 i = 0; i < 53; i++) {
+        for (uint256 i = 0; i < hop1Addrs.length; i++) {
             uint256 amount = 4_000 * 1e6;
             usdc.mint(hop1Addrs[i], amount);
             vm.startPrank(hop1Addrs[i]);

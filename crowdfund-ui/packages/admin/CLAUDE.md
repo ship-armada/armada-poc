@@ -95,8 +95,8 @@ import type { CrowdfundEvent } from '@armada/crowdfund-shared'
 | Function | Role | Phase | Notes |
 |----------|------|-------|-------|
 | `loadArm()` | Permissionless | Active | Verify ARM pre-load. Idempotent. |
-| `addSeeds(address[])` | Launch team | Active, pre-week-1-end | Batch seeds. Max 150 total. |
-| `launchTeamInvite(address, uint8)` | Launch team | Active, week-1 window | Budget-tracked (60/60). |
+| `addSeeds(address[])` | Launch team | Active, pre-launch-team-deadline | Batch seeds. Max 180 total. |
+| `launchTeamInvite(address, uint8)` | Launch team | Active, days 1-14 | Budget-tracked (100/120). |
 | `finalize()` | Permissionless | Active, post-window | Compute allocations, transfer proceeds. |
 | `cancel()` | Security council | Active | Emergency cancel. Irreversible. |
 | `withdrawUnallocatedArm()` | Permissionless | Finalized or Cancelled | Sweep ARM to treasury. |
@@ -104,7 +104,7 @@ import type { CrowdfundEvent } from '@armada/crowdfund-shared'
 ## Local Dev Controls
 
 In local mode (Anvil), the admin app provides:
-- **Time warp buttons** — skip to week-1 end, window end, claim deadline
+- **Time warp buttons** — skip to launch-team deadline, window end, claim deadline
 - **Custom time advance** — input seconds + advance
 - **USDC minting** — via `mintUsdcEndpoint()` Vite plugin
 - **Anvil account switcher** — dropdown of pre-configured accounts with role labels

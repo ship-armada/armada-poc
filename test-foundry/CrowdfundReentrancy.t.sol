@@ -187,8 +187,8 @@ contract CrowdfundReentrancyTest is Test {
         for (uint256 i = 0; i < 53; i++) {
             seeds[i] = address(uint160(0xA000 + i));
         }
-        hop1 = new address[](53);
-        for (uint256 i = 0; i < 53; i++) {
+        hop1 = new address[](109);
+        for (uint256 i = 0; i < 109; i++) {
             hop1[i] = address(uint160(0xB000 + i));
         }
     }
@@ -221,7 +221,7 @@ contract CrowdfundReentrancyTest is Test {
 
         // Invite and commit hop-1
         for (uint256 i = 0; i < hop1.length; i++) {
-            vm.prank(seeds[i]);
+            vm.prank(seeds[i % seeds.length]);
             cf.invite(hop1[i], 0);
             uint256 hop1Amt = 4_000 * 1e6;
             usdc.mint(hop1[i], hop1Amt);
@@ -291,7 +291,7 @@ contract CrowdfundReentrancyTest is Test {
         }
 
         for (uint256 i = 0; i < hop1.length; i++) {
-            vm.prank(seeds[i]);
+            vm.prank(seeds[i % seeds.length]);
             cf.invite(hop1[i], 0);
             uint256 hop1Amt = 4_000 * 1e6;
             usdc.mint(hop1[i], hop1Amt);

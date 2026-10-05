@@ -150,7 +150,7 @@ async function main() {
   const latestBlock = await ethers.provider.getBlock('latest');
   // The open time is an operational buffer (deployment verification,
   // announcement lead time, infra readiness) — NOT a seed-setup window.
-  // Seeds are added during week 1 of the active window; see
+  // Seeds are added during the 14-day launch-team window; see
   // ArmadaCrowdfund._requireArmLoadedAndPreInviteEnd.
   // Absolute CROWDFUND_OPEN_TIME when set (required on mainnet), else latest block +
   // crowdfundOpenDelay. Zero lead here: the mainnet orchestrator already enforced the

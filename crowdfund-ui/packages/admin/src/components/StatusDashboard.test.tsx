@@ -59,7 +59,7 @@ describe('StatusDashboard', () => {
 
   it('renders timeline rows', () => {
     render(<StatusDashboard state={makeState()} role="observer" />)
-    expect(screen.getByText('Week 1 (Seeds + LT Invites)')).toBeInTheDocument()
+    expect(screen.getByText('Days 1-14 (Seeds + LT Invites)')).toBeInTheDocument()
     expect(screen.getByText('Commitment Window')).toBeInTheDocument()
     expect(screen.getByText('Claim Period')).toBeInTheDocument()
   })
@@ -74,7 +74,7 @@ describe('StatusDashboard', () => {
 
   it('shows hop-0 whitelist in N/MAX format', () => {
     render(<StatusDashboard state={makeState()} role="observer" />)
-    expect(screen.getByText('142/160')).toBeInTheDocument()
+    expect(screen.getByText('142/180')).toBeInTheDocument()
   })
 
   it('shows plain count for hop-1 and hop-2 whitelist', () => {
@@ -106,8 +106,8 @@ describe('StatusDashboard', () => {
 
   it('shows Ceiling column with percentage for hop 0-1 and Floor for hop 2', () => {
     render(<StatusDashboard state={makeState()} role="observer" />)
-    // HOP_CONFIGS[0].ceilingBps = 7000 → 70%, HOP_CONFIGS[1].ceilingBps = 4500 → 45%
-    expect(screen.getByText('70%')).toBeInTheDocument()
+    // HOP_CONFIGS[0].ceilingBps = 6000 → 60%, HOP_CONFIGS[1].ceilingBps = 4500 → 45%
+    expect(screen.getByText('60%')).toBeInTheDocument()
     expect(screen.getByText('45%')).toBeInTheDocument()
     expect(screen.getByText('Floor')).toBeInTheDocument()
   })
@@ -126,5 +126,38 @@ describe('StatusDashboard', () => {
     const cells = screen.getAllByText(/%/)
     // Should have at least 3 percentage cells (one per hop) plus the ceiling percentages
     expect(cells.length).toBeGreaterThanOrEqual(3)
+  })
+
+  // WHY: hop-0's effective ceiling at BASE_SALE is $564k (60% of the 95% base pool, less
+  // the 10% extra hop-2 floor), so $600k is oversubscribed. saleSize is 0 until
+  // finalize(), so the ceiling must come from the projected sale size — otherwise the
+  // column reads 0% for the whole live sale.
+  it('measures Over/Under against the effective waterfall ceiling before finalization', () => {
+    const state = makeState({
+      saleSize: 0n,
+      cappedDemand: 600_000n * 10n ** 6n,
+      hopStats: [
+        { totalCommitted: 600_000n * 10n ** 6n, cappedCommitted: 600_000n * 10n ** 6n, whitelistCount: 142, uniqueCommitters: 100 },
+        { totalCommitted: 0n, cappedCommitted: 0n, whitelistCount: 50, uniqueCommitters: 0 },
+        { totalCommitted: 0n, cappedCommitted: 0n, whitelistCount: 200, uniqueCommitters: 0 },
+      ],
+    })
+    render(<StatusDashboard state={state} role="observer" />)
+    expect(screen.getByText('106.4%')).toBeInTheDocument()
+  })
+
+  it('measures Over/Under against the effective waterfall ceiling after finalization', () => {
+    const state = makeState({
+      phase: 1,
+      saleSize: 1_200_000n * 10n ** 6n,
+      cappedDemand: 600_000n * 10n ** 6n,
+      hopStats: [
+        { totalCommitted: 600_000n * 10n ** 6n, cappedCommitted: 600_000n * 10n ** 6n, whitelistCount: 142, uniqueCommitters: 100 },
+        { totalCommitted: 0n, cappedCommitted: 0n, whitelistCount: 50, uniqueCommitters: 0 },
+        { totalCommitted: 0n, cappedCommitted: 0n, whitelistCount: 200, uniqueCommitters: 0 },
+      ],
+    })
+    render(<StatusDashboard state={state} role="observer" />)
+    expect(screen.getByText('106.4%')).toBeInTheDocument()
   })
 })

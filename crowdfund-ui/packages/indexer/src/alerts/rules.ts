@@ -129,7 +129,7 @@ export const ruleA4: AlertRule = (ctx) => {
     dedupeKey: `A4:${crossed}`,
     title: `Seed budget at ${crossed}% (${seedCount}/${CROWDFUND_CONSTANTS.MAX_SEEDS})`,
     body: `Hop-0 SeedAdded count reached ${crossed}% of the configured MAX_SEEDS (${CROWDFUND_CONSTANTS.MAX_SEEDS}).`,
-    runbook: 'OPERATIONS.md §4 Week-1 go/no-go; §10 decision log',
+    runbook: 'OPERATIONS.md §4 Day-14 launch-team checkpoint; §10 decision log',
     context: { seedCount, crossedTier: crossed },
   }]
 }
@@ -148,7 +148,7 @@ export const ruleA5: AlertRule = (ctx) => {
       dedupeKey: `A5:hop1:${crossed1}`,
       title: `Launch-team hop-1 placements at ${crossed1}%`,
       body: `Hop-1 placements: ${hop1}/${CROWDFUND_CONSTANTS.LAUNCH_TEAM_HOP1_BUDGET}.`,
-      runbook: 'OPERATIONS.md §4 Week-1 operations; §10 decision log',
+      runbook: 'OPERATIONS.md §4 Launch-team operating cadence; §10 decision log',
       context: { hop: 1, count: hop1, crossedTier: crossed1 },
     })
   }
@@ -160,7 +160,7 @@ export const ruleA5: AlertRule = (ctx) => {
       dedupeKey: `A5:hop2:${crossed2}`,
       title: `Launch-team hop-2 placements at ${crossed2}%`,
       body: `Hop-2 placements: ${hop2}/${CROWDFUND_CONSTANTS.LAUNCH_TEAM_HOP2_BUDGET}.`,
-      runbook: 'OPERATIONS.md §4 Week-1 operations; §10 decision log',
+      runbook: 'OPERATIONS.md §4 Launch-team operating cadence; §10 decision log',
       context: { hop: 2, count: hop2, crossedTier: crossed2 },
     })
   }
@@ -226,7 +226,7 @@ export const ruleA8: AlertRule = (ctx) => {
     dedupeKey: `A8:${band}`,
     title: `Minimum fund at risk with ${band} remaining`,
     body: `cappedDemand=${capped.toString()} below MIN_SALE=${CROWDFUND_CONSTANTS.MIN_SALE.toString()} with ${band} until commitmentDeadline.`,
-    runbook: 'OPERATIONS.md §5 Weeks 2–3 cadence; §11 Checkpoint 3',
+    runbook: 'OPERATIONS.md §5 Final-week operating cadence; §11 Checkpoint 3',
     context: { cappedDemand: capped.toString(), band },
   }]
 }

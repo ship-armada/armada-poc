@@ -280,15 +280,15 @@ contract CrowdfundFullInvariantTest is Test {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // INV-C2: Ceiling BPS match expected overlapping values (sum = 12500)
+    // INV-C2: Ceiling BPS match expected overlapping values (sum = 10500)
     // ══════════════════════════════════════════════════════════════════════
 
-    /// @notice Hop ceiling basis points match spec: 7000/4500/0 (hop-2 uses floor+rollover, not BPS)
+    /// @notice Hop ceiling basis points match spec: 6000/4500/0 (hop-2 uses floor+rollover, not BPS)
     function invariant_ceilingBpsAreValid() public view {
         (uint16 bps0, , , ) = crowdfund.hopConfigs(0);
         (uint16 bps1, , , ) = crowdfund.hopConfigs(1);
         (uint16 bps2, , , ) = crowdfund.hopConfigs(2);
-        assertEq(bps0, 7000, "INV-C2: Hop 0 ceiling should be 7000");
+        assertEq(bps0, 6000, "INV-C2: Hop 0 ceiling should be 6000");
         assertEq(bps1, 4500, "INV-C2: Hop 1 ceiling should be 4500");
         assertEq(bps2, 0, "INV-C2: Hop 2 ceiling should be 0 (uses floor+rollover)");
     }
@@ -386,6 +386,20 @@ contract CrowdfundFullInvariantTest is Test {
             crowdfund.totalCommitted(),
             handler.ghost_totalUsdcIn(),
             "totalCommitted mismatch"
+        );
+    }
+
+    /// @notice INV-C5: aggregate allocated USDC never exceeds the sale size (waterfall conservation).
+    ///         WHY: the July-2026 waterfall draws hop-0+hop-1 from `available` (85%) via the
+    ///         remainingAvailable cap and hop-2 from its 15% floor + rollover; `available + hop2Floor
+    ///         == saleSize` bounds the total. Holds trivially pre-finalize / in refund mode
+    ///         (totalAllocatedUsdc == 0). This is the aggregate counterpart to INV-C1
+    ///         (per-participant alloc + refund == committed).
+    function invariant_totalAllocatedWithinSaleSize() public view {
+        assertLe(
+            crowdfund.totalAllocatedUsdc(),
+            crowdfund.saleSize(),
+            "INV-C5: totalAllocatedUsdc > saleSize"
         );
     }
 }

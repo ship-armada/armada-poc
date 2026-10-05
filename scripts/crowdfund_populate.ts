@@ -128,12 +128,12 @@ async function main() {
   if (includeHops) {
     // With hops: allocate enough hop-1/hop-2 so that total allocation
     // (after hop ceilings) exceeds MIN_SALE. The hop-0 ceiling at BASE_SALE
-    // is $798K, so hop-1/hop-2 must contribute at least $202K to clear $1M.
+    // is $564K, so hop-1/hop-2 must contribute at least $436K to clear $1M.
     // Each seed can invite 3 hop-1, each hop-1 can invite 2 hop-2.
     // Kept modest to stay within Hardhat's 200 signer limit.
-    const inviteSeeds = 18; // 18 seeds × 3 invites = 54 hop-1
-    hop1Count = inviteSeeds * 3; // 54 hop-1 × $4K = $216K
-    hop2Count = inviteSeeds * 3; // 54 hop-2 × $1K = $54K (subset of available slots)
+    const inviteSeeds = 37; // 37 seeds × 3 invites = 111 hop-1
+    hop1Count = inviteSeeds * 3; // 111 hop-1 × $4K = $444K
+    hop2Count = 0;
 
     const hop1Total = hop1Count * HOP1_CAP;
     const hop2Total = hop2Count * HOP2_CAP;

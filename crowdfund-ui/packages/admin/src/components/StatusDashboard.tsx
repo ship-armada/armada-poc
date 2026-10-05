@@ -98,7 +98,7 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
       {/* Timeline */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <TimelineRow
-          label="Week 1 (Seeds + LT Invites)"
+          label="Days 1-14 (Seeds + LT Invites)"
           isOpen={state.phase === 0 && localTimestamp >= state.windowStart && localTimestamp < state.launchTeamInviteEnd}
           isPending={state.phase === 0 && localTimestamp < state.windowStart}
           endTimestamp={state.launchTeamInviteEnd}
@@ -212,8 +212,9 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
             {state.hopStats.map((stats, hop) => {
               const hopConfig = hop < HOP_CONFIGS.length ? HOP_CONFIGS[hop] : null
               const isFloorHop = hop === 2
-              const ceilingBps = isFloorHop ? CROWDFUND_CONSTANTS.HOP2_FLOOR_BPS : (hopConfig?.ceilingBps ?? 0)
-              const effectiveCeiling = state.saleSize * BigInt(ceilingBps) / 10000n
+              // Effective ceiling from the waterfall (projected sale size until finalized),
+              // matching the contract's finalCeilings — including hop-2's floor + rollover.
+              const effectiveCeiling = estimate.perHopCeiling[hop] ?? 0n
               const overUnderPct = effectiveCeiling > 0n
                 ? Number(stats.cappedCommitted * 10000n / effectiveCeiling) / 100
                 : 0

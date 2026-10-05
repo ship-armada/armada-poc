@@ -18,7 +18,7 @@ const HOP0_CAP = 15_000n * 10n ** 6n
 const HOP1_CAP = 4_000n * 10n ** 6n
 
 const OPEN_TS = 1_700_000_000
-const WEEK1_TS = OPEN_TS + 7 * 24 * 60 * 60
+const WEEK1_TS = OPEN_TS + 14 * 24 * 60 * 60
 const COMMIT_TS = OPEN_TS + 21 * 24 * 60 * 60
 
 const PARAMS: CrowdfundParams = {
@@ -140,14 +140,14 @@ describe('ruleA2 — sale open, not armed', () => {
 // ============ A4 ============
 describe('ruleA4 — seed budget', () => {
   it('fires P2 at 80%', () => {
-    const events = Array.from({ length: 128 }, (_, i) =>
+    const events = Array.from({ length: 144 }, (_, i) =>
       makeEvent('SeedAdded', { seed: `0x${i}` }, i + 1, 0),
     )
     const out = ruleA4(makeContext({ snapshot: { ...makeContext().snapshot, events } as never }))
     expect(out[0]).toMatchObject({ id: 'A4', severity: 'P2', dedupeKey: 'A4:80' })
   })
   it('fires P1 at 100%', () => {
-    const events = Array.from({ length: 160 }, (_, i) =>
+    const events = Array.from({ length: 180 }, (_, i) =>
       makeEvent('SeedAdded', { seed: `0x${i}` }, i + 1, 0),
     )
     const out = ruleA4(makeContext({ snapshot: { ...makeContext().snapshot, events } as never }))
@@ -165,8 +165,8 @@ describe('ruleA4 — seed budget', () => {
 describe('ruleA5 — launch-team placements', () => {
   it('fires separately for hop-1 and hop-2 budgets', () => {
     const events = [
-      ...Array.from({ length: 60 }, (_, i) => makeEvent('LaunchTeamInvited', { invitee: `0xa${i}`, hop: 1 }, i + 1, 0)),
-      ...Array.from({ length: 48 }, (_, i) => makeEvent('LaunchTeamInvited', { invitee: `0xb${i}`, hop: 2 }, i + 200, 0)),
+      ...Array.from({ length: 100 }, (_, i) => makeEvent('LaunchTeamInvited', { invitee: `0xa${i}`, hop: 1 }, i + 1, 0)),
+      ...Array.from({ length: 96 }, (_, i) => makeEvent('LaunchTeamInvited', { invitee: `0xb${i}`, hop: 2 }, i + 200, 0)),
     ]
     const out = ruleA5(makeContext({ snapshot: { ...makeContext().snapshot, events } as never }))
     const ids = out.map((e) => e.dedupeKey).sort()

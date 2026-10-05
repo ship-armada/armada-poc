@@ -7,7 +7,7 @@ import { readCrowdfundAlertParams } from './params.js'
 const OPEN = 1_791_478_800n
 const fakeCrowdfund = {
   windowStart: async () => OPEN,
-  launchTeamInviteEnd: async () => OPEN + 7n * 86_400n,
+  launchTeamInviteEnd: async () => OPEN + 14n * 86_400n,
   windowEnd: async () => OPEN + 21n * 86_400n,
   treasury: async () => '0x00000000000000000000000000000000000000Aa',
   usdc: async () => '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
@@ -23,7 +23,7 @@ describe('readCrowdfundAlertParams', () => {
       contractAddress: '0xcrowdfund',
       treasuryAddress: '0x00000000000000000000000000000000000000Aa',
       openTimestamp: 1_791_478_800,
-      week1Deadline: 1_791_478_800 + 7 * 86_400,
+      week1Deadline: 1_791_478_800 + 14 * 86_400,
       commitmentDeadline: 1_791_478_800 + 21 * 86_400,
     })
     expect(usdcAddress).toBe('0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48')

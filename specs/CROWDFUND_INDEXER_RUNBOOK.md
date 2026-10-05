@@ -169,7 +169,7 @@ Alert evaluator variables (used by `evaluate-alerts`; see [`MONITORING.md`](MONI
 
 | Variable | Default | Behavior |
 |----------|---------|----------|
-| `CROWDFUND_PRIMARY_RPC_URL` | required | `evaluate-alerts` reads the open / week-1 / commitment-deadline timestamps (`windowStart`, `launchTeamInviteEnd`, `windowEnd`) and the treasury + USDC addresses (`treasury`, `usdc`) from the crowdfund contract through this RPC — there are no env vars for them. Also used for `finalizedAt` and the treasury USDC balance (A13/A18–A20). |
+| `CROWDFUND_PRIMARY_RPC_URL` | required | `evaluate-alerts` reads the open / launch-team-invite / commitment-deadline timestamps (`windowStart`, `launchTeamInviteEnd`, `windowEnd`) and the treasury + USDC addresses (`treasury`, `usdc`) from the crowdfund contract through this RPC — there are no env vars for them. Also used for `finalizedAt` and the treasury USDC balance (A13/A18–A20). |
 | `CROWDFUND_ALERT_WEBHOOK_P0` | unset | Discord webhook URL for P0 (immediate) alerts. |
 | `CROWDFUND_ALERT_WEBHOOK_P1` | unset | Discord webhook URL for P1 (same-day) alerts. |
 | `CROWDFUND_ALERT_WEBHOOK_P2` | unset | Discord webhook URL for P2 (attention) alerts. |

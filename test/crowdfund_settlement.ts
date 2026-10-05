@@ -40,17 +40,20 @@ describe("Crowdfund Settlement Rework", function () {
       await crowdfund.connect(s).commit(0, commitUsdc);
     }
 
-    // Add hop-1 demand to ensure net proceeds > MIN_SALE.
-    // Hop-0 ceiling at BASE_SALE ≈ $798K, so we need ~$210K+ from hop-1.
+    // Add $436K of hop-1 demand so projected allocation clears MIN_SALE.
     const hop1Pool = allSigners.slice(140, 195);
-    const inviterCount = Math.min(seeds.length, 18); // 18 × 3 = 54 hop-1 × $4K = $216K
-    for (let i = 0; i < inviterCount; i++) {
-      for (let j = 0; j < 3 && (i * 3 + j) < hop1Pool.length; j++) {
-        const hop1Idx = i * 3 + j;
-        await crowdfund.connect(seeds[i]).invite(hop1Pool[hop1Idx].address, 0);
-        await fundAndApprove(hop1Pool[hop1Idx], USDC(4_000));
-        await crowdfund.connect(hop1Pool[hop1Idx]).commit(1, USDC(4_000));
-      }
+    const committedSlots = new Map<string, { signer: HardhatEthersSigner; slots: number }>();
+    for (let i = 0; i < 109; i++) {
+      const signer = hop1Pool[i % hop1Pool.length];
+      await crowdfund.connect(seeds[i % seeds.length]).invite(signer.address, 0);
+      const entry = committedSlots.get(signer.address) ?? { signer, slots: 0 };
+      entry.slots++;
+      committedSlots.set(signer.address, entry);
+    }
+    for (const { signer, slots } of committedSlots.values()) {
+      const amount = USDC(4_000 * slots);
+      await fundAndApprove(signer, amount);
+      await crowdfund.connect(signer).commit(1, amount);
     }
 
     await time.increase(THREE_WEEKS + 1);
@@ -465,7 +468,7 @@ describe("Crowdfund Settlement Rework", function () {
 
   describe("claim() Refund Mode Guard", function () {
     it("claim() reverts when refundMode is true", async function () {
-      // 80 seeds at hop-0 only → hop-0 ceiling $798K < MIN_SALE → refundMode = true
+      // 80 seeds at hop-0 only → hop-0 ceiling $564K < MIN_SALE → refundMode = true
       const seeds = allSigners.slice(5, 85);
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));

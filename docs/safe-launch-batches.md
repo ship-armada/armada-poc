@@ -10,6 +10,19 @@ for the Safe app's **Transaction Builder**:
 Each file is **one Safe transaction**. A file with several calls is executed by the Safe as one
 bundle (MultiSend): all calls succeed or none do, for one signing round and one gas payment.
 
+## Before you run it
+
+- **No keys needed.** The tasks only read the chain and write files; all signing happens in the
+  Safe app. You do not need `DEPLOYER_PRIVATE_KEY`, a Ledger, or `source config/mainnet.env`.
+- **A repo checkout** with dependencies installed (`npm install --legacy-peer-deps`). Run the
+  commands from the repo root.
+- **RPC:** `export HUB_RPC=<private mainnet RPC>` is recommended. Without it, `mainnetHub` uses a
+  public fallback endpoint; the tasks only make a few reads, but public endpoints can be down or
+  refuse connections. If you see a connection or SSL error, set `HUB_RPC`.
+- **Crowdfund address:** read from `deployments/crowdfund-hub-mainnet.json`, which exists once
+  the launch deploy has run. Before that (or for another deploy), pass `--crowdfund 0x…`.
+- `npx hardhat help cf-safe-batch` lists every option.
+
 ## The CSV
 
 ```

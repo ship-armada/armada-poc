@@ -29,6 +29,7 @@ import { createNonceManager, rejectAnvilAddresses, loadDeployment, saveDeploymen
 import { MULTICALL3_ADDRESS, MULTICALL3_RUNTIME_BYTECODE } from "./multicall3-bytecode";
 
 import { ensureRevenueLockActivated, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, assertCreationProvenance, validateReservePlan } from "./revenue-reserve";
+import { assertInitialStewardPreflight, assertUsdcDecimals, seedInitialSteward, stewardBudgetLimit } from "./initial-steward";
 
 interface CrowdfundDeployment {
   chainId: number;
@@ -189,6 +190,22 @@ async function main() {
   }
   console.log(`   Launch team: ${launchTeamAddress}`);
   console.log(`   Security council: ${securityCouncilAddress}`);
+  // Initial steward (#221, #222): this stage may run days after governance with a different
+  // env file, so re-check the steward against every launch role before its first transaction,
+  // and confirm the hub USDC uses the decimals the whole-USD budget is scaled by.
+  if (config.initialSteward) {
+    await assertInitialStewardPreflight(config.initialSteward, [
+      { label: "deployer", address: deployer.address },
+      { label: "security council", address: securityCouncilAddress },
+      { label: "launch team", address: launchTeamAddress },
+      { label: "reserve allocator", address: config.revenueReserve?.allocator ?? "" },
+      { label: "treasury", address: treasuryAddress },
+      { label: "timelock", address: timelockAddress },
+      { label: "governor", address: governorAddress },
+    ], !isLocal());
+    await assertUsdcDecimals(usdcAddress);
+    console.log(`   Initial steward: ${config.initialSteward.address} (pre-flight passed)`);
+  }
   const crowdfund = await ArmadaCrowdfund.deploy(
     usdcAddress, armTokenAddress, treasuryAddress, launchTeamAddress, securityCouncilAddress, openTimestamp, nm.override()
   );
@@ -513,6 +530,28 @@ async function main() {
       t.token, t.params.windowDuration, t.params.limitBps, t.params.limitAbsolute, t.params.floorAbsolute,
     ]);
     await timelockCall(timelockAddress, treasuryAddress, calldata, `treasury.initOutflowConfig(${t.label})`, nm);
+  }
+
+  // 14b. Initial steward + USDC steward budget (#221, #222). Elect the configured steward and
+  // authorize its USDC budget inside the bootstrap window, then read both back. Must precede
+  // step 15 (delay raise) and step 16 (role renounce): afterwards only governance can do it.
+  if (config.initialSteward) {
+    const steward = config.initialSteward;
+    console.log("14b. Electing initial steward + authorizing its USDC steward budget...");
+    const { termEnd } = await seedInitialSteward(steward,
+      { steward: govDeployment.contracts.steward, treasury: treasuryAddress, usdc: usdcAddress },
+      (target, calldata, description) => timelockCall(timelockAddress, target, calldata, description, nm));
+    govDeployment.initialSteward = {
+      address: steward.address,
+      termEnd: termEnd.toString(),
+      budgetLimit: stewardBudgetLimit(steward).toString(),
+      budgetWindow: steward.budgetWindow,
+    };
+    saveDeployment(govFilename, govDeployment);
+    console.log(`   Steward ${steward.address} elected (term ends ${new Date(Number(termEnd) * 1000).toISOString()})`);
+    console.log(`   USDC steward budget: $${steward.budgetUsdc} per ${steward.budgetWindow}s`);
+  } else {
+    console.log("14b. Initial steward: not configured (elected via governance post-launch)");
   }
 
   // 15. Harden: raise the timelock delay to its production value as the FINAL

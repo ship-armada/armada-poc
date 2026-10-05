@@ -18,6 +18,7 @@
 import { ethers } from "hardhat";
 import { loadDeployment } from "./deploy-utils";
 import { timelockBootstrapChecks, timelockUnexpectedRoleHolders } from "./verify-timelock";
+import { initialStewardChecks } from "./initial-steward";
 import {
   assertReservePostFunding, assertCreationProvenance, reserveConfigMismatch,
   assertRevenueLockAllocation, assertRevenueLockSchedule,
@@ -664,7 +665,9 @@ async function checkTreasuryConfig(govManifest: any, hubCCTP: any | null) {
   // Token candidates to inspect: USDC (if known), ARM, and ETH sentinel address(0).
   // Outflow configs are initialized at deploy by deploy_crowdfund.ts (their values are
   // checked in "Launch Values"); an uninitialized config means that step did not run.
-  // Steward budgets are authorized via governance post-launch, so empty is expected.
+  // Steward budgets are empty at deploy, except the USDC budget seeded with the initial
+  // steward (INITIAL_STEWARD_ADDRESS, #222), whose values are checked in "Launch Values".
+  const seededUsdcBudget = Boolean(getNetworkConfig().initialSteward);
   const candidates: { label: string; address: string }[] = [];
   if (hubCCTP?.contracts?.usdc) {
     candidates.push({ label: "USDC", address: hubCCTP.contracts.usdc });
@@ -704,6 +707,7 @@ async function checkTreasuryConfig(govManifest: any, hubCCTP: any | null) {
     }
 
     // Steward budget. Same fresh-deploy expectation: empty, seeded via governance.
+    if (label === "USDC" && seededUsdcBudget) continue;
     try {
       const budget = await treasury.stewardBudgets(address);
       if (budget.authorized) {
@@ -844,6 +848,18 @@ async function checkLaunchValues(govManifest: any, crowdfundManifest: any,
       const cfg = await treasury.getOutflowConfig(address);
       return [cfg.windowDuration, cfg.limitBps, cfg.limitAbsolute, cfg.floorAbsolute].join(", ");
     }, [expected.windowDuration, expected.limitBps, expected.limitAbsolute, expected.floorAbsolute].join(", "));
+  }
+
+  // Initial steward + USDC steward budget seeded at deploy (#221, #222).
+  if (config.initialSteward) {
+    try {
+      for (const check of await initialStewardChecks(config.initialSteward,
+        { steward: c.steward, treasury: c.treasury, usdc: usdcAddr })) {
+        results.push({ group: GROUP, ...check });
+      }
+    } catch (error) {
+      fail(GROUP, "Initial steward + USDC steward budget readable", (error as Error).message);
+    }
   }
 
   // RevenueLock: activated, rate cap, and (without a reserve) allocation + schedule. The

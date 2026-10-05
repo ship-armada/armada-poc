@@ -576,6 +576,23 @@ Each alert must include:
 
 ---
 
+## 12e. Steward Spend Proposal Monitor
+
+**What:** Alert on every `ProposalCreated` event from the governor with `proposalType == 3` (Steward), from deploy onward.
+
+**Why:** The initial steward and its USDC budget ($60,000 per 30 days) are set at deploy (GOVERNANCE.md §Election). During the sale nobody holds voting power, so a steward spend proposal created then cannot be voted down and the steward cannot be removed; it queues against the empty treasury and pays out once `finalize()` pushes the proceeds. The Security Council veto is the defence, and it only works on **Queued** proposals. The launch-team policy is no steward proposals before the post-finalize quiet period ends, so any steward proposal before then is unexpected.
+
+**Signal:** `ProposalCreated(proposalId, proposer, proposalType = 3, …)`; then `ProposalQueued(proposalId, …)` for the same id.
+
+**Severity:** P1 if created before `finalizedAt + 7 days` (or while the crowdfund is still Active); P2 afterwards.
+
+**Response:**
+- Match the proposal against the steward's published spend plan (recipients, amounts, description).
+- If not recognized: the steward Safe can `cancel()` its own proposal while it is Active (7-day review). Once it is Queued, the Security Council calls `veto(proposalId, rationaleHash)` before the timelock delay (2 days) elapses — or, for a sale-window proposal, before `finalize()` funds the treasury.
+- Once governance has voters, a Standard `removeSteward()` proposal voids every queued steward proposal at execute time.
+
+---
+
 ## 13. Threshold Placeholders
 
 The following thresholds are marked `[TBD]` and must be set before monitoring is deployed. They depend on final infrastructure choices and operational context.

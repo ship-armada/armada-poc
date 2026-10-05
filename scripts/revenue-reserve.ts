@@ -75,7 +75,13 @@ export function reserveConfigMismatch(distributor: string | undefined,
 /** Launch scripts support Safe-compatible introspection. Getters do not authenticate
  * wallet code: verify the intended Safe implementation, owners and modules separately. */
 export async function assertAllocatorMultisig(address: string): Promise<void> {
-  if (await ethers.provider.getCode(address) === "0x") throw new Error("Reserve allocator must be a deployed multisig");
+  await assertTwoOfThreeMultisig(address, "Reserve allocator");
+}
+
+/** Safe-compatible 2-of-3 check shared by launch roles held by a multisig (reserve allocator,
+ * initial steward). Same caveat: getters do not authenticate the wallet code. */
+export async function assertTwoOfThreeMultisig(address: string, label: string): Promise<void> {
+  if (await ethers.provider.getCode(address) === "0x") throw new Error(`${label} must be a deployed multisig`);
   const wallet = new ethers.Contract(address, [
     "function getThreshold() view returns (uint256)",
     "function getOwners() view returns (address[])",
@@ -83,9 +89,9 @@ export async function assertAllocatorMultisig(address: string): Promise<void> {
   const [threshold, owners] = await Promise.all([wallet.getThreshold(), wallet.getOwners()]);
   const unique = new Set<string>(owners.map((owner: string) => ethers.getAddress(owner)));
   if (threshold !== 2n || owners.length !== 3 || unique.size !== 3 || unique.has(ethers.ZeroAddress)) {
-    throw new Error("Reserve allocator must report exactly three distinct owners and threshold two");
+    throw new Error(`${label} must report exactly three distinct owners and threshold two`);
   }
-  rejectAnvilAddresses([...unique], "Reserve allocator owners");
+  rejectAnvilAddresses([...unique], `${label} owners`);
 }
 
 /** activate() accepts excess funding, but the immutable lock cannot recover it. */

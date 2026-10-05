@@ -169,6 +169,8 @@ describe("Mainnet launch deploy guards", function () {
     // Spawning ts-node compiles the orchestrator and config on each run.
     this.timeout(120_000);
 
+    const DRY_RUN_STEWARD = "0x0000000000000000000000000000000000000003";
+
     /** Env for `deploy_mainnet.ts --dry-run`: the committed mainnet.env plus launch-time inputs. */
     function mainnetDryRunEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
       const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: process.env.HOME };
@@ -185,6 +187,7 @@ describe("Mainnet launch deploy guards", function () {
         REVENUE_LOCK_BENEFICIARIES_JSON: JSON.stringify(
           [{ address: "0x0000000000000000000000000000000000000001", amount: "2400000", label: "test" }]),
         CROWDFUND_OPEN_TIME: new Date(openTs * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"),
+        INITIAL_STEWARD_ADDRESS: DRY_RUN_STEWARD,
         ...extra,
       };
     }
@@ -210,6 +213,25 @@ describe("Mainnet launch deploy guards", function () {
       const result = dryRun({ TREASURY_ADDRESS: "0x0000000000000000000000000000000000000002" });
       expect(result.status).to.not.equal(0);
       expect(result.stderr).to.include("TREASURY_ADDRESS must not be set on mainnet");
+      expect(result.stdout).to.not.include("CROWDFUND-LAUNCH DEPLOYMENT");
+    });
+
+    // WHY: the launch elects the steward and seeds its USDC budget at deploy (#221, #222). The
+    // plan must show both before any step runs, so the operator can check them against the
+    // freeze sheet.
+    it("prints the initial steward and its USDC budget in the launch plan", function () {
+      const result = dryRun({});
+      expect(result.status, result.stderr).to.equal(0);
+      expect(result.stdout).to.match(new RegExp(`Steward:\\s+${DRY_RUN_STEWARD}`));
+      expect(result.stdout).to.include("$60000 USDC per 2592000s");
+    });
+
+    // WHY: without INITIAL_STEWARD_ADDRESS the deploy would silently skip the election and the
+    // budget; the orchestrator must refuse before any step runs.
+    it("refuses to start when INITIAL_STEWARD_ADDRESS is unset", function () {
+      const result = dryRun({ INITIAL_STEWARD_ADDRESS: "" });
+      expect(result.status).to.not.equal(0);
+      expect(result.stderr).to.include("INITIAL_STEWARD_ADDRESS");
       expect(result.stdout).to.not.include("CROWDFUND-LAUNCH DEPLOYMENT");
     });
 

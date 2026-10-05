@@ -30,8 +30,8 @@
  * hand per docs/interrupted-launch-recovery.md.
  *
  * Prerequisites (fail loud if missing): deployer key funded on the hub; real CCTP V2
- * addresses + USDC configured; security council / launch team / RevenueLock
- * beneficiaries set. See config/mainnet.env.
+ * addresses + USDC configured; security council / launch team / initial steward (2-of-3
+ * Safe) / RevenueLock beneficiaries set. See config/mainnet.env.
  */
 
 import { execSync } from "child_process";
@@ -181,6 +181,10 @@ async function main() {
   console.log(`  Sale opens:    ${config.crowdfundOpenTime
     ? `${config.crowdfundOpenTime} (${openTimestamp})`
     : `~${new Date(openTimestamp * 1000).toISOString()} (${config.crowdfundOpenDelay}s after the crowdfund step; set CROWDFUND_OPEN_TIME for an exact time)`}`);
+  const steward = config.initialSteward;
+  console.log(`  Steward:       ${steward
+    ? `${steward.address} — elected at deploy, budget $${steward.budgetUsdc} USDC per ${steward.budgetWindow}s`
+    : "none at deploy (elected via governance)"}`);
   console.log();
 
   if (!config.hardenTimelock) {
@@ -236,6 +240,9 @@ async function main() {
     console.log("  - Deployer holds NO timelock roles (admin/proposer/executor/canceller).");
     console.log(`  - Timelock minDelay == ${config.timelockDelay}s (production value).`);
     console.log("  - Wind-down wiring + treasury outflow limits set (see verify output).");
+    if (config.initialSteward) {
+      console.log("  - Initial steward elected + USDC steward budget set (see verify output).");
+    }
   }
   console.log("  - Two-person verify the on-chain treasury outflow limits against PARAMETER_MANIFEST.md §8.2.");
   console.log("  - Shielded-pool phases (privacy pool, yield, fee module) are a SEPARATE later deploy.");

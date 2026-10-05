@@ -35,9 +35,11 @@ import {
   getNetworkConfig,
   getChainRole,
   getGovernanceDeploymentFile,
+  isLocal,
 } from "../config/networks";
 import { createNonceManager, rejectAnvilAddresses, retryReadOnLag, saveDeployment, saveDeploymentInProgress } from "./deploy-utils";
 import { assertAllocatorMultisig, revenueLockSchedule, validateReservePlan, type RevenueLockConstructorArgs } from "./revenue-reserve";
+import { assertInitialStewardPreflight } from "./initial-steward";
 
 interface GovernanceDeployment {
   revenueLockConstructorArgs: RevenueLockConstructorArgs;
@@ -82,6 +84,16 @@ async function main() {
   if (config.revenueReserve) {
     rejectAnvilAddresses([config.revenueReserve.allocator], "Reserve allocator");
     await assertAllocatorMultisig(config.revenueReserve.allocator);
+  }
+  // The initial steward is elected at the end of deploy_crowdfund, after one-shot setters are
+  // spent; refuse a bad steward address now, before this stage's first transaction (#221).
+  if (config.initialSteward) {
+    await assertInitialStewardPreflight(config.initialSteward, [
+      { label: "deployer", address: deployer.address },
+      { label: "security council", address: config.securityCouncilAddress },
+      { label: "launch team", address: config.launchTeamAddress },
+      { label: "reserve allocator", address: config.revenueReserve?.allocator ?? "" },
+    ], !isLocal());
   }
 
   const role = getChainRole(chainId);
@@ -445,6 +457,7 @@ async function main() {
   console.log("\nNext deployment step: run deploy_crowdfund.ts to complete:")
   console.log("  - Crowdfund deployment + ARM distribution");
   console.log("  - Treasury outflow limits for USDC, ARM, and ETH (address(0))");
+  console.log("  - Initial steward election + USDC steward budget (when INITIAL_STEWARD_ADDRESS is set)");
   console.log("  - ArmadaRedemption + ArmadaWindDown deployment");
   console.log("  - Wind-down wiring to governor/treasury/shieldPause");
   console.log("  - Timelock admin renounce (final action)");

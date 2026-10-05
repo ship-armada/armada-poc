@@ -21,6 +21,7 @@ Complete this table before deployment. Every address must be confirmed before an
 | Treasury | Receives net USDC proceeds + unsold/unclaimed ARM | `[TBD]` | Multisig | `[TBD]` |
 | ROOT / Launch team | `addSeed()`, `launchTeamInvite()` | `[TBD]` | Multisig | `[TBD]` |
 | Security Council | `cancel()` authority | `[TBD]` | 3-of-5 multisig | 3-of-5 |
+| Treasury Steward | Elected at deploy with the USDC steward budget; `proposeStewardSpend()` (GOVERNANCE.md §Treasury Steward) | `[TBD]` | Safe multisig | 2-of-3 |
 | ARM token contract | Source of preloaded ARM | `[TBD]` | — | — |
 | USDC token contract | Committed currency | Circle mainnet USDC | — | — |
 
@@ -594,6 +595,8 @@ Every irreversible action must be logged here before it is executed. This is the
 | Observer and committer URLs confirmed working | ☐ | Ops |
 | Monitoring alerts active | ☐ | Ops |
 | Security Council reachability confirmed | ☐ | Ops |
+| Initial steward elected + USDC steward budget verified (`verify_deployment` Launch Values) | ☐ | Deployer |
+| Steward proposal alert active (MONITORING.md §12e); no steward proposals before the quiet period ends | ☐ | Ops |
 | Initial hop-0 list finalized | ☐ | ROOT |
 | Announcement drafted and ready | ☐ | Ops |
 

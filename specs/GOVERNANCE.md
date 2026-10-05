@@ -404,7 +404,7 @@ The steward operates within a **per-token budget table** — a governance-manage
 - Grant custom integrator terms (requires governance)
 - Exceed the treasury outflow rate limits (see §Treasury Outflow Limits) — steward spending counts against the aggregate rolling window in addition to the per-token steward budget
 
-⚠️ At launch, only USDC is in the steward budget table. The $60,000/month limit is sized for approximately 20 months of operating runway on a base raise.
+⚠️ At launch, only USDC is in the steward budget table. The $60,000/month limit is sized for approximately 20 months of operating runway on a base raise. The launch budget is authorized at deploy (`addStewardBudgetToken`, through the timelock bootstrap window, alongside the initial steward election — see §Election); later changes go through governance as above.
 
 ### Process
 
@@ -432,10 +432,12 @@ This inverts the normal proposal flow for routine operational spending: the stew
 
 ### Election
 
-- Initial Treasury Steward: Core team (Knowable)
+- Initial Treasury Steward: Core team (Knowable), elected at deploy — `electSteward` runs through the timelock bootstrap window in the launch deploy, before the deployer's timelock roles are renounced. The steward address must be a 2-of-3 Safe (`INITIAL_STEWARD_ADDRESS`, frozen in PARAMETER_MANIFEST.md §8.2). The first term starts at the deploy block, not at sale close.
 - Term: 6 months, renewable
 - Election and re-election: Extended governance proposal
 - Removal: Standard governance proposal, immediate effect
+
+**Launch-window exposure (accepted, #222).** Because the steward and its USDC budget exist from deploy, the steward channel is live before anyone holds voting power. During the sale all ARM sits in the treasury (cannot delegate), the crowdfund (unclaimed) and RevenueLock (locked), so a steward proposal created then cannot be defeated, and no ordinary proposal can be submitted to remove the steward. Queue-time checks compare against the full budget and the outflow limit, not the treasury balance, so such a proposal can be queued against an empty treasury and executes once `finalize()` pushes the proceeds. The bounds are: one budget ($60,000) per 30-day window, the treasury outflow limit, the Security Council veto on each queued proposal, and steward removal (which voids every queued steward proposal at execute time) once claimed ARM gives governance voters after the quiet period. In refund mode or after cancel the treasury receives no USDC, so there is nothing to spend. Mitigations: the steward is a 2-of-3 Safe, the Security Council is required at deploy, steward proposals are monitored (MONITORING.md §12e), and the launch team does not submit steward proposals before the post-finalize quiet period ends.
 
 ### Steward compensation
 

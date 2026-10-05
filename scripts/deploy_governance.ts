@@ -38,7 +38,7 @@ import {
   isLocal,
 } from "../config/networks";
 import { createNonceManager, rejectAnvilAddresses, retryReadOnLag, saveDeployment, saveDeploymentInProgress } from "./deploy-utils";
-import { assertAllocatorMultisig, revenueLockSchedule, validateReservePlan, type RevenueLockConstructorArgs } from "./revenue-reserve";
+import { assertAllocatorMultisig, assertLaunchRoleMultisigs, revenueLockSchedule, validateReservePlan, type RevenueLockConstructorArgs } from "./revenue-reserve";
 import { assertInitialStewardPreflight } from "./initial-steward";
 
 interface GovernanceDeployment {
@@ -96,6 +96,11 @@ async function main() {
       { label: "launch team", address: config.launchTeamAddress },
       { label: "reserve allocator", address: config.revenueReserve?.allocator ?? "" },
     ], !isLocal());
+  }
+  // The security council and launch team are fixed in the crowdfund this launch deploys; on
+  // mainnet refuse anything but 2-of-3 Safes before this stage's first transaction.
+  if (config.env === "mainnet") {
+    await assertLaunchRoleMultisigs(config.securityCouncilAddress, config.launchTeamAddress);
   }
 
   const role = getChainRole(chainId);

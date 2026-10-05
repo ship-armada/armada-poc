@@ -78,8 +78,21 @@ export async function assertAllocatorMultisig(address: string): Promise<void> {
   await assertTwoOfThreeMultisig(address, "Reserve allocator");
 }
 
+/**
+ * Mainnet security council and launch team must be 2-of-3 Safes, like the steward. Both are
+ * fixed in the crowdfund at deploy, so the governance stage checks before its first transaction
+ * and the crowdfund stage re-checks before deploying the crowdfund.
+ */
+export async function assertLaunchRoleMultisigs(securityCouncil: string, launchTeam: string): Promise<void> {
+  if (!securityCouncil) throw new Error("SECURITY_COUNCIL_ADDRESS is required (a 2-of-3 Safe)");
+  if (!launchTeam) throw new Error("LAUNCH_TEAM_ADDRESS is required (a 2-of-3 Safe)");
+  await assertTwoOfThreeMultisig(securityCouncil, "Security council");
+  await assertTwoOfThreeMultisig(launchTeam, "Launch team");
+}
+
 /** Safe-compatible 2-of-3 check shared by launch roles held by a multisig (reserve allocator,
- * initial steward). Same caveat: getters do not authenticate the wallet code. */
+ * initial steward, mainnet security council and launch team). Same caveat: getters do not
+ * authenticate the wallet code. */
 export async function assertTwoOfThreeMultisig(address: string, label: string): Promise<void> {
   if (await ethers.provider.getCode(address) === "0x") throw new Error(`${label} must be a deployed multisig`);
   const wallet = new ethers.Contract(address, [

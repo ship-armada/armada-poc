@@ -28,7 +28,7 @@ import {
 import { createNonceManager, crowdfundHandoffNonce, rejectAnvilAddresses, loadDeployment, saveDeployment, saveDeploymentInProgress, assertDeploymentComplete, timelockCall, retryReadOnLag, resolveCrowdfundOpenTimestamp } from "./deploy-utils";
 import { MULTICALL3_ADDRESS, MULTICALL3_RUNTIME_BYTECODE } from "./multicall3-bytecode";
 
-import { ensureRevenueLockActivated, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, assertCreationProvenance, validateReservePlan } from "./revenue-reserve";
+import { ensureRevenueLockActivated, assertLaunchRoleMultisigs, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, assertCreationProvenance, validateReservePlan } from "./revenue-reserve";
 import { assertInitialStewardPreflight, assertUsdcDecimals, seedInitialSteward, stewardBudgetLimit } from "./initial-steward";
 
 interface CrowdfundDeployment {
@@ -193,6 +193,11 @@ async function main() {
   }
   console.log(`   Launch team: ${launchTeamAddress}`);
   console.log(`   Security council: ${securityCouncilAddress}`);
+  // This stage may run days after governance with a different env file: re-check before the
+  // crowdfund fixes both addresses (mainnet only; Sepolia uses single-key roles).
+  if (config.env === "mainnet") {
+    await assertLaunchRoleMultisigs(securityCouncilAddress, launchTeamAddress);
+  }
   // Initial steward (#221, #222): this stage may run days after governance with a different
   // env file, so re-check the steward against every launch role before its first transaction,
   // and confirm the hub USDC uses the decimals the whole-USD budget is scaled by.

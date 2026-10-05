@@ -481,7 +481,7 @@ where `acceptedUsdc` is the participant's share of the hop ceiling (full effecti
 
 The crowdfund contract includes an emergency cancel mechanism for catastrophic pre-finalization scenarios: a critical contract bug, a regulatory injunction, or another event that would make proceeding harmful to participants.
 
-**Authority:** Security Council (3-of-5 multisig — see GOVERNANCE.md)
+**Authority:** Security Council (2-of-3 multisig — see GOVERNANCE.md)
 
 **Process:**
 1. Security Council invokes `cancel()` — takes effect immediately
@@ -598,7 +598,7 @@ Those who paid have priority over those who received tokens at zero cost basis. 
 | ARM pre-load requirement | 1,800,000 ARM loaded before window opens | Ensures claim records written at finalization are always backed by sufficient ARM; enforced by contract flag |
 | Settlement model | Lazy settlement: aggregate finalization + per-user computation at claim time | `finalize()` writes only aggregate state (sale size, ceilings, hopDemand, totalAllocatedArm) — zero per-participant storage writes. `claim()` computes each participant's allocation on-the-fly from aggregate parameters + their own commitment records. Net proceeds push to treasury at finalization. ARM and refunds pull at claim time. |
 | Crowdfund finalization | Permissionless — callable by anyone after deadline | All post-deadline outcomes flow through `finalize()`. Sub-minimum demand results in `refundMode = true`. No separate deadline fallback path. Someone must call `finalize()` even in obvious failure cases (permissionless, low-cost). |
-| Crowdfund emergency cancel | Security Council (3-of-5 multisig), immediate effect, pre-finalization only | Speed serves participants in a genuine emergency. Abuse protection from Security Council composition, automatic unconditional refunds, and pre-finalization-only restriction — not a delay. |
+| Crowdfund emergency cancel | Security Council (2-of-3 multisig), immediate effect, pre-finalization only | Speed serves participants in a genuine emergency. Abuse protection from Security Council composition, automatic unconditional refunds, and pre-finalization-only restriction — not a delay. |
 | Post-finalization | No privileged roles | All privileged functions permanently inactive after finalization. `withdrawUnallocatedArm` is permissionless — anyone calls it, ARM goes to immutable treasury address. |
 | Governance quiet period | 7 days after finalization; no proposals until day 8 | Gives community time to claim, delegate, and orient. Security Council handles any emergency during this window. Constructor parameter — applies once, no effect after expiry. |
 | ARM claim deadline | 3 years from finalization, fixed | Predeclared term of participation, ungovernable by design |

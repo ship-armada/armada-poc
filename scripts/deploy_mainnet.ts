@@ -33,8 +33,9 @@
  * A Ledger run signs a pre-flight message on the device before the first transaction.
  *
  * Prerequisites (fail loud if missing): deployer funded on the hub; real CCTP V2
- * addresses + USDC configured; security council / launch team / initial steward (2-of-3
- * Safe) / RevenueLock beneficiaries set. See config/mainnet.env.
+ * addresses + USDC configured; security council / launch team / initial steward (each a
+ * 2-of-3 Safe, checked before the first transaction) / RevenueLock beneficiaries set. See
+ * config/mainnet.env.
  */
 
 import { execSync } from "child_process";

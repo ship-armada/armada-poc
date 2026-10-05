@@ -24,7 +24,7 @@ Single source of truth for every concrete value that enters the deployed contrac
 | Crowdfund contract | `[TBD — set at deployment]` | Immutable | ☐ | Record after deploy |
 | Treasury | `[TBD]` | Immutable (constructor) | ☐ | Receives net USDC proceeds + swept ARM. Must be multisig. |
 | ROOT / Launch team | `[TBD]` | Immutable (constructor) | ☐ | Calls `addSeed()`, `launchTeamInvite()`. Must be multisig. |
-| Security Council | `[TBD]` | Immutable (constructor) | ☐ | Calls `cancel()`. 3-of-5 multisig. |
+| Security Council | `[TBD]` | Immutable (constructor) | ☐ | Calls `cancel()`. 2-of-3 multisig. |
 | ARM token | `[TBD]` | Immutable (constructor) | ☐ | 18 decimals. Verify against official deployment. |
 | USDC token | `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` (Ethereum mainnet) | Immutable (constructor) | ☐ | `HUB_USDC` in `config/mainnet.env`; on-chain: 6 decimals, symbol `USDC`, `isMinter(TokenMinterV2)` true. 6 decimals. Must be the exact USDC contract address on the deployment chain — not a human label. Verify against Circle's official deployment list: https://developers.circle.com/stablecoins/docs/usdc-on-main-networks |
 | CCTP V2 TokenMessengerV2 / MessageTransmitterV2 / TokenMinterV2 | `0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d` / `0x81D40F21F12A8F0E3252Bccb954D722d4c464B64` / `0xfd78EE919681417d192449715b2594ab58f5D002` | Not a crowdfund constructor input — recorded in the hub CCTP manifest by deploy step 1 and reused by the shielded-pool launch | ☐ | Same address on Ethereum, Base, Arbitrum. `CCTP_*` in `config/mainnet.env`; step 1 fails without them (#535). Verify against https://developers.circle.com/cctp/evm-smart-contracts and on-chain (`localDomain`, messenger ↔ transmitter ↔ minter links, `USDC.isMinter(TokenMinterV2)`). |

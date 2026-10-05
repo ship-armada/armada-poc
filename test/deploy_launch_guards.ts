@@ -18,6 +18,7 @@ import {
   CROWDFUND_OPEN_MIN_LEAD_SECONDS,
   CROWDFUND_OPEN_MAX_LEAD_SECONDS,
 } from "../scripts/deploy-utils";
+import { assertLaunchRoleMultisigs } from "../scripts/revenue-reserve";
 
 describe("Mainnet launch deploy guards", function () {
   describe("remote network gas headroom", function () {
@@ -263,6 +264,44 @@ describe("Mainnet launch deploy guards", function () {
       expect(result.status).to.not.equal(0);
       expect(result.stderr).to.include("HARDEN_TIMELOCK must not be disabled on mainnet");
       expect(result.stdout).to.not.include("CROWDFUND-LAUNCH DEPLOYMENT");
+    });
+  });
+  describe("assertLaunchRoleMultisigs", function () {
+    async function safes() {
+      const [, a, b, c, eoa] = await hre.ethers.getSigners();
+      const Mock = await hre.ethers.getContractFactory("ReserveAllocatorIntrospectionMock");
+      const twoOfThree = async () => (await Mock.deploy([a.address, b.address, c.address], 2)).getAddress();
+      const oneOfThree = await (await Mock.deploy([a.address, b.address, c.address], 1)).getAddress();
+      return { sc: await twoOfThree(), launchTeam: await twoOfThree(), oneOfThree, eoa: eoa.address };
+    }
+
+    // WHY: control case — two 2-of-3 Safes are the intended mainnet security council and launch team.
+    it("accepts a 2-of-3 security council and launch team", async function () {
+      const { sc, launchTeam } = await safes();
+      await assertLaunchRoleMultisigs(sc, launchTeam);
+    });
+
+    // WHY: both addresses are baked into the immutable crowdfund. A single key as security council
+    // holds the cancel veto alone; as launch team it holds every seed and launch-team invite.
+    it("rejects an EOA security council", async function () {
+      const { launchTeam, eoa } = await safes();
+      await expect(assertLaunchRoleMultisigs(eoa, launchTeam))
+        .to.be.rejectedWith("Security council must be a deployed multisig");
+    });
+
+    // WHY: a Safe created 1-of-1 (or left at threshold 1) while owners are added must not slip
+    // through: the address alone looks right, only the owner/threshold reads tell them apart.
+    it("rejects a launch team Safe that is not 2-of-3", async function () {
+      const { sc, oneOfThree } = await safes();
+      await expect(assertLaunchRoleMultisigs(sc, oneOfThree))
+        .to.be.rejectedWith("Launch team must report exactly three distinct owners and threshold two");
+    });
+
+    // WHY: an unset address must name the env var, not fail later with an RPC error.
+    it("names the missing env var when an address is unset", async function () {
+      const { sc, launchTeam } = await safes();
+      await expect(assertLaunchRoleMultisigs("", launchTeam)).to.be.rejectedWith("SECURITY_COUNCIL_ADDRESS");
+      await expect(assertLaunchRoleMultisigs(sc, "")).to.be.rejectedWith("LAUNCH_TEAM_ADDRESS");
     });
   });
   describe("assertDeployCommit", function () {

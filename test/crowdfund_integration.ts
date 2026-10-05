@@ -21,7 +21,7 @@ const Phase = { Active: 0, Finalized: 1, Canceled: 2 };
 
 // Time constants
 const ONE_DAY = 86400;
-const LAUNCH_TEAM_WINDOW = 14 * ONE_DAY;
+const LAUNCH_TEAM_WINDOW = 21 * ONE_DAY; // spans the full commitment window
 const THREE_WEEKS = 21 * ONE_DAY;
 
 // USDC amounts (6 decimals)
@@ -212,6 +212,14 @@ describe("Crowdfund Integration", function () {
         crowdfund.addSeed(seed2.address)
       ).to.be.revertedWith("ArmadaCrowdfund: outside week-1 window");
     });
+
+    // WHY: The launch-team window spans the full commitment window, so hop-0 additions
+    // must still succeed late in the final week (days 15-21 were previously closed).
+    it("should allow adding seeds on day 20", async function () {
+      await time.increase(20 * ONE_DAY);
+      await crowdfund.addSeed(seed1.address);
+      expect(await crowdfund.isWhitelisted(seed1.address, 0)).to.be.true;
+    });
   });
 
   // ============================================================
@@ -343,8 +351,9 @@ describe("Crowdfund Integration", function () {
 
       // windowEnd = windowStart + 3 weeks
       expect(we - ws).to.equal(THREE_WEEKS);
-      // launchTeamInviteEnd = windowStart + 14 days
+      // launchTeamInviteEnd = windowStart + 21 days (spans the full commitment window)
       expect(ltie - ws).to.equal(LAUNCH_TEAM_WINDOW);
+      expect(ltie).to.equal(we);
       // windowStart should be the openTimestamp we passed to constructor
       expect(ws).to.be.gt(0);
     });

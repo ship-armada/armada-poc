@@ -129,7 +129,7 @@ export const ruleA4: AlertRule = (ctx) => {
     dedupeKey: `A4:${crossed}`,
     title: `Seed budget at ${crossed}% (${seedCount}/${CROWDFUND_CONSTANTS.MAX_SEEDS})`,
     body: `Hop-0 SeedAdded count reached ${crossed}% of the configured MAX_SEEDS (${CROWDFUND_CONSTANTS.MAX_SEEDS}).`,
-    runbook: 'OPERATIONS.md §4 Day-14 launch-team deadline checkpoint; §10 decision log',
+    runbook: 'OPERATIONS.md §4 Day-14 launch-team checkpoint; §10 decision log',
     context: { seedCount, crossedTier: crossed },
   }]
 }

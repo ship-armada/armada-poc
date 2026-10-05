@@ -97,7 +97,7 @@ After finalization with 100+ participants across all hops:
 - `commit()` outside active window (before windowStart or after windowEnd)
 - `invite()` outside active window
 - `finalize()` before windowEnd
-- `addSeeds()` after the 14-day launch-team window closes
+- `addSeeds()` after the launch-team window closes (at windowEnd; it spans the full commitment window)
 - `claim()` when phase is Canceled (should use `refund()`)
 - Non-admin calls `finalize()`, `addSeeds()`, `withdrawProceeds()`
 

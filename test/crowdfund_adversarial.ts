@@ -17,7 +17,7 @@ const Phase = { Active: 0, Finalized: 1, Canceled: 2 };
 
 const ONE_DAY = 86400;
 const THREE_WEEKS = 21 * ONE_DAY;
-const LAUNCH_TEAM_WINDOW = 14 * ONE_DAY;
+const LAUNCH_TEAM_WINDOW = 21 * ONE_DAY; // spans the full commitment window
 
 const USDC = (n: number) => ethers.parseUnits(n.toString(), 6);
 const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);

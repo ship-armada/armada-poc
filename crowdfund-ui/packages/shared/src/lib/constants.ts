@@ -49,7 +49,7 @@ const CONSTANTS_BY_PROFILE: Record<CrowdfundProfile, CrowdfundConstants> = {
     LAUNCH_TEAM_HOP2_BUDGET: 120,
     MIN_COMMIT: 10n * 10n ** 6n,
     WINDOW_DURATION: 21 * 24 * 60 * 60, // 21 days
-    LAUNCH_TEAM_INVITE_PERIOD: 14 * 24 * 60 * 60, // 14 days
+    LAUNCH_TEAM_INVITE_PERIOD: 21 * 24 * 60 * 60, // 21 days (equal to WINDOW_DURATION)
     CLAIM_DEADLINE_DURATION: 1095 * 24 * 60 * 60, // 3 years
     GOVERNANCE_QUIET_PERIOD: 7 * 24 * 60 * 60, // 7 days
     HOP2_BASE_FLOOR_BPS: 500, // 5%

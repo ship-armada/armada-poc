@@ -22,8 +22,8 @@ export interface CrowdfundAlertParamsReadable {
 
 /**
  * Read open / launch-team-invite / commitment-deadline timestamps and the treasury + USDC addresses
- * from the crowdfund. The launch-team invite deadline (`week1Deadline`, a name that predates the
- * 14-day window) is launchTeamInviteEnd and the commitment deadline is
+ * from the crowdfund. The launch-team invite deadline (`week1Deadline`, a legacy misnomer: the window
+ * spans the full sale) is launchTeamInviteEnd and the commitment deadline is
  * windowEnd (both fixed in the constructor). A failed read propagates.
  */
 export async function readCrowdfundAlertParams(

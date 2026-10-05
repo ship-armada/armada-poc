@@ -26,7 +26,7 @@ Complete this table before deployment. Every address must be confirmed before an
 | USDC token contract | Committed currency | Circle mainnet USDC | — | — |
 
 **Key access rules (from CROWDFUND.md):**
-- `addSeed()` and `launchTeamInvite()`: ROOT only, days 1-14 only
+- `addSeed()` and `launchTeamInvite()`: ROOT only, days 1-21 only (the full commitment window; closes at `windowEnd`)
 - `cancel()`: Security Council only, pre-finalization only
 - `finalize()`, `withdrawUnallocatedArm()`: permissionless (anyone)
 - `claim(delegate)`, `claimRefund()`: permissionless (participant-initiated)
@@ -152,13 +152,13 @@ Record: `contract_address = [address]`, `deploy_tx = [hash]`, `block = [number]`
 
 Record: `loadArm_tx = [hash]`
 
-> **If `loadArm()` was called before `openTimestamp`:** Stop here. Verify observer shows ARMED / PRE-OPEN. Do not proceed to Steps 6, 7, or 10 until `block.timestamp ≥ openTimestamp`. The contract is armed but commitments will revert and `addSeed()` / `launchTeamInvite()` may also revert until the days 1-14 launch-team window is active. (Step 8, the committer integrity-anchor config, is not gated by `openTimestamp` and may be done now.)
+> **If `loadArm()` was called before `openTimestamp`:** Stop here. Verify observer shows ARMED / PRE-OPEN. Do not proceed to Steps 6, 7, or 10 until `block.timestamp ≥ openTimestamp`. The contract is armed but commitments will revert and `addSeed()` / `launchTeamInvite()` may also revert until the launch-team window (days 1-21) is active. (Step 8, the committer integrity-anchor config, is not gated by `openTimestamp` and may be done now.)
 
 > **At or after `openTimestamp`:** Continue to Steps 6, 7, 8, 9, and 10 in order.
 
 ### Step 6: Add initial seeds
 
-**Execute only once `block.timestamp ≥ openTimestamp` and the days 1-14 launch-team window is active.**
+**Execute only once `block.timestamp ≥ openTimestamp` and the launch-team window (days 1-21) is active.**
 
 See §4 (Launch-team operating cadence) for the full seed addition procedure. The first batch of seeds should be added immediately once the launch-team window is active (`block.timestamp ≥ openTimestamp`), before announcing the sale.
 
@@ -210,9 +210,9 @@ opening passes.
 
 ---
 
-## 4. Launch-Team Operating Cadence (Days 1-14)
+## 4. Launch-Team Operating Cadence (Days 1-21)
 
-Days 1-14 are the highest-risk operational phase. Hop-0 participants are added, launch-team budgets are spent, and these actions are either irreversible (`invite()` path) or immediately visible on-chain. Execute with care.
+The launch-team window (days 1-21, the full commitment window) is the highest-risk operational phase. Hop-0 participants are added, launch-team budgets are spent, and these actions are either irreversible (`invite()` path) or immediately visible on-chain. Execute with care.
 
 ### Adding a hop-0 participant
 
@@ -234,7 +234,7 @@ Days 1-14 are the highest-risk operational phase. Hop-0 participants are added, 
 | **On-chain confirmation** | `Invited(ROOT, invitee, fromHop+1, 0)` emitted; observer shows new node with dashed edge from ROOT |
 | **Fallback** | If placement was wrong: see failure scenario §9.2 (bad launch-team invite) |
 
-### Daily checks (days 1-14)
+### Daily checks (days 1-21)
 
 Each day during the launch-team window, the operator should verify:
 
@@ -247,9 +247,9 @@ Each day during the launch-team window, the operator should verify:
 - [ ] Observer and committer responding normally
 - [ ] No anomalous contract calls (check events for unexpected interactions)
 
-### Day-14 launch-team deadline checkpoint
+### Day-14 launch-team checkpoint
 
-Before the launch-team invite window closes (end of day 14), verify:
+With one week of the sale remaining (end of day 14), verify:
 
 | Condition | Status | Owner |
 |---|---|---|
@@ -266,7 +266,7 @@ Before the launch-team invite window closes (end of day 14), verify:
 
 ## 5. Final-Week Operating Cadence
 
-After the launch-team invite window closes on day 14, the operator's role is monitoring, not action.
+The launch-team window stays open until `windowEnd`, so ROOT can still add hop-0 participants and issue placements during days 15-21 under the §4 procedures and decision-log discipline. Late placements leave invitees little time to commit, and every placement consumes a `MAX_FINALIZE_NODES` slot (and `finalize()` gas) whether or not the invitee commits. Otherwise the operator's role is monitoring.
 
 ### Daily checks (days 15-21)
 
@@ -604,7 +604,7 @@ Every irreversible action must be logged here before it is executed. This is the
 
 ---
 
-### Checkpoint 2: Day 14 (before launch-team invite window closes)
+### Checkpoint 2: Day 14 (one week before the launch-team and commitment windows close)
 
 | Condition | Status | Owner |
 |---|---|---|

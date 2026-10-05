@@ -85,8 +85,7 @@ Monitoring derives the current lifecycle phase from events and timestamps.
 |---|---|
 | **PRE-ARMED** | No `ArmLoaded` emitted |
 | **ARMED / PRE-OPEN** | `ArmLoaded` emitted; `now < openTimestamp` |
-| **OPEN / LAUNCH-TEAM WINDOW (days 1-14)** | `ArmLoaded`; `openTimestamp ≤ now ≤ week1Deadline` |
-| **OPEN / FINAL WEEK (days 15-21)** | `ArmLoaded`; `week1Deadline < now ≤ commitmentDeadline` |
+| **OPEN (days 1-21)** | `ArmLoaded`; `openTimestamp ≤ now ≤ commitmentDeadline`. The launch-team window spans this whole phase: `week1Deadline` equals `commitmentDeadline`, and launch-team actions close strictly before it. |
 | **DEADLINE PASSED / NOT FINALIZED** | `now > commitmentDeadline`; no `Finalized`; no `Cancelled` |
 | **FINALIZED / SUCCESS / CLAIMS OPEN** | `Finalized(refundMode=false)`; `Allocated` + `AllocatedHop` events emitted individually at each participant's `claim()` time (lazy settlement). |
 | **FINALIZED / REFUND MODE** | `Finalized(refundMode=true)` |
@@ -188,7 +187,7 @@ off-chain alert covers that condition.
 | **Condition** | Seed count reaches 80%, 90%, 100% of configured budget (180) |
 | **Severity** | P2 at 80%/90%; P1 at 100% |
 | **Meaning** | Launch-team-window hop-0 expansion capacity running low |
-| **Runbook** | `OPERATIONS.md` §4 Day-14 launch-team deadline checkpoint; §10 decision log |
+| **Runbook** | `OPERATIONS.md` §4 Day-14 launch-team checkpoint; §10 decision log |
 
 ---
 

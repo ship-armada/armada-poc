@@ -72,7 +72,10 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
     uint16 public constant HOP2_MAX_INVITES_RECEIVED = 20;
 
     uint256 public constant WINDOW_DURATION = 21 days;
-    uint256 public constant LAUNCH_TEAM_INVITE_PERIOD = 14 days;
+    // The launch-team invite window spans the full commitment window. launchTeamInvite/addSeed use a
+    // strict `< launchTeamInviteEnd` check, so the launch team is closed out at exactly windowEnd while
+    // participant invite/commit (`<= windowEnd`) remain open for that final second.
+    uint256 public constant LAUNCH_TEAM_INVITE_PERIOD = WINDOW_DURATION;
     uint256 public constant CLAIM_DEADLINE_DURATION = 1095 days; // 3 years
     uint256 public constant MIN_COMMIT = 10 * 1e6;               // $10 USDC minimum per commit
     // Per-hop invite stacking caps are stored in hopConfigs[].maxInvitesReceived (1, 10, 20)
@@ -298,7 +301,8 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
         emit Invited(msg.sender, invitee, inviteeHop, 0);
     }
 
-    /// @notice Launch team issues a direct invite at hop-1 or hop-2 during its 14-day window.
+    /// @notice Launch team issues a direct invite at hop-1 or hop-2 during its invite window
+    ///         (which spans the full commitment window).
     ///         The launch team is a sentinel with predeclared invite budgets — it is not
     ///         a participant and cannot commit USDC.
     /// @param invitee Address to invite
@@ -307,7 +311,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
         require(msg.sender == launchTeam, "ArmadaCrowdfund: not launch team");
         require(phase == Phase.Active, "ArmadaCrowdfund: not active");
         require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
-        // Revert string predates the 14-day launch-team window; kept stable because
+        // Revert string kept stable (despite the window spanning the full sale) because
         // off-chain tooling (admin UI error mapping) matches on it.
         require(
             block.timestamp >= windowStart && block.timestamp < launchTeamInviteEnd,
@@ -788,7 +792,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
     function _requireArmLoadedAndPreInviteEnd() internal view {
         require(phase == Phase.Active, "ArmadaCrowdfund: not active");
         require(armLoaded, "ArmadaCrowdfund: ARM not loaded");
-        // Revert string predates the 14-day launch-team window; kept stable because
+        // Revert string kept stable (despite the window spanning the full sale) because
         // off-chain tooling (admin UI error mapping) matches on it.
         require(
             block.timestamp >= windowStart && block.timestamp < launchTeamInviteEnd,

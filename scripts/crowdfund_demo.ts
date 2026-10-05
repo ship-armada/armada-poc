@@ -192,7 +192,7 @@ async function main() {
   log("NOTE", `Adding ${extraSeeds.length} extra seeds to reach minimum raise...`);
 
   // We need to deploy a new crowdfund with all these seeds pre-loaded.
-  // Seeds can be added during the 14-day launch-team window, but this demo
+  // Seeds can be added during the launch-team window, but this demo
   // is already past that point. Instead, show the demo even if it cancels.
   console.log("");
   log("NOTE", `Total committed: ${fmtUsdc(totalComm)} (below $1M minimum)`);

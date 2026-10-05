@@ -14,7 +14,7 @@ const USDC = (n: number) => BigInt(n) * 1_000_000n;
 const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
 
 const ONE_DAY = 86400;
-const LAUNCH_TEAM_WINDOW = 14 * ONE_DAY;
+const LAUNCH_TEAM_WINDOW = 21 * ONE_DAY; // spans the full commitment window
 const THREE_WEEKS = 21 * ONE_DAY;
 const THREE_YEARS = 1095 * ONE_DAY;
 

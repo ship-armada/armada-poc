@@ -38,7 +38,7 @@ Single source of truth for every concrete value that enters the deployed contrac
 | Parameter | Human-readable | Unix timestamp | Mutability | Verified | Notes |
 |---|---|---|---|---|---|
 | Open timestamp | `[TBD: date/time UTC]` | `[TBD]` | Immutable (constructor) | ☐ | Commitment window, hop-0 additions, and invites begin here. Set as `CROWDFUND_OPEN_TIME` (ISO 8601 UTC, e.g. `2026-10-08T17:00:00Z`) in `config/mainnet.env` — required on mainnet; `setup:mainnet` refuses to start unless it is 1h–60d away (#543). |
-| Launch-team invite deadline | Open + 14 days | `[TBD]` | Immutable (constructor) | ☐ | `addSeed()` and `launchTeamInvite()` revert after this |
+| Launch-team invite deadline | Open + 21 days (equals the commitment deadline) | `[TBD]` | Immutable (constructor) | ☐ | `addSeed()` and `launchTeamInvite()` revert at and after this (strict `<`; participant actions stay open for that final second) |
 | Commitment deadline | Open + 21 days | `[TBD]` | Immutable (constructor) | ☐ | `commit()`, `commitWithInvite()`, `invite()` revert after this |
 | Claim deadline | Finalization + 3 years | Computed at finalization | Immutable (derived) | — | `claim()` permitted when `block.timestamp <= finalizationTimestamp + 94_608_000`. Sweep eligible at `>`. |
 
@@ -211,7 +211,7 @@ Every parameter in this contract falls into one of three categories:
 **There are no admin-mutable parameters in the crowdfund contract.** No address can change any parameter after deployment. This is intentional — the mechanism is fully predeclared.
 
 The only role-gated *actions* are:
-- ROOT: `addSeed()`, `launchTeamInvite()` — days 1-14 only
+- ROOT: `addSeed()`, `launchTeamInvite()` — days 1-21 only (the full commitment window)
 - Security Council: `cancel()` — pre-finalization only
 
 Neither of these changes a parameter. They execute predeclared actions within predeclared budgets.

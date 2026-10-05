@@ -96,7 +96,7 @@ import type { CrowdfundEvent } from '@armada/crowdfund-shared'
 |----------|------|-------|-------|
 | `loadArm()` | Permissionless | Active | Verify ARM pre-load. Idempotent. |
 | `addSeeds(address[])` | Launch team | Active, pre-launch-team-deadline | Batch seeds. Max 180 total. |
-| `launchTeamInvite(address, uint8)` | Launch team | Active, days 1-14 | Budget-tracked (100/120). |
+| `launchTeamInvite(address, uint8)` | Launch team | Active, days 1-21 (pre-launch-team-deadline) | Budget-tracked (100/120). |
 | `finalize()` | Permissionless | Active, post-window | Compute allocations, transfer proceeds. |
 | `cancel()` | Security council | Active | Emergency cancel. Irreversible. |
 | `withdrawUnallocatedArm()` | Permissionless | Finalized or Cancelled | Sweep ARM to treasury. |

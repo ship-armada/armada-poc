@@ -11,7 +11,6 @@ const Phase = { Active: 0, Finalized: 1, Canceled: 2 };
 
 // Time constants
 const ONE_DAY = 86400;
-const TWO_WEEKS = 14 * ONE_DAY;
 const THREE_WEEKS = 21 * ONE_DAY;
 
 // USDC amounts (6 decimals)
@@ -163,8 +162,8 @@ describe("Launch Team & Seed Cap", function () {
     });
 
     it("reverts after invite window closes", async function () {
-      // Advance past the 14-day launch team invite window
-      await time.increase(TWO_WEEKS + 1);
+      // Advance past the launch team invite window (which spans the full commitment window)
+      await time.increase(THREE_WEEKS + 1);
       await expect(
         crowdfund.launchTeamInvite(invitee1.address, 0)
       ).to.be.revertedWith("ArmadaCrowdfund: outside week-1 window");
@@ -348,10 +347,17 @@ describe("Launch Team & Seed Cap", function () {
     });
   });
 
-  describe("14-Day Invite Window Timing", function () {
+  describe("Launch-Team Invite Window Timing", function () {
     beforeEach(async function () {
       await crowdfund.addSeed(allSigners[3].address);
 
+    });
+
+    // WHY: The launch-team invite window spans the whole commitment window. Pinning the two
+    // timestamps together catches any constant change that would reintroduce a period at the
+    // end of the sale in which the launch team can no longer act.
+    it("launch team invite window ends at the commitment window end", async function () {
+      expect(await crowdfund.launchTeamInviteEnd()).to.equal(await crowdfund.windowEnd());
     });
 
     it("launch team invite on day 13 succeeds", async function () {
@@ -360,24 +366,28 @@ describe("Launch Team & Seed Cap", function () {
       expect(await crowdfund.isWhitelisted(allSigners[4].address, 1)).to.be.true;
     });
 
-    it("launch team invite on day 15 reverts", async function () {
-      await time.increase(TWO_WEEKS + 1);
+    // WHY: Days 15-21 were previously closed to the launch team. With the window spanning the
+    // full sale, a placement late in the final week must still succeed.
+    it("launch team invite on day 20 succeeds", async function () {
+      await time.increase(20 * ONE_DAY);
+      await crowdfund.launchTeamInvite(allSigners[4].address, 0);
+      expect(await crowdfund.isWhitelisted(allSigners[4].address, 1)).to.be.true;
+    });
+
+    it("launch team invite at exactly windowEnd reverts (boundary)", async function () {
+      // WHY: The launch-team check is strict (`< launchTeamInviteEnd`) while participant
+      // invites and commits allow `<= windowEnd`. At exactly windowEnd the launch team is
+      // already closed out; pins the boundary so the asymmetry is deliberate, not accidental.
+      await time.setNextBlockTimestamp(await crowdfund.windowEnd());
       await expect(
         crowdfund.launchTeamInvite(allSigners[4].address, 0)
       ).to.be.revertedWith("ArmadaCrowdfund: outside week-1 window");
     });
 
-    it("launch team invite at exactly 14 days reverts (boundary)", async function () {
-      // At exactly windowStart + 14 days, the condition is NOT strictly less than
-      await time.increase(TWO_WEEKS);
-      await expect(
-        crowdfund.launchTeamInvite(allSigners[4].address, 0)
-      ).to.be.revertedWith("ArmadaCrowdfund: outside week-1 window");
-    });
-
-    it("regular seed invites still work after the launch-team window", async function () {
-      // Seeds can invite throughout the full active window
-      await time.increase(15 * ONE_DAY);
+    it("regular seed invites still work at windowEnd, after the launch-team window closes", async function () {
+      // WHY: Seeds can invite throughout the full active window, including the final second
+      // (windowEnd), which is the one moment the launch-team window is already closed.
+      await time.setNextBlockTimestamp(await crowdfund.windowEnd());
       const seed = allSigners[3];
       await crowdfund.connect(seed).invite(allSigners[4].address, 0);
       expect(await crowdfund.isWhitelisted(allSigners[4].address, 1)).to.be.true;

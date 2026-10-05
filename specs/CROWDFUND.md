@@ -85,7 +85,7 @@ Hop-0 selection criteria are determined by the launch team based on demonstrated
 
 **Maximum hop-0 count: 180.** The total number of hop-0 participants is capped at 180. This bounds the structural network size at 2,220 participant slots (180 hop-0 nodes + up to 640 hop-1 nodes + up to 1,400 hop-2 nodes); the separate 1,800-node `MAX_FINALIZE_NODES` cap binds first (see the `finalize()` gas note below). Arithmetic: hop-1 slots = (180 hop-0 × 3 invites) + 100 launch-team hop-1 = 640; hop-2 slots = (640 hop-1 nodes × 2 invites) + 120 launch-team hop-2 = 1,400. Because the same address may occupy multiple hop levels, the number of distinct individuals may be lower. The added headroom accommodates unexpected inbound interest; launch-team hop-1 invitations target small angels similar to hop-0 participants, while hop-2 invitations expand community capacity and reduce selection constraints.
 
-**Hop-0 additions.** The launch team may add new hop-0 participants during days 1-14, up to the 180-participant cap. Participants added later naturally have less of the 3-week commitment window remaining. Once added, a hop-0 participant may issue invitations throughout the full three weeks.
+**Hop-0 additions.** The launch team may add new hop-0 participants during days 1-21 (the full commitment window), up to the 180-participant cap. Participants added later naturally have less of the 3-week commitment window remaining. Once added, a hop-0 participant may issue invitations throughout the full three weeks.
 
 **Launch team hop-1 invite budget.** In addition to hop-0 participants, the launch team holds a predeclared budget of 100 direct hop-1 placements, not tied to any hop-0 slot. This allows the launch team to invite small angels similar to hop-0 participants without creating phantom unfilled hop-0 slots. The budget is fixed for the duration of the crowdfund.
 
@@ -105,7 +105,7 @@ Launch team hop-1 invitees are full hop-1 participants: same cap ($4,000), same 
 
 ¹ Hop-2 has no enforced ceiling — only a floor. Its effective ceiling is `hop2_floor + hop1_leftover`, which can reach the full sale size if hop-0 and hop-1 are both empty. The extra 10% floor is funded from hop-0; `HOP_CEILING_BPS` contains no entry for hop-2.
 
-The launch team holds a predeclared invite budget separate from hop-0: 100 hop-1 invitations and 120 hop-2 invitations. These do not consume hop-0 invite slots. Launch team invitations may only be issued during days 1-14.
+The launch team holds a predeclared invite budget separate from hop-0: 100 hop-1 invitations and 120 hop-2 invitations. These do not consume hop-0 invite slots. Launch team invitations may be issued during days 1-21 (the full commitment window).
 
 Hop-2 has first claim on 15% of the fund before hop-0 and hop-1 ceilings are applied. This reserved capacity is always available to hop-2, regardless of earlier hop demand, but hop-2 only receives it to the extent hop-2 participants actually commit. The raw hop ceilings are calculated from a 95% base pool; the additional 10 percentage points of hop-2 floor are funded only from hop-0's raw ceiling, preserving hop-1's raw ceiling.
 
@@ -258,12 +258,12 @@ Residual risk — a hop-0 participant concentrating votes at scale — is primar
 
 | Phase | Duration |
 |---|---|
-| Launch team invite window | Days 1-14 |
+| Launch team invite window | Days 1–21 (full 3 weeks; closes at the commitment deadline) |
 | Hop-0 invite window | Days 1–21 (full 3 weeks) |
 | Hop-1 invite window | Days 1–21 (full 3 weeks) |
 | Commitment window | Days 1–21 (full 3 weeks) |
 
-The launch team's invite budget (hop-0 additions, hop-1, hop-2 placements) may only be issued during days 1-14. Hop-0 and hop-1 participants may issue invitations throughout the full three weeks — right up to the commitment deadline. This leaves launch-team discretion constrained only during the final week and lets the team observe live subscription data for 14 days before its discretion ends. A launch-team invite issued on day 14 has seven days remaining before the sale ends; the launch-team deadline does not affect hop-1 invite rights.
+The launch team's invite budget (hop-0 additions, hop-1, hop-2 placements) may be issued at any point during the commitment window, days 1-21. Hop-0 and hop-1 participants may likewise issue invitations right up to the commitment deadline. Keeping launch-team discretion open for the whole sale lets the team respond to live subscription data until the deadline, at the cost of participants having no final period in which launch-team actions are frozen. Every launch-team action is public on-chain and recorded in the decision log (OPERATIONS.md §10). A placement made late in the window leaves the invitee little time to commit, and still consumes a `MAX_FINALIZE_NODES` slot whether or not they commit. The launch-team window closes at the commitment deadline (`launchTeamInviteEnd == windowEnd`); because the launch-team check is strict (`< launchTeamInviteEnd`), the launch team is closed out at that final second while participant invites and commits (`<= windowEnd`) remain open.
 
 ### Commitment
 
@@ -288,7 +288,7 @@ Deployment sequence:
 
 No CREATE2 is used — the crowdfund address is resolved at conventional deploy time and passed back to subsequent transfer calls.
 
-`loadArm()` may be called before or at the configured open timestamp. If called in advance, the contract is armed but `commit()` reverts until the open timestamp is reached. `addSeed()` and `launchTeamInvite()` are similarly gated to the days 1-14 launch-team window (which begins at the open timestamp) and must not be called before the window is active.
+`loadArm()` may be called before or at the configured open timestamp. If called in advance, the contract is armed but `commit()` reverts until the open timestamp is reached. `addSeed()` and `launchTeamInvite()` are similarly gated to the days 1-21 launch-team window (which begins at the open timestamp) and must not be called before the window is active.
 
 5. Commitment window opens at the configured open timestamp
 
@@ -589,10 +589,10 @@ Those who paid have priority over those who received tokens at zero cost basis. 
 | Overlapping ceilings | Raw terms total 105% of the 95% base pool (60/45); hop-0 additionally funds the extra 10% hop-2 floor | The enforced ceilings do not simply total 105%: hop-1 is bounded by remaining available pool after hop-0. Hop-2's effective ceiling is floor + hop-1 leftover, preserving forward-only rollover. |
 | Hop-2 hard floor | 15% of the fund reserved — hop-2 has first claim on this capacity | Hop-2 is governance breadth and ecosystem signal. The additional 10 percentage points are funded only from hop-0's ceiling, protecting hop-1's raw ceiling while reserving more capacity for community demand. |
 | Multi-hop commits from single address | Permitted; receives ARM allocation at each hop independently | $33k per-subtree ceiling (2.75% of base raise). An address invited by multiple hop-0 participants accumulates across all subtrees — no global cap, but all participation is visible in the graph. Concentration is legible, not preventable. |
-| Invite window | Launch team: days 1-14; Hop-0 and hop-1: full 3 weeks | Launch-team discretion is constrained only for the final week, while the team can observe live subscription data for 14 days before the deadline. Hop-0 and hop-1 participants retain full flexibility throughout. |
-| Rolling hop-0 additions | Launch team may add hop-0 participants during days 1-14, up to 180-participant cap | Constrained to the launch-team invite window. Once added, hop-0 participants may invite throughout the full 3 weeks. |
+| Invite window | Launch team: days 1-21; Hop-0 and hop-1: full 3 weeks | Launch-team discretion stays open for the full sale, so the team can respond to live subscription data until the commitment deadline; there is no final period in which launch-team actions are frozen. All launch-team actions are public on-chain. Hop-0 and hop-1 participants retain full flexibility throughout. |
+| Rolling hop-0 additions | Launch team may add hop-0 participants during days 1-21, up to 180-participant cap | Constrained to the launch-team invite window (the full commitment window). Participants added late have little of the window left to commit and invite. Once added, hop-0 participants may invite until the commitment deadline. |
 | Hop-0 cap | 180 hop-0 participants maximum | Bounds network to 2,220 structural participant slots (the 1,800-node `MAX_FINALIZE_NODES` cap binds first); distinct individuals may be fewer under single-address multi-hop. |
-| Launch team invite budgets | 100 hop-1 + 120 hop-2 invitations, predeclared, days 1-14 only | Adds headroom for small angels and community participation while reducing selection constraints. |
+| Launch team invite budgets | 100 hop-1 + 120 hop-2 invitations, predeclared, days 1-21 only | Adds headroom for small angels and community participation while reducing selection constraints. |
 | Rollover | Unconditional — leftover always rolls forward | Rollover thresholds dropped as weak sybil protection; hop-0 selection is the real defence. Simpler contract. |
 | No commitment withdrawals | Commitments are final once submitted | Eliminates gaming risk and simplifies contract; 3-week maximum lock period is known upfront |
 | ARM pre-load requirement | 1,800,000 ARM loaded before window opens | Ensures claim records written at finalization are always backed by sufficient ARM; enforced by contract flag |
@@ -613,8 +613,8 @@ Those who paid have priority over those who received tokens at zero cost basis. 
 | Function | Caller | Parameters | Preconditions | Effects |
 |---|---|---|---|---|
 | `loadArm()` | Anyone (once) | — | Contract holds ≥ MAX_SALE ARM; not already called | Sets ARM-loaded flag; arms the sale (commitment window opens at configured `openTimestamp`, not at the moment `loadArm()` is called); emits `ArmLoaded` |
-| `addSeed(address)` | Launch team | Hop-0 address | ARM loaded; days 1-14 only; hop-0 count < 180; address not already hop-0; not cancelled; not finalized | Adds address as hop-0 node with `invitedBy = address(0)` (the canonical ROOT marker); emits `SeedAdded(seed)`; decrements hop-0 budget. The inviter is implicit — `addSeed` is callable only by the launch team sentinel, so off-chain reconstruction tools should treat every `SeedAdded` event as a ROOT edge. |
-| `launchTeamInvite(invitee, fromHop)` | Launch team | Target address, inviter's hop (0 or 1; invitee joins at `fromHop + 1`) | ARM loaded; days 1-14 only; budget remaining for target hop; not cancelled; not finalized | Records invite edge from ROOT to invitee at `fromHop + 1`; emits `Invited(ROOT, invitee, fromHop + 1, 0)`; decrements launch team budget |
+| `addSeed(address)` | Launch team | Hop-0 address | ARM loaded; days 1-21 only (strictly before `windowEnd`); hop-0 count < 180; address not already hop-0; not cancelled; not finalized | Adds address as hop-0 node with `invitedBy = address(0)` (the canonical ROOT marker); emits `SeedAdded(seed)`; decrements hop-0 budget. The inviter is implicit — `addSeed` is callable only by the launch team sentinel, so off-chain reconstruction tools should treat every `SeedAdded` event as a ROOT edge. |
+| `launchTeamInvite(invitee, fromHop)` | Launch team | Target address, inviter's hop (0 or 1; invitee joins at `fromHop + 1`) | ARM loaded; days 1-21 only (strictly before `windowEnd`); budget remaining for target hop; not cancelled; not finalized | Records invite edge from ROOT to invitee at `fromHop + 1`; emits `Invited(ROOT, invitee, fromHop + 1, 0)`; decrements launch team budget |
 | `commit(hop, amount)` | Participant | Hop level, USDC amount | ARM loaded; pre-deadline; not cancelled; not finalized; `amount >= MIN_COMMIT` (10 USDC); address holds at least one participation slot at this hop (hop-0 slots from `SeedAdded`; hop-1/hop-2 slots from `Invited`) | Records commitment; transfers USDC to escrow; emits `Committed` |
 | `invite(invitee, fromHop)` | Inviter | Target address, inviter's hop | ARM loaded; pre-deadline; not cancelled; not finalized; caller has available slots at `fromHop` | Records invite edge; creates a new participation slot for invitee at `fromHop + 1` (increases invitee's cap by `HOP_CAP[fromHop + 1]`); emits `Invited(caller, invitee, fromHop + 1, 0)`; decrements inviter's slot count at `fromHop` |
 | `commitWithInvite(inviter, fromHop, nonce, deadline, signature, amount)` | Invitee | Inviter address, inviter's hop, nonce, deadline, EIP-712 signature, USDC amount | Valid EIP-712 + EIP-1271 signature; `nonce > 0`; `amount >= MIN_COMMIT` (10 USDC); `block.timestamp ≤ deadline`; nonce not used/revoked; inviter has available slots at `fromHop`; ARM loaded; pre-deadline; not cancelled; not finalized; USDC approved | Records invite edge + commitment atomically; creates a new participation slot for invitee at `fromHop + 1`; transfers USDC to escrow; emits `Invited(inviter, caller, fromHop + 1, nonce)` + `Committed(caller, fromHop + 1, amount)`; consumes nonce; decrements inviter's slot count |

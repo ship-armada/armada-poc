@@ -28,7 +28,10 @@ transaction hashes, and the deployer nonce.
 1. Stop all deployment senders. Compare manifest chain ID, deployer, contract
    addresses, constructor transactions, current nonce, and each transaction
    receipt with the intended launch record. If a send failed ambiguously, first
-   resolve its receipt and nonce on chain. Do not guess or skip a nonce.
+   resolve its receipt and nonce on chain. Do not guess or skip a nonce. On live
+   networks the deploy prints `[send] nonce N → 0x<hash>` as each transaction is
+   accepted; the last such line identifies a transaction that stalled or was
+   dropped before its receipt.
 2. Read the token's one-shot initialization flags and whitelists, governor quorum
    exclusions, the distributor's integration result, and all wind-down bindings.
    The constructor provenance check and current beneficiary schedule must pass

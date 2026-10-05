@@ -47,6 +47,8 @@ interface GovernanceDeployment {
   revenueReserveDistributorDeploymentTransaction?: string;
   chainId: number;
   deployer: string;
+  /** Deployer nonce after this stage's last transaction (live networks); a hardened crowdfund stage starts here. */
+  deployerNonceAfterGovernance?: number;
   deployBlock: number;
   contracts: {
     timelockController: string;
@@ -424,6 +426,7 @@ async function main() {
     ...(reserveDeploymentTransaction ? { revenueReserveDistributorDeploymentTransaction: reserveDeploymentTransaction } : {}),
     chainId,
     deployer: deployer.address,
+    ...(nm.nextNonce() !== undefined ? { deployerNonceAfterGovernance: nm.nextNonce() } : {}),
     deployBlock: governanceDeployBlock,
     contracts: {
       timelockController: timelockAddress,

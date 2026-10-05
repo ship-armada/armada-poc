@@ -138,6 +138,7 @@
     "typechain": "^8.3.2"
   },
   "devDependencies": {
+    "@nomicfoundation/hardhat-ledger": "^1.2.2",
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",
     "@types/abstract-leveldown": "^7.2.1",
     "@types/cors": "^2.8.19",

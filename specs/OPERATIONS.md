@@ -17,7 +17,7 @@ Complete this table before deployment. Every address must be confirmed before an
 
 | Role | Description | Address | Wallet type | Quorum |
 |---|---|---|---|---|
-| Deployer | Deploys the contract | `[TBD]` | Multisig required (not EOA) | — |
+| Deployer | Deploys the contract | `[TBD]` | EOA, preferably a Ledger (`DEPLOYER_LEDGER_ADDRESS`, see `docs/ledger-deploy.md`); otherwise a fresh single-use key. The pipeline signs as one account; it holds no role or ARM after the run | — |
 | Treasury | Receives net USDC proceeds + unsold/unclaimed ARM | `[TBD]` | Multisig | `[TBD]` |
 | ROOT / Launch team | `addSeed()`, `launchTeamInvite()` | `[TBD]` | Multisig | `[TBD]` |
 | Security Council | `cancel()` authority | `[TBD]` | 3-of-5 multisig | 3-of-5 |

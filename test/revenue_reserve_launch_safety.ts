@@ -20,7 +20,7 @@ describe("Reserve launch safety", function () {
     const timelock = await (await ethers.getContractFactory("TimelockController"))
       .deploy(0, [deployer.address], [deployer.address], deployer.address);
     let next = await deployer.getNonce();
-    const nm = { override: () => ({ nonce: next++ }) };
+    const nm = { override: () => ({ nonce: next++ }), nextNonce: () => next };
     return { deployer, outsider, lock, timelock, nm, next: () => next };
   }
 

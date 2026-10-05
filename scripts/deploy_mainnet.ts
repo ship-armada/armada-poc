@@ -29,7 +29,10 @@
  * earlier run exist. A run that stops part-way is an interrupted launch — recover it by
  * hand per docs/interrupted-launch-recovery.md.
  *
- * Prerequisites (fail loud if missing): deployer key funded on the hub; real CCTP V2
+ * Signer: DEPLOYER_PRIVATE_KEY, or a Ledger via DEPLOYER_LEDGER_ADDRESS (docs/ledger-deploy.md).
+ * A Ledger run signs a pre-flight message on the device before the first transaction.
+ *
+ * Prerequisites (fail loud if missing): deployer funded on the hub; real CCTP V2
  * addresses + USDC configured; security council / launch team / initial steward (2-of-3
  * Safe) / RevenueLock beneficiaries set. See config/mainnet.env.
  */
@@ -110,8 +113,8 @@ async function main() {
     console.error("Error: CCTP_MODE must be 'real' for the crowdfund-launch orchestrator.");
     process.exit(1);
   }
-  if (!config.deployerPrivateKey) {
-    console.error("Error: DEPLOYER_PRIVATE_KEY is required.");
+  if (!config.deployerPrivateKey && !config.deployerLedgerAddress) {
+    console.error("Error: DEPLOYER_PRIVATE_KEY or DEPLOYER_LEDGER_ADDRESS is required.");
     process.exit(1);
   }
   if (!HUB_NETWORKS.includes(hubNet)) {
@@ -175,6 +178,9 @@ async function main() {
   console.log(`  Env:           ${config.env}`);
   console.log(`  Hub:           ${config.hub.name} (Chain ${config.hub.chainId}, network ${hubNet})`);
   console.log(`  CCTP Mode:     ${config.cctpMode}`);
+  console.log(`  Signer:        ${config.deployerLedgerAddress
+    ? `Ledger ${config.deployerLedgerAddress} (approve each transaction on the device)`
+    : "DEPLOYER_PRIVATE_KEY"}`);
   console.log(`  Harden:        ${config.hardenTimelock}`);
   console.log(`  Commit:        ${deployCommit ? `${deployCommit} (HEAD matches, tree clean)` : "NOT pinned (DEPLOY_COMMIT not set)"}`);
   console.log(`  Timelock:      ${config.hardenTimelock ? `deploy at 0 → raise to ${config.timelockDelay}s → renounce` : `${config.timelockDelay}s (deployer keeps roles)`}`);
@@ -193,6 +199,15 @@ async function main() {
   }
 
   run("npx hardhat compile", "Compiling contracts");
+
+  // Ledger pre-flight: the device signs a message (no transaction), so a disconnected or locked
+  // device, the wrong app, or the wrong address stops the run before its first transaction.
+  if (config.deployerLedgerAddress) {
+    run(
+      `npx hardhat run scripts/ledger_preflight.ts --network ${hubNet} --no-compile`,
+      "Ledger pre-flight (approve the message on the device)"
+    );
+  }
 
   // 1. CCTP-record. deploy_cctp_sepolia.ts records REAL Circle CCTP addresses for any
   //    real-CCTP env (not Sepolia-specific despite the name) and writes the hub manifest

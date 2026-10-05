@@ -25,7 +25,7 @@ import {
   getGovernanceDeploymentFile,
   isLocal,
 } from "../config/networks";
-import { createNonceManager, rejectAnvilAddresses, loadDeployment, saveDeployment, saveDeploymentInProgress, assertDeploymentComplete, timelockCall, retryReadOnLag, resolveCrowdfundOpenTimestamp } from "./deploy-utils";
+import { createNonceManager, crowdfundHandoffNonce, rejectAnvilAddresses, loadDeployment, saveDeployment, saveDeploymentInProgress, assertDeploymentComplete, timelockCall, retryReadOnLag, resolveCrowdfundOpenTimestamp } from "./deploy-utils";
 import { MULTICALL3_ADDRESS, MULTICALL3_RUNTIME_BYTECODE } from "./multicall3-bytecode";
 
 import { ensureRevenueLockActivated, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, assertCreationProvenance, validateReservePlan } from "./revenue-reserve";
@@ -57,7 +57,6 @@ async function main() {
   const network = await ethers.provider.getNetwork();
   const chainId = Number(network.chainId);
   const config = getNetworkConfig();
-  const nm = await createNonceManager(deployer);
 
   const role = getChainRole(chainId);
   if (!role) {
@@ -94,6 +93,10 @@ async function main() {
   }
   // A governance stage that stopped part-way is an interrupted launch, not a base to build on.
   assertDeploymentComplete(govDeployment, govFilename);
+  // This stage starts seconds after governance's last transaction, when a lagging RPC node can
+  // still report an already-used nonce. A hardened run starts from the nonce governance recorded.
+  const nm = await createNonceManager(deployer,
+    crowdfundHandoffNonce(govDeployment, config.hardenTimelock, isLocal()));
   const armTokenAddress = govDeployment.contracts.armToken;
   const treasuryAddress = govDeployment.contracts.treasury;
   const governorAddress = govDeployment.contracts.governor;

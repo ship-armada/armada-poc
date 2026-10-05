@@ -235,6 +235,26 @@ describe("Mainnet launch deploy guards", function () {
       expect(result.stdout).to.not.include("CROWDFUND-LAUNCH DEPLOYMENT");
     });
 
+    // WHY: a Ledger deploy has no private key. The plan must say transactions are signed on the
+    // device, and the device pre-flight must run before the first transaction.
+    it("plans a Ledger deploy with the device pre-flight first", function () {
+      const ledger = "0x00000000000000000000000000000000000000Ab";
+      const result = dryRun({ DEPLOYER_PRIVATE_KEY: "", DEPLOYER_LEDGER_ADDRESS: ledger });
+      expect(result.status, result.stderr).to.equal(0);
+      expect(result.stdout).to.match(new RegExp(`Signer:\\s+Ledger ${ledger}`));
+      const preflight = result.stdout.indexOf("Ledger pre-flight");
+      expect(preflight).to.be.greaterThan(-1);
+      expect(preflight).to.be.lessThan(result.stdout.indexOf("1/3 Recording real CCTP addresses"));
+    });
+
+    // WHY: a key left in secrets.env next to a Ledger address would sign instead of the device.
+    it("refuses to start with both a key and a Ledger address", function () {
+      const result = dryRun({ DEPLOYER_LEDGER_ADDRESS: "0x00000000000000000000000000000000000000Ab" });
+      expect(result.status).to.not.equal(0);
+      expect(result.stderr).to.include("not both");
+      expect(result.stdout).to.not.include("CROWDFUND-LAUNCH DEPLOYMENT");
+    });
+
     // WHY: without the harden profile the deployer holds no timelock roles, so the crowdfund
     // step would revert at its first timelock-only call after spending one-shot initializers.
     // The orchestrator must refuse up front instead of warning and running anyway.

@@ -88,21 +88,33 @@ export async function retryReadOnLag<T>(
 export interface NonceManager {
   /** Returns a transaction override object with the next nonce (testnet) or empty (local) */
   override(): { nonce: number } | Record<string, never>;
+  /** The nonce the next override() will hand out (testnet), or undefined (local). */
+  nextNonce(): number | undefined;
 }
 
 /**
  * Creates a nonce manager that explicitly tracks nonces for testnet deployments.
  * On local Anvil, returns empty overrides (ethers manages nonces automatically).
+ *
+ * `expectedStartNonce` is the nonce the previous stage ended at, for a stage that runs right
+ * after it. The start nonce is then read with awaitExpectedNonce instead of a single read.
  */
-export async function createNonceManager(signer: HardhatEthersSigner): Promise<NonceManager> {
-  let nonce = await signer.getNonce();
+export async function createNonceManager(
+  signer: HardhatEthersSigner,
+  expectedStartNonce?: number,
+): Promise<NonceManager> {
   const local = isLocal();
 
   if (local) {
     return {
       override: () => ({}),
+      nextNonce: () => undefined,
     };
   }
+
+  let nonce = expectedStartNonce === undefined
+    ? await signer.getNonce()
+    : await awaitExpectedNonce(() => signer.getNonce(), expectedStartNonce);
 
   console.log(`  [nonce-manager] Starting nonce: ${nonce}`);
 
@@ -111,7 +123,62 @@ export async function createNonceManager(signer: HardhatEthersSigner): Promise<N
       const current = nonce++;
       return { nonce: current };
     },
+    nextNonce: () => nonce,
   };
+}
+
+/**
+ * The nonce the crowdfund stage must start at, or undefined when the handoff does not apply.
+ * A hardened run deploys governance and then crowdfund back to back (deploy_mainnet.ts), so the
+ * crowdfund starts exactly where governance ended. Non-hardened runs may deploy other stages in
+ * between, and local runs let ethers pick nonces.
+ */
+export function crowdfundHandoffNonce(
+  govDeployment: { deployerNonceAfterGovernance?: number },
+  hardenTimelock: boolean,
+  local: boolean,
+): number | undefined {
+  if (!hardenTimelock || local) return undefined;
+  if (govDeployment.deployerNonceAfterGovernance === undefined) {
+    throw new Error(
+      "Governance manifest has no deployerNonceAfterGovernance; a hardened crowdfund stage must " +
+      "follow a governance stage that recorded it."
+    );
+  }
+  return govDeployment.deployerNonceAfterGovernance;
+}
+
+/**
+ * Read the deployer's nonce at the start of a stage that runs straight after another one,
+ * whose final nonce was recorded as `expected`.
+ *
+ * - Lower: the RPC node has not seen the previous stage's last blocks yet. Retry (RPC lag).
+ * - Higher: the deployer key sent transactions outside the deploy. Abort at once.
+ */
+export async function awaitExpectedNonce(
+  readNonce: () => Promise<number>,
+  expected: number,
+  attempts = 8,
+  delayMs = 5000,
+): Promise<number> {
+  const nonce = await retryReadOnLag("Deployer nonce", async () => {
+    const current = await readNonce();
+    if (current < expected) {
+      throw new Error(
+        `Deployer nonce ${current} is behind the ${expected} the previous stage ended at ` +
+        `(the RPC node is behind)`
+      );
+    }
+    return current;
+  }, attempts, delayMs);
+  if (nonce > expected) {
+    throw new Error(
+      `Deployer nonce is ${nonce}, but the previous stage ended at ${expected}: the deployer key ` +
+      `sent ${nonce - expected} transaction(s) outside this deploy. Do not send anything else; ` +
+      `investigate with ${INTERRUPTED_LAUNCH_RUNBOOK}.`
+    );
+  }
+  return nonce;
 }
 
 // ============================================================================
@@ -203,8 +270,9 @@ export function assertDeployCommit(expectedCommit: string, repoDir: string = pro
 }
 
 /** Minimum time between the pre-flight check and the crowdfund opening: room for the
- *  remaining deploy steps, verification, manifest publish, frontend pin and indexer start. */
-export const CROWDFUND_OPEN_MIN_LEAD_SECONDS = 60 * 60;
+ *  remaining deploy steps, verification, manifest publish, frontend pin and indexer start.
+ *  Sized for a Ledger run, where every transaction waits for a human approval. */
+export const CROWDFUND_OPEN_MIN_LEAD_SECONDS = 6 * 60 * 60;
 /** Maximum lead — a further-out open time is treated as a typo (wrong year or month). */
 export const CROWDFUND_OPEN_MAX_LEAD_SECONDS = 60 * 86400;
 

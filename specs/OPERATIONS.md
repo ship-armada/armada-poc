@@ -219,17 +219,17 @@ The launch-team window (days 1-21, the full commitment window) is the highest-ri
 | | |
 |---|---|
 | **Actor** | ROOT (launch team multisig) |
-| **Action** | Call `addSeed(address)` |
+| **Action** | Call `addSeeds([...])` from the launch-team Safe: rows with hop 0 in a `npx hardhat cf-safe-batch` CSV, executed as Transaction Builder batches (`docs/safe-launch-batches.md`) |
 | **Preconditions** | Within launch-team window; hop-0 count < 180; address not already a seed (duplicate `addSeed()` for the same address is invalid); address confirmed with seed (they know what they're signing up for); entry recorded in decision log (§10) |
 | **On-chain confirmation** | `SeedAdded(address)` event emitted; observer shows new hop-0 node with edge from ROOT |
-| **Fallback** | If `addSeed()` reverts: check launch-team invite deadline; check hop-0 count; see failure scenario §9.1 (wrong seed added) |
+| **Fallback** | If the batch reverts: re-run the CSV with `--check` (deadline, hop-0 count, already-added seeds); see failure scenario §9.1 (wrong seed added) |
 
 ### Issuing a launch-team hop-1 or hop-2 placement
 
 | | |
 |---|---|
 | **Actor** | ROOT (launch team multisig) |
-| **Action** | Call `launchTeamInvite(invitee, fromHop)` where `fromHop` is 0 (for hop-1 placement) or 1 (for hop-2 placement) |
+| **Action** | Call `launchTeamInvite(invitee, fromHop)` where `fromHop` is 0 (for hop-1 placement) or 1 (for hop-2 placement), from the launch-team Safe: rows with target hop 1 or 2 in a `npx hardhat cf-safe-batch` CSV (`docs/safe-launch-batches.md`). Inviting an already-invited address stacks (raises its cap) and needs `--allow-stack` |
 | **Preconditions** | Within launch-team window; budget remaining for target hop; invitee address confirmed; entry recorded in decision log (§10) |
 | **On-chain confirmation** | `Invited(ROOT, invitee, fromHop+1, 0)` emitted; observer shows new node with dashed edge from ROOT |
 | **Fallback** | If placement was wrong: see failure scenario §9.2 (bad launch-team invite) |
@@ -364,7 +364,7 @@ Cancel is only for catastrophic events: active exploit, regulatory injunction, o
 | | |
 |---|---|
 | **Actor** | Security Council (2-of-3 multisig) |
-| **Action** | Propose and execute `cancel()` |
+| **Action** | Propose and execute `cancel()` from the security-council Safe. Prepare the Transaction Builder file in advance with `npx hardhat cf-safe-cancel` (`docs/safe-launch-batches.md`) |
 | **Preconditions** | `finalized == false`; 2-of-3 quorum; emergency decision recorded |
 | **On-chain confirmation** | `Cancelled` event emitted; `cancelled == true`; `finalize()` now reverts; `commit()` now reverts |
 | **Fallback** | If multisig execution fails: check quorum; check nonce; do not retry until root cause understood |

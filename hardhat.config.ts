@@ -3,6 +3,7 @@ import "@nomicfoundation/hardhat-toolbox";
 import "dotenv/config";
 import "./tasks/governance";
 import "./tasks/crowdfund";
+import "./tasks/crowdfund-safe";
 import { resolveDeployerSigner } from "./config/deployer-signer";
 import { installLedgerOnlyAccounts, installSendGuard } from "./scripts/send-guard";
 

@@ -9,6 +9,8 @@ The project is transitioning from POC to production and ships in two launches:
 
 This README covers the **local privacy-pool + shielded-yield demo**. For the crowdfund/governance apps and their deploy flows, see `CLAUDE.md`, `crowdfund-ui/`, and `specs/`.
 
+Mainnet launch runbooks live in `docs/`: [`ledger-deploy.md`](docs/ledger-deploy.md) (deploying with a Ledger), [`safe-launch-batches.md`](docs/safe-launch-batches.md) (launch-team seeds/invites and the security-council cancel from their Safes, via `npx hardhat cf-safe-batch` / `cf-safe-cancel`), and [`interrupted-launch-recovery.md`](docs/interrupted-launch-recovery.md).
+
 ## Quick Start
 
 ### Prerequisites

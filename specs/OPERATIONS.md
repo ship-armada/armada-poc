@@ -17,10 +17,10 @@ Complete this table before deployment. Every address must be confirmed before an
 
 | Role | Description | Address | Wallet type | Quorum |
 |---|---|---|---|---|
-| Deployer | Deploys the contract | `[TBD]` | Multisig required (not EOA) | — |
-| Treasury | Receives net USDC proceeds + unsold/unclaimed ARM | `[TBD]` | Multisig | `[TBD]` |
-| ROOT / Launch team | `addSeed()`, `launchTeamInvite()` | `[TBD]` | Multisig | `[TBD]` |
-| Security Council | `cancel()` authority | `[TBD]` | 3-of-5 multisig | 3-of-5 |
+| Deployer | Deploys the contract | `[TBD]` | EOA, preferably a Ledger (`DEPLOYER_LEDGER_ADDRESS`, see `docs/ledger-deploy.md`); otherwise a fresh single-use key. The pipeline signs as one account; it holds no role or ARM after the run | — |
+| Treasury | Receives net USDC proceeds + unsold/unclaimed ARM | `[TBD]` (from the governance manifest) | Contract: `ArmadaTreasuryGov`, deployed by the launch and controlled by governance through the timelock; not a wallet | — |
+| ROOT / Launch team | `addSeed()`, `launchTeamInvite()` | `[TBD]` | Safe multisig | 2-of-3 |
+| Security Council | `cancel()` authority | `[TBD]` | Safe multisig | 2-of-3 |
 | Treasury Steward | Elected at deploy with the USDC steward budget; `proposeStewardSpend()` (GOVERNANCE.md §Treasury Steward) | `[TBD]` | Safe multisig | 2-of-3 |
 | ARM token contract | Source of preloaded ARM | `[TBD]` | — | — |
 | USDC token contract | Committed currency | Circle mainnet USDC | — | — |
@@ -49,7 +49,7 @@ Complete every item before calling the deploy script. Sign off with initials and
 | ARM token address | `[address]` | ☐ | Verify against official ARM deployment |
 | USDC token address | Circle mainnet USDC | ☐ | 6 decimals |
 | ROOT / launch team address | `[address]` | ☐ | Must match multisig above |
-| Security Council address | `[address]` | ☐ | Must match 3-of-5 multisig above |
+| Security Council address | `[address]` | ☐ | Must match 2-of-3 multisig above |
 | Commitment window open timestamp | `[unix timestamp]` | ☐ | Verify against intended date/time + timezone |
 | Commitment deadline timestamp | `[unix timestamp]` | ☐ | Open + 21 days |
 | Launch team invite deadline | `[unix timestamp]` | ☐ | Open + 14 days |
@@ -103,7 +103,7 @@ Execute in exact order. Do not proceed to the next step until the previous step'
 | **Actor** | Deployer |
 | **Action** | Run deploy script with verified constructor params: `source config/mainnet.env && DEPLOY_COMMIT=<SHA> npm run setup:mainnet -- --confirm-mainnet`, where `<SHA>` is the full 40-character SHA of the commit being deployed. The script refuses to start, before compiling or sending anything, unless `HEAD` is that commit and the working tree is clean. Etherscan verification (Step 2) must build from the same commit. |
 | **Preconditions** | All pre-launch checklist items signed off; launch config (beneficiaries, open time, addresses) committed — uncommitted or untracked files block the deploy |
-| **On-chain confirmation** | Contract address returned; verify on block explorer: correct bytecode, correct constructor args. The script ends by running `verify_deployment.ts`, whose "Launch Values" group reads back the frozen values (open time, outflow limits, wind-down deadline/threshold, RevenueLock rate cap and schedule, quorum exclusions, cross-contract bindings) against config |
+| **On-chain confirmation** | Contract address returned; verify on block explorer: correct bytecode, correct constructor args. The script ends by running `verify_deployment.ts` in the Launch 1 scope (`VERIFY_SCOPE=launch1`: the Launch 2 groups are not checked), whose "Launch Values" group reads back the frozen values (open time, outflow limits, wind-down deadline/threshold, RevenueLock rate cap and schedule, quorum exclusions, cross-contract bindings) against config |
 | **Fallback** | If the script ends with `VERIFICATION FAILED`: every transaction was sent but a value or binding does not match — do not announce the sale or pin the frontend; review the FAIL rows and do not re-run. If deploy fails: debug constructor params; do not redeploy without re-running full checklist. If the deploy stopped after sending any transaction, it is an interrupted launch — follow `docs/interrupted-launch-recovery.md`, do not re-run |
 
 Record: `contract_address = [address]`, `deploy_tx = [hash]`, `block = [number]`
@@ -219,17 +219,17 @@ The launch-team window (days 1-21, the full commitment window) is the highest-ri
 | | |
 |---|---|
 | **Actor** | ROOT (launch team multisig) |
-| **Action** | Call `addSeed(address)` |
+| **Action** | Call `addSeeds([...])` from the launch-team Safe: rows with hop 0 in a `npx hardhat cf-safe-batch` CSV, executed as Transaction Builder batches (`docs/safe-launch-batches.md`) |
 | **Preconditions** | Within launch-team window; hop-0 count < 180; address not already a seed (duplicate `addSeed()` for the same address is invalid); address confirmed with seed (they know what they're signing up for); entry recorded in decision log (§10) |
 | **On-chain confirmation** | `SeedAdded(address)` event emitted; observer shows new hop-0 node with edge from ROOT |
-| **Fallback** | If `addSeed()` reverts: check launch-team invite deadline; check hop-0 count; see failure scenario §9.1 (wrong seed added) |
+| **Fallback** | If the batch reverts: re-run the CSV with `--check` (deadline, hop-0 count, already-added seeds); see failure scenario §9.1 (wrong seed added) |
 
 ### Issuing a launch-team hop-1 or hop-2 placement
 
 | | |
 |---|---|
 | **Actor** | ROOT (launch team multisig) |
-| **Action** | Call `launchTeamInvite(invitee, fromHop)` where `fromHop` is 0 (for hop-1 placement) or 1 (for hop-2 placement) |
+| **Action** | Call `launchTeamInvite(invitee, fromHop)` where `fromHop` is 0 (for hop-1 placement) or 1 (for hop-2 placement), from the launch-team Safe: rows with target hop 1 or 2 in a `npx hardhat cf-safe-batch` CSV (`docs/safe-launch-batches.md`). Inviting an already-invited address stacks (raises its cap) and needs `--allow-stack` |
 | **Preconditions** | Within launch-team window; budget remaining for target hop; invitee address confirmed; entry recorded in decision log (§10) |
 | **On-chain confirmation** | `Invited(ROOT, invitee, fromHop+1, 0)` emitted; observer shows new node with dashed edge from ROOT |
 | **Fallback** | If placement was wrong: see failure scenario §9.2 (bad launch-team invite) |
@@ -355,7 +355,7 @@ Cancel is only for catastrophic events: active exploit, regulatory injunction, o
 
 - [ ] Nature of the emergency: `[describe]`
 - [ ] Is this reversible by any other means? If yes: use that means instead.
-- [ ] Security Council quorum (3-of-5) confirmed and reachable
+- [ ] Security Council quorum (2-of-3) confirmed and reachable
 - [ ] Decision recorded in decision log with rationale
 - [ ] Participant announcement drafted and ready to publish simultaneously
 
@@ -363,9 +363,9 @@ Cancel is only for catastrophic events: active exploit, regulatory injunction, o
 
 | | |
 |---|---|
-| **Actor** | Security Council (3-of-5 multisig) |
-| **Action** | Propose and execute `cancel()` |
-| **Preconditions** | `finalized == false`; 3-of-5 quorum; emergency decision recorded |
+| **Actor** | Security Council (2-of-3 multisig) |
+| **Action** | Propose and execute `cancel()` from the security-council Safe. Prepare the Transaction Builder file in advance with `npx hardhat cf-safe-cancel` (`docs/safe-launch-batches.md`) |
+| **Preconditions** | `finalized == false`; 2-of-3 quorum; emergency decision recorded |
 | **On-chain confirmation** | `Cancelled` event emitted; `cancelled == true`; `finalize()` now reverts; `commit()` now reverts |
 | **Fallback** | If multisig execution fails: check quorum; check nonce; do not retry until root cause understood |
 
@@ -465,7 +465,7 @@ When `block.timestamp > finalization_timestamp + (3 * 365 * 24 * 3600)`:
 **Mitigation:**
 - Maintain a documented backup contact list for all multisig signers.
 - Test multisig signing 48 hours before the commitment window opens.
-- Security Council: 3-of-5 means 2 signers can be unavailable. Know who the 5 are at all times.
+- Security Council: 2-of-3 means 1 signer can be unavailable. Know who the 3 are at all times.
 
 ---
 

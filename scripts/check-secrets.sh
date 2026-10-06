@@ -20,6 +20,7 @@ ALLOWED_FILES=(
   "scripts/multicall3-bytecode.ts"  # Canonical Multicall3 public runtime bytecode (not a key) — etched onto local Anvil
   "scripts/capture/vectors/keyset-vectors.json"  # Phase 0 keyset vectors derived from FIXED TEST SEEDS (not real secrets); the live-testnet crosscheck stores only the public 0zk address
   "scripts/capture/spike-claim-as-transfer.ts"  # Phase 0 spike — publicly-known Anvil + BIP-39 test mnemonics only
+  "test/fixtures/tx-builder-checksum-vectors.json"  # Safe Transaction Builder's published checksum vectors (32-byte hashes, not keys)
 )
 
 # Directories whose entire contents are known non-secret data: captured differential test vectors

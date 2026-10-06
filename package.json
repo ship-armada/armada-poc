@@ -138,7 +138,9 @@
     "typechain": "^8.3.2"
   },
   "devDependencies": {
+    "@nomicfoundation/hardhat-ledger": "^1.2.2",
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@safe-global/safe-contracts": "1.4.1-2",
     "@types/abstract-leveldown": "^7.2.1",
     "@types/cors": "^2.8.19",
     "@types/encoding-down": "^5.0.1",

@@ -3,6 +3,9 @@ import "@nomicfoundation/hardhat-toolbox";
 import "dotenv/config";
 import "./tasks/governance";
 import "./tasks/crowdfund";
+import "./tasks/crowdfund-safe";
+import { resolveDeployerSigner } from "./config/deployer-signer";
+import { installGasHeadroom, installLedgerOnlyAccounts, installSendGuard } from "./scripts/send-guard";
 
 // Anvil default account private key (Account 0)
 const ANVIL_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
@@ -12,6 +15,33 @@ const ANVIL_MNEMONIC = "test test test test test test test test test test test j
 
 // Deployer key: use env var for testnets, Anvil default for local
 const DEPLOYER_PRIVATE_KEY = process.env.DEPLOYER_PRIVATE_KEY || ANVIL_KEY;
+
+// Live-network signer: a raw key (above), or a Ledger when DEPLOYER_LEDGER_ADDRESS is set. The
+// Ledger plugin is loaded only then, so local runs and CI never touch the USB stack. A Ledger
+// network must carry NO `accounts`: Hardhat lists local accounts first, so a key (or the Anvil
+// fallback above) would become signer[0] and sign instead of the device. The RPC node's own
+// accounts are listed before the Ledger too, so eth_accounts is pinned to the Ledger alone.
+const DEPLOYER_SIGNER = resolveDeployerSigner(process.env);
+if (DEPLOYER_SIGNER.kind === "ledger") {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  require("@nomicfoundation/hardhat-ledger");
+  installLedgerOnlyAccounts(DEPLOYER_SIGNER.address);
+}
+function liveSigner(): Record<string, unknown> {
+  return DEPLOYER_SIGNER.kind === "ledger"
+    ? { ledgerAccounts: [DEPLOYER_SIGNER.address] }
+    : { accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [] };
+}
+
+// Live deploys log each transaction's nonce + hash as it is sent and, on a Ledger, offer a
+// retry when signing fails before broadcast (scripts/send-guard.ts). Registered after the
+// Ledger plugin so it wraps the Ledger provider. Gas headroom applies each network's
+// gasMultiplier to gas estimates (hardhat-ethers bypasses Hardhat's own multiplier). Gated on
+// DEPLOY_ENV so local runs and the in-process test network keep Hardhat's default provider stack.
+if (process.env.DEPLOY_ENV && process.env.DEPLOY_ENV !== "local") {
+  installGasHeadroom();
+  installSendGuard();
+}
 
 // Client networks are generated from the indexed CLIENT_<n>_* env scheme (CLIENT_COUNT clients),
 // mirroring config/networks.ts so adding a client needs no manual network entry. Each client i
@@ -40,13 +70,13 @@ function buildClientNetworks(): Record<string, any> {
     nets[`sepoliaClient${i}`] = {
       url: rpc || "",
       chainId,
-      accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
+      ...liveSigner(),
       gasMultiplier: 2.0,
     };
     nets[`mainnetClient${i}`] = {
       url: rpc || "",
       chainId,
-      accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
+      ...liveSigner(),
       gasMultiplier: 2.0,
     };
   }
@@ -144,7 +174,7 @@ const config: HardhatUserConfig = {
     sepoliaHub: {
       url: process.env.HUB_RPC || "https://ethereum-sepolia-rpc.publicnode.com",
       chainId: 11155111,
-      accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
+      ...liveSigner(),
       gasMultiplier: 2.0,
     },
     // Client networks (sepoliaClient<i>) are generated from CLIENT_COUNT via buildClientNetworks().
@@ -163,7 +193,7 @@ const config: HardhatUserConfig = {
     mainnetHub: {
       url: process.env.HUB_RPC || "https://ethereum-rpc.publicnode.com",
       chainId: 1,
-      accounts: DEPLOYER_PRIVATE_KEY ? [DEPLOYER_PRIVATE_KEY] : [],
+      ...liveSigner(),
       gasMultiplier: 2.0,
     },
     // Client networks (mainnetClient<i>) are generated from CLIENT_COUNT via buildClientNetworks().

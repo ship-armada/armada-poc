@@ -453,7 +453,7 @@ Additional steward-like roles (e.g. a Protocol Steward for integrator and relaye
 
 ## Security Council
 
-3-of-5 multisig. Fast-response body for situations where the governance proposal cycle (7+ days) is too slow.
+2-of-3 multisig. Fast-response body for situations where the governance proposal cycle (7+ days) is too slow.
 
 ### Powers
 

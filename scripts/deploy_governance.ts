@@ -38,7 +38,7 @@ import {
   isLocal,
 } from "../config/networks";
 import { createNonceManager, rejectAnvilAddresses, retryReadOnLag, saveDeployment, saveDeploymentInProgress } from "./deploy-utils";
-import { assertAllocatorMultisig, revenueLockSchedule, validateReservePlan, type RevenueLockConstructorArgs } from "./revenue-reserve";
+import { assertAllocatorMultisig, assertLaunchRoleMultisigs, revenueLockSchedule, validateReservePlan, type RevenueLockConstructorArgs } from "./revenue-reserve";
 import { assertInitialStewardPreflight } from "./initial-steward";
 
 interface GovernanceDeployment {
@@ -47,6 +47,8 @@ interface GovernanceDeployment {
   revenueReserveDistributorDeploymentTransaction?: string;
   chainId: number;
   deployer: string;
+  /** Deployer nonce after this stage's last transaction (live networks); a hardened crowdfund stage starts here. */
+  deployerNonceAfterGovernance?: number;
   deployBlock: number;
   contracts: {
     timelockController: string;
@@ -94,6 +96,11 @@ async function main() {
       { label: "launch team", address: config.launchTeamAddress },
       { label: "reserve allocator", address: config.revenueReserve?.allocator ?? "" },
     ], !isLocal());
+  }
+  // The security council and launch team are fixed in the crowdfund this launch deploys; on
+  // mainnet refuse anything but 2-of-3 Safes before this stage's first transaction.
+  if (config.env === "mainnet") {
+    await assertLaunchRoleMultisigs(config.securityCouncilAddress, config.launchTeamAddress);
   }
 
   const role = getChainRole(chainId);
@@ -424,6 +431,7 @@ async function main() {
     ...(reserveDeploymentTransaction ? { revenueReserveDistributorDeploymentTransaction: reserveDeploymentTransaction } : {}),
     chainId,
     deployer: deployer.address,
+    ...(nm.nextNonce() !== undefined ? { deployerNonceAfterGovernance: nm.nextNonce() } : {}),
     deployBlock: governanceDeployBlock,
     contracts: {
       timelockController: timelockAddress,

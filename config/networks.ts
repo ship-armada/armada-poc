@@ -15,6 +15,7 @@
  */
 
 import "dotenv/config";
+import { resolveDeployerSigner } from "./deployer-signer";
 
 // ============================================================================
 // Types
@@ -73,7 +74,10 @@ export interface OutflowParams {
 export interface NetworkConfig {
   env: DeployEnv;
   cctpMode: CCTPMode;
+  /** Empty when the deployer signs with a Ledger (see deployerLedgerAddress). */
   deployerPrivateKey: string;
+  /** Set when the deployer signs with a Ledger instead of DEPLOYER_PRIVATE_KEY. */
+  deployerLedgerAddress?: string;
   hub: ChainConfig;
   /** Client chains, in order (client1, client2, ...). Length == CLIENT_COUNT. */
   clients: ChainConfig[];
@@ -424,14 +428,18 @@ export function getNetworkConfig(): NetworkConfig {
     );
   }
 
-  // Deployer key: required for real testnets, default Anvil key for local
+  // Deployer signer: a key or a Ledger address for real testnets/mainnet, default Anvil key for local
   const defaultKey = env === "local"
     ? "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
     : "";
-  const deployerPrivateKey = optionalEnv("DEPLOYER_PRIVATE_KEY", defaultKey);
+  const deployerSigner = resolveDeployerSigner(process.env);
+  const deployerLedgerAddress = deployerSigner.kind === "ledger" ? deployerSigner.address : undefined;
+  const deployerPrivateKey = deployerSigner.kind === "key"
+    ? deployerSigner.privateKey
+    : deployerLedgerAddress ? "" : defaultKey;
 
-  if (env !== "local" && !deployerPrivateKey) {
-    throw new Error("DEPLOYER_PRIVATE_KEY is required for non-local environments");
+  if (env !== "local" && !deployerPrivateKey && !deployerLedgerAddress) {
+    throw new Error("DEPLOYER_PRIVATE_KEY or DEPLOYER_LEDGER_ADDRESS is required for non-local environments");
   }
 
   const hub: ChainConfig = {
@@ -498,6 +506,7 @@ export function getNetworkConfig(): NetworkConfig {
     env,
     cctpMode,
     deployerPrivateKey,
+    deployerLedgerAddress,
     hub,
     clients,
     cctpShared,

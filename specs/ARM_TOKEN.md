@@ -29,7 +29,7 @@ ARM is the governance and ownership token of the Armada protocol. This document 
 
 ### Mint and Distribution
 
-ARM is minted to an initial bootstrap holder (the deployer address — **required to be a deployment multisig, not a single EOA**) in the `ArmadaToken` constructor via a single `_mint()` call, then distributed during the deterministic deployment sequence to the three final recipients. This is the standard ERC-20 deployment pattern; it avoids fragile CREATE2 precomputed address dependencies.
+ARM is minted to an initial bootstrap holder (the deployer address — a single EOA, preferably held on a Ledger; it holds the supply only for the length of the deploy run and none after it) in the `ArmadaToken` constructor via a single `_mint()` call, then distributed during the deterministic deployment sequence to the three final recipients. This is the standard ERC-20 deployment pattern; it avoids fragile CREATE2 precomputed address dependencies.
 
 **Final recipient allocations:**
 

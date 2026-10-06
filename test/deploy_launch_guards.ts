@@ -18,6 +18,7 @@ import {
   CROWDFUND_OPEN_MIN_LEAD_SECONDS,
   CROWDFUND_OPEN_MAX_LEAD_SECONDS,
 } from "../scripts/deploy-utils";
+import { assertLaunchRoleMultisigs } from "../scripts/revenue-reserve";
 
 describe("Mainnet launch deploy guards", function () {
   describe("remote network gas headroom", function () {
@@ -235,6 +236,35 @@ describe("Mainnet launch deploy guards", function () {
       expect(result.stdout).to.not.include("CROWDFUND-LAUNCH DEPLOYMENT");
     });
 
+    // WHY: a Ledger deploy has no private key. The plan must say transactions are signed on the
+    // device, and the device pre-flight must run before the first transaction.
+    // WHY: the launch's verification must run in the Launch 1 scope, so Launch 2 manifests
+    // (absent on mainnet, stale on Sepolia) neither warn nor fail; the printed command is the
+    // one an operator re-runs by hand.
+    it("verifies in the Launch 1 scope", function () {
+      const result = dryRun({});
+      expect(result.status, result.stderr).to.equal(0);
+      expect(result.stdout).to.include("> VERIFY_SCOPE=launch1 npx hardhat run scripts/verify_deployment.ts");
+    });
+
+    it("plans a Ledger deploy with the device pre-flight first", function () {
+      const ledger = "0x00000000000000000000000000000000000000Ab";
+      const result = dryRun({ DEPLOYER_PRIVATE_KEY: "", DEPLOYER_LEDGER_ADDRESS: ledger });
+      expect(result.status, result.stderr).to.equal(0);
+      expect(result.stdout).to.match(new RegExp(`Signer:\\s+Ledger ${ledger}`));
+      const preflight = result.stdout.indexOf("Ledger pre-flight");
+      expect(preflight).to.be.greaterThan(-1);
+      expect(preflight).to.be.lessThan(result.stdout.indexOf("1/3 Recording real CCTP addresses"));
+    });
+
+    // WHY: a key left in secrets.env next to a Ledger address would sign instead of the device.
+    it("refuses to start with both a key and a Ledger address", function () {
+      const result = dryRun({ DEPLOYER_LEDGER_ADDRESS: "0x00000000000000000000000000000000000000Ab" });
+      expect(result.status).to.not.equal(0);
+      expect(result.stderr).to.include("not both");
+      expect(result.stdout).to.not.include("CROWDFUND-LAUNCH DEPLOYMENT");
+    });
+
     // WHY: without the harden profile the deployer holds no timelock roles, so the crowdfund
     // step would revert at its first timelock-only call after spending one-shot initializers.
     // The orchestrator must refuse up front instead of warning and running anyway.
@@ -243,6 +273,44 @@ describe("Mainnet launch deploy guards", function () {
       expect(result.status).to.not.equal(0);
       expect(result.stderr).to.include("HARDEN_TIMELOCK must not be disabled on mainnet");
       expect(result.stdout).to.not.include("CROWDFUND-LAUNCH DEPLOYMENT");
+    });
+  });
+  describe("assertLaunchRoleMultisigs", function () {
+    async function safes() {
+      const [, a, b, c, eoa] = await hre.ethers.getSigners();
+      const Mock = await hre.ethers.getContractFactory("ReserveAllocatorIntrospectionMock");
+      const twoOfThree = async () => (await Mock.deploy([a.address, b.address, c.address], 2)).getAddress();
+      const oneOfThree = await (await Mock.deploy([a.address, b.address, c.address], 1)).getAddress();
+      return { sc: await twoOfThree(), launchTeam: await twoOfThree(), oneOfThree, eoa: eoa.address };
+    }
+
+    // WHY: control case — two 2-of-3 Safes are the intended mainnet security council and launch team.
+    it("accepts a 2-of-3 security council and launch team", async function () {
+      const { sc, launchTeam } = await safes();
+      await assertLaunchRoleMultisigs(sc, launchTeam);
+    });
+
+    // WHY: both addresses are baked into the immutable crowdfund. A single key as security council
+    // holds the cancel veto alone; as launch team it holds every seed and launch-team invite.
+    it("rejects an EOA security council", async function () {
+      const { launchTeam, eoa } = await safes();
+      await expect(assertLaunchRoleMultisigs(eoa, launchTeam))
+        .to.be.rejectedWith("Security council must be a deployed multisig");
+    });
+
+    // WHY: a Safe created 1-of-1 (or left at threshold 1) while owners are added must not slip
+    // through: the address alone looks right, only the owner/threshold reads tell them apart.
+    it("rejects a launch team Safe that is not 2-of-3", async function () {
+      const { sc, oneOfThree } = await safes();
+      await expect(assertLaunchRoleMultisigs(sc, oneOfThree))
+        .to.be.rejectedWith("Launch team must report exactly three distinct owners and threshold two");
+    });
+
+    // WHY: an unset address must name the env var, not fail later with an RPC error.
+    it("names the missing env var when an address is unset", async function () {
+      const { sc, launchTeam } = await safes();
+      await expect(assertLaunchRoleMultisigs("", launchTeam)).to.be.rejectedWith("SECURITY_COUNCIL_ADDRESS");
+      await expect(assertLaunchRoleMultisigs(sc, "")).to.be.rejectedWith("LAUNCH_TEAM_ADDRESS");
     });
   });
   describe("assertDeployCommit", function () {

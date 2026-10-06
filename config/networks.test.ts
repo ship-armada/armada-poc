@@ -9,7 +9,7 @@ import * as path from "path";
 
 // Env keys the config reads that a test might set — cleared between tests so one case
 // can't leak chain topology into the next (getNetworkConfig caches, so we also re-require).
-const MANAGED_PREFIXES = ["CLIENT_", "HUB_", "CCTP_", "DEPLOY_ENV", "DEPLOYER_PRIVATE_KEY",
+const MANAGED_PREFIXES = ["CLIENT_", "HUB_", "CCTP_", "DEPLOY_ENV", "DEPLOYER_PRIVATE_KEY", "DEPLOYER_LEDGER_ADDRESS",
   "REVENUE_LOCK_", "REVENUE_RESERVE_", "TREASURY_ADDRESS", "SECURITY_COUNCIL_ADDRESS", "LAUNCH_TEAM_ADDRESS",
   "CCTP_MODE", "WINDDOWN_", "OUTFLOW_", "CROWDFUND_", "HARDEN_TIMELOCK", "INITIAL_STEWARD_", "STEWARD_BUDGET_"];
 
@@ -137,6 +137,46 @@ describe("networks config — N clients", () => {
       // CLIENT_1_RPC intentionally omitted
       CLIENT_1_CHAIN_ID: "11155420", CLIENT_1_CCTP_DOMAIN: "2",
     }).getNetworkConfig()).to.throw(/CLIENT_1_RPC/);
+  });
+});
+
+describe("deployer signer", () => {
+  afterEach(() => {
+    clearManagedEnv();
+    delete process.env.REVENUE_LOCK_BENEFICIARIES_JSON;
+  });
+  const LEDGER = "0x00000000000000000000000000000000000000Ab";
+  const ONE_CLIENT = {
+    HUB_CHAIN_ID: "11155111", HUB_CCTP_DOMAIN: "0", CLIENT_COUNT: "1",
+    CLIENT_1_RPC: "https://c1", CLIENT_1_CHAIN_ID: "11155420", CLIENT_1_CCTP_DOMAIN: "2",
+  };
+  const { DEPLOYER_PRIVATE_KEY: _key, ...SEPOLIA_NO_KEY } = { ...SEPOLIA_BASE, ...ONE_CLIENT };
+
+  // WHY: a Ledger deploy supplies no private key; the address alone satisfies the live-network
+  // signer requirement, and no key may leak through for scripts that build a Wallet from it.
+  it("accepts DEPLOYER_LEDGER_ADDRESS in place of DEPLOYER_PRIVATE_KEY", () => {
+    const c = freshConfig({ ...SEPOLIA_NO_KEY, DEPLOYER_LEDGER_ADDRESS: LEDGER }).getNetworkConfig();
+    expect(c.deployerLedgerAddress).to.equal(LEDGER);
+    expect(c.deployerPrivateKey).to.equal("");
+  });
+
+  // WHY: a live deploy with no signer must fail at config load, naming both options.
+  it("requires a key or a Ledger address on live networks", () => {
+    expect(() => freshConfig(SEPOLIA_NO_KEY).getNetworkConfig())
+      .to.throw(/DEPLOYER_PRIVATE_KEY or DEPLOYER_LEDGER_ADDRESS/);
+  });
+
+  // WHY: with both set Hardhat would sign with the key, not the Ledger the operator expects.
+  it("refuses both a key and a Ledger address", () => {
+    expect(() => freshConfig({ ...SEPOLIA_BASE, DEPLOYER_LEDGER_ADDRESS: LEDGER }).getNetworkConfig())
+      .to.throw(/not both/);
+  });
+
+  // WHY: the key path is unchanged; deployerLedgerAddress stays unset.
+  it("keeps the private-key path unchanged", () => {
+    const c = freshConfig({ ...SEPOLIA_BASE, ...ONE_CLIENT }).getNetworkConfig();
+    expect(c.deployerPrivateKey).to.equal(SEPOLIA_BASE.DEPLOYER_PRIVATE_KEY);
+    expect(c.deployerLedgerAddress).to.equal(undefined);
   });
 });
 

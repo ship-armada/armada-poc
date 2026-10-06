@@ -1,0 +1,68 @@
+{
+  "_source": "Safe Transaction Builder checksum test vectors, copied from safe-global/safe-react-apps: apps/tx-builder/src/lib/checksum.test.js (builderTest) and cypress/fixtures/test-working-batch.json (exportedFile, checksum removed as on import). Public data, not secrets.",
+  "builderTest": {
+    "expectedChecksum": "0x4ecbfd364aa6759983915644e73f8bd411e85a2dc306f252a387c2728c4db64c",
+    "file": {
+      "version": "1.0",
+      "chainId": "4",
+      "createdAt": 1646321521061,
+      "meta": {
+        "name": "test batch file",
+        "txBuilderVersion": "1.4.0",
+        "checksum": "",
+        "createdFromSafeAddress": "0xDF8a1Ce35c9a6ACE153B4e0767942f1E2291a1Aa",
+        "createdFromOwnerAddress": "0x49d4450977E2c95362C13D3a31a09311E0Ea26A6"
+      },
+      "transactions": [
+        {
+          "to": "0x49d4450977E2c95362C13D3a31a09311E0Ea26A6",
+          "value": "0",
+          "contractMethod": { "inputs": [{ "internalType": "address", "name": "paramAddress", "type": "address" }], "name": "testAddress", "payable": false },
+          "contractInputsValues": { "paramAddress": "0x49d4450977E2c95362C13D3a31a09311E0Ea26A6" }
+        },
+        {
+          "to": "0x49d4450977E2c95362C13D3a31a09311E0Ea26A6",
+          "value": "0",
+          "contractMethod": { "inputs": [{ "internalType": "bool", "name": "paramBool", "type": "bool" }], "name": "testBool", "payable": false },
+          "contractInputsValues": { "paramAddress": "", "paramBool": "false" }
+        },
+        {
+          "to": "0x49d4450977E2c95362C13D3a31a09311E0Ea26A6",
+          "value": "2000000000000000000",
+          "data": "0x42f4579000000000000000000000000049d4450977e2c95362c13d3a31a09311e0ea26a6"
+        }
+      ]
+    }
+  },
+  "exportedFile": {
+    "expectedChecksum": "0x783b24b06f925df195ac0e0103507caf6520cff278555c11e9b8edb43bc2a196",
+    "file": {
+      "version": "1.0",
+      "chainId": "5",
+      "createdAt": 1671532788473,
+      "meta": {
+        "name": "Transactions Batch",
+        "description": "",
+        "txBuilderVersion": "1.13.1",
+        "createdFromSafeAddress": "0xE96C43C54B08eC528e9e815fC3D02Ea94A320505",
+        "createdFromOwnerAddress": ""
+      },
+      "transactions": [
+        {
+          "to": "0x51A099ac1BF46D471110AA8974024Bfe518Fd6C4",
+          "value": "0",
+          "data": null,
+          "contractMethod": { "inputs": [{ "internalType": "bool", "name": "newValue", "type": "bool" }], "name": "testBooleanValue", "payable": false },
+          "contractInputsValues": { "newValue": "true" }
+        },
+        {
+          "to": "0x51A099ac1BF46D471110AA8974024Bfe518Fd6C4",
+          "value": "0",
+          "data": null,
+          "contractMethod": { "inputs": [{ "internalType": "address", "name": "newValue", "type": "address" }], "name": "testAddressValue", "payable": false },
+          "contractInputsValues": { "newValue": "0x51A099ac1BF46D471110AA8974024Bfe518Fd6C4" }
+        }
+      ]
+    }
+  }
+}

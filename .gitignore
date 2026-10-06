@@ -38,6 +38,10 @@ deployments/*.json
 !deployments/*-sepolia*.json
 !deployments/*-mainnet*.json
 
+# Safe Transaction Builder batches from `npx hardhat cf-safe-batch` / `cf-safe-cancel`. They
+# list participant addresses and labels, so they stay local.
+safe-batches/
+
 # Named deployment instances pulled from the armada-deployments repo by
 # `npm run fetch-deployment -- <name>`. Each instance is reproducible from the
 # upstream repo, so we never commit local copies.

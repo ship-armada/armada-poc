@@ -191,6 +191,7 @@ poc/
 ├── relayer/                # CCTP message relay + HTTP fee API
 ├── scripts/                # Deployment scripts
 ├── tasks/                  # Hardhat CLI tasks (crowdfund, governance)
+├── tools/                  # Standalone tools (crowdfund-model: shareable allocation modeler)
 ├── specs/                  # Specifications (governance, crowdfund, fees, ops)
 ├── deploy/                 # Crowdfund indexer deployment infra
 ├── deployments/            # Generated contract addresses

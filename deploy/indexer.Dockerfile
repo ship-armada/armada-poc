@@ -12,9 +12,13 @@ WORKDIR /app
 # indexer and the shared source files (which import `ethers`) resolve them by
 # walking up the tree. tsx (the TypeScript/ESM runner) is a devDependency
 # required at runtime, so do not omit dev deps here. The indexer package has no
-# workspace deps, so it installs standalone (no --legacy-peer-deps).
-COPY packages/indexer/package.json ./package.json
-RUN npm install --no-audit --no-fund
+# workspace deps, so it installs standalone from its own lockfile; `npm ci`
+# pins every build to that lockfile and fails if package.json has drifted from
+# it (regenerate with deploy/update-indexer-lockfile.sh). --legacy-peer-deps
+# matches how the lockfile is generated: npm 10 crashes resolving the optional
+# peer graph of the test tooling (vite/vitest), which the image never runs.
+COPY packages/indexer/package.json packages/indexer/package-lock.json ./
+RUN npm ci --legacy-peer-deps --no-audit --no-fund
 
 # Application source: the indexer plus the shared package it imports via
 # relative paths. The /app/packages/{indexer,shared} layout mirrors the

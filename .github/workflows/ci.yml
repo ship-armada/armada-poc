@@ -32,6 +32,29 @@ jobs:
       # Config unit tests (mocha, config/*.test.ts) — no chains or compilation needed.
       - run: npm run test:config
 
+  # Builds the crowdfund indexer image exactly as the VPS does. `npm ci` inside the
+  # build fails if crowdfund-ui/packages/indexer/package.json drifted from its
+  # standalone lockfile (fix: ./deploy/update-indexer-lockfile.sh).
+  indexer-image:
+    name: Indexer Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f deploy/indexer.Dockerfile -t crowdfund-indexer:ci crowdfund-ui
+      # With no env the server must load its whole module graph, then refuse to
+      # start on missing config — proves the installed deps resolve under tsx.
+      - name: Smoke-run image without config
+        run: |
+          set +e
+          output=$(docker run --rm crowdfund-indexer:ci 2>&1)
+          status=$?
+          set -e
+          echo "$output"
+          if [ "$status" -ne 1 ] || ! grep -q "Missing required environment variable:" <<<"$output"; then
+            echo "::error::expected exit 1 with a missing-env-var refusal, got exit $status"
+            exit 1
+          fi
+
   # Hardhat compilation and full integration test suite
   hardhat:
     name: Hardhat Compile & Test

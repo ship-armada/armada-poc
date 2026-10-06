@@ -7,6 +7,8 @@ infra on the same host — each service runs its own commit-tagged image.
 ## Layout
 
 - `indexer.Dockerfile` — build recipe (stays in this repo, builds from a checkout).
+- `update-indexer-lockfile.sh` — regenerates the indexer's standalone lockfile
+  (`crowdfund-ui/packages/indexer/package-lock.json`) that the image installs from.
 - `docker-compose.yml` — the fleet (indexer, alerts, postgres). **Copy this
   + your `.env` to a live ops dir outside the build checkout**, e.g. `/opt/armada-infra/`.
 - `indexer.env.template` — copy to `.env` and fill in. Never commit the real `.env`.
@@ -19,6 +21,22 @@ infra on the same host — each service runs its own commit-tagged image.
 SHA=$(git rev-parse --short HEAD)
 docker build -f deploy/indexer.Dockerfile -t crowdfund-indexer:$SHA crowdfund-ui
 ```
+
+The image installs the indexer's dependencies with `npm ci` from its own committed
+lockfile, so every build of a given commit gets the same versions. CI builds the
+image on every PR (`Indexer Docker Image` job).
+
+### Changing indexer dependencies
+
+After editing `crowdfund-ui/packages/indexer/package.json`, regenerate the image's
+lockfile and commit both files together — otherwise `npm ci` refuses to build:
+
+```bash
+./deploy/update-indexer-lockfile.sh
+```
+
+This lockfile is separate from the workspace lockfiles that local dev installs from,
+so the image's resolved versions can differ from your local `node_modules`.
 
 ## 2. Configure (in your ops dir, e.g. /opt/armada-infra/)
 

@@ -47,8 +47,9 @@ transaction hashes, and the deployer nonce.
    as applicable. The current script is not idempotent; these are individually
    reviewed recovery transactions, not an automated resume command.
 5. Run `verify_deployment.ts` with the intended environment and the recorded
-   manifests. Its reserve, wiring, timelock and launch-values groups must
-   pass. Scan timelock role events from the first governance deployment block
+   manifests, in the Launch 1 scope as the orchestrator does
+   (`VERIFY_SCOPE=launch1 npx hardhat run scripts/verify_deployment.ts --network mainnetHub`).
+   Its reserve, wiring, timelock and launch-values groups must pass. Scan timelock role events from the first governance deployment block
    for other holders.
    Record receipts and findings before opening the crowdfund window.
 

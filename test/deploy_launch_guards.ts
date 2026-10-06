@@ -238,6 +238,15 @@ describe("Mainnet launch deploy guards", function () {
 
     // WHY: a Ledger deploy has no private key. The plan must say transactions are signed on the
     // device, and the device pre-flight must run before the first transaction.
+    // WHY: the launch's verification must run in the Launch 1 scope, so Launch 2 manifests
+    // (absent on mainnet, stale on Sepolia) neither warn nor fail; the printed command is the
+    // one an operator re-runs by hand.
+    it("verifies in the Launch 1 scope", function () {
+      const result = dryRun({});
+      expect(result.status, result.stderr).to.equal(0);
+      expect(result.stdout).to.include("> VERIFY_SCOPE=launch1 npx hardhat run scripts/verify_deployment.ts");
+    });
+
     it("plans a Ledger deploy with the device pre-flight first", function () {
       const ledger = "0x00000000000000000000000000000000000000Ab";
       const result = dryRun({ DEPLOYER_PRIVATE_KEY: "", DEPLOYER_LEDGER_ADDRESS: ledger });

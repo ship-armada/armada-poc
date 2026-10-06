@@ -10,15 +10,20 @@
  * Graceful degradation: missing manifests produce WARN (not FAIL), so the script
  * works at any stage of incremental deployment.
  *
+ * VERIFY_SCOPE=launch1 (set by the Launch 1 orchestrator, deploy_mainnet.ts) skips the Launch 2
+ * groups (SNARK keys, privacy pool, yield/fee) and ends with a Launch-1-specific verdict.
+ *
  * Usage:
  *   npx hardhat run scripts/verify_deployment.ts --network hub
  *   npx hardhat run scripts/verify_deployment.ts --network sepoliaHub
+ *   VERIFY_SCOPE=launch1 npx hardhat run scripts/verify_deployment.ts --network mainnetHub
  */
 
 import { ethers } from "hardhat";
 import { loadDeployment } from "./deploy-utils";
 import { timelockBootstrapChecks, timelockUnexpectedRoleHolders } from "./verify-timelock";
 import { initialStewardChecks } from "./initial-steward";
+import { LAUNCH2_GROUPS, resolveVerifyScope, verificationVerdict } from "./verify-scope";
 import {
   assertReservePostFunding, assertCreationProvenance, reserveConfigMismatch,
   assertRevenueLockAllocation, assertRevenueLockSchedule,
@@ -890,8 +895,14 @@ async function main() {
   console.log("=== Armada Deployment Verification ===\n");
 
   const config = getNetworkConfig();
+  const scope = resolveVerifyScope(process.env);
+  const launch1 = scope === "launch1";
   console.log(`Environment: ${config.env}`);
-  console.log(`CCTP Mode: ${config.cctpMode}\n`);
+  console.log(`CCTP Mode: ${config.cctpMode}`);
+  console.log(`Scope: ${launch1 ? "Launch 1" : "full"}\n`);
+  if (launch1) {
+    console.log(`Launch 2 components not checked (not part of the Launch 1 deploy): ${LAUNCH2_GROUPS.join(", ")}\n`);
+  }
 
   // Load manifests
   const hubCCTPFile = getCCTPDeploymentFile("hub");
@@ -903,11 +914,12 @@ async function main() {
   const feeFile = getFeeModuleDeploymentFile();
 
   const hubCCTP = loadOrWarn("CCTP Wiring", hubCCTPFile);
-  const hubPool = loadOrWarn("SNARK Verification", hubPoolFile);
+  // A Launch 1 run does not load the Launch 2 manifests, so their groups never run.
+  const hubPool = launch1 ? null : loadOrWarn("SNARK Verification", hubPoolFile);
   const govManifest = loadOrWarn("Governance Wiring", govFile);
-  const yieldManifest = loadOrWarn("Yield + Fee Wiring", yieldFile);
+  const yieldManifest = launch1 ? null : loadOrWarn("Yield + Fee Wiring", yieldFile);
   const crowdfundManifest = loadOrWarn("ARM Token + Crowdfund", crowdfundFile);
-  const feeManifest = loadDeployment(feeFile); // Soft load — no group-level warn
+  const feeManifest = launch1 ? null : loadDeployment(feeFile); // Soft load — no group-level warn
 
   // Run check groups (each group only runs if its prerequisite manifests exist)
   if (hubPool) {
@@ -974,14 +986,9 @@ async function main() {
 
   console.log(`\n  ${passes} passed, ${warns} warnings, ${fails} failed\n`);
 
-  if (fails > 0) {
-    console.log("  DEPLOYMENT VERIFICATION FAILED\n");
-    process.exit(1);
-  } else if (warns > 0) {
-    console.log("  Deployment verified with warnings (may be expected for partial deployments)\n");
-  } else {
-    console.log("  ALL CHECKS PASSED\n");
-  }
+  const verdict = verificationVerdict(scope, { passes, warns, fails });
+  console.log(`  ${verdict.message}\n`);
+  if (verdict.exitCode !== 0) process.exit(verdict.exitCode);
 }
 
 main()

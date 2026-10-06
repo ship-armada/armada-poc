@@ -84,9 +84,9 @@ Check during the rehearsal:
 - [ ] Leave one prompt waiting longer than the device's auto-lock delay. Note whether the device
       locks and how the retry behaves.
 - [ ] Note the total run time and the ETH spent, to size the mainnet open time and funding.
-- [ ] `verify_deployment.ts` at the end: on Sepolia it also checks the repo's older Launch-2
-      privacy-pool/yield manifests against the new governance contracts, so expect exactly four
-      failures in the Privacy Pool and Yield groups. Move `deployments/{privacy-pool-*,yield-hub,
-      fee-module-hub,aave-mock-hub}-sepolia.json` aside and re-run `npx hardhat run
-      scripts/verify_deployment.ts --network sepoliaHub --no-compile`: it should report 0 failed.
-      Restore them with `git checkout -- deployments/` afterwards.
+- [ ] The run ends with `LAUNCH 1 DEPLOYMENT VERIFIED`. Verification runs in the Launch 1 scope,
+      so the repo's older Launch-2 Sepolia manifests are not checked. With `CROWDFUND_OPEN_DELAY`
+      instead of `CROWDFUND_OPEN_TIME`, expect one WARN (no configured open time to compare).
+      Re-run it by hand with `VERIFY_SCOPE=launch1 npx hardhat run scripts/verify_deployment.ts
+      --network sepoliaHub --no-compile`. Afterwards, `git checkout -- deployments/` restores the
+      committed Sepolia manifests the rehearsal overwrote.

@@ -232,9 +232,10 @@ async function main() {
   );
 
   // Verification — a check, not a deploy step. Every transaction has been sent by now, so a
-  // failure is reported loudly (and exits non-zero) rather than rolled back.
+  // failure is reported loudly (and exits non-zero) rather than rolled back. The Launch 1 scope
+  // skips the Launch 2 groups, whose manifests are absent (mainnet) or from an older stack (Sepolia).
   const verified = runCheck(
-    `npx hardhat run scripts/verify_deployment.ts --network ${hubNet}`,
+    `VERIFY_SCOPE=launch1 npx hardhat run scripts/verify_deployment.ts --network ${hubNet}`,
     "Verifying deployment"
   );
   if (!verified) {

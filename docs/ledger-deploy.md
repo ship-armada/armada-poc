@@ -2,8 +2,8 @@
 
 `npm run setup:mainnet` (`scripts/deploy_mainnet.ts`) can sign with a Ledger instead of a
 `DEPLOYER_PRIVATE_KEY`. The key never leaves the device, so malware on the deploy machine
-(including a compromised npm dependency) cannot copy it. Each transaction, about 63 for the
-crowdfund launch, needs an approval on the device, so a run takes 30–60 minutes of attended
+(including a compromised npm dependency) cannot copy it. Each transaction, about 61 for the
+crowdfund launch (63 with a revenue reserve), needs an approval on the device, so a run takes 30–60 minutes of attended
 signing.
 
 Only the Launch 1 orchestrator path (CCTP-record, governance, crowdfund, verify) supports a
@@ -19,18 +19,22 @@ Ledger. Other scripts that build a wallet from `DEPLOYER_PRIVATE_KEY` (e.g. `lin
    the script's read-back checks and `verify_deployment.ts` check what was deployed.
 3. **Device auto-lock:** turn it off (or set the longest delay) for the session.
 4. **Account:** use an Ethereum account created in Ledger Live. The plugin searches the Ledger
-   Live paths `m/44'/60'/<i>'/0/0` for `i` = 0–20. Fund it on the hub for
-   gasLimit × maxFeePerGas per transaction (the networks run with `gasMultiplier` 2.0).
-5. **Host:** close Ledger Live and any browser wallet (they hold the USB connection). Keep the
+   Live paths `m/44'/60'/<i>'/0/0` for `i` = 0–20.
+5. **Funding:** the launch is about 61 transactions using about 28M gas in total, plus about 46k
+   gas per RevenueLock beneficiary beyond two. You pay only for gas used, but each transaction
+   needs gasLimit × maxFeePerGas available up front, and live networks sign with 2× gas-limit
+   headroom (`gasMultiplier`, capped at the 16.77M per-transaction limit). Fund about
+   2 × total gas × the expected gas price; the pre-flight prints the balance.
+6. **Host:** close Ledger Live and any browser wallet (they hold the USB connection). Keep the
    machine awake for the whole run (`caffeinate -dims` on macOS). Use a private `HUB_RPC`.
-6. **Config:** remove `DEPLOYER_PRIVATE_KEY` from `config/secrets.env` and set
+7. **Config:** remove `DEPLOYER_PRIVATE_KEY` from `config/secrets.env` and set
 
    ```bash
    export DEPLOYER_LEDGER_ADDRESS=0x...   # the Ledger account's address
    ```
 
    Setting both is refused: Hardhat would list the key's account first and sign with it.
-7. **Open time:** the orchestrator requires `CROWDFUND_OPEN_TIME` to be at least 6 hours away
+8. **Open time:** the orchestrator requires `CROWDFUND_OPEN_TIME` to be at least 6 hours away
    when it starts. For a Ledger run, prefer about 24 hours, so verification, manifest publish,
    frontend pin and indexer start are not rushed.
 
@@ -80,4 +84,9 @@ Check during the rehearsal:
 - [ ] Leave one prompt waiting longer than the device's auto-lock delay. Note whether the device
       locks and how the retry behaves.
 - [ ] Note the total run time and the ETH spent, to size the mainnet open time and funding.
-- [ ] `verify_deployment.ts` passes at the end.
+- [ ] `verify_deployment.ts` at the end: on Sepolia it also checks the repo's older Launch-2
+      privacy-pool/yield manifests against the new governance contracts, so expect exactly four
+      failures in the Privacy Pool and Yield groups. Move `deployments/{privacy-pool-*,yield-hub,
+      fee-module-hub,aave-mock-hub}-sepolia.json` aside and re-run `npx hardhat run
+      scripts/verify_deployment.ts --network sepoliaHub --no-compile`: it should report 0 failed.
+      Restore them with `git checkout -- deployments/` afterwards.

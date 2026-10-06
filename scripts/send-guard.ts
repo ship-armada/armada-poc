@@ -1,10 +1,10 @@
-// ABOUTME: Provider wrappers for live deploys: log each send's nonce and hash, offer a retry when a
-// ABOUTME: Ledger signature fails before broadcast, and keep the Ledger as the only listed account.
+// ABOUTME: Provider wrappers for live deploys: log each send's nonce and hash, retry a Ledger signature
+// ABOUTME: that failed before broadcast, keep the Ledger the only account, and apply gasMultiplier headroom.
 
 import { extendProvider } from "hardhat/config";
 import { ProviderWrapper } from "hardhat/plugins";
 import type { EIP1193Provider, RequestArguments } from "hardhat/types";
-import { Transaction } from "ethers";
+import { Transaction, toQuantity } from "ethers";
 import * as readline from "readline/promises";
 
 export const LEDGER_PLUGIN_NAME = "@nomicfoundation/hardhat-ledger";
@@ -106,6 +106,35 @@ export class LedgerOnlyAccountsProvider extends ProviderWrapper {
   }
 }
 
+/** EIP-7825 (Fusaka): no transaction may set a gas limit above 2^24. */
+export const TRANSACTION_GAS_LIMIT_CAP = 16_777_216n;
+
+/** Scale an estimate by `multiplier` (rounded up), but never above the per-transaction cap. */
+export function withGasHeadroom(estimate: bigint, multiplier: number): bigint {
+  const thousandths = BigInt(Math.round(multiplier * 1000));
+  const scaled = (estimate * thousandths + 999n) / 1000n;
+  const capped = scaled < TRANSACTION_GAS_LIMIT_CAP ? scaled : TRANSACTION_GAS_LIMIT_CAP;
+  return capped > estimate ? capped : estimate;
+}
+
+/**
+ * Applies the network's gasMultiplier to eth_estimateGas results. hardhat-ethers sets each
+ * transaction's gas limit from its own estimate, so Hardhat's gasMultiplier (which only fills a
+ * missing limit) never applied and launch transactions were signed at exactly their estimate.
+ * Only the limit changes: gas used, and so the cost, is whatever the transaction consumes.
+ */
+export class GasHeadroomProvider extends ProviderWrapper {
+  constructor(provider: EIP1193Provider, private readonly _multiplier: number) {
+    super(provider);
+  }
+
+  public async request(args: RequestArguments): Promise<unknown> {
+    const result = await this._wrappedProvider.request(args);
+    if (args.method !== "eth_estimateGas") return result;
+    return toQuantity(withGasHeadroom(BigInt(result as string), this._multiplier));
+  }
+}
+
 /** Live networks get the guard; local Anvil and in-process Hardhat networks are left untouched. */
 export function isLiveNetwork(networkName: string): boolean {
   return networkName.startsWith("sepolia") || networkName.startsWith("mainnet");
@@ -119,6 +148,14 @@ export function installLedgerOnlyAccounts(ledgerAddress: string): void {
   extendProvider(async (provider, _config, networkName) =>
     isLiveNetwork(networkName) ? new LedgerOnlyAccountsProvider(provider, ledgerAddress) : provider
   );
+}
+
+/** Register GasHeadroomProvider on live networks whose config sets a gasMultiplier above 1. */
+export function installGasHeadroom(): void {
+  extendProvider(async (provider, config, networkName) => {
+    const multiplier = (config.networks[networkName] as { gasMultiplier?: number }).gasMultiplier ?? 1;
+    return isLiveNetwork(networkName) && multiplier > 1 ? new GasHeadroomProvider(provider, multiplier) : provider;
+  });
 }
 
 /**

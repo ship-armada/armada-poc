@@ -5,7 +5,7 @@ import "./tasks/governance";
 import "./tasks/crowdfund";
 import "./tasks/crowdfund-safe";
 import { resolveDeployerSigner } from "./config/deployer-signer";
-import { installLedgerOnlyAccounts, installSendGuard } from "./scripts/send-guard";
+import { installGasHeadroom, installLedgerOnlyAccounts, installSendGuard } from "./scripts/send-guard";
 
 // Anvil default account private key (Account 0)
 const ANVIL_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
@@ -35,9 +35,11 @@ function liveSigner(): Record<string, unknown> {
 
 // Live deploys log each transaction's nonce + hash as it is sent and, on a Ledger, offer a
 // retry when signing fails before broadcast (scripts/send-guard.ts). Registered after the
-// Ledger plugin so it wraps the Ledger provider. Gated on DEPLOY_ENV so local runs and the
-// in-process test network keep Hardhat's default provider stack.
+// Ledger plugin so it wraps the Ledger provider. Gas headroom applies each network's
+// gasMultiplier to gas estimates (hardhat-ethers bypasses Hardhat's own multiplier). Gated on
+// DEPLOY_ENV so local runs and the in-process test network keep Hardhat's default provider stack.
 if (process.env.DEPLOY_ENV && process.env.DEPLOY_ENV !== "local") {
+  installGasHeadroom();
   installSendGuard();
 }
 

@@ -6,7 +6,10 @@ import * as path from "path";
 import hre from "hardhat";
 import { ethers } from "ethers";
 import type { RequestArguments } from "hardhat/types";
-import { SendGuardProvider, LedgerOnlyAccountsProvider, LEDGER_PLUGIN_NAME, type SendGuardIO } from "../scripts/send-guard";
+import {
+  SendGuardProvider, LedgerOnlyAccountsProvider, GasHeadroomProvider, withGasHeadroom,
+  TRANSACTION_GAS_LIMIT_CAP, LEDGER_PLUGIN_NAME, type SendGuardIO,
+} from "../scripts/send-guard";
 import { awaitExpectedNonce, crowdfundHandoffNonce, CROWDFUND_OPEN_MIN_LEAD_SECONDS } from "../scripts/deploy-utils";
 import { assertLedgerSigner, assertSignedBy, ledgerPreflightMessage } from "../scripts/ledger-preflight";
 
@@ -141,6 +144,37 @@ describe("Human-paced deploy guards", function () {
       const args = { method: "eth_sendTransaction", params: [LEDGER_TX] };
       expect(await new LedgerOnlyAccountsProvider(provider, LEDGER_TX.from).request(args)).to.equal(HASH);
       expect(calls).to.deep.equal([args]);
+    });
+  });
+
+  describe("gas headroom (gasMultiplier)", function () {
+    // WHY: hardhat-ethers sets each transaction's gas limit from its own eth_estimateGas call, so
+    // Hardhat's gasMultiplier (applied only when a send has no limit) never took effect: every
+    // launch transaction was signed at exactly its estimate. The multiplier is applied to the
+    // estimate instead.
+    it("scales an estimate by the multiplier, rounding up", function () {
+      expect(withGasHeadroom(100_000n, 2)).to.equal(200_000n);
+      expect(withGasHeadroom(100_001n, 1.5)).to.equal(150_002n);
+      expect(withGasHeadroom(100_000n, 1)).to.equal(100_000n);
+    });
+
+    // WHY: since Fusaka a transaction may not exceed 2^24 gas. Doubling a large estimate (the
+    // RevenueLock deploy with many beneficiaries) past that would make the transaction invalid,
+    // so headroom stops at the cap, and an estimate already above it is left for the node to reject.
+    it("never raises a limit above the per-transaction gas cap", function () {
+      expect(TRANSACTION_GAS_LIMIT_CAP).to.equal(16_777_216n);
+      expect(withGasHeadroom(9_000_000n, 2)).to.equal(TRANSACTION_GAS_LIMIT_CAP);
+      expect(withGasHeadroom(17_000_000n, 2)).to.equal(17_000_000n);
+    });
+
+    // WHY: only estimates change; every other call, and estimate errors (e.g. the timelock's
+    // "not ready" retry signal), pass through untouched.
+    it("rewrites eth_estimateGas results only", async function () {
+      const { provider } = scriptedProvider(["0x186a0", "0x1", new Error("operation is not ready")]);
+      const headroom = new GasHeadroomProvider(provider, 2);
+      expect(await headroom.request({ method: "eth_estimateGas", params: [{}] })).to.equal("0x30d40");
+      expect(await headroom.request({ method: "eth_chainId" })).to.equal("0x1");
+      await expect(headroom.request({ method: "eth_estimateGas", params: [{}] })).to.be.rejectedWith(/not ready/);
     });
   });
 
@@ -347,6 +381,56 @@ describe("Human-paced deploy guards", function () {
       const message = ledgerPreflightMessage(1, "a".repeat(40));
       expect(message).to.include("Chain: 1").and.include("a".repeat(40)).and.include("No transaction");
       expect(ledgerPreflightMessage(11155111, undefined)).to.include("not pinned");
+    });
+  });
+
+  describe("gas headroom through Hardhat's provider stack", function () {
+    // WHY: end to end for the real bug — a hot-key send on a live network, through hardhat-ethers
+    // and Hardhat's full provider stack, must be signed with ~2x the node's estimate (the network's
+    // gasMultiplier). The stub RPC estimates 100,000 gas and captures the signed raw transaction.
+    it("signs live-network transactions with the configured gasMultiplier", function () {
+      this.timeout(120_000);
+      const key = "0x" + "11".repeat(32);
+      const snippet = `
+        const http = require("http");
+        const { Transaction } = require("ethers");
+        let raw;
+        const results = {
+          eth_chainId: "0xaa36a7", net_version: "11155111", eth_blockNumber: "0x10",
+          eth_estimateGas: "0x186a0", eth_getTransactionCount: "0x0", eth_gasPrice: "0x3b9aca00",
+          eth_maxPriorityFeePerGas: "0x1",
+          eth_feeHistory: { oldestBlock: "0xf", baseFeePerGas: ["0x3b9aca00", "0x3b9aca00"], gasUsedRatio: [0.5], reward: [["0x1"]] },
+          eth_getBlockByNumber: { number: "0x10", baseFeePerGas: "0x3b9aca00", timestamp: "0x1", transactions: [] },
+          eth_getTransactionByHash: null,
+        };
+        const srv = http.createServer((req, res) => {
+          let body = ""; req.on("data", (d) => body += d);
+          req.on("end", () => {
+            const r = JSON.parse(body);
+            let result = results[r.method] ?? null;
+            if (r.method === "eth_sendRawTransaction") { raw = r.params[0]; result = Transaction.from(raw).hash; }
+            res.setHeader("content-type", "application/json");
+            res.end(JSON.stringify({ jsonrpc: "2.0", id: r.id, result }));
+          });
+        });
+        srv.listen(0, "127.0.0.1", async () => {
+          process.env.HUB_RPC = "http://127.0.0.1:" + srv.address().port;
+          const hre = require("hardhat");
+          console.log("ESTIMATE " + await hre.ethers.provider.estimateGas({ to: "0x00000000000000000000000000000000000000cd" }));
+          const [signer] = await hre.ethers.getSigners();
+          signer.sendTransaction({ to: "0x00000000000000000000000000000000000000cd", value: 0 }).catch(() => {});
+          for (let i = 0; i < 200 && !raw; i++) await new Promise((r) => setTimeout(r, 50));
+          console.log("GASLIMIT " + (raw ? Transaction.from(raw).gasLimit : "none"));
+          srv.close(); process.exit(0);
+        });`;
+      const r = spawnSync(process.execPath, ["-r", "ts-node/register", "-e", snippet], {
+        cwd: path.join(__dirname, ".."), encoding: "utf8",
+        env: { PATH: process.env.PATH, HOME: process.env.HOME, TS_NODE_TRANSPILE_ONLY: "true",
+          DEPLOY_ENV: "sepolia", HARDHAT_NETWORK: "sepoliaHub", DEPLOYER_PRIVATE_KEY: key },
+      });
+      expect(r.status, r.stderr).to.equal(0);
+      expect(r.stdout).to.include("ESTIMATE 200000");
+      expect(r.stdout).to.include("GASLIMIT 200000");
     });
   });
 });

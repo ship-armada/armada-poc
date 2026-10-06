@@ -46,8 +46,16 @@ npm run crowdfund:committer # Start crowdfund committer UI (port 5174)
 npm run crowdfund:admin     # Start crowdfund admin UI (port 5175)
 npm run crowdfund:populate  # Fill crowdfund to $1M+ minimum (local only)
 
+# Launch-team / security-council actions from their Safes (docs/safe-launch-batches.md)
+npx hardhat cf-safe-batch --file launch.csv --network mainnetHub   # seeds + invites → Transaction Builder files
+npx hardhat cf-safe-cancel --network mainnetHub                    # security-council cancel() file
+
 # Sepolia testnet
 npm run setup:sepolia       # Deploy to Sepolia (requires config/secrets.env)
+
+# Launch 1 (crowdfund + governance only; NOT the privacy pool). Network comes from the sourced env:
+# config/mainnet.env for the real launch, config/sepolia.env + HARDEN_TIMELOCK=true for a rehearsal.
+npm run setup:mainnet -- --dry-run   # preview the launch plan (see docs/ledger-deploy.md)
 npm run relayer:sepolia     # Start relayer in real CCTP mode (Iris attestation)
 
 # Named deployment instances (pulls manifests from armada-deployments repo)
@@ -105,7 +113,7 @@ When writing new code, follow production security practices even though these le
 | `deploy/` | Crowdfund indexer deployment infra (Docker, nginx, backup scripts) |
 | `deployments/` | Generated deployment manifests (Sepolia and mainnet ones are committed) |
 | `specs/` | Specifications — governance, crowdfund, fee structure, ARM token, operations, monitoring |
-| `docs/` | Operational runbooks (e.g. wind-down redemption) |
+| `docs/` | Operational runbooks (Ledger deploy, Safe launch batches, interrupted-launch recovery, wind-down redemption) |
 | `_legacy/llm-analysis-2026-02/` | LLM-generated security analysis snapshot (Feb 2026, formerly `audit-reports/`) — historical, predates fee module/governance/July review |
 | `reports/` | Threat models, formal verification notes, analysis reports |
 | `mcp-server/` | MCP server exposing read-only dev tools for AI coding agents |

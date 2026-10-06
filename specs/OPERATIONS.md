@@ -18,7 +18,7 @@ Complete this table before deployment. Every address must be confirmed before an
 | Role | Description | Address | Wallet type | Quorum |
 |---|---|---|---|---|
 | Deployer | Deploys the contract | `[TBD]` | EOA, preferably a Ledger (`DEPLOYER_LEDGER_ADDRESS`, see `docs/ledger-deploy.md`); otherwise a fresh single-use key. The pipeline signs as one account; it holds no role or ARM after the run | — |
-| Treasury | Receives net USDC proceeds + unsold/unclaimed ARM | `[TBD]` | Multisig | `[TBD]` |
+| Treasury | Receives net USDC proceeds + unsold/unclaimed ARM | `[TBD]` (from the governance manifest) | Contract: `ArmadaTreasuryGov`, deployed by the launch and controlled by governance through the timelock; not a wallet | — |
 | ROOT / Launch team | `addSeed()`, `launchTeamInvite()` | `[TBD]` | Safe multisig | 2-of-3 |
 | Security Council | `cancel()` authority | `[TBD]` | Safe multisig | 2-of-3 |
 | Treasury Steward | Elected at deploy with the USDC steward budget; `proposeStewardSpend()` (GOVERNANCE.md §Treasury Steward) | `[TBD]` | Safe multisig | 2-of-3 |

@@ -52,9 +52,9 @@ Complete every item before calling the deploy script. Sign off with initials and
 | Security Council address | `[address]` | ☐ | Must match 2-of-3 multisig above |
 | Commitment window open timestamp | `[unix timestamp]` | ☐ | Verify against intended date/time + timezone |
 | Commitment deadline timestamp | `[unix timestamp]` | ☐ | Open + 21 days |
-| Launch team invite deadline | `[unix timestamp]` | ☐ | Open + 14 days |
-| MAX_SALE | 1,800,000 × 10^18 | ☐ | ARM units (18 decimals) |
-| BASE_SALE | 1,200,000 × 10^18 | ☐ | ARM units |
+| Launch team invite deadline | `[unix timestamp]` | ☐ | Open + 21 days (equals the commitment deadline) |
+| MAX_SALE | 1,800,000 × 10^6 | ☐ | USDC units (6 decimals) |
+| BASE_SALE | 1,200,000 × 10^6 | ☐ | USDC units |
 | MINIMUM_RAISE | 1,000,000 × 10^6 | ☐ | USDC units (6 decimals) |
 | EXPANSION_TRIGGER | 1,500,000 × 10^6 | ☐ | USDC units |
 | Hop-0 budget | 180 | ☐ | Max hop-0 participants |

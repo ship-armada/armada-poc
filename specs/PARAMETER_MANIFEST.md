@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Single source of truth for every concrete value that enters the deployed contract. Referenced by CROWDFUND.md (mechanism), OPERATIONS.md (deployment), MONITORING.md (alerting), IMPLEMENTATION_TEST.md (test harness), and the eventual audit package.
+Single source of truth for every concrete value that enters the deployed contract. Referenced by CROWDFUND.md (mechanism), OPERATIONS.md (deployment), MONITORING.md (alerting), and the eventual audit package.
 
 **Every value in this document must be confirmed before deployment. No other document overrides this one for deployment-time values.**
 
@@ -37,12 +37,12 @@ Single source of truth for every concrete value that enters the deployed contrac
 
 | Parameter | Human-readable | Unix timestamp | Mutability | Verified | Notes |
 |---|---|---|---|---|---|
-| Open timestamp | `[TBD: date/time UTC]` | `[TBD]` | Immutable (constructor) | ☐ | Commitment window, hop-0 additions, and invites begin here. Set as `CROWDFUND_OPEN_TIME` (ISO 8601 UTC, e.g. `2026-10-08T17:00:00Z`) in `config/mainnet.env` — required on mainnet; `setup:mainnet` refuses to start unless it is 1h–60d away (#543). |
+| Open timestamp | `[TBD: date/time UTC]` | `[TBD]` | Immutable (constructor) | ☐ | Commitment window, hop-0 additions, and invites begin here. Set as `CROWDFUND_OPEN_TIME` (ISO 8601 UTC, e.g. `2026-10-08T17:00:00Z`) in `config/mainnet.env` — required on mainnet; `setup:mainnet` refuses to start unless it is 6h–60d away (`CROWDFUND_OPEN_MIN_LEAD_SECONDS` / `CROWDFUND_OPEN_MAX_LEAD_SECONDS` in `scripts/deploy-utils.ts`). |
 | Launch-team invite deadline | Open + 21 days (equals the commitment deadline) | `[TBD]` | Immutable (constructor) | ☐ | `addSeed()` and `launchTeamInvite()` revert at and after this (strict `<`; participant actions stay open for that final second) |
 | Commitment deadline | Open + 21 days | `[TBD]` | Immutable (constructor) | ☐ | `commit()`, `commitWithInvite()`, `invite()` revert after this |
 | Claim deadline | Finalization + 3 years | Computed at finalization | Immutable (derived) | — | `claim()` permitted when `block.timestamp <= finalizationTimestamp + 94_608_000`. Sweep eligible at `>`. |
 
-**Timestamp verification:** Convert each unix timestamp back to human-readable and confirm date, time, and timezone match intent. Verify `launchTeamInviteDeadline == openTimestamp + 1_209_600` (14 × 86400). Verify `commitmentDeadline == openTimestamp + 1_814_400` (21 × 86400).
+**Timestamp verification:** Convert each unix timestamp back to human-readable and confirm date, time, and timezone match intent. Verify `launchTeamInviteEnd() == windowStart() + 1_814_400` (21 × 86400). Verify `windowEnd() == windowStart() + 1_814_400` (21 × 86400) — the two deadlines are equal.
 
 **3-year duration:** Exactly `94_608_000 seconds` (1,095 days = 3 × 365 days). This is a fixed second count, not 3 calendar years — does not account for leap years.
 
@@ -52,11 +52,11 @@ Single source of truth for every concrete value that enters the deployed contrac
 
 | Parameter | Human-readable | Contract value | Unit | Mutability | Verified |
 |---|---|---|---|---|---|
-| BASE_SALE | 1,200,000 ARM | `1_200_000_000_000_000_000_000_000` | ARM (18 dec) | Immutable (constant) | ☐ |
-| MAX_SALE | 1,800,000 ARM | `1_800_000_000_000_000_000_000_000` | ARM (18 dec) | Immutable (constant) | ☐ |
-| MINIMUM_RAISE | $1,000,000 USDC | `1_000_000_000_000` | USDC (6 dec) | Immutable (constant) | ☐ |
-| EXPANSION_TRIGGER | $1,500,000 USDC capped demand | `1_500_000_000_000` | USDC (6 dec) | Immutable (constant) | ☐ |
-| PRICE | $1.00 per ARM | 1e6 USDC per 1e18 ARM | Ratio | Immutable (constant) | ☐ |
+| BASE_SALE | $1,200,000 USDC (= 1,200,000 ARM at $1) | `1_200_000_000_000` | USDC (6 dec) | Immutable (constant) | ☐ |
+| MAX_SALE | $1,800,000 USDC (= 1,800,000 ARM at $1) | `1_800_000_000_000` | USDC (6 dec) | Immutable (constant) | ☐ |
+| MIN_SALE (spec: MINIMUM_RAISE) | $1,000,000 USDC | `1_000_000_000_000` | USDC (6 dec) | Immutable (constant) | ☐ |
+| ELASTIC_TRIGGER (spec: EXPANSION_TRIGGER) | $1,500,000 USDC capped demand | `1_500_000_000_000` | USDC (6 dec) | Immutable (constant) | ☐ |
+| ARM_PRICE | $1.00 per ARM | `1_000_000` (1e6 USDC per 1e18 ARM) | Ratio | Immutable (constant) | ☐ |
 | TOTAL_SUPPLY | 12,000,000 ARM | `12_000_000_000_000_000_000_000_000` | ARM (18 dec) | — | Reference only (not in crowdfund contract) |
 
 **Decimal conversion rules:**
@@ -70,12 +70,12 @@ Single source of truth for every concrete value that enters the deployed contrac
 
 | Parameter | Hop-0 | Hop-1 | Hop-2 | Mutability |
 |---|---|---|---|---|
-| HOP_CAP (per slot) | $15,000 (`15_000_000_000` USDC) | $4,000 (`4_000_000_000` USDC) | $1,000 (`1_000_000_000` USDC) | Immutable (constant) |
-| HOP_CEILING_BPS | 6000 (60% of base pool, then less extra floor) | 4500 (45% of base pool) | — (no enforced ceiling) | Immutable (constant) |
+| `HOPn_CAP_USDC` (per slot) | $15,000 (`15_000_000_000` USDC) | $4,000 (`4_000_000_000` USDC) | $1,000 (`1_000_000_000` USDC) | Immutable (constant) |
+| `HOPn_CEILING_BPS` | 6000 (60% of base pool, then less extra floor) | 4500 (45% of base pool) | — (no enforced ceiling) | Immutable (constant) |
 | HOP2_BASE_FLOOR_BPS | — | — | 500 (5% of sale_size) | Immutable (constant) |
 | HOP2_EXTRA_FLOOR_BPS | — | — | 1000 (additional 10% of sale_size) | Immutable (constant) |
-| Outgoing invite slots per slot (`maxInvites`) | 3 | 2 | 0 | Immutable (constant) |
-| Incoming invite stacking cap (`maxInvitesReceived`) | 1 | 10 | 20 | Immutable (constant) |
+| Outgoing invite slots per slot (`HOPn_MAX_INVITES`) | 3 | 2 | 0 | Immutable (constant) |
+| Incoming invite stacking cap (`HOPn_MAX_INVITES_RECEIVED`) | 1 | 10 | 20 | Immutable (constant) |
 | Slot source | `SeedAdded` | `Invited` | `Invited` | — |
 
 **Cap formula:** Per-address cap at hop = `participation_slots[(address, hop)] × HOP_CAP[hop]`
@@ -93,9 +93,9 @@ Single source of truth for every concrete value that enters the deployed contrac
 
 | Parameter | Value | Mutability | Verified | Notes |
 |---|---|---|---|---|
-| Hop-0 budget | 180 | Immutable (constant) | ☐ | Max `addSeed()` calls |
-| Launch-team hop-1 budget | 100 | Immutable (constant) | ☐ | Max `launchTeamInvite(_, 0)` calls |
-| Launch-team hop-2 budget | 120 | Immutable (constant) | ☐ | Max `launchTeamInvite(_, 1)` calls |
+| Hop-0 budget (`MAX_SEEDS`) | 180 | Immutable (constant) | ☐ | Max `addSeed()` calls |
+| Launch-team hop-1 budget (`LAUNCH_TEAM_HOP1_BUDGET`) | 100 | Immutable (constant) | ☐ | Max `launchTeamInvite(_, 0)` calls |
+| Launch-team hop-2 budget (`LAUNCH_TEAM_HOP2_BUDGET`) | 120 | Immutable (constant) | ☐ | Max `launchTeamInvite(_, 1)` calls |
 | `MAX_FINALIZE_NODES` | 1,800 | Immutable (constant) | ☐ | Hard cap on total `participantNodes`, enforced in `_initParticipant`. Keeps one-shot `finalize()` (~8,200 gas/node cold, ~15.2M at 1,800) under the **16,777,216 (2^24, EIP-7825) per-tx gas cap**. Node creation reverts `"node cap reached"` beyond it. |
 | Structural max network size | 2,220 nodes | Derived | — | 180 + 640 + 1,400 — but `MAX_FINALIZE_NODES` (1,800) binds first, so 2,220 is not reachable (see CROWDFUND.md) |
 
@@ -107,7 +107,7 @@ Single source of truth for every concrete value that enters the deployed contrac
 |---|---|---|---|
 | `name` | `"ArmadaCrowdfund"` | Immutable (constant) | ☐ |
 | `version` | `"1"` | Immutable (constant) | ☐ |
-| `chainId` | `[TBD]` | Implementation-dependent: stored in constructor state OR derived from `block.chainid` at verification time. Verify which model the implementation uses and record here. | ☐ |
+| `chainId` | `1` (Ethereum mainnet) | Derived: OpenZeppelin `EIP712` caches `block.chainid` at construction and rebuilds the separator if the chain id ever differs | ☐ |
 | `verifyingContract` | `[TBD — set at deployment]` | Immutable (derived) | ☐ — verify post-deploy via `DOMAIN_SEPARATOR()` |
 
 **Post-deploy verification:** Call `DOMAIN_SEPARATOR()` and compare against locally computed `keccak256(abi.encode(DOMAIN_TYPEHASH, nameHash, versionHash, chainId, contractAddress))`. If mismatch: do NOT proceed. Redeploy.
@@ -135,8 +135,8 @@ These values are defined in GOVERNANCE.md and affect the ARM token / governor co
 | Quiet period | 7 days post-finalization | GOVERNANCE.md | No proposals until day 8 |
 | Claim deadline | 3 years (94,608,000 seconds) | CROWDFUND.md §Finalization | Fixed term — but the crowdfund contract derives this from `finalizationTimestamp`, not a constructor arg |
 | Proposal threshold | 5,000 ARM | GOVERNANCE.md | |
-| Quorum | max(20% circulating, 100,000 ARM) | GOVERNANCE.md | |
-| `LIMIT_ACTIVATION_DELAY` | 24 days (2,073,600 seconds) | GOVERNANCE.md §Treasury Outflow Limits | Hardcoded constant in `ArmadaTreasuryGov`. Not governance-settable. Constrained by `_maxExtendedCycle() < LIMIT_ACTIVATION_DELAY` — governor timing setters revert if they would violate this invariant. |
+| Quorum | max(20% Standard / 30% Extended × eligible supply, 100,000 ARM) | `ArmadaGovernor` | Eligible supply = total supply − treasury − quorum-excluded addresses (crowdfund, RevenueLock, reserve distributor), snapshotted at proposal creation. Quorum % is governance-settable within 5–50%; the 100,000 ARM floor (`QUORUM_FLOOR`) is a constant. |
+| `LIMIT_ACTIVATION_DELAY` | 24 days (2,073,600 seconds) | GOVERNANCE.md §Treasury Outflow Limits | Hardcoded constant in `ArmadaTreasuryGov`. Not governance-settable. `ArmadaGovernor.setProposalTypeParams` reverts if the Extended cycle (voting delay + voting period + execution delay) would reach its mirror constant `TREASURY_OUTFLOW_ACTIVATION_DELAY` (24 days). |
 
 ### 8.2 Deploy inputs — freeze before deploy
 
@@ -144,7 +144,7 @@ Unlike §8.1, these **are** deployment inputs for the governance / RevenueLock d
 
 | Parameter | Value | Mutability | Verified | Notes / tracking |
 |---|---|---|---|---|
-| RevenueLock beneficiary list | `[TBD — finalized (address, amount) JSON]` | Immutable (RevenueLock constructor) | ☐ | Must sum **exactly** to 2,400,000 × 10^18 ARM (1,800,000 team + 600,000 airdrop). Loaded via `REVENUE_LOCK_BENEFICIARIES_FILE`, which lists the direct entries only: they plus the reserve cap make up the 2,400,000; deploy rejects Anvil placeholders on non-local. Tracking: #144. The schedule must identify the reserve distributor and separately reviewed airdrop distributor, reconcile categories with the approved cap table, and persist original constructor ordering; individual airdrop recipients are not assumed to be direct entries. |
+| RevenueLock beneficiary list | `[TBD — finalized (address, amount) JSON]` | Immutable (RevenueLock constructor) | ☐ | Direct entries plus the reserve cap must sum **exactly** to 2,400,000 × 10^18 ARM (`ARM_REVENUE_LOCK_ALLOCATION`); the deploy checks only this total, so the team / airdrop / reserve split must be reconciled against the approved cap table by hand. Loaded via `REVENUE_LOCK_BENEFICIARIES_FILE`, which lists the direct entries only: they plus the reserve cap make up the 2,400,000; deploy rejects Anvil placeholders on non-local. Tracking: #144. The schedule must identify the reserve distributor and separately reviewed airdrop distributor, reconcile categories with the approved cap table, and persist original constructor ordering; individual airdrop recipients are not assumed to be direct entries. |
 | Reserve cap | `[TBD — approved cap-table amount]` | Immutable (distributor constructor) | ☐ | Within the 2,400,000 ARM lock budget; 360,000 ARM / 3% is a worked example only. Reconcile the reported 120,000 ARM / 1% cap-table reserve before launch; this PR does not change category ownership. `REVENUE_RESERVE_AMOUNT` (whole ARM) in `config/mainnet.env` — **required** on mainnet (no default). Tracking: #582. |
 | Reserve allocator | `[TBD — independently verified Safe]` | Immutable (distributor constructor) | ☐ | Exactly three identified owners, threshold two; confirm chain/address, implementation, modules, guard, fallback handler, quorum eligibility and absence from `noDelegation`. `REVENUE_RESERVE_ALLOCATOR` in `config/mainnet.env` — **required** on mainnet (no default). Must differ from the deployer and Security Council (checked before the first transaction); may be the launch team Safe. Tracking: #582. |
 | Treasury outflow limit — USDC | 30-day window; max($100,000, 10% of treasury USDC); floor $50,000 (`2592000`, `1000` bps, `100000000000`, `50000000000`) | Set at deploy (timelock `initOutflowConfig`); governance-adjustable after, floor can only be raised | ☐ | From GOVERNANCE.md §Treasury Outflow Limits. `OUTFLOW_USDC_*` in `config/mainnet.env`. Tracking: #348. |
@@ -153,8 +153,10 @@ Unlike §8.1, these **are** deployment inputs for the governance / RevenueLock d
 | RevenueLock `MAX_REVENUE_INCREASE_PER_DAY` | $10,000/day = 10,000 × 10^18 (`10000000000000000000000`, 18-decimal USD) | Immutable (RevenueLock constructor); not governance-settable | ☐ | 18-decimal USD to match `RevenueCounter.recognizedRevenueUsd` — **not** 6-decimal USDC; a 10^6 value would cap the ratchet at $0.00000001/day and lock beneficiaries out permanently. Calibrated (issue #225) to require minimum 100 days for malicious $0 → $1M full-unlock acceleration under captured governance, assuming `syncObservedRevenue()` is called at least daily. Defensive security calibration, not steady-state economic parameter. Effective rate cap depends on regular sync calls; without regular syncs, the cap accumulates over idle periods (start the daily sync on deploy day). `REVENUE_LOCK_MAX_INCREASE_PER_DAY_USD` (whole USD) in `config/mainnet.env`; config rejects non-integers and values above $1,000,000. Also applies to later cohorts (`deploy_revenue_lock_cohort.ts`). Source: REVENUE_LOCK.md §6, ARM_TOKEN.md §5.1. Tracking: #530. |
 | Wind-down revenue threshold | $10,000 cumulative = 10,000 × 10^18 (`10000000000000000000000`, 18-decimal USD; set in whole USD as `WINDDOWN_REVENUE_THRESHOLD=10000`) | Set at deploy (ArmadaWindDown constructor); governance-adjustable pre-trigger (`setRevenueThreshold`) | ☐ | Below-threshold recognized revenue at the deadline makes wind-down **permissionlessly triggerable**. Recognized revenue only advances via the Launch 2 fee module — set with a Launch 2 schedule buffer so the pool has time to ship. Value per GOVERNANCE.md / CROWDFUND.md §Wind-Down. `WINDDOWN_REVENUE_THRESHOLD` is **required** on mainnet (no default in `config/networks.ts`). Tracking: #381 (feasibility C2). |
 | Wind-down deadline | `2027-12-31T00:00:00Z` (unix `1830211200`) | Set at deploy (ArmadaWindDown constructor); governance-adjustable pre-trigger (`setWindDownDeadline`) | ☐ | The date the permissionless trigger arms if revenue is under threshold. Must leave headroom for the Launch 2 (shielded pool) deploy + fee revenue ramp; governance is expected to retarget it to ~6 months after Launch 2 once that date is known (CROWDFUND.md §Wind-Down). `WINDDOWN_DEADLINE` is **required** on mainnet (no default in `config/networks.ts`). Tracking: #381 (feasibility C2). |
-| Initial Treasury Steward | `[TBD — independently verified Safe]` | Set at deploy (timelock `electSteward`); 180-day term from the deploy block; re-election Extended, removal Standard | ☐ | `INITIAL_STEWARD_ADDRESS` in `config/mainnet.env` — **required** on mainnet (no default). Exactly three identified owners, threshold two (checked on-chain before the first transaction, as for the reserve allocator); must differ from the deployer, Security Council, launch team and reserve allocator. Confirm chain/address, implementation, modules, guard and fallback handler. Tracking: #221. |
+| Initial Treasury Steward | `[TBD — independently verified Safe]` | Set at deploy (timelock `electSteward`); 180-day term from the deploy block; re-election Extended, removal Standard | ☐ | `INITIAL_STEWARD_ADDRESS` in `config/mainnet.env` — **required** on mainnet (no default). Exactly three identified owners, threshold two (checked on-chain before the first transaction, as for the reserve allocator); must differ from the deployer, Security Council, launch team, reserve allocator, treasury, timelock and governor. Confirm chain/address, implementation, modules, guard and fallback handler. Tracking: #221. |
 | USDC steward budget | $60,000 per rolling 30 days (`60000` whole USD → `60000000000` at 6dp, `2592000`) | Set at deploy (timelock `addStewardBudgetToken`); increase / extend Extended, decrease / remove Standard | ☐ | From GOVERNANCE.md §Treasury Steward. `STEWARD_BUDGET_USDC` (whole USD; config rejects values above the USDC outflow absolute limit) and `STEWARD_BUDGET_WINDOW` in `config/mainnet.env`; the deploy refuses a hub USDC that does not report 6 decimals. Accepted launch-window exposure: GOVERNANCE.md §Election. Tracking: #222. |
+| ARM distribution | Treasury 7,800,000 / Crowdfund 1,800,000 / RevenueLock 2,400,000 ARM (sums to the 12,000,000 supply; deployer keeps 0) | One-time transfers at deploy | ☐ | `ARM_TREASURY_ALLOCATION` / `ARM_CROWDFUND_ALLOCATION` / `ARM_REVENUE_LOCK_ALLOCATION` (whole ARM) in `config/mainnet.env`. The deploy halts unless the three balances match exactly, total supply is 12,000,000 and the deployer holds 0 ARM afterwards. |
+| Timelock delay | 2 days (`172800`) | Timelock `minDelay`; governance can change it, but the governor rejects any `updateDelay` above 2 days | ☐ | `TIMELOCK_DELAY` in `config/mainnet.env`. With `HARDEN_TIMELOCK=true` (forced on mainnet) the timelock is deployed at delay 0, the deployer runs the timelock-only setup, then the delay is raised to this value and every deployer timelock role is renounced (#347). |
 
 ---
 
@@ -163,7 +165,7 @@ Unlike §8.1, these **are** deployment inputs for the governance / RevenueLock d
 | Parameter | Value | Verified | Notes |
 |---|---|---|---|
 | Settlement mode | Lazy settlement | ✓ | `finalize()` writes aggregate state only; `Allocated` + `AllocatedHop` emitted at individual `claim()` time. No `emitSettlement()`, no `SettlementComplete`. |
-| Gas estimate at max network | `[TBD]` gas | ☐ | From IMPLEMENTATION_TEST.md S16 fixture |
+| Gas estimate at max network | `[TBD]` gas | ☐ | From `scripts/crowdfund_gas_dryrun.ts` (fills to `MAX_FINALIZE_NODES`, finalizes, asserts gasUsed < 2^24) |
 | Per-tx gas cap | 16,777,216 (2^24) | — | EIP-7825 single-tx cap — the binding limit for `finalize()`; the block gas limit (~30M+) is not |
 
 ---
@@ -227,9 +229,6 @@ This manifest is referenced by:
 | CROWDFUND.md | All economic constants; hop structure; timing |
 | OPERATIONS.md | Constructor params checklist (§2); deployment record |
 | MONITORING.md | Alert thresholds; timestamp boundaries; budget caps |
-| IMPLEMENTATION_TEST.md | Test harness constants; gas fixture parameters |
-| CROWDFUND_REVIEW_BRIEF.md | Key parameters block; pressure-test values |
-| CROWDFUND_OBSERVER.md | Hop caps for display; budget totals |
 | CROWDFUND_COMMITTER.md | Hop caps for eligibility display; link expiry default |
 
 ---
@@ -245,6 +244,8 @@ Before deployment, every row must be verified. This is the final sign-off.
 | RevenueLock beneficiary list finalized and sums to 2,400,000e18 (§8.2, #144) | ☐ | |
 | Treasury outflow limits finalized — USDC/ARM/ETH (§8.2, #348) | ☐ | |
 | Wind-down threshold + deadline set with Launch 2 schedule buffer (§8.2, #381 C2) | ☐ | |
+| Reserve allocator Safe + reserve cap finalized (§8.2, #582) | ☐ | |
+| Initial steward Safe + USDC steward budget finalized (§8.2, #221, #222) | ☐ | |
 | All timestamps independently converted and verified | ☐ | |
 | All decimal-encoded values independently computed and verified | ☐ | |
 | EIP-712 domain fields confirmed | ☐ | |

@@ -75,7 +75,7 @@ Governance power follows economic commitment. Until the protocol generates reven
 
 ### Design Philosophy
 
-This is a trusted-network crowdfund, not viral growth. Participation requires invitation from someone closer to the core. Hop-0 and hop-1 each have enforced ceilings, while hop-2 has a 15% reserved floor and an effective ceiling determined by that floor plus any hop-1 leftover. Actual allocation is demand-driven: each hop receives whatever it committed, up to its effective ceiling, and anything unused rolls forward to later hops. The launch team's invite budget closes after day 14; hop-0 and hop-1 participants may invite throughout all three weeks; commitments remain open for the full three weeks.
+This is a trusted-network crowdfund, not viral growth. Participation requires invitation from someone closer to the core. Hop-0 and hop-1 each have enforced ceilings, while hop-2 has a 15% reserved floor and an effective ceiling determined by that floor plus any hop-1 leftover. Actual allocation is demand-driven: each hop receives whatever it committed, up to its effective ceiling, and anything unused rolls forward to later hops. The launch team's invite budget stays open for the full three weeks; hop-0 and hop-1 participants may invite throughout all three weeks; commitments remain open for the full three weeks.
 
 ### Initial Network
 

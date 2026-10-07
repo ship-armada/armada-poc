@@ -214,6 +214,21 @@ contract RevenueCounter is Initializable, UUPSUpgradeable, OwnableUpgradeable {
         emit Frozen(recognizedRevenueUsd);
     }
 
+    // ============ Ownership Lock ============
+
+    /// @notice Ownership is fixed at initialization and cannot be transferred.
+    /// @dev The owner (timelock) holds the UUPS upgrade authority. A hand-off would let the
+    ///      new owner upgrade this contract without a governance vote or upgrade-gate approval.
+    function transferOwnership(address) public pure override {
+        revert("RevenueCounter: ownership is fixed");
+    }
+
+    /// @notice Ownership cannot be renounced.
+    /// @dev Renouncing would permanently disable upgrades and every owner-gated function.
+    function renounceOwnership() public pure override {
+        revert("RevenueCounter: ownership is fixed");
+    }
+
     // ============ UUPS ============
 
     /// @dev Only the owner (timelock) can authorize upgrades.

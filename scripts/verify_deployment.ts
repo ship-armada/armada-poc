@@ -945,6 +945,11 @@ async function main() {
       } catch (error) {
         fail("Governance Wiring", "Timelock role event scan complete", String(error));
       }
+    } else if (!config.hardenTimelock) {
+      warn("Governance Wiring", "Timelock roles hardened",
+        "Deployer keeps timelock proposer/executor roles on non-hardened deploys, so it can "
+        + "schedule upgrades directly and bypass the governor's upgrade gate. Use "
+        + "HARDEN_TIMELOCK=true for any deployment that must match production security.");
     }
     await checkWindDownWiring(govManifest);
     await checkTreasuryConfig(govManifest, hubCCTP);

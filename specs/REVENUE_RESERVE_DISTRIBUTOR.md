@@ -232,7 +232,8 @@ only when the lock is activated. Ambiguous send failures still abort. This preve
 an outsider's earlier activation from skipping treasury limits, production timelock
 delay, manifest writes, and bootstrap-role renunciation. Post-deployment verification
 checks the actual `TIMELOCK_ADMIN_ROLE`; hardened mode fails on retained deployer
-admin/proposer/executor/canceller roles or an incorrect production delay, including
+admin/proposer/executor/canceller roles, on the timelock retaining admin over itself,
+or on an incorrect production delay, including
 when an interrupted launch has not written its final crowdfund manifest.
 
 **Funding is the irreversible boundary, including before activation.** A failed

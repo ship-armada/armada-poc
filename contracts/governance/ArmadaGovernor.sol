@@ -98,8 +98,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     error Gov_OutflowInfeasible();
     error Gov_StewardBudgetInfeasible();
     error Gov_NoChange();
-    error Gov_CannotRevokeGovernorRole(bytes32 role);
-    error Gov_CannotRenounceTimelockAdmin();
 
     // ============ Types ============
 
@@ -228,37 +226,22 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     uint256 internal constant TREASURY_EXTENDED_THRESHOLD_BPS = 500; // 5%
 
     // Timelock-targeting calldata that the propose-time guard recognizes. The guard
-    // (_validateTimelockCalldata) defends three role-cardinality / parameter-bound
-    // invariants that no individual function signature exposes on its own:
-    //   1. _minDelay <= MIN_EXECUTION_DELAY — structurally bounds _minDelay below
-    //      every queueable proposal type's executionDelay floor, preventing the
-    //      audit-103 brick where `_minDelay > p.executionDelay` permanently reverts
-    //      every queue() path. Paired with a queue-time max(executionDelay, _minDelay)
-    //      widening in queue() as defense-in-depth — if a future feature bypasses this
-    //      propose-time guard, the runtime reconciliation still averts the brick.
-    //   2. Governor retains PROPOSER / EXECUTOR / CANCELLER on the timelock — the
-    //      production deploy grants these roles only to this governor, so revoking
-    //      any of them permanently bricks queue / execute / veto respectively.
-    //   3. Timelock self retains TIMELOCK_ADMIN_ROLE — the production deploy
-    //      renounces deployer admin (deploy_crowdfund.ts:332), leaving only the
-    //      timelock self with admin. Renouncing it closes all future role grants;
-    //      combined with (2), eliminates every on-chain recovery surface.
-    // Future role-management features (e.g. adding a backup proposer multisig)
-    // must intentionally bypass this guard via a separate code path that re-evaluates
-    // the invariants — a parallel propose-time pipeline must not silently inherit
-    // the same allowlist.
+    // (_validateTimelockCalldata) enforces _minDelay <= MIN_EXECUTION_DELAY, which
+    // structurally bounds _minDelay below every queueable proposal type's
+    // executionDelay floor, preventing the audit-103 brick where
+    // `_minDelay > p.executionDelay` permanently reverts every queue() path. Paired
+    // with a queue-time max(executionDelay, _minDelay) widening in queue() as
+    // defense-in-depth — if a future feature bypasses this propose-time guard, the
+    // runtime reconciliation still averts the brick.
+    //
+    // Timelock role management needs no propose-time guard. The production deploy
+    // (deploy_crowdfund.ts step 16) revokes the timelock's admin role over itself and
+    // the deployer renounces its own, so no account holds TIMELOCK_ADMIN_ROLE. Any
+    // grantRole / revokeRole a proposal schedules therefore reverts at execution:
+    // governance can neither add a second proposer nor strip this governor's
+    // PROPOSER / EXECUTOR / CANCELLER roles. scripts/verify-timelock.ts checks that
+    // no admin remains.
     bytes4 internal constant UPDATE_DELAY_SELECTOR = bytes4(keccak256("updateDelay(uint256)"));
-    bytes4 internal constant REVOKE_ROLE_SELECTOR = bytes4(keccak256("revokeRole(bytes32,address)"));
-    bytes4 internal constant RENOUNCE_ROLE_SELECTOR = bytes4(keccak256("renounceRole(bytes32,address)"));
-
-    // Timelock role hashes precomputed from the OZ AccessControl + TimelockController
-    // role-name strings. Avoids three external view calls per role-revoke check at
-    // runtime. Verified against TimelockController constants on every compile via
-    // the explicit equality assertions in test-foundry/GovernorUpdateDelayCap.t.sol.
-    bytes32 internal constant TIMELOCK_PROPOSER_ROLE = keccak256("PROPOSER_ROLE");
-    bytes32 internal constant TIMELOCK_EXECUTOR_ROLE = keccak256("EXECUTOR_ROLE");
-    bytes32 internal constant TIMELOCK_CANCELLER_ROLE = keccak256("CANCELLER_ROLE");
-    bytes32 internal constant TIMELOCK_ADMIN_ROLE = keccak256("TIMELOCK_ADMIN_ROLE");
 
     // Fail-closed classification: selectors not in extendedSelectors AND not in
     // standardSelectors default to Extended. This prevents bypass via unclassified
@@ -1566,8 +1549,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         }
     }
 
-    /// @dev Reject timelock-targeting calldata that would violate any of the three
-    ///      cardinality / parameter-bound invariants documented at the
+    /// @dev Reject timelock-targeting updateDelay calldata that would break the
+    ///      _minDelay <= MIN_EXECUTION_DELAY invariant documented at the
     ///      UPDATE_DELAY_SELECTOR declaration. Skips malformed calldata (would revert
     ///      at the timelock anyway). Values decoded directly via mload instead of
     ///      abi.decode to keep the loop body compact.
@@ -1589,54 +1572,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
                 }
                 if (newDelay > MIN_EXECUTION_DELAY) {
                     revert Gov_UpdateDelayExceedsCap(newDelay, MIN_EXECUTION_DELAY);
-                }
-                continue;
-            }
-
-            // Both revokeRole and renounceRole take (bytes32 role, address account).
-            // Decode once and branch on selector to defend the two distinct
-            // role-cardinality invariants.
-            if (sel != REVOKE_ROLE_SELECTOR && sel != RENOUNCE_ROLE_SELECTOR) continue;
-            if (cd.length < 68) continue;
-            bytes32 role;
-            address account;
-            assembly ("memory-safe") {
-                role := mload(add(cd, 36))
-                account := mload(add(cd, 68))
-            }
-
-            if (sel == REVOKE_ROLE_SELECTOR) {
-                // Block revocation of any role the governor itself holds and
-                // requires to function (queue / execute / veto). Revoking the same
-                // role from a non-governor account (e.g. a future backup proposer)
-                // is allowed.
-                if (
-                    account == address(this) &&
-                    (
-                        role == TIMELOCK_PROPOSER_ROLE ||
-                        role == TIMELOCK_EXECUTOR_ROLE ||
-                        role == TIMELOCK_CANCELLER_ROLE
-                    )
-                ) {
-                    revert Gov_CannotRevokeGovernorRole(role);
-                }
-                // Also block the timelock self-revoking its own ADMIN role. Same
-                // end state as the renounceRole(ADMIN, timelock) shape blocked
-                // below: the timelock-self holds ADMIN as the role's admin AND
-                // satisfies its own onlyRole gate during a self-call, so revoke
-                // succeeds; downstream grantRole permanently closed.
-                if (account == tl && role == TIMELOCK_ADMIN_ROLE) {
-                    revert Gov_CannotRenounceTimelockAdmin();
-                }
-            } else {
-                // Block renunciation of TIMELOCK_ADMIN_ROLE by the timelock itself.
-                // OZ AccessControl requires msg.sender == account on renounce, and
-                // when this calldata fires via the queue+execute pipeline msg.sender
-                // is the timelock — so account == timelock is the only renounce
-                // shape that actually executes for the admin role. Closing it
-                // permanently disables all future grantRole calls.
-                if (account == tl && role == TIMELOCK_ADMIN_ROLE) {
-                    revert Gov_CannotRenounceTimelockAdmin();
                 }
             }
         }

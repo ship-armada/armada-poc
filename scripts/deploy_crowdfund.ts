@@ -597,6 +597,13 @@ async function main() {
     console.log("   Renounced PROPOSER/EXECUTOR/CANCELLER from deployer");
   }
   const ADMIN_ROLE = await timelock.TIMELOCK_ADMIN_ROLE();
+  // Revoke the timelock's admin role over itself while the deployer still holds admin.
+  // Afterwards nobody can grant or revoke timelock roles, so the governor stays the only
+  // proposer/executor/canceller and no proposal can add a second proposer that bypasses
+  // the governor's checks. Revoking an already-revoked role is a no-op, so a resumed
+  // deploy can repeat this step.
+  await (await timelock.revokeRole(ADMIN_ROLE, timelockAddress, nm.override())).wait();
+  console.log("   Revoked TIMELOCK_ADMIN_ROLE from the timelock itself");
   await (await timelock.renounceRole(ADMIN_ROLE, deployer.address, nm.override())).wait();
   console.log("   Renounced TIMELOCK_ADMIN_ROLE from deployer");
 

@@ -42,9 +42,12 @@ transaction hashes, and the deployer nonce.
    `totalAllocation`; `activate()` accepts excess and offers no sweep. Check
    `crowdfund.armLoaded()` and lock activation before repeating either call.
 4. Complete remaining treasury outflow limits and the production timelock delay
-   while the bootstrap roles still exist. Read back their actual values. Then
-   renounce deployer proposer, executor, canceller and `TIMELOCK_ADMIN_ROLE`
-   as applicable. The current script is not idempotent; these are individually
+   while the bootstrap roles still exist. Read back their actual values. Then,
+   while the deployer still holds `TIMELOCK_ADMIN_ROLE`, revoke that role from
+   the timelock itself (`timelock.revokeRole(TIMELOCK_ADMIN_ROLE, timelock)`),
+   and only then renounce deployer proposer, executor, canceller and
+   `TIMELOCK_ADMIN_ROLE` as applicable. Once the deployer has renounced admin,
+   the timelock's self-admin can no longer be revoked. The current script is not idempotent; these are individually
    reviewed recovery transactions, not an automated resume command.
 5. Run `verify_deployment.ts` with the intended environment and the recorded
    manifests, in the Launch 1 scope as the orchestrator does

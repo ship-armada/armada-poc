@@ -847,6 +847,8 @@ If governance submits a new loosening change while a previous one is still pendi
 
 ## Contract Upgrade Scope
 
+**Timelock roles are fixed at deploy.** The governor holds the timelock's PROPOSER, EXECUTOR and CANCELLER roles, and nobody holds `TIMELOCK_ADMIN_ROLE`: the launch deploy revokes the timelock's admin role over itself before the deployer renounces its own. No proposal can therefore grant a second proposer or executor (which could schedule calls that skip the governor's checks) or strip the governor's roles; such calls revert at execution. Governance changes happen through in-place upgrades of the governor proxy, not by pointing the timelock at a different contract. `verify_deployment.ts` checks this layout by replaying the timelock's role events.
+
 | Contract | Upgradeable? | Mechanism | Why |
 |---|---|---|---|
 | **ARM token** | No | — | Trust bedrock. All invariants are unconditional. See ARM_TOKEN.md §9. |

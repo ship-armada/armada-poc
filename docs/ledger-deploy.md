@@ -2,8 +2,8 @@
 
 `npm run setup:mainnet` (`scripts/deploy_mainnet.ts`) can sign with a Ledger instead of a
 `DEPLOYER_PRIVATE_KEY`. The key never leaves the device, so malware on the deploy machine
-(including a compromised npm dependency) cannot copy it. Each transaction, about 61 for the
-crowdfund launch (63 with a revenue reserve), needs an approval on the device, so a run takes 30–60 minutes of attended
+(including a compromised npm dependency) cannot copy it. Each transaction, about 63 for the
+crowdfund launch (including the two for the required revenue reserve), needs an approval on the device, so a run takes 30–60 minutes of attended
 signing.
 
 Only the Launch 1 orchestrator path (CCTP-record, governance, crowdfund, verify) supports a

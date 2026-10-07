@@ -33,9 +33,9 @@
  * A Ledger run signs a pre-flight message on the device before the first transaction.
  *
  * Prerequisites (fail loud if missing): deployer funded on the hub; real CCTP V2
- * addresses + USDC configured; security council / launch team / initial steward (each a
- * 2-of-3 Safe, checked before the first transaction) / RevenueLock beneficiaries set. See
- * config/mainnet.env.
+ * addresses + USDC configured; security council / launch team / initial steward / reserve
+ * allocator (each a 2-of-3 Safe, checked before the first transaction) / reserve cap /
+ * RevenueLock beneficiaries set. See config/mainnet.env.
  */
 
 import { execSync } from "child_process";
@@ -192,6 +192,10 @@ async function main() {
   console.log(`  Steward:       ${steward
     ? `${steward.address} — elected at deploy, budget $${steward.budgetUsdc} USDC per ${steward.budgetWindow}s`
     : "none at deploy (elected via governance)"}`);
+  const reserve = config.revenueReserve;
+  console.log(`  Reserve:       ${reserve
+    ? `${reserve.allocator} — ${reserve.amount} ARM cap (allocator and cap are immutable)`
+    : "none (RevenueLock holds direct beneficiaries only)"}`);
   console.log();
 
   if (!config.hardenTimelock) {
@@ -259,6 +263,9 @@ async function main() {
     console.log("  - Wind-down wiring + treasury outflow limits set (see verify output).");
     if (config.initialSteward) {
       console.log("  - Initial steward elected + USDC steward budget set (see verify output).");
+    }
+    if (config.revenueReserve) {
+      console.log("  - Reserve distributor bound to RevenueLock with the configured allocator and cap (see verify output).");
     }
   }
   console.log("  - Two-person verify the on-chain treasury outflow limits against PARAMETER_MANIFEST.md §8.2.");

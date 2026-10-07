@@ -38,7 +38,7 @@ import {
   isLocal,
 } from "../config/networks";
 import { createNonceManager, rejectAnvilAddresses, retryReadOnLag, saveDeployment, saveDeploymentInProgress } from "./deploy-utils";
-import { assertAllocatorMultisig, assertLaunchRoleMultisigs, revenueLockSchedule, validateReservePlan, type RevenueLockConstructorArgs } from "./revenue-reserve";
+import { assertAllocatorDistinct, assertAllocatorMultisig, assertLaunchRoleMultisigs, revenueLockSchedule, validateReservePlan, type RevenueLockConstructorArgs } from "./revenue-reserve";
 import { assertInitialStewardPreflight } from "./initial-steward";
 
 interface GovernanceDeployment {
@@ -86,6 +86,10 @@ async function main() {
   if (config.revenueReserve) {
     rejectAnvilAddresses([config.revenueReserve.allocator], "Reserve allocator");
     await assertAllocatorMultisig(config.revenueReserve.allocator);
+    assertAllocatorDistinct(config.revenueReserve.allocator, [
+      { label: "deployer", address: deployer.address },
+      { label: "security council", address: config.securityCouncilAddress },
+    ]);
   }
   // The initial steward is elected at the end of deploy_crowdfund, after one-shot setters are
   // spent; refuse a bad steward address now, before this stage's first transaction (#221).

@@ -4,7 +4,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { loadFixture, takeSnapshot, time, mine, setBalance } from "@nomicfoundation/hardhat-network-helpers";
 import { deployGovernorProxy } from "./helpers/deploy-governor";
-import { assertAllocatorMultisig, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, assertReservePostFunding, assertCreationProvenance, validateReservePlan, revenueLockSchedule, reserveConfigMismatch, type RevenueLockConstructorArgs } from "../scripts/revenue-reserve";
+import { assertAllocatorDistinct, assertAllocatorMultisig, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, assertReservePostFunding, assertCreationProvenance, validateReservePlan, revenueLockSchedule, reserveConfigMismatch, type RevenueLockConstructorArgs } from "../scripts/revenue-reserve";
 import { buildRevenueLockVerificationTasks } from "../scripts/verify_etherscan";
 
 describe("Reserve deployment funding gate", function () {
@@ -368,6 +368,31 @@ describe("Reserve deployment funding gate", function () {
       const mock = await Mock.deploy([...owners], threshold);
       await expect(assertAllocatorMultisig(await mock.getAddress())).to.be.rejectedWith("three distinct owners");
     }
+  });
+
+  // WHY: The security council's cancel and veto powers check the launch operations; an allocator
+  // at the same address would hold both sides. The deploy scripts pass these roles (#582).
+  it("rejects an allocator equal to the deployer or security council, ignoring address case", async function () {
+    const { plan, b } = await loadFixture(fixture);
+    const [deployer] = await ethers.getSigners();
+    const roles = [{ label: "deployer", address: deployer.address }, { label: "security council", address: plan.allocator }];
+    expect(() => assertAllocatorDistinct(plan.allocator, roles))
+      .to.throw("Reserve allocator must differ from the security council");
+    expect(() => assertAllocatorDistinct(deployer.address.toLowerCase(),
+      [{ label: "deployer", address: deployer.address }, { label: "security council", address: b.address }]))
+      .to.throw("Reserve allocator must differ from the deployer");
+  });
+
+  // WHY: The launch team Safe may also hold the allocator role, so the scripts do not pass it.
+  // Unset roles (local stacks without a configured security council) arrive empty and are skipped.
+  it("accepts an allocator that reuses the launch team Safe and skips unset roles", async function () {
+    const { plan, b } = await loadFixture(fixture);
+    const [deployer] = await ethers.getSigners();
+    const launchTeam = plan.allocator;
+    expect(() => assertAllocatorDistinct(launchTeam,
+      [{ label: "deployer", address: deployer.address }, { label: "security council", address: b.address }])).to.not.throw();
+    expect(() => assertAllocatorDistinct(plan.allocator,
+      [{ label: "deployer", address: deployer.address }, { label: "security council", address: "" }])).to.not.throw();
   });
 
   // WHY: The reserve comes out of the lock's existing allocation, so appending 3% to a full 20% list must fail.

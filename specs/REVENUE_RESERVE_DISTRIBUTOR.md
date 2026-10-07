@@ -173,8 +173,10 @@ ETH donations are unsupported and have no rescue mechanism.
 
 1. Verify the intended ARM token, allocator wallet code and three owners with threshold two.
 2. Configure both `REVENUE_RESERVE_ALLOCATOR` and `REVENUE_RESERVE_AMOUNT` (ARM token units,
-   e.g. `360000`). The reserve is optional in the generic scripts; both variables are
-   required for this launch design. Neither is defaulted or inferred.
+   e.g. `360000`). The config requires both on mainnet and on hardened
+   (`HARDEN_TIMELOCK=true`) Sepolia rehearsals; elsewhere the reserve is optional.
+   Neither is defaulted or inferred. The allocator must differ from the deployer and
+   Security Council; it may be the launch team Safe.
 3. Supply `REVENUE_LOCK_BENEFICIARIES_FILE` or `REVENUE_LOCK_BENEFICIARIES_JSON` with the
    **direct** beneficiaries only (2,040,000 ARM for the example). Do not include another
    entry for the reserve. Direct amounts plus the reserve must equal

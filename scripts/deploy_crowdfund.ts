@@ -28,7 +28,7 @@ import {
 import { createNonceManager, crowdfundHandoffNonce, rejectAnvilAddresses, loadDeployment, saveDeployment, saveDeploymentInProgress, assertDeploymentComplete, timelockCall, retryReadOnLag, resolveCrowdfundOpenTimestamp } from "./deploy-utils";
 import { MULTICALL3_ADDRESS, MULTICALL3_RUNTIME_BYTECODE } from "./multicall3-bytecode";
 
-import { ensureRevenueLockActivated, assertLaunchRoleMultisigs, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, assertCreationProvenance, validateReservePlan } from "./revenue-reserve";
+import { ensureRevenueLockActivated, assertAllocatorDistinct, assertLaunchRoleMultisigs, assertRevenueLockAllocation, assertRevenueLockSchedule, assertReservePreFunding, assertCreationProvenance, validateReservePlan } from "./revenue-reserve";
 import { assertInitialStewardPreflight, assertUsdcDecimals, seedInitialSteward, stewardBudgetLimit } from "./initial-steward";
 
 interface CrowdfundDeployment {
@@ -197,6 +197,14 @@ async function main() {
   // crowdfund fixes both addresses (mainnet only; Sepolia uses single-key roles).
   if (config.env === "mainnet") {
     await assertLaunchRoleMultisigs(securityCouncilAddress, launchTeamAddress);
+  }
+  // Reserve allocator (#582): the distributor fixed it in the governance stage; re-check it
+  // against the security council this stage fixes in the crowdfund.
+  if (config.revenueReserve) {
+    assertAllocatorDistinct(config.revenueReserve.allocator, [
+      { label: "deployer", address: deployer.address },
+      { label: "security council", address: securityCouncilAddress },
+    ]);
   }
   // Initial steward (#221, #222): this stage may run days after governance with a different
   // env file, so re-check the steward against every launch role before its first transaction,

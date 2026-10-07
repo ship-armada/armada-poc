@@ -79,6 +79,20 @@ export async function assertAllocatorMultisig(address: string): Promise<void> {
 }
 
 /**
+ * The allocator may reuse the launch team Safe, so callers pass only the roles it must not share:
+ * the deployer and the security council, whose cancel and veto powers check launch operations
+ * (#582). Unset roles (empty strings) are skipped.
+ */
+export function assertAllocatorDistinct(allocator: string, otherRoles: { label: string; address: string }[]): void {
+  const address = ethers.getAddress(allocator);
+  for (const role of otherRoles) {
+    if (role.address && ethers.getAddress(role.address.toLowerCase()) === address) {
+      throw new Error(`Reserve allocator must differ from the ${role.label} (${address})`);
+    }
+  }
+}
+
+/**
  * Mainnet security council and launch team must be 2-of-3 Safes, like the steward. Both are
  * fixed in the crowdfund at deploy, so the governance stage checks before its first transaction
  * and the crowdfund stage re-checks before deploying the crowdfund.

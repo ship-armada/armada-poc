@@ -517,7 +517,7 @@ describe("Governance Adversarial", function () {
   describe("Constructor Zero-Address Validation", function () {
     it("ArmadaGovernor rejects zero armToken", async function () {
       const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-      const impl = await ArmadaGovernor.deploy();
+      const impl = await ArmadaGovernor.deploy(await governor.upgradeGate());
       await impl.waitForDeployment();
       const initData = ArmadaGovernor.interface.encodeFunctionData("initialize", [
         ethers.ZeroAddress,
@@ -532,7 +532,7 @@ describe("Governance Adversarial", function () {
 
     it("ArmadaGovernor rejects zero timelock", async function () {
       const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-      const impl = await ArmadaGovernor.deploy();
+      const impl = await ArmadaGovernor.deploy(await governor.upgradeGate());
       await impl.waitForDeployment();
       const initData = ArmadaGovernor.interface.encodeFunctionData("initialize", [
         await armToken.getAddress(),
@@ -547,7 +547,7 @@ describe("Governance Adversarial", function () {
 
     it("ArmadaGovernor rejects zero treasury", async function () {
       const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-      const impl = await ArmadaGovernor.deploy();
+      const impl = await ArmadaGovernor.deploy(await governor.upgradeGate());
       await impl.waitForDeployment();
       const initData = ArmadaGovernor.interface.encodeFunctionData("initialize", [
         await armToken.getAddress(),

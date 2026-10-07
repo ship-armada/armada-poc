@@ -10,6 +10,7 @@ import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./ArmadaToken.sol";
 import "./IArmadaGovernance.sol";
+import "./UpgradeGate.sol";
 import "../crowdfund/IArmadaCrowdfund.sol";
 
 
@@ -44,6 +45,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     error Gov_ZeroArmToken();
     error Gov_ZeroTimelock();
     error Gov_ZeroTreasury();
+    error Gov_ZeroUpgradeGate();
     error Gov_AlreadyLocked();
     error Gov_AlreadyResolved();
     error Gov_AutoCreatedOnly();
@@ -291,8 +293,16 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     // ============ Constructor & Initializer ============
 
+    /// @notice Launch Team co-sign for gated proposals (upgrades, new ARM delegators). Fixed in
+    ///         the implementation's bytecode: governance can only change it through a governor
+    ///         upgrade, which this gate itself must approve.
+    /// @custom:oz-upgrades-unsafe-allow state-variable-immutable
+    UpgradeGate public immutable upgradeGate;
+
     /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
+    constructor(address _upgradeGate) {
+        if (_upgradeGate == address(0)) revert Gov_ZeroUpgradeGate();
+        upgradeGate = UpgradeGate(_upgradeGate);
         _disableInitializers();
     }
 
@@ -1140,6 +1150,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         }
 
         p.executed = true;
+
+        // Proposals that upgrade a contract or authorize an ARM delegator need the Launch
+        // Team's approval of this exact proposal; reverts otherwise. Checked here rather than
+        // at queue so the team can review through the execution delay and revoke until now.
+        upgradeGate.check(proposalId, p.targets, p.values, p.calldatas);
 
         timelock.executeBatch{value: msg.value}(
             p.targets, p.values, p.calldatas,

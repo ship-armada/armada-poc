@@ -188,7 +188,8 @@ async function main() {
   console.log("\n=== Cohort deployment complete ===");
   console.log("\nNext steps (via governance proposal):");
   console.log(`  1. armToken.addToWhitelist(${lockAddress})`);
-  console.log(`  2. armToken.addAuthorizedDelegator(${lockAddress})`);
+  console.log(`  2. armToken.addAuthorizedDelegator(${lockAddress})  — gated: the Launch Team must approve the`);
+  console.log("     proposal on the UpgradeGate before it can execute (verify canonical RevenueLock bytecode first)");
   console.log(`  3. treasury.distribute(armToken, ${lockAddress}, ${ethers.formatUnits(totalAllocation, 18)} ARM)`);
   console.log("\nOr use the 'Register Revenue Lock Cohort' template in the governance-ui.");
 }

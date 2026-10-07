@@ -338,6 +338,25 @@ async function checkGovernanceWiring(govManifest: any) {
     results.push({ group: GROUP, ...check });
   }
 
+  // Upgrade gate: the governor executes gated proposals (upgrades, new ARM delegators) only
+  // with the launch team's approval, so the gate it trusts and the team behind it must match.
+  if (govManifest.contracts.upgradeGate) {
+    await expectOnChain(GROUP, "Governor → upgradeGate",
+      () => governor.upgradeGate(), govManifest.contracts.upgradeGate);
+    const gate = await ethers.getContractAt("UpgradeGate", govManifest.contracts.upgradeGate);
+    await expectOnChain(GROUP, "upgradeGate launchTeam",
+      () => gate.launchTeam(), config.launchTeamAddress || govManifest.deployer);
+  } else {
+    fail(GROUP, "Upgrade gate recorded", "governance manifest has no upgradeGate address");
+  }
+
+  // RevenueCounter's owner holds its upgrade authority; it must be the timelock so upgrades
+  // go through governance and the gate.
+  if (govManifest.contracts.revenueCounter) {
+    const counter = await ethers.getContractAt("RevenueCounter", govManifest.contracts.revenueCounter);
+    await expectOnChain(GROUP, "RevenueCounter owned by timelock", () => counter.owner(), timelockAddr);
+  }
+
   // Governor → steward link
   if (govManifest.contracts.steward) {
     try {

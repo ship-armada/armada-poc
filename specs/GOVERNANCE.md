@@ -347,9 +347,9 @@ Most reusable governance parameters listed above are themselves governable — l
 | **Security Council** | SC address replacement via governance | Extended |
 | **Adapters** | Authorize new adapter (loosening — grants protocol access) | Extended |
 | **Adapters** | Deauthorize / fully deauthorize adapter (tightening — revokes access) | Standard |
-| **Upgrades** | Governor contract upgrade (UUPS, governance-gated) | Extended |
-| **Upgrades** | Fee module upgrade (UUPS, governance-gated) | Extended |
-| **Upgrades** | Revenue counter upgrade (UUPS, governance-gated) | Extended |
+| **Upgrades** | Governor contract upgrade (UUPS, governance-gated) | Extended + Launch Team approval |
+| **Upgrades** | Fee module upgrade (UUPS, governance-gated) | Extended + Launch Team approval |
+| **Upgrades** | Revenue counter upgrade (UUPS, governance-gated) | Extended + Launch Team approval |
 | **Revenue** | Non-stablecoin revenue attestation (`addRevenue` increment, routine; `attestRevenue` SET, confirmed-error correction) | Standard |
 | **Revenue** | Expand qualifying revenue definition | Extended |
 | **ARM token** | Add address to transfer whitelist (add-only, no removal) | Extended |
@@ -849,6 +849,20 @@ If governance submits a new loosening change while a previous one is still pendi
 
 **Timelock roles are fixed at deploy.** The governor holds the timelock's PROPOSER, EXECUTOR and CANCELLER roles, and nobody holds `TIMELOCK_ADMIN_ROLE`: the launch deploy revokes the timelock's admin role over itself before the deployer renounces its own. No proposal can therefore grant a second proposer or executor (which could schedule calls that skip the governor's checks) or strip the governor's roles; such calls revert at execution. Governance changes happen through in-place upgrades of the governor proxy, not by pointing the timelock at a different contract. `verify_deployment.ts` checks this layout by replaying the timelock's role events.
 
+### Launch Team upgrade gate
+
+A governor upgrade can replace every other safety mechanism, and a newly authorized ARM delegator can re-delegate any holder's votes. Either would turn a single governance win — including one won on low turnout or by a misleading proposal — into permanent control. These actions therefore need two independent sign-offs: a passed governance proposal **and** the Launch Team's approval of that exact proposal.
+
+- **Gated actions:** any proposal action calling `upgradeTo(address)` or `upgradeToAndCall(address,bytes)` on any contract (governor, revenue counter, fee module, future UUPS contracts), or `addAuthorizedDelegator(address)` on the ARM token. The list is fixed in the `UpgradeGate` contract's code; governance cannot change it.
+- **Default fail.** `ArmadaGovernor.execute()` asks the gate before executing. A proposal with a gated action and no approval cannot execute. Proposals without gated actions are unaffected.
+- **Exact-proposal approval.** The Launch Team (2-of-3 Safe) approves `(proposalId, targets, values, calldatas)`. An approval cannot be reused by any other proposal, so re-proposing an older implementation (for example rolling back past a security fix) needs a fresh approval. The team can revoke an approval at any time before execution, and is expected to review during the voting period and execution delay.
+- **Neither side acts alone.** The Launch Team cannot propose or execute anything; governance cannot execute a gated proposal without the team. A compromised Launch Team Safe gains nothing without also winning a vote.
+- **Team rotation is the team's own decision.** The team nominates a successor (`transferLaunchTeam`) who must accept (`acceptLaunchTeam`); governance cannot redirect the gate.
+- **Fixed in the governor implementation.** The gate's address is an immutable of the governor implementation. Changing it needs a governor upgrade, which the current gate must approve. Approving any governor upgrade includes confirming the new implementation's gate address and that the governor still responds correctly to the wind-down contract.
+- **No sunset.** The gate is intended as launch-phase protection. Removing it later is itself a gated governor upgrade, and the replacement must keep an on-chain rule for `addAuthorizedDelegator` (for example, accepting only factory-deployed canonical RevenueLock cohorts) — otherwise delegation hijack returns.
+
+The gate does not cover bounded actions such as treasury distributions, outflow-limit changes or parameter updates; those remain ordinary governance, constrained by outflow limits, the activation delay and the Security Council veto.
+
 | Contract | Upgradeable? | Mechanism | Why |
 |---|---|---|---|
 | **ARM token** | No | — | Trust bedrock. All invariants are unconditional. See ARM_TOKEN.md §9. |
@@ -857,9 +871,9 @@ If governance submits a new loosening change while a previous one is still pendi
 | **Redemption contract** | No | — | Permissionless post-wind-down. Four excluded addresses hardcoded in constructor (treasury, revenue-lock, crowdfund, redemption). No admin, no governance interaction. |
 | **Revenue-lock contract** | No | — | Beneficiaries must trust the milestone schedule and release logic cannot change. |
 | **Wind-down contract** | No | — | Trigger conditions must be deterministic and immutable. Has pre-authorized authority to: sweep non-ARM treasury assets to redemption contract (permissionless per-token), call `setTransferable(true)`, and set `windDownActive` flag on pause contract. Parameters (threshold, deadline) are governable, but the trigger mechanism itself cannot be replaced. |
-| **Governor** | Yes | UUPS, governance-gated via timelock | Must be extensible — new proposal types, bond mechanics, steward logic. Extended proposal required. |
-| **Fee module** | Yes | UUPS, governance-gated via timelock | Fee tiers, integrator terms, yield fee rates. New fee types as protocol evolves. Extended proposal required. |
-| **Revenue counter** | Yes | UUPS, governance-gated via timelock | Interface is fixed (`recognizedRevenueUsd() returns uint256`). Implementation can be upgraded to handle new revenue types. The immutable revenue-lock contract reads the proxy address. Ownership is fixed to the timelock at initialization: `transferOwnership` and `renounceOwnership` always revert, so the upgrade authority cannot be handed to another address. **Note:** if the fee module is replaced (new proxy address), the RevenueCounter implementation must be upgraded to point at the new fee-collector — these upgrades must be coordinated. |
+| **Governor** | Yes | UUPS, governance-gated via timelock + Launch Team approval | Must be extensible — new proposal types, bond mechanics, steward logic. Extended proposal required, and the Launch Team must approve the proposal (§Launch Team upgrade gate). |
+| **Fee module** | Yes | UUPS, governance-gated via timelock + Launch Team approval | Fee tiers, integrator terms, yield fee rates. New fee types as protocol evolves. Extended proposal required, and the Launch Team must approve the proposal (§Launch Team upgrade gate). |
+| **Revenue counter** | Yes | UUPS, governance-gated via timelock + Launch Team approval | Interface is fixed (`recognizedRevenueUsd() returns uint256`). Implementation can be upgraded to handle new revenue types. The immutable revenue-lock contract reads the proxy address. Ownership is fixed to the timelock at initialization: `transferOwnership` and `renounceOwnership` always revert, so the upgrade authority cannot be handed to another address. **Note:** if the fee module is replaced (new proxy address), the RevenueCounter implementation must be upgraded to point at the new fee-collector — these upgrades must be coordinated. |
 | **Adapters** (CCTP, Aave, future) | Not upgradeable — additive registry | Governor maintains authorized adapter registry | New adapters are deployed as independent contracts and authorized via governance proposal. Old adapters can be deauthorized or set to withdraw-only. Each adapter is independently auditable. See §Adapter Registry. |
 | **Shielded pool** (Railgun) | No | — | Core privacy infrastructure. Immutable. |
 

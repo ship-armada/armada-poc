@@ -65,7 +65,7 @@ describe("Governance UUPS Upgrade", function () {
 
   describe("Upgrade Authorization", function () {
     it("upgrade via timelock succeeds", async function () {
-      const v2Impl = await linkedGovernorFactory.deploy();
+      const v2Impl = await linkedGovernorFactory.deploy(await governor.upgradeGate());
       await v2Impl.waitForDeployment();
 
       // Execute upgrade via timelock
@@ -88,7 +88,7 @@ describe("Governance UUPS Upgrade", function () {
     });
 
     it("upgrade from non-timelock reverts", async function () {
-      const v2Impl = await linkedGovernorFactory.deploy();
+      const v2Impl = await linkedGovernorFactory.deploy(await governor.upgradeGate());
       await v2Impl.waitForDeployment();
 
       await expect(
@@ -97,7 +97,7 @@ describe("Governance UUPS Upgrade", function () {
     });
 
     it("upgrade from deployer reverts", async function () {
-      const v2Impl = await linkedGovernorFactory.deploy();
+      const v2Impl = await linkedGovernorFactory.deploy(await governor.upgradeGate());
       await v2Impl.waitForDeployment();
 
       await expect(
@@ -115,7 +115,7 @@ describe("Governance UUPS Upgrade", function () {
       const deployerAddr = await governor.deployer();
 
       // Deploy V2 and upgrade via timelock
-      const v2Impl = await linkedGovernorFactory.deploy();
+      const v2Impl = await linkedGovernorFactory.deploy(await governor.upgradeGate());
       await v2Impl.waitForDeployment();
 
       const upgradeCalldata = governor.interface.encodeFunctionData(
@@ -148,7 +148,7 @@ describe("Governance UUPS Upgrade", function () {
       expect(quorum).to.equal(2000);
 
       // Upgrade
-      const v2Impl = await linkedGovernorFactory.deploy();
+      const v2Impl = await linkedGovernorFactory.deploy(await governor.upgradeGate());
       await v2Impl.waitForDeployment();
 
       const upgradeCalldata = governor.interface.encodeFunctionData(
@@ -186,7 +186,7 @@ describe("Governance UUPS Upgrade", function () {
     });
 
     it("implementation cannot be initialized directly", async function () {
-      const impl = await linkedGovernorFactory.deploy();
+      const impl = await linkedGovernorFactory.deploy(await governor.upgradeGate());
       await impl.waitForDeployment();
 
       await expect(

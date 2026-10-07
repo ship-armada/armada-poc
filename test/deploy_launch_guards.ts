@@ -1,5 +1,5 @@
 // ABOUTME: Guards for the mainnet crowdfund-launch deploy — remote-network gas headroom, the
-// ABOUTME: re-run refusal, the absolute crowdfund open time, pool-treasury override and harden profile.
+// ABOUTME: re-run refusal, the absolute crowdfund open time, pool-treasury override, harden profile and reserve.
 import { expect } from "chai";
 import { spawnSync } from "child_process";
 import { execFileSync } from "child_process";
@@ -171,6 +171,7 @@ describe("Mainnet launch deploy guards", function () {
     this.timeout(120_000);
 
     const DRY_RUN_STEWARD = "0x0000000000000000000000000000000000000003";
+    const DRY_RUN_ALLOCATOR = "0x0000000000000000000000000000000000000004";
 
     /** Env for `deploy_mainnet.ts --dry-run`: the committed mainnet.env plus launch-time inputs. */
     function mainnetDryRunEnv(extra: Record<string, string>): NodeJS.ProcessEnv {
@@ -185,8 +186,11 @@ describe("Mainnet launch deploy guards", function () {
       return {
         ...env,
         DEPLOYER_PRIVATE_KEY: "test-placeholder-not-a-real-key",
+        // Direct entries plus the reserve exhaust the 2.4M lock.
         REVENUE_LOCK_BENEFICIARIES_JSON: JSON.stringify(
-          [{ address: "0x0000000000000000000000000000000000000001", amount: "2400000", label: "test" }]),
+          [{ address: "0x0000000000000000000000000000000000000001", amount: "2040000", label: "test" }]),
+        REVENUE_RESERVE_ALLOCATOR: DRY_RUN_ALLOCATOR,
+        REVENUE_RESERVE_AMOUNT: "360000",
         CROWDFUND_OPEN_TIME: new Date(openTs * 1000).toISOString().replace(/\.\d{3}Z$/, "Z"),
         INITIAL_STEWARD_ADDRESS: DRY_RUN_STEWARD,
         ...extra,
@@ -233,6 +237,24 @@ describe("Mainnet launch deploy guards", function () {
       const result = dryRun({ INITIAL_STEWARD_ADDRESS: "" });
       expect(result.status).to.not.equal(0);
       expect(result.stderr).to.include("INITIAL_STEWARD_ADDRESS");
+      expect(result.stdout).to.not.include("CROWDFUND-LAUNCH DEPLOYMENT");
+    });
+
+    // WHY: the reserve allocator and cap are immutable distributor constructor inputs (#582). The
+    // plan must show both before any step runs, so the operator can check them against the
+    // freeze sheet.
+    it("prints the reserve allocator and cap in the launch plan", function () {
+      const result = dryRun({});
+      expect(result.status, result.stderr).to.equal(0);
+      expect(result.stdout).to.match(new RegExp(`Reserve:\\s+${DRY_RUN_ALLOCATOR} — 360000 ARM cap`));
+    });
+
+    // WHY: Launch 1 ships the reserve distributor; without REVENUE_RESERVE_* the deploy would
+    // fund a lock with no reserve, so the orchestrator must refuse before any step runs.
+    it("refuses to start when the reserve is unset", function () {
+      const result = dryRun({ REVENUE_RESERVE_ALLOCATOR: "", REVENUE_RESERVE_AMOUNT: "" });
+      expect(result.status).to.not.equal(0);
+      expect(result.stderr).to.include("REVENUE_RESERVE_ALLOCATOR and REVENUE_RESERVE_AMOUNT are required");
       expect(result.stdout).to.not.include("CROWDFUND-LAUNCH DEPLOYMENT");
     });
 

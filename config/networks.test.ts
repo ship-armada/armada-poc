@@ -40,6 +40,12 @@ function freshConfig(env: Record<string, string>) {
 const REVENUE_LOCK_JSON = JSON.stringify([{ address: "0x0000000000000000000000000000000000000001", amount: "1", label: "test" }]);
 // INITIAL_STEWARD_ADDRESS is mainnet-required; mainnet cases that isolate another field supply it.
 const TEST_STEWARD = "0x0000000000000000000000000000000000000003";
+// The revenue reserve is required on the launch path (mainnet and hardened Sepolia); cases that
+// isolate another field supply it.
+const TEST_RESERVE = {
+  REVENUE_RESERVE_ALLOCATOR: "0x0000000000000000000000000000000000000004",
+  REVENUE_RESERVE_AMOUNT: "360000",
+};
 const SEPOLIA_BASE = {
   DEPLOY_ENV: "sepolia",
   // Non-local envs require DEPLOYER_PRIVATE_KEY to be non-empty; the config never parses it,
@@ -202,6 +208,48 @@ describe("reserve configuration", () => {
     expect(freshConfig({ DEPLOY_ENV: "local" }).getNetworkConfig().revenueReserve).to.equal(undefined);
   });
 
+  const ONE_CLIENT = {
+    CLIENT_COUNT: "1",
+    CLIENT_1_RPC: "https://c1", CLIENT_1_CHAIN_ID: "8453", CLIENT_1_CCTP_DOMAIN: "6",
+  };
+  const MAINNET_BASE = {
+    ...SEPOLIA_BASE, ...ONE_CLIENT, DEPLOY_ENV: "mainnet", CCTP_MODE: "real",
+    INITIAL_STEWARD_ADDRESS: TEST_STEWARD,
+    WINDDOWN_DEADLINE: "2027-12-31T00:00:00Z", CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
+    WINDDOWN_REVENUE_THRESHOLD: "10000",
+  };
+
+  // WHY: Launch 1 ships with the reserve distributor, and its allocator and cap are immutable.
+  // A mainnet run that left both unset would deploy a lock without the reserve, so the
+  // config must refuse to build (#582).
+  it("requires the reserve on mainnet", () => {
+    expect(() => freshConfig(MAINNET_BASE).getNetworkConfig())
+      .to.throw(/REVENUE_RESERVE_ALLOCATOR and REVENUE_RESERVE_AMOUNT are required/);
+  });
+
+  // WHY: the hardened Sepolia run rehearses the mainnet launch path, so it must deploy the
+  // reserve too, or the rehearsal skips the distributor and its funding checks.
+  it("requires the reserve on a hardened Sepolia rehearsal", () => {
+    expect(() => freshConfig({ ...SEPOLIA_BASE, ...ONE_CLIENT, HARDEN_TIMELOCK: "true" }).getNetworkConfig())
+      .to.throw(/REVENUE_RESERVE_ALLOCATOR and REVENUE_RESERVE_AMOUNT are required/);
+  });
+
+  // WHY: Sepolia ops deploys and local stacks (including local harden tests) keep the
+  // direct-only lock without a vetted Safe.
+  it("keeps the reserve optional on unhardened Sepolia and on local", () => {
+    expect(freshConfig({ ...SEPOLIA_BASE, ...ONE_CLIENT }).getNetworkConfig().revenueReserve).to.equal(undefined);
+    expect(freshConfig({ DEPLOY_ENV: "local", HARDEN_TIMELOCK: "true" }).getNetworkConfig().revenueReserve)
+      .to.equal(undefined);
+  });
+
+  // WHY: the configured mainnet allocator and cap must reach the deploy scripts unchanged.
+  it("uses the explicit reserve on mainnet", () => {
+    const c = freshConfig({ ...MAINNET_BASE, ...TEST_RESERVE }).getNetworkConfig();
+    expect(c.revenueReserve).to.deep.equal({
+      allocator: TEST_RESERVE.REVENUE_RESERVE_ALLOCATOR, amount: TEST_RESERVE.REVENUE_RESERVE_AMOUNT,
+    });
+  });
+
   // WHY: The committed Sepolia schedule must exhaust the lock budget in either
   // mode; the previous 200 ARM file would strand 2,399,800 ARM on activation.
   it("pins fresh Sepolia beneficiary totals for direct and reserve rehearsals", () => {
@@ -226,7 +274,7 @@ describe("wind-down deadline", () => {
   // CROWDFUND_OPEN_TIME is also mainnet-required; set it so these cases isolate the deadline.
   const MAINNET_BASE = {
     ...SEPOLIA_BASE, ...ONE_CLIENT, DEPLOY_ENV: "mainnet", CCTP_MODE: "real",
-    INITIAL_STEWARD_ADDRESS: TEST_STEWARD,
+    INITIAL_STEWARD_ADDRESS: TEST_STEWARD, ...TEST_RESERVE,
     CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z", WINDDOWN_REVENUE_THRESHOLD: "10000",
   };
 
@@ -264,7 +312,7 @@ describe("wind-down revenue threshold", () => {
   };
   const MAINNET_BASE = {
     ...SEPOLIA_BASE, ...ONE_CLIENT, DEPLOY_ENV: "mainnet", CCTP_MODE: "real",
-    INITIAL_STEWARD_ADDRESS: TEST_STEWARD,
+    INITIAL_STEWARD_ADDRESS: TEST_STEWARD, ...TEST_RESERVE,
     WINDDOWN_DEADLINE: "2027-12-31T00:00:00Z", CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
   };
 
@@ -302,7 +350,7 @@ describe("crowdfund open time", () => {
   };
   const MAINNET_BASE = {
     ...SEPOLIA_BASE, ...ONE_CLIENT, DEPLOY_ENV: "mainnet", CCTP_MODE: "real",
-    INITIAL_STEWARD_ADDRESS: TEST_STEWARD,
+    INITIAL_STEWARD_ADDRESS: TEST_STEWARD, ...TEST_RESERVE,
     WINDDOWN_DEADLINE: "2027-12-31T00:00:00Z", WINDDOWN_REVENUE_THRESHOLD: "10000",
   };
 
@@ -342,7 +390,7 @@ describe("privacy pool treasury override", () => {
   };
   const MAINNET_BASE = {
     ...SEPOLIA_BASE, ...ONE_CLIENT, DEPLOY_ENV: "mainnet", CCTP_MODE: "real",
-    INITIAL_STEWARD_ADDRESS: TEST_STEWARD,
+    INITIAL_STEWARD_ADDRESS: TEST_STEWARD, ...TEST_RESERVE,
     WINDDOWN_DEADLINE: "2027-12-31T00:00:00Z", CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
     WINDDOWN_REVENUE_THRESHOLD: "10000",
   };
@@ -384,7 +432,7 @@ describe("timelock harden profile", () => {
     ...SEPOLIA_BASE, CLIENT_COUNT: "1",
     CLIENT_1_RPC: "https://c1", CLIENT_1_CHAIN_ID: "8453", CLIENT_1_CCTP_DOMAIN: "6",
     DEPLOY_ENV: "mainnet", CCTP_MODE: "real",
-    INITIAL_STEWARD_ADDRESS: TEST_STEWARD,
+    INITIAL_STEWARD_ADDRESS: TEST_STEWARD, ...TEST_RESERVE,
     WINDDOWN_DEADLINE: "2027-12-31T00:00:00Z", CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
     WINDDOWN_REVENUE_THRESHOLD: "10000",
   };
@@ -479,7 +527,7 @@ describe("initial steward and USDC steward budget", () => {
     CLIENT_1_RPC: "https://c1", CLIENT_1_CHAIN_ID: "8453", CLIENT_1_CCTP_DOMAIN: "6",
   };
   const MAINNET_BASE = {
-    ...SEPOLIA_BASE, ...ONE_CLIENT, DEPLOY_ENV: "mainnet", CCTP_MODE: "real",
+    ...SEPOLIA_BASE, ...ONE_CLIENT, DEPLOY_ENV: "mainnet", CCTP_MODE: "real", ...TEST_RESERVE,
     WINDDOWN_DEADLINE: "2027-12-31T00:00:00Z", CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
     WINDDOWN_REVENUE_THRESHOLD: "10000",
   };
@@ -584,7 +632,7 @@ describe("committed mainnet.env", () => {
       DEPLOYER_PRIVATE_KEY: "test-placeholder-not-a-real-key",
       REVENUE_LOCK_BENEFICIARIES_JSON: REVENUE_LOCK_JSON,
       CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
-      INITIAL_STEWARD_ADDRESS: TEST_STEWARD,
+      INITIAL_STEWARD_ADDRESS: TEST_STEWARD, ...TEST_RESERVE,
     });
     expect(() => validateCCTPConfig("hub")).to.not.throw();
   });
@@ -615,7 +663,7 @@ describe("committed mainnet.env", () => {
       DEPLOYER_PRIVATE_KEY: "test-placeholder-not-a-real-key",
       REVENUE_LOCK_BENEFICIARIES_JSON: REVENUE_LOCK_JSON,
       CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
-      INITIAL_STEWARD_ADDRESS: TEST_STEWARD,
+      INITIAL_STEWARD_ADDRESS: TEST_STEWARD, ...TEST_RESERVE,
     }).getNetworkConfig();
     expect(c.outflowConfig).to.deep.equal(SPEC_OUTFLOW);
   });

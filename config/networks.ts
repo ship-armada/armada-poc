@@ -116,7 +116,7 @@ export interface NetworkConfig {
    * All values are whole-token counts (no decimals). The deployer retains the remainder.
    *   Treasury:    7.8M — protocol treasury (65%)
    *   Crowdfund:   1.8M — backs MAX_SALE at $1/ARM
-   *   RevenueLock: 2.4M — team, advisors, airdrop and optional reserve (20% combined)
+   *   RevenueLock: 2.4M — team, advisors, airdrop and reserve (20% combined)
    *   Deployer remainder: 0
    */
   armDistribution: {
@@ -130,9 +130,10 @@ export interface NetworkConfig {
    * For local dev, Anvil default accounts are used as placeholders.
    */
   revenueLockBeneficiaries: RevenueLockBeneficiary[];
-  /** Optional reserve within the RevenueLock total. With a reserve enabled, the
+  /** Reserve within the RevenueLock total. With a reserve enabled, the
    * beneficiary list above contains only direct recipients (total minus reserve).
-   * Both fields must be explicitly set; neither a Safe nor an amount is invented. */
+   * Both fields must be explicitly set; neither a Safe nor an amount is invented.
+   * Required on mainnet and hardened Sepolia rehearsals, optional elsewhere. */
   revenueReserve?: { allocator: string; amount: string };
   /** Security council address for crowdfund cancel authority. Required for non-local. */
   securityCouncilAddress: string;
@@ -235,6 +236,29 @@ function revenueLockMaxIncreaseEnv(key: string, defaultValue: string): string {
     );
   }
   return value;
+}
+
+/**
+ * Read the revenue reserve (allocator Safe + cap). Both are set, or neither. Required on the
+ * launch path, mainnet and the hardened Sepolia rehearsal, because Launch 1 ships the reserve
+ * distributor and both values are immutable once deployed (#582). Optional elsewhere.
+ */
+function buildRevenueReserve(env: DeployEnv, hardenTimelock: boolean): NetworkConfig["revenueReserve"] {
+  const allocator = process.env.REVENUE_RESERVE_ALLOCATOR?.trim();
+  const amount = process.env.REVENUE_RESERVE_AMOUNT?.trim();
+  if (Boolean(allocator) !== Boolean(amount)) {
+    throw new Error("Set both REVENUE_RESERVE_ALLOCATOR and REVENUE_RESERVE_AMOUNT, or neither");
+  }
+  if (!allocator || !amount) {
+    if (env !== "local" && hardenTimelock) {
+      throw new Error(
+        "REVENUE_RESERVE_ALLOCATOR and REVENUE_RESERVE_AMOUNT are required on the launch path " +
+        "(mainnet, or HARDEN_TIMELOCK=true off-local): Launch 1 deploys the revenue reserve (#582)."
+      );
+    }
+    return undefined;
+  }
+  return { allocator, amount };
 }
 
 /** Decimals the whole-USD steward budget is scaled by. deploy_crowdfund confirms the hub USDC
@@ -395,12 +419,6 @@ let _cachedConfig: NetworkConfig | null = null;
 export function getNetworkConfig(): NetworkConfig {
   if (_cachedConfig) return _cachedConfig;
 
-  const reserveAllocator = process.env.REVENUE_RESERVE_ALLOCATOR?.trim();
-  const reserveAmount = process.env.REVENUE_RESERVE_AMOUNT?.trim();
-  if (Boolean(reserveAllocator) !== Boolean(reserveAmount)) {
-    throw new Error("Set both REVENUE_RESERVE_ALLOCATOR and REVENUE_RESERVE_AMOUNT, or neither");
-  }
-
   const env = (optionalEnv("DEPLOY_ENV", "local")) as DeployEnv;
   const cctpMode = (optionalEnv("CCTP_MODE", "mock")) as CCTPMode;
 
@@ -528,9 +546,7 @@ export function getNetworkConfig(): NetworkConfig {
       revenueLock: optionalEnv("ARM_REVENUE_LOCK_ALLOCATION", "2400000"),
     },
     revenueLockBeneficiaries,
-    revenueReserve: reserveAllocator && reserveAmount
-      ? { allocator: reserveAllocator, amount: reserveAmount }
-      : undefined,
+    revenueReserve: buildRevenueReserve(env, hardenTimelock),
     securityCouncilAddress: optionalEnv("SECURITY_COUNCIL_ADDRESS", ""),
     launchTeamAddress: optionalEnv("LAUNCH_TEAM_ADDRESS", ""),
     crowdfundOpenDelay: numEnv("CROWDFUND_OPEN_DELAY", 600),

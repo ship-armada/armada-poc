@@ -532,6 +532,7 @@ describe("RevenueCounter", function () {
   // upgrade the counter with no vote and no Launch Team approval — bypassing the
   // upgrade gate. Ownership is therefore fixed at initialization.
   describe("Ownership Lock", function () {
+    // WHY: the owner itself is the realistic attacker path (a passed governance proposal).
     it("should reject transferOwnership from the owner", async function () {
       await expect(
         revenueCounter.transferOwnership(alice.address)
@@ -539,6 +540,7 @@ describe("RevenueCounter", function () {
       expect(await revenueCounter.owner()).to.equal(owner.address);
     });
 
+    // WHY: renouncing would permanently disable upgrades and every owner-gated function.
     it("should reject renounceOwnership from the owner", async function () {
       await expect(
         revenueCounter.renounceOwnership()
@@ -546,6 +548,7 @@ describe("RevenueCounter", function () {
       expect(await revenueCounter.owner()).to.equal(owner.address);
     });
 
+    // WHY: the override replaces Ownable's access check, so non-owners must still be rejected.
     it("should reject transferOwnership and renounceOwnership from a non-owner", async function () {
       await expect(
         revenueCounter.connect(alice).transferOwnership(alice.address)
@@ -555,6 +558,7 @@ describe("RevenueCounter", function () {
       ).to.be.revertedWith("RevenueCounter: ownership is fixed");
     });
 
+    // WHY: the lock must not break the owner's legitimate powers (revenue attestation, upgrades).
     it("should keep owner-gated functions and upgrades working", async function () {
       await revenueCounter.addRevenue(ethers.parseUnits("1", 18));
       expect(await revenueCounter.recognizedRevenueUsd()).to.equal(ethers.parseUnits("1", 18));

@@ -386,6 +386,37 @@ describe("Governance Veto", function () {
       expect(await governor.state(proposalId)).to.equal(ProposalState.Queued);
     });
 
+    // WHY: overturning a veto ejects the Security Council and restores the proposal, so the
+    // overturning (AGAINST) side must reach quorum by itself. Under a participation quorum,
+    // honest votes to uphold the veto would help a below-quorum attacker overturn it.
+    it("should uphold veto when AGAINST leads but is below quorum on its own", async function () {
+      const [, , , , , eve] = await ethers.getSigners();
+      // Ratification quorum = 20% of eligible (35% of supply) = 840k ARM.
+      const overturnAmount = ethers.parseUnits("500000", ARM_DECIMALS); // below quorum
+      const upholdAmount = ethers.parseUnits("400000", ARM_DECIMALS);   // together: 900k >= quorum
+      await armToken.connect(alice).transfer(dave.address, overturnAmount);
+      await armToken.connect(alice).transfer(eve.address, upholdAmount);
+      await armToken.connect(dave).delegate(dave.address);
+      await armToken.connect(eve).delegate(eve.address);
+      await mineBlock();
+
+      const proposalId = await createAndQueueProposal(alice);
+      const ratId = await vetoProposal(proposalId);
+      expect(overturnAmount).to.be.lt(await governor.quorum(ratId));
+      expect(overturnAmount + upholdAmount).to.be.gte(await governor.quorum(ratId));
+
+      await governor.connect(dave).castVote(ratId, Vote.Against);
+      await governor.connect(eve).castVote(ratId, Vote.For);
+      await time.increase(SEVEN_DAYS + 1);
+
+      await expect(governor.resolveRatification(ratId))
+        .to.emit(governor, "RatificationResolved")
+        .withArgs(ratId, true);
+      expect(await governor.securityCouncil()).to.equal(carol.address);
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Canceled);
+      expect(await governor.state(ratId)).to.equal(ProposalState.Executed);
+    });
+
     it("should restore original proposal to Queued state when veto is denied", async function () {
       const proposalId = await createAndQueueProposal(alice);
       const ratId = await vetoProposal(proposalId);

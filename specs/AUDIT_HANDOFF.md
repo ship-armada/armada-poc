@@ -272,6 +272,27 @@ Record the auditor's written acknowledgement, exact commit SHA, review dates, fi
 and closure evidence in the audit package. Keep this item open until that evidence
 exists. The earlier RevenueLock review and passing CI do not establish scope coverage.
 
+## Governance-capture mitigation scope amendment
+
+**Status: written auditor acceptance required before mainnet deploy.** These changes close
+the routes by which one governance win (including a low-turnout or misleading proposal)
+could become permanent control. The Phase 1 scope must explicitly include:
+
+- `UpgradeGate.sol` (new): per-proposal Launch Team approval, gated selector list, two-step
+  team rotation.
+- `ArmadaGovernor.sol`: the execute-time gate check and immutable gate address; quorum
+  counting where the deciding side must reach quorum alone (Standard / Extended / Signaling:
+  FOR; veto overturn: AGAINST; Steward unchanged); every treasury ARM `distribute` classified
+  Extended; removal of the timelock `revokeRole` / `renounceRole` propose-time checks.
+- `RevenueCounter.sol`: `transferOwnership` / `renounceOwnership` revert.
+- `deploy_governance.ts` / `deploy_crowdfund.ts`: gate deployment before the governor
+  implementation; revoking the timelock's self-admin before the deployer renounces admin.
+- `verify-timelock.ts` / `verify_deployment.ts`: no `TIMELOCK_ADMIN_ROLE` holder at all,
+  governor-only operational roles (event replay), gate wiring, RevenueCounter owner.
+
+Record the auditor's written acknowledgement, exact commit SHA, review dates, findings and
+closure evidence in the audit package.
+
 ### Airdrop integration prerequisite
 
 If the approved airdrop allocation is held in RevenueLock, its distributor address

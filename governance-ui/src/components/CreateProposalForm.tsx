@@ -889,7 +889,7 @@ export function CreateProposalForm({ contracts, wallet, govData, onCreated }: Cr
                 onChange={(e) => setCohortIncludeDelegator(e.target.checked)}
               />
               <code className="text-blue-400">armToken.addAuthorizedDelegator(lock)</code>
-              <span className="text-neutral-500">— allow delegateOnBehalf</span>
+              <span className="text-neutral-500">— allow delegateOnBehalf (needs Launch Team approval before execution)</span>
             </label>
             <label className="flex items-center gap-2 text-xs text-neutral-300">
               <input

@@ -4,6 +4,7 @@ import "dotenv/config";
 import "./tasks/governance";
 import "./tasks/crowdfund";
 import "./tasks/crowdfund-safe";
+import "./tasks/upgrade-gate-safe";
 import { resolveDeployerSigner } from "./config/deployer-signer";
 import { installGasHeadroom, installLedgerOnlyAccounts, installSendGuard } from "./scripts/send-guard";
 
@@ -139,6 +140,7 @@ const config: HardhatUserConfig = {
       "contracts/governance/RevenueReserveDistributor.sol": { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
       "contracts/governance/ShieldPauseController.sol": { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
       "contracts/governance/TreasurySteward.sol":      { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
+      "contracts/governance/UpgradeGate.sol":          { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
       "contracts/crowdfund/ArmadaCrowdfund.sol":       { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
       "contracts/crowdfund/IArmadaCrowdfund.sol":      { version: "0.8.20", settings: { optimizer: { enabled: true, runs: 200 }, evmVersion: "shanghai" } },
     },

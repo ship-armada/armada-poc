@@ -70,6 +70,7 @@ describe("Reserve launch safety", function () {
     const data = timelock.interface.encodeFunctionData("updateDelay", [172800]);
     await (await timelock.schedule(address, 0, data, ethers.ZeroHash, ethers.ZeroHash, 0, nm.override())).wait();
     await (await timelock.execute(address, 0, data, ethers.ZeroHash, ethers.ZeroHash, nm.override())).wait();
+    await (await timelock.revokeRole(await timelock.TIMELOCK_ADMIN_ROLE(), address, nm.override())).wait();
     for (const role of [await timelock.PROPOSER_ROLE(), await timelock.EXECUTOR_ROLE(),
       await timelock.CANCELLER_ROLE(), await timelock.TIMELOCK_ADMIN_ROLE()]) {
       await (await timelock.renounceRole(role, deployer.address, nm.override())).wait();
@@ -103,7 +104,7 @@ describe("Reserve launch safety", function () {
     const { timelock, deployer } = await fixture();
     expect(await timelock.hasRole(await timelock.DEFAULT_ADMIN_ROLE(), deployer.address)).to.equal(false);
     const strict = await timelockBootstrapChecks(await timelock.getAddress(), deployer.address, 172800n);
-    expect(strict).to.have.length(5);
+    expect(strict).to.have.length(6);
     expect(strict.every(check => check.status === "FAIL")).to.equal(true);
     const partial = await timelockBootstrapChecks(await timelock.getAddress(), deployer.address);
     expect(partial.every(check => check.status === "WARN")).to.equal(true);
@@ -121,6 +122,45 @@ describe("Reserve launch safety", function () {
     await timelock.revokeRole(role, outsider.address);
     expect(await timelockUnexpectedRoleHolders(address, block, deployer.address))
       .not.to.include(`${outsider.address}: ${role}`);
+  });
+
+  // WHY: The upgrade gate is bypass-proof only if nobody can grant timelock roles. The
+  // timelock's admin role over itself is revoked at deploy, so a timelock still holding it
+  // (an interrupted or pre-hardening deploy) must fail the launch check.
+  it("fails the bootstrap check while the timelock retains admin over itself", async function () {
+    const { timelock, deployer } = await fixture();
+    const address = await timelock.getAddress();
+    const selfAdmin = (checks: { check: string; status: string }[]) =>
+      checks.find(c => c.check === "Timelock self-admin revoked");
+    expect(selfAdmin(await timelockBootstrapChecks(address, deployer.address, 172800n))?.status).to.equal("FAIL");
+    expect(selfAdmin(await timelockBootstrapChecks(address, deployer.address))?.status).to.equal("WARN");
+    await timelock.revokeRole(await timelock.TIMELOCK_ADMIN_ROLE(), address);
+    expect(selfAdmin(await timelockBootstrapChecks(address, deployer.address, 172800n))?.status).to.equal("PASS");
+  });
+
+  // WHY: The event scan permitted the timelock's own admin role. After the deploy-time
+  // revocation no account may hold it, the timelock included.
+  it("reports the timelock's own admin role as an unexpected holder", async function () {
+    const { timelock, deployer } = await fixture();
+    const block = (await timelock.deploymentTransaction()!.wait())!.blockNumber;
+    const address = await timelock.getAddress();
+    const admin = await timelock.TIMELOCK_ADMIN_ROLE();
+    expect(await timelockUnexpectedRoleHolders(address, block, deployer.address))
+      .to.include(`${address}: ${admin}`);
+    await timelock.revokeRole(admin, address);
+    expect(await timelockUnexpectedRoleHolders(address, block, deployer.address))
+      .not.to.include(`${address}: ${admin}`);
+  });
+
+  // WHY: An EXECUTOR role held by address(0) opens timelock execution to anyone, which
+  // would bypass the governor and its upgrade gate. It must always be reported.
+  it("reports an open role held by address(0)", async function () {
+    const { timelock, deployer } = await fixture();
+    const block = (await timelock.deploymentTransaction()!.wait())!.blockNumber;
+    const executor = await timelock.EXECUTOR_ROLE();
+    await timelock.grantRole(executor, ethers.ZeroAddress);
+    expect(await timelockUnexpectedRoleHolders(await timelock.getAddress(), block, deployer.address))
+      .to.include(`${ethers.ZeroAddress}: ${executor}`);
   });
 
   // WHY: Public RPC plans often cap eth_getLogs ranges below the scan's starting chunk.

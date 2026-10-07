@@ -20,6 +20,7 @@ import {
   type LaunchState,
   type TxBuilderFile,
 } from "../scripts/safe-batch";
+import { builderCalldata, deploySafeInfra, executeFile } from "./helpers/safe-tx-builder";
 
 const A = "0x00000000000000000000000000000000000000A1";
 const B = "0x00000000000000000000000000000000000000b2";
@@ -38,26 +39,6 @@ function openState(overrides: Partial<LaunchState> = {}): LaunchState {
   };
 }
 const row = (line: number, address: string, hop: 0 | 1 | 2, label = ""): LaunchRow => ({ line, address, hop, label });
-
-/**
- * Mirrors how the Safe Transaction Builder turns an imported file into calldata
- * (safe-react-apps apps/tx-builder/src/utils.ts: parseInputValue / parseStringToArray, and
- * convertToProposedTransactions). A file the builder cannot encode silently becomes "0x", so the
- * values we write must survive exactly this parsing.
- */
-function builderCalldata(tx: TxBuilderFile["transactions"][number]): string {
-  if (tx.data) return tx.data;
-  const method = tx.contractMethod!;
-  const values = method.inputs.map((input) => {
-    const raw = (tx.contractInputsValues ?? {})[input.name].trim();
-    if (input.type.endsWith("[]")) {
-      return raw.slice(1, -1).split(",").map((v) => v.trim().replace(/"/g, "").replace(/'/g, ""));
-    }
-    return raw;
-  });
-  const fragment = `function ${method.name}(${method.inputs.map((i) => i.type).join(",")})`;
-  return new ethers.Interface([fragment]).encodeFunctionData(method.name, values);
-}
 
 describe("Safe batches for launch-team and security-council actions", function () {
   describe("parseLaunchCsv", function () {
@@ -243,12 +224,6 @@ describe("Safe batches for launch-team and security-council actions", function (
   });
 
   describe("with a real Safe (cf-safe-batch / cf-safe-cancel tasks)", function () {
-    // Safe v1.4.1, the version the Safe web app deploys on mainnet, from @safe-global/safe-contracts.
-    const safeArtifact = (p: string) => JSON.parse(fs.readFileSync(path.join(__dirname, "..", "node_modules",
-      "@safe-global", "safe-contracts", "build", "artifacts", "contracts", p), "utf8"));
-    const SAFE = safeArtifact("Safe.sol/Safe.json");
-    const FACTORY = safeArtifact("proxies/SafeProxyFactory.sol/SafeProxyFactory.json");
-    const MULTISEND = safeArtifact("libraries/MultiSendCallOnly.sol/MultiSendCallOnly.json");
     const ARM = (n: number) => ethers.parseUnits(String(n), 18);
 
     let tmp: string;
@@ -264,23 +239,7 @@ describe("Safe batches for launch-team and security-council actions", function (
     async function fixture() {
       const signers = await hre.ethers.getSigners();
       const [deployer, treasury, o1, o2, o3, s1, s2, s3, x, y, z] = signers;
-      const deploy = async (a: any, ...args: unknown[]) => {
-        const c = await new hre.ethers.ContractFactory(a.abi, a.bytecode, deployer).deploy(...args);
-        await c.waitForDeployment();
-        return c as any;
-      };
-      const singleton = await deploy(SAFE);
-      const factory = await deploy(FACTORY);
-      const multiSend = await deploy(MULTISEND);
-      let salt = 0;
-      const createSafe = async () => {
-        const setup = singleton.interface.encodeFunctionData("setup", [[o1.address, o2.address, o3.address], 2,
-          ethers.ZeroAddress, "0x", ethers.ZeroAddress, ethers.ZeroAddress, 0, ethers.ZeroAddress]);
-        const receipt = await (await factory.createProxyWithNonce(await singleton.getAddress(), setup, salt++)).wait();
-        const created = receipt.logs.map((l: any) => { try { return factory.interface.parseLog(l); } catch { return null; } })
-          .find((e: any) => e?.name === "ProxyCreation");
-        return new hre.ethers.Contract(created.args.proxy, SAFE.abi, deployer) as any;
-      };
+      const { multiSend, createSafe } = await deploySafeInfra(deployer, [o1, o2, o3]);
       const launchSafe = await createSafe();
       const councilSafe = await createSafe();
 
@@ -296,32 +255,6 @@ describe("Safe batches for launch-team and security-council actions", function (
       await arm.transfer(cfAddress, ARM(1_800_000));
       await crowdfund.loadArm();
       return { crowdfund, cfAddress, launchSafe, councilSafe, multiSend, owners: [o1, o2], seeds: [s1, s2, s3], x, y, z };
-    }
-
-    /**
-     * Execute one Transaction Builder file as the Safe app would: calldata encoded from the
-     * file's method + values, several calls bundled through MultiSendCallOnly (delegatecall),
-     * and two owners' EIP-712 signatures over the SafeTx.
-     */
-    async function executeFile(safe: any, multiSend: any, owners: any[], file: TxBuilderFile) {
-      const calls = file.transactions.map((tx) => ({ to: tx.to, value: BigInt(tx.value), data: builderCalldata(tx) }));
-      const single = calls.length === 1;
-      const to = single ? calls[0].to : await multiSend.getAddress();
-      const data = single ? calls[0].data : multiSend.interface.encodeFunctionData("multiSend", [ethers.concat(calls.map((c) =>
-        ethers.solidityPacked(["uint8", "address", "uint256", "uint256", "bytes"], [0, c.to, c.value, ethers.dataLength(c.data), c.data])))]);
-      const operation = single ? 0 : 1;
-      const message = { to, value: 0n, data, operation, safeTxGas: 0n, baseGas: 0n, gasPrice: 0n,
-        gasToken: ethers.ZeroAddress, refundReceiver: ethers.ZeroAddress, nonce: await safe.nonce() };
-      const domain = { chainId: Number(file.chainId), verifyingContract: await safe.getAddress() };
-      const types = { SafeTx: [
-        { name: "to", type: "address" }, { name: "value", type: "uint256" }, { name: "data", type: "bytes" },
-        { name: "operation", type: "uint8" }, { name: "safeTxGas", type: "uint256" }, { name: "baseGas", type: "uint256" },
-        { name: "gasPrice", type: "uint256" }, { name: "gasToken", type: "address" }, { name: "refundReceiver", type: "address" },
-        { name: "nonce", type: "uint256" }] };
-      const sigs = await Promise.all(owners.map(async (o) => ({ owner: o.address.toLowerCase(), sig: await o.signTypedData(domain, types, message) })));
-      sigs.sort((a, b) => (a.owner < b.owner ? -1 : 1));
-      await (await safe.connect(owners[0]).execTransaction(to, 0, data, operation, 0, 0, 0,
-        ethers.ZeroAddress, ethers.ZeroAddress, ethers.concat(sigs.map((s) => s.sig)))).wait();
     }
 
     const readFiles = (dir: string) => fs.readdirSync(dir).filter((f) => f.endsWith(".json")).sort((a, b) =>

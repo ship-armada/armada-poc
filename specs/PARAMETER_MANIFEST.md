@@ -23,7 +23,7 @@ Single source of truth for every concrete value that enters the deployed contrac
 |---|---|---|---|---|
 | Crowdfund contract | `[TBD — set at deployment]` | Immutable | ☐ | Record after deploy |
 | Treasury | `[TBD]` | Immutable (constructor) | ☐ | Receives net USDC proceeds + swept ARM. `ArmadaTreasuryGov`, deployed by the launch and controlled by governance through the timelock (not a multisig). |
-| ROOT / Launch team | `[TBD]` | Immutable (constructor) | ☐ | Calls `addSeed()`, `launchTeamInvite()`. 2-of-3 Safe (checked at deploy). |
+| ROOT / Launch team | `[TBD]` | Immutable (constructor) | ☐ | Calls `addSeed()`, `launchTeamInvite()`. 2-of-3 Safe (checked at deploy). The same `LAUNCH_TEAM_ADDRESS` is the `UpgradeGate` approver: every governance proposal that upgrades a contract or authorizes an ARM delegator needs this Safe's approval to execute (GOVERNANCE.md §Launch Team upgrade gate). The gate's team can be rotated later only by the team itself (two-step handover). |
 | Security Council | `[TBD]` | Immutable (constructor) | ☐ | Calls `cancel()`. 2-of-3 multisig. |
 | ARM token | `[TBD]` | Immutable (constructor) | ☐ | 18 decimals. Verify against official deployment. |
 | USDC token | `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` (Ethereum mainnet) | Immutable (constructor) | ☐ | `HUB_USDC` in `config/mainnet.env`; on-chain: 6 decimals, symbol `USDC`, `isMinter(TokenMinterV2)` true. 6 decimals. Must be the exact USDC contract address on the deployment chain — not a human label. Verify against Circle's official deployment list: https://developers.circle.com/stablecoins/docs/usdc-on-main-networks |

@@ -16,6 +16,12 @@ export async function timelockBootstrapChecks(address: string, deployer: string,
       status: retained ? (expectedDelay === undefined ? "WARN" : "FAIL") : "PASS",
       detail: retained ? `Deployer retains ${name}` : "" });
   }
+  // With no admin left, nobody can grant timelock roles, so the governor stays the only
+  // proposer/executor and its upgrade gate cannot be bypassed.
+  const selfAdmin = await timelock.hasRole(await timelock.TIMELOCK_ADMIN_ROLE(), address);
+  checks.push({ check: "Timelock self-admin revoked",
+    status: selfAdmin ? (expectedDelay === undefined ? "WARN" : "FAIL") : "PASS",
+    detail: selfAdmin ? "Timelock still holds TIMELOCK_ADMIN_ROLE over itself" : "" });
   if (expectedDelay !== undefined) {
     const actual = await timelock.getMinDelay();
     checks.push({ check: "Production timelock delay", status: actual === expectedDelay ? "PASS" : "FAIL",
@@ -61,9 +67,10 @@ export async function timelockUnexpectedRoleHolders(address: string, fromBlock: 
   const unexpected: string[] = [];
   for (const account of accounts.values()) {
     for (const role of roles) {
-      const permitted = role === roles[0]
-        ? ethers.getAddress(account) === ethers.getAddress(address)
-        : ethers.getAddress(account) === ethers.getAddress(expectedGovernor);
+      // Nobody may hold the admin role (the timelock's own admin is revoked at deploy);
+      // the operational roles belong to the governor alone.
+      const permitted = role !== roles[0]
+        && ethers.getAddress(account) === ethers.getAddress(expectedGovernor);
       if (await timelock.hasRole(role, account) && !permitted) unexpected.push(`${account}: ${role}`);
     }
   }

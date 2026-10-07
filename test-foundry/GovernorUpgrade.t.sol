@@ -16,6 +16,8 @@ import "./helpers/GovernorDeployHelper.sol";
 contract ArmadaGovernorV2Mock is ArmadaGovernor {
     uint256 public newV2Variable;
 
+    constructor(address _upgradeGate) ArmadaGovernor(_upgradeGate) {}
+
     function setNewV2Variable(uint256 val) external {
         require(msg.sender == address(timelock), "not timelock");
         newV2Variable = val;
@@ -89,7 +91,7 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
     // ============ Upgrade Authorization ============
 
     function test_upgrade_viaTimelockSucceeds() public {
-        ArmadaGovernorV2Mock v2Impl = new ArmadaGovernorV2Mock();
+        ArmadaGovernorV2Mock v2Impl = new ArmadaGovernorV2Mock(address(governor.upgradeGate()));
 
         // Upgrade via timelock
         vm.prank(address(timelock));
@@ -101,7 +103,7 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
     }
 
     function test_upgrade_fromNonTimelockReverts() public {
-        ArmadaGovernorV2Mock v2Impl = new ArmadaGovernorV2Mock();
+        ArmadaGovernorV2Mock v2Impl = new ArmadaGovernorV2Mock(address(governor.upgradeGate()));
 
         vm.prank(attacker);
         vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotTimelock.selector));
@@ -109,7 +111,7 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
     }
 
     function test_upgrade_fromDeployerReverts() public {
-        ArmadaGovernorV2Mock v2Impl = new ArmadaGovernorV2Mock();
+        ArmadaGovernorV2Mock v2Impl = new ArmadaGovernorV2Mock(address(governor.upgradeGate()));
 
         vm.prank(deployer);
         vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotTimelock.selector));
@@ -134,7 +136,7 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
         assertEq(governor.securityCouncil(), address(0x5C5C));
 
         // Upgrade
-        ArmadaGovernorV2Mock v2Impl = new ArmadaGovernorV2Mock();
+        ArmadaGovernorV2Mock v2Impl = new ArmadaGovernorV2Mock(address(governor.upgradeGate()));
         vm.prank(address(timelock));
         governor.upgradeTo(address(v2Impl));
 
@@ -163,7 +165,7 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
         assertEq(quorum, 2000);
 
         // Upgrade
-        ArmadaGovernorV2Mock v2Impl = new ArmadaGovernorV2Mock();
+        ArmadaGovernorV2Mock v2Impl = new ArmadaGovernorV2Mock(address(governor.upgradeGate()));
         vm.prank(address(timelock));
         governor.upgradeTo(address(v2Impl));
 
@@ -188,7 +190,7 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
     }
 
     function test_initialize_implementationCannotBeInitialized() public {
-        ArmadaGovernor impl = new ArmadaGovernor();
+        ArmadaGovernor impl = new ArmadaGovernor(address(governor.upgradeGate()));
 
         vm.expectRevert("Initializable: contract is already initialized");
         impl.initialize(
@@ -215,7 +217,7 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
         assertTrue(governor.windDownContractSet());
 
         // Upgrade
-        ArmadaGovernorV2Mock v2Impl = new ArmadaGovernorV2Mock();
+        ArmadaGovernorV2Mock v2Impl = new ArmadaGovernorV2Mock(address(governor.upgradeGate()));
         vm.prank(address(timelock));
         governor.upgradeTo(address(v2Impl));
 

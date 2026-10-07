@@ -53,7 +53,19 @@ This means:
 
 Delegation is free to change at any time. Redelegating takes effect for proposals created after the next block.
 
-**Votes can be changed during the voting period.** A voter may switch between FOR, AGAINST, and ABSTAIN at any time while voting is active. Only the final vote state at voting close counts. This encourages early participation — voters aren't penalized for updating their position as discussion evolves. **Votes cannot be withdrawn entirely** — once cast, the voter's weight counts toward quorum regardless of subsequent switches. This means quorum only increases during voting, preventing quorum manipulation (vote to push above threshold, then withdraw to drop below).
+**Votes can be changed during the voting period.** A voter may switch between FOR, AGAINST, and ABSTAIN at any time while voting is active. Only the final vote state at voting close counts. This encourages early participation — voters aren't penalized for updating their position as discussion evolves. **Votes cannot be withdrawn entirely** — once cast, a vote can only be moved between FOR, AGAINST, and ABSTAIN.
+
+### Quorum counting
+
+**The side that changes state must reach quorum by itself.** AGAINST and ABSTAIN votes never help a proposal pass:
+
+| Proposal type | Passes / takes effect when |
+|---|---|
+| Standard, Extended, Signaling | FOR votes ≥ quorum **and** FOR > AGAINST |
+| Veto ratification (overturning the veto) | AGAINST votes ≥ quorum **and** AGAINST > FOR — otherwise the veto stands |
+| Steward (pass-by-default) | Defeated only when total participation (FOR + AGAINST + ABSTAIN) ≥ quorum **and** AGAINST > FOR |
+
+Counting only the deciding side prevents a participation paradox: if every vote counted toward quorum, a losing minority that voted AGAINST would help a below-quorum FOR side reach quorum, so opponents would be better off not voting at all. Under this rule voting AGAINST is never counter-productive. Steward proposals keep total participation because there the deciding side is the *defeat*, and participation counting makes blocking a bad steward spend easier, not harder.
 
 **One level of delegation only.** A delegate cannot redelegate to a third party. Voting power terminates at the delegatee.
 
@@ -139,8 +151,8 @@ until they delegate; sponsored batches retain this consequence by explicit desig
 3. ACTIVE   → Voting open: FOR / AGAINST / ABSTAIN (votes changeable during this period)
               Standard:  7 days
               Extended: 14 days
-4. OUTCOME  → DEFEATED (quorum not met, or majority AGAINST)
-            → SUCCEEDED (quorum met + majority FOR)
+4. OUTCOME  → DEFEATED (FOR below quorum, or FOR not greater than AGAINST)
+            → SUCCEEDED (FOR alone meets quorum + FOR greater than AGAINST)
 5. QUEUED   → Execution delay — Security Council may veto during this window (see §Security Council)
               Standard: 48 hours
               Extended:  7 days
@@ -180,6 +192,7 @@ loosens constraints, or increases risk exposure:
 
 * Fee parameter increases
 * Treasury allocation via `distribute()` or `distributeETH()` exceeding 5% of current treasury balance (the 5% rule applies to the per-tx distribution channel only — `stewardSpend()` is governed by the per-token Steward Budget table; see §Treasury Steward)
+* Any treasury `distribute()` of ARM, regardless of amount. Distributed ARM becomes permanent voting power (non-transferable ARM can still be delegated), so a Standard-bar ARM grant repeated each outflow window would let a low-turnout win compound into a lasting majority.
 * Treasury Steward election
 * Security Council seat changes via governance
 * Contract upgrades (governor, fee module, revenue counter)
@@ -211,8 +224,10 @@ constraints, or reduces risk exposure:
 * Quorum floor increases
 * Steward budget decreases (remove token, decrease per-token limit, shorten window)
 
-All other proposals — including treasury allocations within 5%
+All other proposals — including non-ARM treasury allocations within 5%
 and routine operational actions — are **standard**.
+
+**Implementation note: fail-closed classification.** The governor only treats a call as Standard if its function selector is explicitly registered as Standard. Any selector that is not registered — including newly added protocol functions — classifies as Extended until governance registers it.
 
 **Design principle: tightening is easy, loosening is hard.** Actions
 that reduce the protocol's attack surface or revoke granted
@@ -315,8 +330,9 @@ Most reusable governance parameters listed above are themselves governable — l
 |----------|-------|---------------|
 | **Fees** | Fee increases (shield fee, yield fee, volume tiers, integrator terms) | Extended |
 | **Fees** | Fee decreases | Standard |
-| **Treasury operations** | `distribute()` / `distributeETH()` allocations ≤5% of treasury balance | Standard |
+| **Treasury operations** | `distribute()` / `distributeETH()` allocations ≤5% of treasury balance (non-ARM tokens and ETH) | Standard |
 | **Treasury operations** | `distribute()` / `distributeETH()` allocations >5% of treasury balance | Extended |
+| **Treasury operations** | `distribute()` of ARM, any amount | Extended |
 | **Treasury operations** | `stewardSpend()` (within an authorized per-token Steward Budget) | Steward (pass-by-default; per-token budget is the gate, not the 5% rule — see §Treasury Steward) |
 | **Parameters** | Batch windows, relayer config, yield sources | Standard |
 | **Parameters** | Activity shaping defaults (transaction size constraints, rate limits, recommended ranges) | Extended |
@@ -333,12 +349,16 @@ Most reusable governance parameters listed above are themselves governable — l
 | **Security Council** | SC address replacement via governance | Extended |
 | **Adapters** | Authorize new adapter (loosening — grants protocol access) | Extended |
 | **Adapters** | Deauthorize / fully deauthorize adapter (tightening — revokes access) | Standard |
-| **Upgrades** | Governor contract upgrade (UUPS, governance-gated) | Extended |
-| **Upgrades** | Fee module upgrade (UUPS, governance-gated) | Extended |
-| **Upgrades** | Revenue counter upgrade (UUPS, governance-gated) | Extended |
+| **Upgrades** | Governor contract upgrade (UUPS, governance-gated) | Extended + Launch Team approval |
+| **Upgrades** | Fee module upgrade (UUPS, governance-gated) | Extended + Launch Team approval |
+| **Upgrades** | Revenue counter upgrade (UUPS, governance-gated) | Extended + Launch Team approval |
 | **Revenue** | Non-stablecoin revenue attestation (`addRevenue` increment, routine; `attestRevenue` SET, confirmed-error correction) | Standard |
 | **Revenue** | Expand qualifying revenue definition | Extended |
 | **ARM token** | Add address to transfer whitelist (add-only, no removal) | Extended |
+| **ARM token** | Authorize an ARM delegator (`addAuthorizedDelegator`, add-only, e.g. a follow-on RevenueLock cohort) | Extended + Launch Team approval |
+| **ARM token** | Enable global transfers (`setTransferable(true)`, one-way) | Standard |
+| **Governance** | Proposal classification registry (add/remove Extended or Standard selectors) | Extended |
+| **Governance** | Add a quorum-excluded address (`addExcludedAddress`, add-only) | Extended |
 | **Signaling** | Non-executable preference vote (no execution, no bond) | Standard |
 
 ### Immutable
@@ -353,6 +373,9 @@ Most reusable governance parameters listed above are themselves governable — l
 | **Crowdfund contract** | All parameters (see PARAMETER_MANIFEST.md §12) |
 | **ARM token contract** | Non-upgradeable. No proxy. All invariants in ARM_TOKEN.md §12 are unconditional. |
 | **Revenue-lock contract** | Milestone schedule and release logic. Beneficiaries must trust these cannot change. |
+| **Timelock roles** | Governor holds PROPOSER / EXECUTOR / CANCELLER; nobody holds admin, so no role can ever be granted or revoked (§Contract Upgrade Scope). |
+| **Revenue counter ownership** | Fixed to the timelock; `transferOwnership` / `renounceOwnership` revert. |
+| **Upgrade gate** | Gated selector list (`upgradeTo`, `upgradeToAndCall`, `addAuthorizedDelegator`). Only the Launch Team can change the gate's team address (§Launch Team upgrade gate). |
 | **Wind-down contract** | Trigger mechanism (conditions are deterministic), treasury sweep authority, `setTransferable(true)` authority, and `windDownActive` flag on pause contract. Parameters (threshold, deadline) are governable but the trigger logic itself is immutable. |
 
 ### Pool access conditions
@@ -493,7 +516,7 @@ When the Security Council vetoes a queued proposal:
      separate transaction — restoration does not auto-execute.
      No re-submission is required. The community has voted twice
      (once to pass the original proposal, once to deny the veto).
-   - **Quorum not met:** Veto stands by default. If the community can't mobilize to override, the SC's security judgment holds.
+   - **AGAINST below quorum:** Veto stands by default. If the community can't mobilize to override, the SC's security judgment holds. Overturning requires AGAINST votes alone to reach quorum and to exceed FOR — votes upholding the veto never count toward the overturn.
 4. Ratification uses **standard quorum** (20% of circulating voting power or 100,000 ARM).
 
 **The ejection consequence is the accountability mechanism.** The SC only vetoes when they're genuinely confident the community will back them — vetoing a proposal the community wanted means losing the seat. This replaces the need for a separate SC bond or punishment mechanism.
@@ -833,6 +856,22 @@ If governance submits a new loosening change while a previous one is still pendi
 
 ## Contract Upgrade Scope
 
+**Timelock roles are fixed at deploy.** The governor holds the timelock's PROPOSER, EXECUTOR and CANCELLER roles, and nobody holds `TIMELOCK_ADMIN_ROLE`: the launch deploy revokes the timelock's admin role over itself before the deployer renounces its own. No proposal can therefore grant a second proposer or executor (which could schedule calls that skip the governor's checks) or strip the governor's roles; such calls revert at execution. Governance changes happen through in-place upgrades of the governor proxy, not by pointing the timelock at a different contract. `verify_deployment.ts` checks this layout by replaying the timelock's role events.
+
+### Launch Team upgrade gate
+
+A governor upgrade can replace every other safety mechanism, and a newly authorized ARM delegator can re-delegate any holder's votes. Either would turn a single governance win — including one won on low turnout or by a misleading proposal — into permanent control. These actions therefore need two independent sign-offs: a passed governance proposal **and** the Launch Team's approval of that exact proposal.
+
+- **Gated actions:** any proposal action calling `upgradeTo(address)` or `upgradeToAndCall(address,bytes)` on any contract (governor, revenue counter, fee module, future UUPS contracts), or `addAuthorizedDelegator(address)` on the ARM token. The list is fixed in the `UpgradeGate` contract's code; governance cannot change it.
+- **Default fail.** `ArmadaGovernor.execute()` asks the gate before executing. A proposal with a gated action and no approval cannot execute. Proposals without gated actions are unaffected.
+- **Exact-proposal approval.** The Launch Team (2-of-3 Safe) approves `(proposalId, targets, values, calldatas)`. An approval cannot be reused by any other proposal, so re-proposing an older implementation (for example rolling back past a security fix) needs a fresh approval. The team can revoke an approval at any time before execution, and is expected to review during the voting period and execution delay.
+- **Neither side acts alone.** The Launch Team cannot propose or execute anything; governance cannot execute a gated proposal without the team. A compromised Launch Team Safe gains nothing without also winning a vote.
+- **Team rotation is the team's own decision.** The team nominates a successor (`transferLaunchTeam`) who must accept (`acceptLaunchTeam`); governance cannot redirect the gate.
+- **Fixed in the governor implementation.** The gate's address is an immutable of the governor implementation. Changing it needs a governor upgrade, which the current gate must approve. Approving any governor upgrade includes confirming the new implementation's gate address and that the governor still responds correctly to the wind-down contract.
+- **No sunset.** The gate is intended as launch-phase protection. Removing it later is itself a gated governor upgrade, and the replacement must keep an on-chain rule for `addAuthorizedDelegator` (for example, accepting only factory-deployed canonical RevenueLock cohorts) — otherwise delegation hijack returns.
+
+The gate does not cover bounded actions such as treasury distributions, outflow-limit changes or parameter updates; those remain ordinary governance, constrained by outflow limits, the activation delay and the Security Council veto.
+
 | Contract | Upgradeable? | Mechanism | Why |
 |---|---|---|---|
 | **ARM token** | No | — | Trust bedrock. All invariants are unconditional. See ARM_TOKEN.md §9. |
@@ -841,9 +880,9 @@ If governance submits a new loosening change while a previous one is still pendi
 | **Redemption contract** | No | — | Permissionless post-wind-down. Four excluded addresses hardcoded in constructor (treasury, revenue-lock, crowdfund, redemption). No admin, no governance interaction. |
 | **Revenue-lock contract** | No | — | Beneficiaries must trust the milestone schedule and release logic cannot change. |
 | **Wind-down contract** | No | — | Trigger conditions must be deterministic and immutable. Has pre-authorized authority to: sweep non-ARM treasury assets to redemption contract (permissionless per-token), call `setTransferable(true)`, and set `windDownActive` flag on pause contract. Parameters (threshold, deadline) are governable, but the trigger mechanism itself cannot be replaced. |
-| **Governor** | Yes | UUPS, governance-gated via timelock | Must be extensible — new proposal types, bond mechanics, steward logic. Extended proposal required. |
-| **Fee module** | Yes | UUPS, governance-gated via timelock | Fee tiers, integrator terms, yield fee rates. New fee types as protocol evolves. Extended proposal required. |
-| **Revenue counter** | Yes | UUPS, governance-gated via timelock | Interface is fixed (`recognizedRevenueUsd() returns uint256`). Implementation can be upgraded to handle new revenue types. The immutable revenue-lock contract reads the proxy address. **Note:** if the fee module is replaced (new proxy address), the RevenueCounter implementation must be upgraded to point at the new fee-collector — these upgrades must be coordinated. |
+| **Governor** | Yes | UUPS, governance-gated via timelock + Launch Team approval | Must be extensible — new proposal types, bond mechanics, steward logic. Extended proposal required, and the Launch Team must approve the proposal (§Launch Team upgrade gate). |
+| **Fee module** | Yes | UUPS, governance-gated via timelock + Launch Team approval | Fee tiers, integrator terms, yield fee rates. New fee types as protocol evolves. Extended proposal required, and the Launch Team must approve the proposal (§Launch Team upgrade gate). |
+| **Revenue counter** | Yes | UUPS, governance-gated via timelock + Launch Team approval | Interface is fixed (`recognizedRevenueUsd() returns uint256`). Implementation can be upgraded to handle new revenue types. The immutable revenue-lock contract reads the proxy address. Ownership is fixed to the timelock at initialization: `transferOwnership` and `renounceOwnership` always revert, so the upgrade authority cannot be handed to another address. **Note:** if the fee module is replaced (new proxy address), the RevenueCounter implementation must be upgraded to point at the new fee-collector — these upgrades must be coordinated. |
 | **Adapters** (CCTP, Aave, future) | Not upgradeable — additive registry | Governor maintains authorized adapter registry | New adapters are deployed as independent contracts and authorized via governance proposal. Old adapters can be deauthorized or set to withdraw-only. Each adapter is independently auditable. See §Adapter Registry. |
 | **Shielded pool** (Railgun) | No | — | Core privacy infrastructure. Immutable. |
 
@@ -927,7 +966,7 @@ Token governance represents ARM holders. But Armada's value comes primarily from
 
 ### Governance reality
 
-**At launch, governance security depends on the integrity of the top delegates, not on token distribution.** Power concentrates in 3-5 early delegates. Governance is slow (7-14 day cycles). Protection comes from outflow limits and visibility windows, not from voting mechanics. The system is designed to degrade predictably (bounded leakage, slow degradation) rather than catastrophically (full drain, permanent capture). This is intentional — the outflow limits and SC veto are the real safety rails, and governance voting is the steering mechanism within those rails.
+**At launch, governance security depends on the integrity of the top delegates, not on token distribution.** Power concentrates in 3-5 early delegates. Governance is slow (7-14 day cycles). Protection comes from outflow limits and visibility windows, not from voting mechanics. The system is designed to degrade predictably (bounded leakage, slow degradation) rather than catastrophically (full drain, permanent capture). This is intentional — the outflow limits, the Launch Team upgrade gate and the SC veto are the real safety rails, and governance voting is the steering mechanism within those rails. The rails do different jobs: outflow limits bound how fast funds can leave; the upgrade gate stops any single governance win (including a low-turnout or misleading one) from becoming permanent control through an upgrade or a new ARM delegator; the SC veto stops mistaken or suspicious proposals but can be overturned by a ratification vote, so it is not a defence against a genuine majority.
 
 ### Future governance upgrades (governor is UUPS-upgradeable)
 

@@ -49,6 +49,22 @@ export interface ProposalData {
   // Veto linkage (populated for relevant proposal types)
   vetoedProposalId?: number // set on VetoRatification proposals
   ratificationId?: number  // set on proposals that have been vetoed
+  // Set when the proposal contains a gated action (contract upgrade or new ARM delegator): it can
+  // only execute once the Launch Team has approved it on the governor's UpgradeGate.
+  launchTeamApproval?: { approved: boolean; launchTeam: string }
+}
+
+/**
+ * Votes that count toward quorum, mirroring ArmadaGovernor: the side that changes state
+ * must reach quorum by itself. FOR for Standard/Extended/Signaling, AGAINST (the overturn)
+ * for veto ratifications, and total participation for pass-by-default Steward proposals.
+ */
+export function quorumCountingVotes(
+  p: Pick<ProposalData, 'proposalType' | 'forVotes' | 'againstVotes' | 'abstainVotes'>,
+): bigint {
+  if (p.proposalType === ProposalType.Steward) return p.forVotes + p.againstVotes + p.abstainVotes
+  if (p.proposalType === ProposalType.VetoRatification) return p.againstVotes
+  return p.forVotes
 }
 
 /** Treasury outflow rate-limit configuration for a single token */

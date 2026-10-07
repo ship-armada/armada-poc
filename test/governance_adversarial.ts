@@ -223,26 +223,27 @@ describe("Governance Adversarial", function () {
       expect(await governor.state(proposalId)).to.equal(ProposalState.Defeated);
     });
 
-    it("quorum reached with 100% abstain votes results in Defeated", async function () {
+    // WHY: abstain is purely expressive — a proposal with no FOR support must not pass
+    // however many holders abstain.
+    it("100% abstain votes results in Defeated", async function () {
       const proposalId = await createProposal(alice);
 
       await time.increase(TWO_DAYS + 1);
 
-      // Both vote abstain — reaches quorum but forVotes = 0, againstVotes = 0
+      // Both vote abstain — forVotes = 0, againstVotes = 0
       await governor.connect(alice).castVote(proposalId, Vote.Abstain);
       await governor.connect(bob).castVote(proposalId, Vote.Abstain);
 
       await time.increase(EXTENDED_VOTING_PERIOD + 1);
 
-      // Total participation (35% of supply abstain) >= quorum (30% of eligible) → quorum reached
-      // But forVotes (0) > againstVotes (0) is false → Defeated
+      // Abstain does not count toward quorum: forVotes (0) < quorum → Defeated
       expect(await governor.state(proposalId)).to.equal(ProposalState.Defeated);
     });
 
-    it("against votes count toward quorum (participation model)", async function () {
+    // WHY: opposition with no FOR side present must defeat the proposal (FOR is below quorum).
+    it("against votes alone defeat a proposal", async function () {
       // Eligible supply = 35% of total. Extended quorum = 30% of eligible = 10.5% of total.
-      // Bob (15% of supply) votes Against → exceeds quorum on its own.
-      // Proposal should be Defeated (quorum met, but forVotes=0).
+      // Bob (15% of supply) votes Against; nobody votes For.
       const proposalId = await createProposal(alice);
 
       await time.increase(TWO_DAYS + 1);
@@ -251,13 +252,68 @@ describe("Governance Adversarial", function () {
 
       await time.increase(EXTENDED_VOTING_PERIOD + 1);
 
-      // Quorum reached via against votes alone (15% >= 10.5%)
-      // Defeated because forVotes (0) > againstVotes is false
+      // forVotes (0) < quorum, and forVotes > againstVotes is false → Defeated
       expect(await governor.state(proposalId)).to.equal(ProposalState.Defeated);
+    });
 
-      // Verify the quorum threshold was indeed met
-      const q = await governor.quorum(proposalId);
-      expect(BOB_AMOUNT).to.be.gte(q);
+    // WHY: under a participation quorum, a losing opposition that votes AGAINST helps the
+    // proposal reach quorum. An attacker below quorum could then pass a proposal *because*
+    // honest holders voted against it. Only FOR votes may count toward quorum.
+    it("against votes do not help a below-quorum For side pass", async function () {
+      // Extended quorum = 30% of eligible (35% of supply) = 10.5% of supply = 1.26M ARM.
+      const attackerAmount = ethers.parseUnits("800000", ARM_DECIMALS); // below quorum
+      const opposerAmount = ethers.parseUnits("600000", ARM_DECIMALS);  // together: 1.4M >= quorum
+      await armToken.connect(alice).transfer(carol.address, attackerAmount);
+      await armToken.connect(alice).transfer(dave.address, opposerAmount);
+      await armToken.connect(carol).delegate(carol.address);
+      await armToken.connect(dave).delegate(dave.address);
+      await mineBlock();
+
+      const proposalId = await createProposal(alice);
+      expect(attackerAmount).to.be.lt(await governor.quorum(proposalId));
+      expect(attackerAmount + opposerAmount).to.be.gte(await governor.quorum(proposalId));
+
+      await time.increase(TWO_DAYS + 1);
+      await governor.connect(carol).castVote(proposalId, Vote.For);
+      await governor.connect(dave).castVote(proposalId, Vote.Against);
+      await time.increase(EXTENDED_VOTING_PERIOD + 1);
+
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Defeated);
+    });
+
+    // WHY: same paradox as above via ABSTAIN — under an OZ-style for+abstain quorum, abstainers
+    // would push a below-quorum FOR side over the line.
+    it("abstain votes do not help a below-quorum For side pass", async function () {
+      const forAmount = ethers.parseUnits("800000", ARM_DECIMALS);     // below 1.26M quorum
+      const abstainAmount = ethers.parseUnits("600000", ARM_DECIMALS);
+      await armToken.connect(alice).transfer(carol.address, forAmount);
+      await armToken.connect(alice).transfer(dave.address, abstainAmount);
+      await armToken.connect(carol).delegate(carol.address);
+      await armToken.connect(dave).delegate(dave.address);
+      await mineBlock();
+
+      const proposalId = await createProposal(alice);
+
+      await time.increase(TWO_DAYS + 1);
+      await governor.connect(carol).castVote(proposalId, Vote.For);
+      await governor.connect(dave).castVote(proposalId, Vote.Abstain);
+      await time.increase(EXTENDED_VOTING_PERIOD + 1);
+
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Defeated);
+    });
+
+    // WHY: the rule must not over-correct — a FOR side that meets quorum alone and beats
+    // AGAINST passes regardless of how much opposition votes.
+    it("a For side at quorum on its own passes despite against votes", async function () {
+      const proposalId = await createProposal(alice);
+
+      await time.increase(TWO_DAYS + 1);
+      // Alice (20% of supply) alone exceeds the 10.5%-of-supply quorum; Bob (15%) opposes.
+      await governor.connect(alice).castVote(proposalId, Vote.For);
+      await governor.connect(bob).castVote(proposalId, Vote.Against);
+      await time.increase(EXTENDED_VOTING_PERIOD + 1);
+
+      expect(await governor.state(proposalId)).to.equal(ProposalState.Succeeded);
     });
 
     it("propose with exactly threshold voting power succeeds", async function () {
@@ -298,7 +354,7 @@ describe("Governance Adversarial", function () {
 
       await time.increase(TWO_DAYS + 1);
 
-      // Bob votes against (alone) — quorum reached but forVotes=0 → Defeated
+      // Bob votes against (alone) — forVotes=0 is below quorum → Defeated
       await governor.connect(bob).castVote(proposalId, Vote.Against);
 
       await time.increase(EXTENDED_VOTING_PERIOD + 1);
@@ -461,7 +517,7 @@ describe("Governance Adversarial", function () {
   describe("Constructor Zero-Address Validation", function () {
     it("ArmadaGovernor rejects zero armToken", async function () {
       const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-      const impl = await ArmadaGovernor.deploy();
+      const impl = await ArmadaGovernor.deploy(await governor.upgradeGate());
       await impl.waitForDeployment();
       const initData = ArmadaGovernor.interface.encodeFunctionData("initialize", [
         ethers.ZeroAddress,
@@ -476,7 +532,7 @@ describe("Governance Adversarial", function () {
 
     it("ArmadaGovernor rejects zero timelock", async function () {
       const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-      const impl = await ArmadaGovernor.deploy();
+      const impl = await ArmadaGovernor.deploy(await governor.upgradeGate());
       await impl.waitForDeployment();
       const initData = ArmadaGovernor.interface.encodeFunctionData("initialize", [
         await armToken.getAddress(),
@@ -491,7 +547,7 @@ describe("Governance Adversarial", function () {
 
     it("ArmadaGovernor rejects zero treasury", async function () {
       const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-      const impl = await ArmadaGovernor.deploy();
+      const impl = await ArmadaGovernor.deploy(await governor.upgradeGate());
       await impl.waitForDeployment();
       const initData = ArmadaGovernor.interface.encodeFunctionData("initialize", [
         await armToken.getAddress(),

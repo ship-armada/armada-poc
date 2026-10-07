@@ -592,6 +592,30 @@ Each alert must include:
 
 ---
 
+## 12f. Upgrade Gate and Governance-Capture Monitor
+
+**What:** Alert on every governance action that could turn one vote into permanent control, and on every change to the Launch Team gate.
+
+**Why:** Upgrades and new ARM delegators execute only with Launch Team approval (GOVERNANCE.md §Launch Team upgrade gate), but the team must see them early to review in time. Detection at proposal creation gives the full voting period plus execution delay (~23 days for Extended). Timelock role changes should never happen after deploy (nobody holds admin), so any such event means the role layout is not what verification checked.
+
+**Signals:**
+- `ProposalCreated` where the gate's `requiresApproval(calldatas)` is true (read the actions with `getProposalActions`) — a gated proposal entered the pipeline.
+- UpgradeGate `ProposalApproved`, `ProposalApprovalRevoked`, `LaunchTeamTransferStarted`, `LaunchTeamTransferred`.
+- `Upgraded(implementation)` on the governor or RevenueCounter proxies.
+- ArmadaToken `AuthorizedDelegatorAdded`.
+- TimelockController `RoleGranted` / `RoleRevoked` after the deploy block.
+
+**Severity:** P1 for a gated `ProposalCreated`, `LaunchTeamTransferStarted`, any timelock role event, and any `Upgraded` / `AuthorizedDelegatorAdded` without a matching earlier `ProposalApproved`; P2 for approvals, revocations and expected upgrades.
+
+**Response:**
+- Gated proposal: Launch Team reviews per `docs/safe-launch-batches.md` §Launch Team upgrade approvals; prepare the decision with `npx hardhat gate-safe-approve --proposal <id>` only after the checklist passes.
+- Unexpected `LaunchTeamTransferStarted`: the current team overwrites the nomination (`transferLaunchTeam` to itself) before the nominee accepts, and rotates compromised Safe owners.
+- Timelock role event: treat as a security incident; re-run `verify_deployment.ts` and its role audit.
+
+**Status:** Specified; not yet implemented in the indexer alert rules.
+
+---
+
 ## 13. Threshold Placeholders
 
 The following thresholds are marked `[TBD]` and must be set before monitoring is deployed. They depend on final infrastructure choices and operational context.

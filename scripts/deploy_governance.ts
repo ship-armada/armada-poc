@@ -56,6 +56,7 @@ interface GovernanceDeployment {
     treasury: string;
     governor: string;
     governorImpl: string;
+    upgradeGate: string;
     steward: string;
     adapterRegistry: string;
     revenueCounter: string;
@@ -173,10 +174,32 @@ async function main() {
   recordProgress({ treasury: treasuryAddress });
   console.log(`   ArmadaTreasuryGov: ${treasuryAddress}`);
 
-  // 4. Deploy ArmadaGovernor (UUPS proxy)
-  console.log("4. Deploying ArmadaGovernor (UUPS proxy)...");
+  // 4. Deploy UpgradeGate + ArmadaGovernor (UUPS proxy). The gate requires Launch Team approval
+  // for any proposal that upgrades a contract or authorizes an ARM delegator; its address is
+  // fixed in the governor implementation. Launch team resolution mirrors deploy_crowdfund.ts:
+  // config-driven for non-local (must differ from the deployer), deployer fallback for local.
+  let gateLaunchTeam: string;
+  if (config.launchTeamAddress) {
+    gateLaunchTeam = config.launchTeamAddress;
+    rejectAnvilAddresses([gateLaunchTeam], "Launch team");
+    if (gateLaunchTeam.toLowerCase() === deployer.address.toLowerCase()) {
+      throw new Error("Launch team address must differ from deployer address");
+    }
+  } else if (isLocal()) {
+    gateLaunchTeam = deployer.address;
+  } else {
+    throw new Error("LAUNCH_TEAM_ADDRESS is required for non-local deployments");
+  }
+  console.log("4. Deploying UpgradeGate + ArmadaGovernor (UUPS proxy)...");
+  const UpgradeGate = await ethers.getContractFactory("UpgradeGate");
+  const upgradeGate = await UpgradeGate.deploy(gateLaunchTeam, nm.override());
+  await upgradeGate.deploymentTransaction()!.wait();
+  const upgradeGateAddress = await upgradeGate.getAddress();
+  recordProgress({ upgradeGate: upgradeGateAddress });
+  console.log(`   UpgradeGate: ${upgradeGateAddress} (launch team ${gateLaunchTeam})`);
+
   const ArmadaGovernor = await ethers.getContractFactory("ArmadaGovernor");
-  const governorImpl = await ArmadaGovernor.deploy(nm.override());
+  const governorImpl = await ArmadaGovernor.deploy(upgradeGateAddress, nm.override());
   await governorImpl.deploymentTransaction()!.wait();
   const governorImplAddress = await governorImpl.getAddress();
   recordProgress({ governorImpl: governorImplAddress });
@@ -439,6 +462,7 @@ async function main() {
       treasury: treasuryAddress,
       governor: governorAddress,
       governorImpl: governorImplAddress,
+      upgradeGate: upgradeGateAddress,
       steward: stewardAddress,
       adapterRegistry: adapterRegistryAddress,
       revenueCounter: revenueCounterAddress,

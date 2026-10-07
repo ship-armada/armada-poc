@@ -57,6 +57,19 @@ The SC can veto queued governance proposals. Every veto triggers a mandatory com
 - If the community **overrides** the veto, the SC is ejected and the original proposal is re-queued
 - A new SC can only be appointed via governance proposal — no self-reinstatement
 
+### Launch Team Upgrade Gate
+
+A governance proposal that upgrades a contract (`upgradeTo` / `upgradeToAndCall`) or authorizes a
+new ARM delegator (`addAuthorizedDelegator`) cannot execute until the Launch Team 2-of-3 Safe
+approves that exact proposal on the `UpgradeGate`:
+
+- **Two independent sign-offs:** governance alone cannot execute such a proposal, and the Launch
+  Team cannot propose or execute anything — it can only approve or revoke
+- **Exact-proposal approvals:** an approval covers one proposal id and its actions, so it cannot be
+  replayed for a later proposal (for example, a rollback to an older implementation)
+- **Fixed scope:** the gated function list is in the gate's code; only the Launch Team can hand its
+  role to a successor (two-step handover)
+
 ### Governance Wind-Down
 
 An irreversible protocol shutdown mechanism, activated via governance proposal:
@@ -73,6 +86,7 @@ An irreversible protocol shutdown mechanism, activated via governance proposal:
 Monitor on-chain events from:
 - `ShieldPauseController` — pause/unpause activity
 - `ArmadaGovernor` — proposal creation, vetoes, wind-down activation
+- `UpgradeGate` — approvals, revocations and team handovers; gated proposals at creation (specs/MONITORING.md §12f)
 - `PrivacyPool` modules — unusual shield/unshield patterns
 
 ### 2. Triage

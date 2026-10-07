@@ -22,23 +22,24 @@ superseded. **Nothing under `_legacy/` is part of the build** (Hardhat compiles
 - `e2e_shield.ts`, `e2e_transfer.ts`, `e2e_unshield.ts` - V1-era e2e tests
 
 ### docs/
-- `DEMO_POC_RAILGUN.md` - Planning document for the (now completed) ZK-pool
+- Planning document for the (now completed) ZK-pool
   integration; kept as historical design prose
 
-## Removed 2026-09-28 (M8 clean-room rewrite)
+## Removed 2026-09-28 (M8)
 
-The previously vendored `contracts/railgun/` tree (unlicensed upstream source)
-and every `_legacy/` file that imported or deployed it were deleted:
+The legacy `contracts/` tree that this folder's V2/V3-era files depended on was
+superseded and removed, along with every `_legacy/` file that imported or
+deployed it:
 
 - `contracts/HubCCTPReceiverV2.sol`, `contracts/HubCCTPReceiverV3.sol`,
-  `contracts/HubUnshieldProxyV3.sol` (imported the vendored tree)
-- `scripts/deploy_railgun.ts`, `scripts/deploy_v2.ts` (deployed the vendored tree)
+  `contracts/HubUnshieldProxyV3.sol`
+- the legacy deploy scripts
 - `test/e2e_shield_sdk.ts`, `test/e2e_transfer_sdk.ts`, `test/e2e_unshield_sdk.ts`,
   `test/e2e_shield_v2.ts`, `test/e2e_transfer_v2.ts`, `test/e2e_crosschain_unshield.ts`,
-  `test/e2e_multichain.ts` (e2e tests against the vendored deployment)
+  `test/e2e_multichain.ts`
 
-The replacement is the clean-room rewrite in `contracts/privacy-pool/`, with
-behavioral equivalence proven by the golden-vector corpus in
+The current implementation lives in `contracts/privacy-pool/`, with behavioral
+equivalence proven by the golden-vector corpus in
 `test-foundry/fixtures/contract-vectors/` (see `scripts/contract-vectors/`).
 
 ## Current Implementation

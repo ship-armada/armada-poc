@@ -1,10 +1,10 @@
 # Armada Privacy Pool — Contract Behavior Specification
 
-**Status:** Phase 0 clean-room rewrite specification
+**Status:** Phase 0 behavior specification
 **Audience:** Implementer rewriting the privacy pool contract system from scratch (without access to any legacy or third-party unlicensed source)
-**Companion document:** `specs/CONTRACT_REWRITE_DEVIATIONS.md` (provenance & intentional-deviation register — the only place legacy-system naming may appear)
+**Companion document:** `specs/CONTRACT_REWRITE_DEVIATIONS.md` (provenance & intentional-deviation register — the deviation register)
 
-> **How this document was produced.** Every fact below is a *behavioral* fact extracted from Armada's own deployed-source tree (`contracts/privacy-pool/`), from Armada's circuit specification (`armada-circuits/docs/SPEC.md`, `docs/PRIMITIVES.md`), and from Armada's formal fee model (`armada-lean/ArmadaLean/Fee.lean`). Prose was rewritten from scratch. An implementer following this document should never need to open any file outside the rewrite workspace.
+> **How this document was produced.** Every fact below is a *behavioral* fact extracted from Armada's own deployed-source tree (`contracts/privacy-pool/`), from Armada's circuit specification (`armada-circuits/docs/SPEC.md`, `docs/PRIMITIVES.md`), and from Armada's formal fee model (`armada-lean/ArmadaLean/Fee.lean`). Prose was written fresh from observed behavior. An implementer following this document should never need any other source.
 
 > **Conformance language.** "MUST / MUST NOT / SHOULD" are normative. Anything marked **OQ-n** is an open question pending a team decision (§13) — implement to the *current* behavior described, but flag the call site.
 
@@ -55,7 +55,7 @@ Out of scope for this document: `PrivacyPoolClient` (client-chain contract), CCT
 |---|---|---|
 | `SNARK_SCALAR_FIELD` | `21888242871839275222246405745257275088548364400416034343698204186575808495617` | BN254 scalar field order. All field-valued inputs must be `<` this. |
 | `VERIFICATION_BYPASS` | `0x000000000000000000000000000000000000dEaD` | If `tx.origin` equals this address, `verify` returns `true` (gas-estimation escape hatch — **OQ-4**). |
-| `ZERO_VALUE` | `0x0488f89b25bc7011eaf6a5edce71aeafb9fe706faa3c0a5cd9cbe868ae3b9ffc` (decimal `2051258411002736885948763699317990061539314419500486054347250703186609807356`) | Level-0 zero leaf of the Merkle tree. **This exact value is a consensus fact** — the tree's empty root and every zero node derive from it. Its derivation is recorded in the deviation register (D-1); the rewrite MUST hard-code the value above. |
+| `ZERO_VALUE` | `0x0488f89b25bc7011eaf6a5edce71aeafb9fe706faa3c0a5cd9cbe868ae3b9ffc` (decimal `2051258411002736885948763699317990061539314419500486054347250703186609807356`) | Level-0 zero leaf of the Merkle tree. **This exact value is a consensus fact** — the tree's empty root and every zero node derive from it. Its derivation is recorded in the deviation register (D-1); implementations MUST hard-code the value above. |
 | `TREE_DEPTH` | `16` | Binary tree; 65,536 (`2**16`) leaves per tree. |
 | `BASIS_POINTS` | `10000` | Fee denominator (module-private constant in ShieldModule). |
 | `CCTPFinality.FAST` | `1000` (uint32) | CCTP V2 "confirmed" finality threshold. |
@@ -316,7 +316,7 @@ All revert with `"PrivacyPool: Only owner"` unless `msg.sender == owner`.
 |---|---|---|---|
 | `setRemotePool(uint32 domain, bytes32 poolAddress)` | `0x37bc0324` | `remotePools[domain] = poolAddress` | `RemotePoolSet(domain, poolAddress)` |
 | `setVerificationKey(uint256 n, uint256 m, VerifyingKey calldata key)` | `0x2ec0f359` | `delegatecall` → `VerifierModule.setVerificationKey` (§9.1; owner re-checked inside the module) | `VerifyingKeySet` (from module) |
-| `setShieldFee(uint120 feeBps)` | `0x47338389` | `require(feeBps <= 10000, "PrivacyPool: Fee too high")`; sets `shieldFee` | none |
+| `setShieldFee(uint120 feeBps)` | `0x47338389` | `require(feeBps <= MAX_SHIELD_FEE_BPS (1000 = 10%), "PrivacyPool: Fee too high")`; sets `shieldFee` | none |
 | `setTestingMode(bool enabled)` | `0x596d7a68` | `delegatecall` → `VerifierModule.setTestingMode`, then emits `TestingModeSet` **again** — two identical events per call (**OQ-8**) | `TestingModeSet` ×2 |
 | `setHookRouter(address)` | `0xdf4af94b` | sets `hookRouter` | none |
 | `setRemoteHookRouter(uint32 domain, bytes32 routerAddress)` | `0x7c1cc0ed` | sets `remoteHookRouters[domain]` (pin for outbound burn `destinationCaller`, D-16) | none |
@@ -378,7 +378,7 @@ Called exactly once from `PrivacyPool.initialize`:
    - After level 15, `leafHashes[0]` holds the new root.
 4. `merkleRoot = leafHashes[0]`; `rootHistory[treeNumber][merkleRoot] = true`.
 
-The rewrite MUST reproduce this tree byte-for-byte: identical roots for identical insertion sequences, verified against existing test vectors/differential tests.
+Implementations MUST reproduce this tree byte-for-byte: identical roots for identical insertion sequences, verified against existing test vectors/differential tests.
 
 ### 6.3 `hashLeftRight(bytes32, bytes32) returns (bytes32)` — selector `0x38bf282e`
 
@@ -593,7 +593,7 @@ For each nullifier `n`: `require(!nullifiers[boundParams.treeNumber][n], "Transa
 
 ---
 
-## 13. Open Questions (require a team decision before/at rewrite)
+## 13. Open Questions (require a team decision)
 
 | ID | Question | Current behavior |
 |---|---|---|
@@ -606,7 +606,7 @@ For each nullifier `n`: `require(!nullifiers[boundParams.treeNumber][n], "Transa
 | **OQ-7** | ~~`initialize` is permissionless first-call; if not invoked atomically at deployment it is front-runnable.~~ **RESOLVED post-drift (D-18):** `initialize` is gated to the deployer (private immutable captured in the constructor). | Deployer-only. |
 | **OQ-8** | `setTestingMode` emits `TestingModeSet` twice (once inside the module delegatecall, once on the router). Intentional or bug? | Double emission. |
 | **OQ-9** | `atomicCrossChainUnshield` does not require `unshieldPreimage.token == USDC` — a proof over a non-USDC note would still burn USDC. Add the check? | Token unchecked. |
-| **OQ-10** | `setShieldFee` allows up to 10000 bps (100%). Intended cap? | Cap is 100%. |
+| **OQ-10** | ~~`setShieldFee` allows up to 10000 bps (100%). Intended cap?~~ **RESOLVED post-drift:** `MAX_SHIELD_FEE_BPS = 1000` (10%) hard cap on the flat fee; the fee module caps every component at 10% (`MAX_BPS`) and the yield fee at 1–50%. | 10% cap. |
 | **OQ-11** | `testingMode` exists as a full proof bypass. Production expectation is removal (see deviation register D-3). Confirm removal plan and any staging-net needs. | Owner-toggleable bypass. |
 | **OQ-12** | `snarkSafetyVector` storage (slot 54) is never read or written. Retain as reserved (slot must stay either way) but drop the getter? | Dead public mapping. |
 
@@ -614,4 +614,4 @@ For each nullifier `n`: `require(!nullifiers[boundParams.treeNumber][n], "Transa
 
 ## Appendix
 
-Intentional deviations from the legacy implementation, and the provenance register for consensus-critical constants (including the `ZERO_VALUE` derivation string), live in **`specs/CONTRACT_REWRITE_DEVIATIONS.md`** — the only document in this repository section where legacy naming may appear.
+Intentional deviations from the legacy implementation live in **`specs/CONTRACT_REWRITE_DEVIATIONS.md`**.

@@ -1,6 +1,6 @@
 # Contract Golden-Vector Capture Harness
 
-Phase 1 of the clean-room contract rewrite plan (`specs/PRIVACY_POOL_CONTRACT.md`).
+Phase 1 of the contract implementation plan (`specs/PRIVACY_POOL_CONTRACT.md`).
 Captures golden behavioral vectors for the deployed privacy pool system so the
 Phase 2 rewrite can prove behavioral equivalence by replaying identical calldata
 old-vs-new and comparing events / state / reverts / gas.

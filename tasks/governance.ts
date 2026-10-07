@@ -18,6 +18,7 @@
 import { task } from "hardhat/config";
 import * as fs from "fs";
 import * as path from "path";
+import { readGateProposal } from "../scripts/upgrade-gate-batch";
 
 const StateNames = ["PENDING", "ACTIVE", "DEFEATED", "SUCCEEDED", "QUEUED", "EXECUTED", "CANCELED"];
 
@@ -162,6 +163,15 @@ task("execute-proposal", "Execute a queued proposal")
     const deployment = loadDeployment(getNetworkName(chainId));
 
     const governor = await ethers.getContractAt("ArmadaGovernor", deployment.contracts.governor);
+    // A proposal that upgrades a contract or authorizes an ARM delegator needs the Launch Team's
+    // approval first; explain that instead of surfacing a bare Gate_NotApproved revert.
+    const gateView = await readGateProposal(ethers.provider, deployment.contracts.governor, BigInt(args.proposal));
+    if (gateView.gated.some(Boolean) && !gateView.approved) {
+      console.log(`Proposal #${args.proposal} contains a gated action (contract upgrade or new ARM delegator)`);
+      console.log(`and the Launch Team (${gateView.launchTeam}) has not approved it. Prepare the approval with:`);
+      console.log(`  npx hardhat gate-safe-approve --proposal ${args.proposal} --network ${hre.network.name}`);
+      return;
+    }
     await governor.execute(Number(args.proposal));
     console.log(`Proposal #${args.proposal} executed`);
   });

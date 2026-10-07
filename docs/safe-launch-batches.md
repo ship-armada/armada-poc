@@ -1,11 +1,13 @@
 # Launch-team and security-council actions from a Safe
 
 On mainnet the launch team and the security council are 2-of-3 Safes. The crowdfund admin app
-signs with a browser wallet, so it cannot act for them. Instead, two Hardhat tasks write files
+signs with a browser wallet, so it cannot act for them. Instead, Hardhat tasks write files
 for the Safe app's **Transaction Builder**:
 
 - `cf-safe-batch`: seeds and launch-team invites, from a CSV
 - `cf-safe-cancel`: the security council's emergency `cancel()`
+- `gate-safe-approve`: the launch team's approval (or revocation) of a governance proposal that
+  upgrades a contract or authorizes an ARM delegator — see §Launch Team upgrade approvals
 
 Each file is **one Safe transaction**. A file with several calls is executed by the Safe as one
 bundle (MultiSend): all calls succeed or none do, for one signing round and one gas payment.
@@ -93,6 +95,46 @@ Rules:
 before the sale opens, then execute it only on a recorded emergency decision
 (`specs/OPERATIONS.md` §7, Cancel Procedure). `cancel()` is immediate and irreversible.
 
+## Launch Team upgrade approvals
+
+A governance proposal that upgrades a contract (`upgradeTo` / `upgradeToAndCall` on any target)
+or authorizes an ARM delegator (`addAuthorizedDelegator`) cannot execute until the Launch Team
+Safe approves that exact proposal on the `UpgradeGate` (specs/GOVERNANCE.md §Launch Team upgrade
+gate). The approval covers one proposal id and its exact actions; it never carries over to another
+proposal, even one with identical calls.
+
+```bash
+npx hardhat gate-safe-approve --proposal <id> --network mainnetHub            # approve.json + summary.md
+npx hardhat gate-safe-approve --proposal <id> --revoke --network mainnetHub   # revoke.json + summary.md
+```
+
+The task reads the proposal from the governor (address from the governance manifest, or
+`--governor`), refuses proposals with no gated action, terminal proposals (Defeated, Executed,
+Canceled), repeat approvals and revokes of unapproved proposals, and prints `WARNING:` lines for
+automated findings — a new governor implementation that trusts a different gate, an implementation
+or delegator address with no code. Output goes to `safe-batches/<time>-gate-approve/` (gitignored).
+
+Review before approving — every gated action, plus the ungated actions in the same proposal:
+
+- [ ] **Upgrades:** implementation source verified on the block explorer and matching the reviewed
+      commit; storage layout extends the current one without reordering.
+- [ ] **Governor upgrades:** the new implementation's `upgradeGate()` is this gate (the task checks
+      this); the wind-down contract can still call `setWindDownActive`.
+- [ ] **RevenueCounter upgrades:** `freeze()` and `recognizedRevenueUsd()` behave as before, so the
+      wind-down exit keeps working.
+- [ ] **`upgradeToAndCall`:** the attached call matches the proposal description.
+- [ ] **`addAuthorizedDelegator`:** the address runs canonical RevenueLock code (runtime bytecode
+      matches a build of the audited source, ignoring constructor immutables).
+- [ ] No unresolved `WARNING:` findings.
+
+Review during the voting period and execution delay; approve before the execution time. The team
+can revoke an approval at any time until the proposal executes. Rotating the Launch Team address on
+the gate is two-step: the current team calls `transferLaunchTeam(new)`, then the new Safe calls
+`acceptLaunchTeam()`.
+
+`npx hardhat execute-proposal --proposal <id>` (local tooling) explains when a proposal is still
+waiting for Launch Team approval instead of sending a transaction that would revert.
+
 ## Sepolia rehearsal
 
 Rehearse with a Sepolia crowdfund whose launch team and security council are 2-of-3 Safes
@@ -104,3 +146,6 @@ Rehearse with a Sepolia crowdfund whose launch team and security council are 2-o
 - [ ] Owner 2 confirms and executes; the seeds and invites appear on chain.
 - [ ] Re-running the same CSV refuses (already added) and writes nothing.
 - [ ] `cf-safe-cancel` imports and simulates cleanly (execute only on a throwaway deploy).
+- [ ] `gate-safe-approve` for a governor-upgrade proposal (needs `HARDEN_TIMELOCK=true`, so the
+      deployer cannot bypass the gate): the file imports without a checksum warning, the decoded
+      `approve` call matches `summary.md`, and the proposal executes only after the Safe executes it.

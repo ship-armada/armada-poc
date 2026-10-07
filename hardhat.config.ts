@@ -4,6 +4,7 @@ import "dotenv/config";
 import "./tasks/governance";
 import "./tasks/crowdfund";
 import "./tasks/crowdfund-safe";
+import "./tasks/upgrade-gate-safe";
 import { resolveDeployerSigner } from "./config/deployer-signer";
 import { installGasHeadroom, installLedgerOnlyAccounts, installSendGuard } from "./scripts/send-guard";
 

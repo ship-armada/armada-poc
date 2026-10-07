@@ -12,8 +12,6 @@
  */
 
 import { task, types } from "hardhat/config";
-import { HardhatPluginError } from "hardhat/plugins";
-import type { HardhatRuntimeEnvironment } from "hardhat/types";
 import { createHash } from "crypto";
 import { getAddress } from "ethers";
 import * as fs from "fs";
@@ -32,6 +30,7 @@ import {
   renderLaunchSummary,
   validateLaunchRows,
 } from "../scripts/safe-batch";
+import { createRunDir, reported } from "./safe-task-utils";
 
 /** Batch-size ceilings that keep one Safe transaction well under the ~16.7M per-transaction gas cap. */
 const MAX_SEEDS_PER_BATCH_CEILING = 180;
@@ -52,32 +51,10 @@ function resolveCrowdfund(networkName: string, override: string | undefined): st
   return getAddress(JSON.parse(fs.readFileSync(manifest, "utf8")).contracts.crowdfund);
 }
 
-/** A fresh output directory per run, so files from different runs never mix. */
-function createRunDir(out: string, kind: string): string {
-  const dir = path.resolve(out, `${new Date().toISOString().replace(/[:.]/g, "-")}-${kind}`);
-  if (fs.existsSync(dir)) throw new Error(`Output directory already exists: ${dir}`);
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
-}
-
 function requireBatchSize(name: string, value: number, ceiling: number): void {
   if (!Number.isInteger(value) || value < 1 || value > ceiling) {
     throw new Error(`--${name} must be a whole number from 1 to ${ceiling}, got ${value}`);
   }
-}
-
-/**
- * Refusals (bad CSV, failed checks) are expected outcomes: report them as plugin errors so
- * Hardhat prints the message plainly instead of "An unexpected error occurred" with a stack.
- */
-function reported<A>(taskName: string, action: (args: A, hre: HardhatRuntimeEnvironment) => Promise<unknown>) {
-  return async (args: A, hre: HardhatRuntimeEnvironment) => {
-    try {
-      return await action(args, hre);
-    } catch (error) {
-      throw new HardhatPluginError(taskName, (error as Error).message, error as Error);
-    }
-  };
 }
 
 task("cf-safe-batch", "Write Safe Transaction Builder batches for launch-team seeds and invites from a CSV")

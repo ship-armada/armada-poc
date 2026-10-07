@@ -307,14 +307,14 @@ invariants use **256 runs, 50 calls per run**, with final settlement checked too
 
 Gas measurements use cold contract/storage access and the compiler settings above:
 
-| Scenario | Execution gas verified in CI |
+| Scenario | Execution gas, solc 0.8.20 / Shanghai / optimizer 200 |
 |---|---:|
-| Collect and pay 75 undelegated grantees at first milestone | < 12,000,000 (CI gas bound) |
-| Collect and pay 75 separately delegated grantees plus allocator at wind-down | < 12,000,000 (CI gas bound) |
+| Collect and pay 75 undelegated grantees at first milestone | 4,722,965 |
+| Collect and pay 75 separately delegated grantees plus allocator at wind-down | 8,293,097 |
 
 These are measured call execution costs, not a live transaction fee quote. They
 exclude transaction intrinsic gas and do not subtract transaction-level refunds.
-Each gas test enforces a 12M execution-gas ceiling. Actual cost depends on state,
+Each full-batch gas test enforces a 12M execution-gas ceiling; three 25-recipient range claims each enforce a 5M ceiling. Actual cost depends on state,
 compiler settings and gas price; the sponsor pays it, not each recipient.
 
 ## Mainnet acceptance evidence

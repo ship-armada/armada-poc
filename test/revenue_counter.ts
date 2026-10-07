@@ -522,4 +522,85 @@ describe("RevenueCounter", function () {
       ).to.be.revertedWith("Ownable: caller is not the owner");
     });
   });
+
+  // ============================================================
+  // 6. Ownership Lock
+  // ============================================================
+
+  // WHY: The owner (the timelock) can upgrade this contract. If ownership could be
+  // handed off, one innocuous-looking governance proposal calling transferOwnership(X)
+  // would let X upgrade the counter with no further vote. Ownership is therefore fixed
+  // at initialization.
+  describe("Ownership Lock", function () {
+    // WHY: the owner itself is the realistic attacker path (a passed governance proposal).
+    it("should reject transferOwnership from the owner", async function () {
+      await expect(
+        revenueCounter.transferOwnership(alice.address)
+      ).to.be.revertedWith("RevenueCounter: ownership is fixed");
+      expect(await revenueCounter.owner()).to.equal(owner.address);
+    });
+
+    // WHY: renouncing would permanently disable upgrades and every owner-gated function.
+    it("should reject renounceOwnership from the owner", async function () {
+      await expect(
+        revenueCounter.renounceOwnership()
+      ).to.be.revertedWith("RevenueCounter: ownership is fixed");
+      expect(await revenueCounter.owner()).to.equal(owner.address);
+    });
+
+    // WHY: the override replaces Ownable's access check, so non-owners must still be rejected.
+    it("should reject transferOwnership and renounceOwnership from a non-owner", async function () {
+      await expect(
+        revenueCounter.connect(alice).transferOwnership(alice.address)
+      ).to.be.revertedWith("RevenueCounter: ownership is fixed");
+      await expect(
+        revenueCounter.connect(alice).renounceOwnership()
+      ).to.be.revertedWith("RevenueCounter: ownership is fixed");
+    });
+
+    // WHY: the lock must not break the owner's legitimate powers (revenue attestation, upgrades).
+    it("should keep owner-gated functions and upgrades working", async function () {
+      await revenueCounter.addRevenue(ethers.parseUnits("1", 18));
+      expect(await revenueCounter.recognizedRevenueUsd()).to.equal(ethers.parseUnits("1", 18));
+
+      const RevenueCounterV2 = await ethers.getContractFactory("RevenueCounter");
+      const newImpl = await RevenueCounterV2.deploy();
+      await newImpl.waitForDeployment();
+      await revenueCounter.upgradeTo(await newImpl.getAddress());
+
+      // The lock survives an upgrade to the same implementation code.
+      await expect(
+        revenueCounter.transferOwnership(alice.address)
+      ).to.be.revertedWith("RevenueCounter: ownership is fixed");
+      expect(await revenueCounter.owner()).to.equal(owner.address);
+    });
+
+    // WHY: In production the owner is the timelock, so the hand-off would arrive as a
+    // scheduled timelock operation. This exercises that exact path end to end.
+    it("should reject a transferOwnership executed through the owning timelock", async function () {
+      const Timelock = await ethers.getContractFactory("TimelockController");
+      const timelock = await Timelock.deploy(0, [owner.address], [owner.address], ethers.ZeroAddress);
+      await timelock.waitForDeployment();
+      const timelockAddr = await timelock.getAddress();
+
+      const RevenueCounter = await ethers.getContractFactory("RevenueCounter");
+      const impl = await RevenueCounter.deploy();
+      await impl.waitForDeployment();
+      const initData = RevenueCounter.interface.encodeFunctionData("initialize", [timelockAddr]);
+      const ERC1967Proxy = await ethers.getContractFactory("ERC1967Proxy");
+      const proxy = await ERC1967Proxy.deploy(await impl.getAddress(), initData);
+      await proxy.waitForDeployment();
+      const timelockOwned = RevenueCounter.attach(await proxy.getAddress()) as any;
+
+      const target = await timelockOwned.getAddress();
+      const data = RevenueCounter.interface.encodeFunctionData("transferOwnership", [alice.address]);
+      const salt = ethers.ZeroHash;
+      await timelock.schedule(target, 0, data, ethers.ZeroHash, salt, 0);
+
+      await expect(
+        timelock.execute(target, 0, data, ethers.ZeroHash, salt)
+      ).to.be.revertedWith("TimelockController: underlying transaction reverted");
+      expect(await timelockOwned.owner()).to.equal(timelockAddr);
+    });
+  });
 });

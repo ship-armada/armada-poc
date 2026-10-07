@@ -227,6 +227,8 @@ constraints, or reduces risk exposure:
 All other proposals — including non-ARM treasury allocations within 5%
 and routine operational actions — are **standard**.
 
+**Implementation note: fail-closed classification.** The governor only treats a call as Standard if its function selector is explicitly registered as Standard. Any selector that is not registered — including newly added protocol functions — classifies as Extended until governance registers it.
+
 **Design principle: tightening is easy, loosening is hard.** Actions
 that reduce the protocol's attack surface or revoke granted
 authority should face lower governance friction than actions that
@@ -353,6 +355,10 @@ Most reusable governance parameters listed above are themselves governable — l
 | **Revenue** | Non-stablecoin revenue attestation (`addRevenue` increment, routine; `attestRevenue` SET, confirmed-error correction) | Standard |
 | **Revenue** | Expand qualifying revenue definition | Extended |
 | **ARM token** | Add address to transfer whitelist (add-only, no removal) | Extended |
+| **ARM token** | Authorize an ARM delegator (`addAuthorizedDelegator`, add-only, e.g. a follow-on RevenueLock cohort) | Extended + Launch Team approval |
+| **ARM token** | Enable global transfers (`setTransferable(true)`, one-way) | Standard |
+| **Governance** | Proposal classification registry (add/remove Extended or Standard selectors) | Extended |
+| **Governance** | Add a quorum-excluded address (`addExcludedAddress`, add-only) | Extended |
 | **Signaling** | Non-executable preference vote (no execution, no bond) | Standard |
 
 ### Immutable
@@ -367,6 +373,9 @@ Most reusable governance parameters listed above are themselves governable — l
 | **Crowdfund contract** | All parameters (see PARAMETER_MANIFEST.md §12) |
 | **ARM token contract** | Non-upgradeable. No proxy. All invariants in ARM_TOKEN.md §12 are unconditional. |
 | **Revenue-lock contract** | Milestone schedule and release logic. Beneficiaries must trust these cannot change. |
+| **Timelock roles** | Governor holds PROPOSER / EXECUTOR / CANCELLER; nobody holds admin, so no role can ever be granted or revoked (§Contract Upgrade Scope). |
+| **Revenue counter ownership** | Fixed to the timelock; `transferOwnership` / `renounceOwnership` revert. |
+| **Upgrade gate** | Gated selector list (`upgradeTo`, `upgradeToAndCall`, `addAuthorizedDelegator`). Only the Launch Team can change the gate's team address (§Launch Team upgrade gate). |
 | **Wind-down contract** | Trigger mechanism (conditions are deterministic), treasury sweep authority, `setTransferable(true)` authority, and `windDownActive` flag on pause contract. Parameters (threshold, deadline) are governable but the trigger logic itself is immutable. |
 
 ### Pool access conditions
@@ -957,7 +966,7 @@ Token governance represents ARM holders. But Armada's value comes primarily from
 
 ### Governance reality
 
-**At launch, governance security depends on the integrity of the top delegates, not on token distribution.** Power concentrates in 3-5 early delegates. Governance is slow (7-14 day cycles). Protection comes from outflow limits and visibility windows, not from voting mechanics. The system is designed to degrade predictably (bounded leakage, slow degradation) rather than catastrophically (full drain, permanent capture). This is intentional — the outflow limits and SC veto are the real safety rails, and governance voting is the steering mechanism within those rails.
+**At launch, governance security depends on the integrity of the top delegates, not on token distribution.** Power concentrates in 3-5 early delegates. Governance is slow (7-14 day cycles). Protection comes from outflow limits and visibility windows, not from voting mechanics. The system is designed to degrade predictably (bounded leakage, slow degradation) rather than catastrophically (full drain, permanent capture). This is intentional — the outflow limits, the Launch Team upgrade gate and the SC veto are the real safety rails, and governance voting is the steering mechanism within those rails. The rails do different jobs: outflow limits bound how fast funds can leave; the upgrade gate stops any single governance win (including a low-turnout or misleading one) from becoming permanent control through an upgrade or a new ARM delegator; the SC veto stops mistaken or suspicious proposals but can be overturned by a ratification vote, so it is not a defence against a genuine majority.
 
 ### Future governance upgrades (governor is UUPS-upgradeable)
 

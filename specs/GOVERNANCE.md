@@ -810,7 +810,7 @@ All outflow parameter changes are asymmetric:
 - **Tightening changes take effect immediately.** Any change that reduces spending capacity is a security-improving action and is never delayed.
 - **Loosening changes are subject to a 24-day activation delay.** Any change that increases spending capacity is written to a pending slot and activates only after the delay expires. Treasury outflow checks read active parameters, not pending ones.
 
-The 24-day activation delay exceeds the maximum Extended proposal governance cycle (2-day proposal delay + 14-day voting period + 7-day execution delay = 23 days). Governor timing parameter setters enforce that the Extended cycle remains strictly shorter than the activation delay (`_maxExtendedCycle() < LIMIT_ACTIVATION_DELAY`).
+The 24-day activation delay exceeds the maximum Extended proposal governance cycle (2-day proposal delay + 14-day voting period + 7-day execution delay = 23 days). `ArmadaGovernor.setProposalTypeParams` enforces that the Extended cycle remains strictly shorter than the activation delay (it reverts when votingDelay + votingPeriod + executionDelay ≥ `TREASURY_OUTFLOW_ACTIVATION_DELAY`, the governor's mirror of `LIMIT_ACTIVATION_DELAY`).
 
 This structurally prevents two attack patterns:
 

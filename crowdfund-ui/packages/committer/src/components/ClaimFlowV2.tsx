@@ -105,7 +105,9 @@ export interface ClaimFlowV2Props {
   claimDeadline: number
   totalCommitted: bigint
   windowEnd: number
-  cappedDemand: bigint
+  /** Pre-finalize projection that finalize() will enter refund mode (post-
+   *  waterfall allocation below MIN_SALE) — see `isProjectedRefund`. */
+  projectedRefund: boolean
   claimAvailable: boolean
   claimCountdownSeconds?: number
   onGoToMyPosition: () => void
@@ -239,7 +241,7 @@ function ClaimFlowScreens(props: ClaimFlowV2Props) {
   })
 
   // Decide claim mode based on contract state. Phase 2 (cancelled) → refund.
-  // Phase 0 with refundMode (cappedDemand < min) → refund. Otherwise → ARM.
+  // Finalized with refundMode (allocation < min) → refund. Otherwise → ARM.
   // This mirrors v1 ClaimTab's mode derivation.
   const mode: ClaimMode = phase === 2 || refundMode ? 'refund' : 'arm'
 
@@ -761,18 +763,18 @@ function ClaimFlowScreens(props: ClaimFlowV2Props) {
   // (0, 0) for everyone (allocations only exist post-finalization). Without
   // this branch the user falls through to the generic "Nothing to claim"
   // copy below, which is misleading when the sale's outcome is already
-  // determined (e.g., capped demand fell short of MIN_SALE → everyone gets
-  // a USDC refund, but no one can claim it until someone calls finalize()).
+  // determined (e.g., the post-waterfall allocation fell short of MIN_SALE →
+  // everyone gets a USDC refund, but no one can claim it until someone calls
+  // finalize()).
   const windowEnded = props.windowEnd > 0 && props.blockTimestamp > props.windowEnd
-  const saleBelowMin = props.cappedDemand < CROWDFUND_CONSTANTS.MIN_SALE
   if (phase === 0 && windowEnded) {
-    if (saleBelowMin) {
+    if (props.projectedRefund) {
       return (
         <GateShell title="Sale ended below minimum">
           <p className={styles.gateBody}>
             {props.totalCommitted > 0n
-              ? `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum fund. Once it's finalized, you'll be able to claim a refund of your committed ${formatUsdc(props.totalCommitted)} from here.`
-              : `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum fund. Once it's finalized, all committed USDC will be refundable to the addresses that participated.`}
+              ? `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum fund after per-hop allocation limits. Once it's finalized, you'll be able to claim a refund of your committed ${formatUsdc(props.totalCommitted)} from here.`
+              : `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum fund after per-hop allocation limits. Once it's finalized, all committed USDC will be refundable to the addresses that participated.`}
           </p>
           <p className={styles.gateBodyFootnote}>
             Finalization is permissionless — anyone can trigger it. Refresh this page once

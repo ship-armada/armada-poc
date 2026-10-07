@@ -48,8 +48,8 @@ export {
   isValidEnsName,
 } from './lib/addressInput.js'
 
-export { estimateAllocation, estimateUserArmAllocation } from './lib/allocation.js'
-export type { AllocationEstimate, UserHopPosition } from './lib/allocation.js'
+export { estimateAllocation, estimateUserArmAllocation, projectsRefundMode } from './lib/allocation.js'
+export type { AllocationEstimate, HopAllocationStats, UserHopPosition } from './lib/allocation.js'
 
 export {
   computeSelfFillPlan,

@@ -77,6 +77,7 @@ export function AdminActions({ state, role, signer, crowdfundAddress, treasury, 
               totalCommitted={state.totalCommitted}
               saleSize={state.saleSize}
               cappedDemand={state.cappedDemand}
+              hopStats={state.hopStats}
             />
           )}
         </div>

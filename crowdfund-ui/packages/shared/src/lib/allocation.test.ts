@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest'
 import {
   estimateAllocation,
   estimateUserArmAllocation,
+  projectsRefundMode,
   type UserHopPosition,
 } from './allocation.js'
 import { CROWDFUND_CONSTANTS, HOP_CONFIGS } from './constants.js'
@@ -130,6 +131,45 @@ describe('estimateAllocation — economic thresholds', () => {
     const belowMin = estimateForDemands(1_050_000n * USDC, 435_000n * USDC, 0n, CROWDFUND_CONSTANTS.BASE_SALE)
     expect(atMin.totalAllocUsdc).toBe(CROWDFUND_CONSTANTS.MIN_SALE) // == $1M → finalize() succeeds
     expect(belowMin.totalAllocUsdc).toBeLessThan(CROWDFUND_CONSTANTS.MIN_SALE) // < $1M → refund mode
+  })
+})
+
+describe('projectsRefundMode', () => {
+  // WHY: finalize() enters refundMode when the post-waterfall allocation is below MIN_SALE,
+  // not when capped demand is. Hop-0's ceiling ($564k base / $846k expanded) sits below
+  // MIN_SALE, so hop-0-heavy demand can clear $1M yet still refund. The committer, admin
+  // and indexer must all predict the contract's outcome, so they share this one check.
+  function projectFor(hop0: bigint, hop1: bigint, hop2: bigint): boolean {
+    const hopStats = [
+      { cappedCommitted: hop0 },
+      { cappedCommitted: hop1 },
+      { cappedCommitted: hop2 },
+    ]
+    return projectsRefundMode(hopStats, hop0 + hop1 + hop2)
+  }
+  const K = 1_000n * USDC
+
+  it('projects refund when capped demand is below MIN_SALE', () => {
+    expect(projectFor(500n * K, 200n * K, 100n * K)).toBe(true)
+  })
+
+  it('projects refund when hop-0-heavy demand clears MIN_SALE but allocates below it (base)', () => {
+    // $1.05M capped → $564k + $100k + $50k = $714k allocated.
+    expect(projectFor(900n * K, 100n * K, 50n * K)).toBe(true)
+  })
+
+  it('projects refund when hop-0-only demand triggers expansion but allocates below MIN_SALE', () => {
+    // $1.5M capped → MAX_SALE, but hop-0 alone allocates only $846k.
+    expect(projectFor(1_500n * K, 0n, 0n)).toBe(true)
+  })
+
+  it('does not project refund when demand is spread across hops', () => {
+    expect(projectFor(564n * K, 300n * K, 200n * K)).toBe(false)
+  })
+
+  it('matches the contract boundary: exactly MIN_SALE allocated succeeds (`< MIN_SALE` refunds)', () => {
+    expect(projectFor(1_050n * K, 436n * K, 0n)).toBe(false) // $1,000k allocated
+    expect(projectFor(1_050n * K, 435n * K, 0n)).toBe(true) // $999k allocated
   })
 })
 

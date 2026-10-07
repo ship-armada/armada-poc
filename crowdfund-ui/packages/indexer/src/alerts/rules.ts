@@ -1,6 +1,7 @@
 // ABOUTME: Pure alert-rule evaluators for MONITORING.md §8 A1–A20.
 // ABOUTME: Each rule returns 0..n AlertEvent occurrences given the current context.
 
+import { estimateAllocation, projectsRefundMode, type HopAllocationStats } from '../../../shared/src/lib/allocation.js'
 import { CROWDFUND_CONSTANTS } from '../../../shared/src/lib/constants.js'
 import type { CrowdfundEvent } from '../../../shared/src/lib/events.js'
 import type { CrowdfundGraph } from '../../../shared/src/lib/graph.js'
@@ -19,6 +20,32 @@ function cappedDemandTotal(graph: CrowdfundGraph): bigint {
   let total = 0n
   for (const node of graph.nodes.values()) total += node.committed
   return total
+}
+
+/** Capped demand and the post-waterfall allocation finalize() would make from it.
+ *  `refund` mirrors the contract's refundMode decision (allocation < MIN_SALE). */
+function minimumFundProjection(graph: CrowdfundGraph): {
+  capped: bigint
+  projectedAllocatedUsdc: bigint
+  refund: boolean
+} {
+  const hopStats: HopAllocationStats[] = [
+    { cappedCommitted: 0n },
+    { cappedCommitted: 0n },
+    { cappedCommitted: 0n },
+  ]
+  let capped = 0n
+  for (const node of graph.nodes.values()) {
+    const stat = hopStats[node.hop]
+    if (!stat) continue
+    stat.cappedCommitted += node.committed
+    capped += node.committed
+  }
+  return {
+    capped,
+    projectedAllocatedUsdc: estimateAllocation(hopStats, capped, 0n).totalAllocUsdc,
+    refund: projectsRefundMode(hopStats, capped),
+  }
 }
 
 function duplicateSlotNodeCount(graph: CrowdfundGraph): number {
@@ -210,8 +237,8 @@ export const ruleA7: AlertRule = (ctx) => {
 // A8 — Minimum fund at risk late in sale (P2)
 export const ruleA8: AlertRule = (ctx) => {
   if (!isSnapshotTrustworthy(ctx)) return []
-  const capped = cappedDemandTotal(ctx.snapshot.graph)
-  if (capped >= CROWDFUND_CONSTANTS.MIN_SALE) return []
+  const { capped, projectedAllocatedUsdc, refund } = minimumFundProjection(ctx.snapshot.graph)
+  if (!refund) return []
   const remaining = ctx.params.commitmentDeadline - ctx.now
   if (remaining <= 0) return []
   const TWENTY_FOUR_H = 24 * 60 * 60
@@ -225,9 +252,9 @@ export const ruleA8: AlertRule = (ctx) => {
     severity: 'P2',
     dedupeKey: `A8:${band}`,
     title: `Minimum fund at risk with ${band} remaining`,
-    body: `cappedDemand=${capped.toString()} below MIN_SALE=${CROWDFUND_CONSTANTS.MIN_SALE.toString()} with ${band} until commitmentDeadline.`,
+    body: `projected allocation=${projectedAllocatedUsdc.toString()} (cappedDemand=${capped.toString()}) below MIN_SALE=${CROWDFUND_CONSTANTS.MIN_SALE.toString()} with ${band} until commitmentDeadline.`,
     runbook: 'OPERATIONS.md §5 Final-week operating cadence; §11 Checkpoint 3',
-    context: { cappedDemand: capped.toString(), band },
+    context: { cappedDemand: capped.toString(), projectedAllocatedUsdc: projectedAllocatedUsdc.toString(), band },
   }]
 }
 
@@ -238,8 +265,8 @@ export const ruleA9a: AlertRule = (ctx) => {
   const finalized = eventsOfType(ctx.snapshot.events, 'Finalized').length > 0
   const cancelled = eventsOfType(ctx.snapshot.events, 'Cancelled').length > 0
   if (finalized || cancelled) return []
-  const capped = cappedDemandTotal(ctx.snapshot.graph)
-  if (capped < CROWDFUND_CONSTANTS.MIN_SALE) return []
+  const { capped, projectedAllocatedUsdc, refund } = minimumFundProjection(ctx.snapshot.graph)
+  if (refund) return []
   const past = ctx.now - ctx.params.commitmentDeadline
   const severity: 'P1' | 'P0' = past >= ctx.thresholds.finalizeGraceSeconds ? 'P0' : 'P1'
   return [{
@@ -247,29 +274,29 @@ export const ruleA9a: AlertRule = (ctx) => {
     severity,
     dedupeKey: `A9a:${severity}`,
     title: `Deadline passed; finalize() required`,
-    body: `commitmentDeadline ${past}s ago; cappedDemand=${capped.toString()} ≥ MIN_SALE. Call finalize().`,
+    body: `commitmentDeadline ${past}s ago; projected allocation=${projectedAllocatedUsdc.toString()} (cappedDemand=${capped.toString()}) ≥ MIN_SALE. Call finalize().`,
     runbook: 'OPERATIONS.md §11 Checkpoint 3; §6 Finalization procedure',
-    context: { cappedDemand: capped.toString(), past, severity },
+    context: { cappedDemand: capped.toString(), projectedAllocatedUsdc: projectedAllocatedUsdc.toString(), past, severity },
   }]
 }
 
-// A9b — Deadline passed, sub-minimum demand (P1)
+// A9b — Deadline passed, projected allocation below minimum (P1)
 export const ruleA9b: AlertRule = (ctx) => {
   if (!isSnapshotTrustworthy(ctx)) return []
   if (ctx.now <= ctx.params.commitmentDeadline) return []
   const finalized = eventsOfType(ctx.snapshot.events, 'Finalized').length > 0
   const cancelled = eventsOfType(ctx.snapshot.events, 'Cancelled').length > 0
   if (finalized || cancelled) return []
-  const capped = cappedDemandTotal(ctx.snapshot.graph)
-  if (capped >= CROWDFUND_CONSTANTS.MIN_SALE) return []
+  const { capped, projectedAllocatedUsdc, refund } = minimumFundProjection(ctx.snapshot.graph)
+  if (!refund) return []
   return [{
     id: 'A9b',
     severity: 'P1',
     dedupeKey: 'A9b',
-    title: 'Deadline passed; sub-minimum demand',
-    body: `cappedDemand=${capped.toString()} below MIN_SALE. Permissionless finalize() will activate refundMode.`,
+    title: 'Deadline passed; projected allocation below minimum',
+    body: `projected allocation=${projectedAllocatedUsdc.toString()} (cappedDemand=${capped.toString()}) below MIN_SALE. Permissionless finalize() will activate refundMode.`,
     runbook: 'OPERATIONS.md §5 pre-finalization checkpoint (sub-minimum branch)',
-    context: { cappedDemand: capped.toString() },
+    context: { cappedDemand: capped.toString(), projectedAllocatedUsdc: projectedAllocatedUsdc.toString() },
   }]
 }
 

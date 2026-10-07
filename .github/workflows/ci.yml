@@ -95,6 +95,8 @@ jobs:
       - run: npm ci --legacy-peer-deps
       - uses: foundry-rs/foundry-toolchain@v1
       - run: forge test
+      # Measure the full 75-grantee batch with the production compiler and EVM settings.
+      - run: forge test --match-contract RevenueReserveDistributorGasTest --use 0.8.20 --evm-version shanghai --optimize --optimizer-runs 200 -vv
 
   # Contract size check (EIP-170 limit: 24576 bytes).
   # Reads Hardhat artifacts so the measured bytecode matches what actually deploys.

@@ -43,8 +43,8 @@ contract RevenueReserveDistributor is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     uint256 public constant BPS = 10_000;
-    /// @notice 50 distinct grantees plus the allocator, whose slot is reserved.
-    uint256 public constant MAX_BENEFICIARIES = 51;
+    /// @notice 75 distinct grantees plus the allocator, whose slot is reserved.
+    uint256 public constant MAX_BENEFICIARIES = 76;
     /// @notice 10^-14 ARM. Ensures all basis-point entitlements divide exactly.
     uint256 public constant ALLOCATION_QUANTUM = 10_000;
 

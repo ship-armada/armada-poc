@@ -233,17 +233,17 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
 
     // WHY: A full list must remain bounded while top-ups and the allocator fallback still work.
     function test_recipientLimitReservesAllocatorSlot() public {
-        for (uint256 i; i < 50; ++i) {
+        for (uint256 i; i < 75; ++i) {
             _assign(address(uint160(0x1000 + i)), 1e18);
         }
-        assertEq(distributor.beneficiaryCount(), 51);
+        assertEq(distributor.beneficiaryCount(), 76);
         assertEq(distributor.beneficiaries(0), allocator);
         vm.prank(allocator);
         vm.expectRevert(RevenueReserveDistributor.TooManyBeneficiaries.selector);
         distributor.assign(alice, 1e18);
         _assign(address(0x1000), 2e18);
         _assign(allocator, 1e18);
-        assertEq(distributor.beneficiaryCount(), 51);
+        assertEq(distributor.beneficiaryCount(), 76);
         _revenue(10_000e18);
         windDown.governanceTriggerWindDown();
         distributor.distribute();
@@ -540,26 +540,26 @@ contract RevenueReserveDistributorTest is RevenueReserveDistributorFixture {
 contract RevenueReserveDistributorGasTest is RevenueReserveDistributorFixture {
     function setUp() public override {
         super.setUp();
-        for (uint256 i; i < 50; ++i) {
+        for (uint256 i; i < 75; ++i) {
             _assign(address(uint160(0x1000 + i)), 3_000e18);
         }
     }
 
-    // WHY: The proposed one-sponsor batch must fit comfortably in an L1 transaction for all 50 grantees.
-    function testGas_distribute50Undelegated() public {
+    // WHY: The proposed one-sponsor batch must fit comfortably in an L1 transaction for all 75 grantees.
+    function testGas_distribute75Undelegated() public {
         _revenue(10_000e18);
         _cool();
         uint256 beforeGas = gasleft();
         distributor.distribute();
         uint256 used = beforeGas - gasleft();
-        emit log_named_uint("50 grantees, initial collection and payout (execution gas)", used);
-        assertLt(used, 8_000_000);
-        assertEq(distributor.totalClaimed(), 15_000e18);
+        emit log_named_uint("75 grantees, initial collection and payout (execution gas)", used);
+        assertLt(used, 12_000_000);
+        assertEq(distributor.totalClaimed(), 22_500e18);
     }
 
-    // WHY: Distinct delegate checkpoints plus an allocator payout are the heavier 51-recipient wind-down case.
-    function testGas_distribute51DelegatedAtWindDown() public {
-        for (uint256 i; i < 50; ++i) {
+    // WHY: Distinct delegate checkpoints plus an allocator payout are the heavier 76-recipient wind-down case.
+    function testGas_distribute76DelegatedAtWindDown() public {
+        for (uint256 i; i < 75; ++i) {
             address who = address(uint160(0x1000 + i));
             vm.prank(who);
             token.delegate(who);
@@ -573,9 +573,23 @@ contract RevenueReserveDistributorGasTest is RevenueReserveDistributorFixture {
         uint256 beforeGas = gasleft();
         distributor.distribute();
         uint256 used = beforeGas - gasleft();
-        emit log_named_uint("50 delegated grantees + allocator fallback (execution gas)", used);
-        assertLt(used, 8_000_000);
+        emit log_named_uint("75 delegated grantees + allocator fallback (execution gas)", used);
+        assertLt(used, 12_000_000);
         assertEq(distributor.totalClaimed(), RESERVE / 10);
+    }
+
+    // WHY: If a full sponsored payout exceeds a chain's transaction cap, three
+    // bounded ranges must still pay every grantee at a comfortable gas cost.
+    function testGas_claimRanges25KeepAllRecipientsLive() public {
+        _revenue(10_000e18);
+        distributor.collect();
+        for (uint256 start = 1; start < 76; start += 25) {
+            _cool();
+            uint256 beforeGas = gasleft();
+            distributor.claimRange(start, start + 25);
+            assertLt(beforeGas - gasleft(), 5_000_000);
+        }
+        assertEq(distributor.totalClaimed(), 22_500e18);
     }
 
     function _cool() internal {

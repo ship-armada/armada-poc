@@ -235,7 +235,7 @@ If `triggerWindDown()` is called on the wind-down contract:
 
 ### 11.1 Standard treasury transfer (default)
 
-The simple path. After governance enables global transfers, a treasury transfer via governance proposal sends ARM directly to a recipient wallet; the recipient delegates via standard `delegate()`. No lock contract, no atomic delegation, no whitelisting needed. Use this for grants that should vest immediately on disbursement.
+The simple path. After governance enables global transfers, a treasury transfer via governance proposal sends ARM directly to a recipient wallet; the recipient delegates via standard `delegate()`. Every treasury ARM distribution classifies as an Extended proposal, whatever its size (GOVERNANCE.md §Standard vs. extended classification). No lock contract, no atomic delegation, no whitelisting needed. Use this for grants that should vest immediately on disbursement.
 
 ### 11.2 Follow-on RevenueLock cohort (revenue-gated)
 

@@ -485,20 +485,26 @@ describe("Wind-Down & Redemption Integration", function () {
   // ============================================================
 
   describe("Proposal lifecycle freeze (post-wind-down)", function () {
-    // Standard proposal timing — must match the governor's defaults so we can
+    // Extended proposal timing — must match the governor's defaults so we can
     // advance the clock the right amount to reach Succeeded / Queued states.
-    const STANDARD_VOTING_PERIOD = 7 * ONE_DAY;
-    const STANDARD_EXECUTION_DELAY = 2 * ONE_DAY;
-    const ProposalType = { Standard: 0 };
+    // Treasury ARM distributions always classify as Extended.
+    const EXTENDED_VOTING_PERIOD = 14 * ONE_DAY;
+    const EXTENDED_EXECUTION_DELAY = 7 * ONE_DAY;
+    const ProposalType = { Standard: 0, Extended: 1 };
     const ProposalState = {
       Pending: 0, Active: 1, Defeated: 2, Succeeded: 3,
       Queued: 4, Executed: 5, Canceled: 6,
     };
     const Vote = { Against: 0, For: 1, Abstain: 2 };
 
-    // Build a Standard treasury-distribute proposal that would move ARM out of
-    // the treasury — the exact mutation the wind-down freeze is meant to block.
+    // Build a treasury-distribute proposal that would move ARM out of the
+    // treasury — the exact mutation the wind-down freeze is meant to block.
     async function createTreasuryArmProposal(description: string) {
+      // ARM distributions are Extended (30% quorum). Register the non-voting RevenueLock and
+      // crowdfund stand-ins as quorum-excluded, as the production deploy does, so alice + bob
+      // (10% of supply, all of the voting supply) can reach it.
+      await governor.setExcludedAddresses([revenueLockAddr.address, crowdfundAddr.address]);
+      await mine(1);
       const distributeAmount = ethers.parseUnits("1000", ARM_DECIMALS);
       const targets = [await treasuryContract.getAddress()];
       const values = [0n];
@@ -506,7 +512,7 @@ describe("Wind-Down & Redemption Integration", function () {
         await armToken.getAddress(), carol.address, distributeAmount,
       ])];
       await governor.connect(alice).propose(
-        ProposalType.Standard, targets, values, calldatas, description
+        ProposalType.Extended, targets, values, calldatas, description
       );
     }
 
@@ -515,7 +521,7 @@ describe("Wind-Down & Redemption Integration", function () {
       await time.increase(TWO_DAYS + 1); // past voting delay
       await governor.connect(alice).castVote(1, Vote.For);
       await governor.connect(bob).castVote(1, Vote.For);
-      await time.increase(STANDARD_VOTING_PERIOD + 1);
+      await time.increase(EXTENDED_VOTING_PERIOD + 1);
       expect(await governor.state(1)).to.equal(ProposalState.Succeeded);
     }
 
@@ -525,7 +531,7 @@ describe("Wind-Down & Redemption Integration", function () {
     // break the redemption contract's pro-rata invariant
     // (GOVERNANCE.md §11). Audit findings #99 and #100.
     it("queue reverts after wind-down (pre-trigger Succeeded proposal)", async function () {
-      await createTreasuryArmProposal("Standard treasury distribute");
+      await createTreasuryArmProposal("Treasury ARM distribute");
       await advanceToSucceeded();
 
       // Trigger wind-down with the proposal sitting in Succeeded state.
@@ -548,7 +554,7 @@ describe("Wind-Down & Redemption Integration", function () {
     // be executable post-trigger; otherwise the timelock-scheduled action
     // would still mutate treasury ARM after redemption opens.
     it("execute reverts after wind-down (pre-trigger Queued proposal)", async function () {
-      await createTreasuryArmProposal("Standard treasury distribute");
+      await createTreasuryArmProposal("Treasury ARM distribute");
       await advanceToSucceeded();
 
       // Queue while still pre-trigger.
@@ -558,11 +564,11 @@ describe("Wind-Down & Redemption Integration", function () {
       // Advance past the execution delay so the timelock would otherwise
       // permit execution — this isolates the wind-down gate as the only
       // remaining barrier.
-      await time.increase(STANDARD_EXECUTION_DELAY + 1);
+      await time.increase(EXTENDED_EXECUTION_DELAY + 1);
 
       // Trigger wind-down with the proposal sitting in Queued state.
-      // (windDownDeadline is 365 days out and we have only advanced by ~12
-      // days of voting + 2 days of execution delay, so we're still
+      // (windDownDeadline is 365 days out and we have only advanced by ~16
+      // days of voting + 7 days of execution delay, so we're still
       // pre-deadline; advance past it before triggering.)
       if ((await time.latest()) <= windDownDeadline) {
         await time.increaseTo(windDownDeadline + 1);

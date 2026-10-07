@@ -313,11 +313,14 @@ describe("Governance Integration", function () {
       ).to.be.revertedWithCustomError(governor, "Gov_BelowProposalThreshold");
     });
 
+    // WHY: the Standard lifecycle needs an action that classifies as Standard. A small USDC
+    // distribution (1% of the treasury's 100k USDC) does; any ARM distribution would be
+    // forced to Extended because treasury ARM becomes voting power.
     it("should transition Pending → Active → Succeeded", async function () {
       const targets = [await treasury.getAddress()];
       const values = [0n];
       const calldatas = [treasury.interface.encodeFunctionData("distribute", [
-        await armToken.getAddress(), carol.address, ethers.parseUnits("100", ARM_DECIMALS)
+        await usdc.getAddress(), carol.address, ethers.parseUnits("1000", USDC_DECIMALS)
       ])];
 
       await governor.connect(alice).propose(
@@ -378,12 +381,14 @@ describe("Governance Integration", function () {
       expect(await governor.state(1)).to.equal(ProposalState.Defeated);
     });
 
+    // WHY: end-to-end Standard path through the timelock. Uses a sub-5% USDC distribution so
+    // the proposal stays Standard (ARM distributions are always Extended).
     it("should queue and execute via timelock", async function () {
-      const distributeAmount = ethers.parseUnits("1000", ARM_DECIMALS);
+      const distributeAmount = ethers.parseUnits("1000", USDC_DECIMALS);
       const targets = [await treasury.getAddress()];
       const values = [0n];
       const calldatas = [treasury.interface.encodeFunctionData("distribute", [
-        await armToken.getAddress(), carol.address, distributeAmount
+        await usdc.getAddress(), carol.address, distributeAmount
       ])];
 
       await governor.connect(alice).propose(
@@ -405,11 +410,11 @@ describe("Governance Integration", function () {
       await time.increase(STANDARD_EXECUTION_DELAY + 1);
 
       // Execute
-      const carolBalanceBefore = await armToken.balanceOf(carol.address);
+      const carolBalanceBefore = await usdc.balanceOf(carol.address);
       await governor.execute(1);
       expect(await governor.state(1)).to.equal(ProposalState.Executed);
 
-      const carolBalanceAfter = await armToken.balanceOf(carol.address);
+      const carolBalanceAfter = await usdc.balanceOf(carol.address);
       expect(carolBalanceAfter - carolBalanceBefore).to.equal(distributeAmount);
     });
 

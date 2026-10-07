@@ -1382,7 +1382,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     /// @dev Classify a proposal based on its calldata. Fail-closed: any selector not
     ///      explicitly registered as Extended or Standard defaults to Extended.
     ///      If any action targets an extended selector, the entire proposal is Extended.
-    ///      Treasury-targeted distribute() and distributeETH() amounts are aggregated
+    ///      Any treasury distribute() of ARM forces Extended. Other treasury-targeted
+    ///      distribute() and distributeETH() amounts are aggregated
     ///      per token across the entire proposal; if any token's aggregate exceeds 5%
     ///      of the spot treasury balance, force Extended. Per-token aggregation
     ///      prevents a proposer from batch-splitting one large drain into many
@@ -1431,6 +1432,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
             (address token, uint256 amount, bool ok) = _decodeTreasuryDistribute(calldatas[i]);
             if (!ok) continue;
+            // Treasury ARM granted to any address becomes permanent voting power, so every
+            // ARM distribution takes the Extended bar regardless of the 5% threshold.
+            if (token == address(armToken)) return ProposalType.Extended;
 
             bool found;
             for (uint256 k = 0; k < tokenCount; k++) {

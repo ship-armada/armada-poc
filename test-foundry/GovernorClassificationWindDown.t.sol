@@ -399,6 +399,60 @@ contract GovernorClassificationWindDownTest is Test, GovernorDeployHelper {
         assertEq(uint256(pType), uint256(ProposalType.Standard));
     }
 
+    // WHY: treasury ARM granted to an address becomes permanent voting power (non-transferable
+    // ARM can still be delegated). Under the 5% rule a 250k grant of 7.8M treasury ARM would ride
+    // the Standard bar every outflow window, letting a low-turnout win compound into a lasting
+    // majority. Any ARM distribution — however small — must take the Extended path.
+    function test_classify_armDistributeSmallAmountForcesExtended() public {
+        // 1 ARM out of ~6M treasury ARM: far below the 5% threshold
+        bytes memory data = abi.encodeWithSelector(
+            bytes4(keccak256("distribute(address,address,uint256)")),
+            address(armToken),
+            alice,
+            1e18
+        );
+        uint256 proposalId = _proposeWithCalldata(alice, ProposalType.Standard, address(treasury), data);
+
+        (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
+        assertEq(uint256(pType), uint256(ProposalType.Extended));
+    }
+
+    // WHY: the ARM rule must hold for every amount and recipient, not just a sample value.
+    function testFuzz_classify_armDistributeAlwaysExtended(address recipient, uint256 amount) public {
+        amount = bound(amount, 1, armToken.balanceOf(address(treasury)));
+        bytes memory data = abi.encodeWithSelector(
+            bytes4(keccak256("distribute(address,address,uint256)")),
+            address(armToken),
+            recipient,
+            amount
+        );
+        uint256 proposalId = _proposeWithCalldata(alice, ProposalType.Standard, address(treasury), data);
+
+        (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
+        assertEq(uint256(pType), uint256(ProposalType.Extended));
+    }
+
+    // WHY: an ARM grant hidden in a batch next to a routine sub-threshold USDC spend must still
+    // force the whole proposal to Extended.
+    function test_classify_armDistributeInMixedBatchForcesExtended() public {
+        usdc.mint(address(treasury), 1_000_000e6);
+
+        bytes4 distSel = bytes4(keccak256("distribute(address,address,uint256)"));
+        address[] memory targets = new address[](2);
+        targets[0] = address(treasury);
+        targets[1] = address(treasury);
+        uint256[] memory values = new uint256[](2);
+        bytes[] memory calldatas = new bytes[](2);
+        calldatas[0] = abi.encodeWithSelector(distSel, address(usdc), alice, 10_000e6);
+        calldatas[1] = abi.encodeWithSelector(distSel, address(armToken), bob, 1e18);
+
+        vm.prank(alice);
+        uint256 proposalId = governor.propose(ProposalType.Standard, targets, values, calldatas, "usdc + arm");
+
+        (,ProposalType pType,,,,,,, ) = governor.getProposal(proposalId);
+        assertEq(uint256(pType), uint256(ProposalType.Extended));
+    }
+
     // WHY: distributeETH must mirror the >5% auto-promotion that distribute() has, or
     // governance could drain ETH at the Standard quorum/timing threshold while ERC20
     // drains require Extended. Treasury balance is read via address.balance for the

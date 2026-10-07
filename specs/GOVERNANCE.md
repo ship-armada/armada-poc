@@ -192,6 +192,7 @@ loosens constraints, or increases risk exposure:
 
 * Fee parameter increases
 * Treasury allocation via `distribute()` or `distributeETH()` exceeding 5% of current treasury balance (the 5% rule applies to the per-tx distribution channel only — `stewardSpend()` is governed by the per-token Steward Budget table; see §Treasury Steward)
+* Any treasury `distribute()` of ARM, regardless of amount. Distributed ARM becomes permanent voting power (non-transferable ARM can still be delegated), so a Standard-bar ARM grant repeated each outflow window would let a low-turnout win compound into a lasting majority.
 * Treasury Steward election
 * Security Council seat changes via governance
 * Contract upgrades (governor, fee module, revenue counter)
@@ -223,7 +224,7 @@ constraints, or reduces risk exposure:
 * Quorum floor increases
 * Steward budget decreases (remove token, decrease per-token limit, shorten window)
 
-All other proposals — including treasury allocations within 5%
+All other proposals — including non-ARM treasury allocations within 5%
 and routine operational actions — are **standard**.
 
 **Design principle: tightening is easy, loosening is hard.** Actions
@@ -327,8 +328,9 @@ Most reusable governance parameters listed above are themselves governable — l
 |----------|-------|---------------|
 | **Fees** | Fee increases (shield fee, yield fee, volume tiers, integrator terms) | Extended |
 | **Fees** | Fee decreases | Standard |
-| **Treasury operations** | `distribute()` / `distributeETH()` allocations ≤5% of treasury balance | Standard |
+| **Treasury operations** | `distribute()` / `distributeETH()` allocations ≤5% of treasury balance (non-ARM tokens and ETH) | Standard |
 | **Treasury operations** | `distribute()` / `distributeETH()` allocations >5% of treasury balance | Extended |
+| **Treasury operations** | `distribute()` of ARM, any amount | Extended |
 | **Treasury operations** | `stewardSpend()` (within an authorized per-token Steward Budget) | Steward (pass-by-default; per-token budget is the gate, not the 5% rule — see §Treasury Steward) |
 | **Parameters** | Batch windows, relayer config, yield sources | Standard |
 | **Parameters** | Activity shaping defaults (transaction size constraints, rate limits, recommended ranges) | Extended |

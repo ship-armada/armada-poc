@@ -573,11 +573,11 @@ describe("Crowdfund Integration", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: not active window");
     });
 
-    it("should reject commit below $10 USDC minimum", async function () {
+    it("should reject commit below $50 USDC minimum", async function () {
       await setupActive([seed1]);
 
       await expect(
-        crowdfund.connect(seed1).commit(0, USDC(9))
+        crowdfund.connect(seed1).commit(0, USDC(49))
       ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
 
       await expect(
@@ -585,12 +585,12 @@ describe("Crowdfund Integration", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
     });
 
-    it("should accept commit of exactly $10 USDC", async function () {
+    it("should accept commit of exactly $50 USDC", async function () {
       await setupActive([seed1]);
 
-      await crowdfund.connect(seed1).commit(0, USDC(10));
+      await crowdfund.connect(seed1).commit(0, USDC(50));
       const committed = await crowdfund.getCommitment(seed1.address, 0);
-      expect(committed).to.equal(USDC(10));
+      expect(committed).to.equal(USDC(50));
     });
 
     it("should track aggregate stats correctly", async function () {

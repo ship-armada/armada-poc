@@ -25,7 +25,8 @@ const FOURTEEN_DAYS = 14 * ONE_DAY;
 
 // Spec-aligned timing
 const STANDARD_VOTING_PERIOD = SEVEN_DAYS;
-const STANDARD_EXECUTION_DELAY = TWO_DAYS;
+const STANDARD_EXECUTION_DELAY = 3 * ONE_DAY;
+const RATIFICATION_PERIOD = FOURTEEN_DAYS;
 
 describe("Governance Veto", function () {
   // Contracts
@@ -215,8 +216,8 @@ describe("Governance Veto", function () {
       expect(proposalType).to.equal(ProposalType.VetoRatification);
 
       // VetoRatification has 0 voting delay — voting starts at creation time
-      // voteEnd should be voteStart + 7 days
-      expect(voteEnd - voteStart).to.equal(SEVEN_DAYS);
+      // voteEnd should be voteStart + 14 days
+      expect(voteEnd - voteStart).to.equal(RATIFICATION_PERIOD);
     });
 
     it("should start ratification voting immediately (Active state)", async function () {
@@ -333,8 +334,8 @@ describe("Governance Veto", function () {
       await governor.connect(alice).castVote(ratId, Vote.For);
       await governor.connect(bob).castVote(ratId, Vote.For);
 
-      // Advance past voting period (7 days)
-      await time.increase(SEVEN_DAYS + 1);
+      // Advance past voting period (14 days)
+      await time.increase(RATIFICATION_PERIOD + 1);
 
       await expect(governor.resolveRatification(ratId))
         .to.emit(governor, "RatificationResolved")
@@ -353,7 +354,7 @@ describe("Governance Veto", function () {
       // No one votes — quorum not met
 
       // Advance past voting period
-      await time.increase(SEVEN_DAYS + 1);
+      await time.increase(RATIFICATION_PERIOD + 1);
 
       await expect(governor.resolveRatification(ratId))
         .to.emit(governor, "RatificationResolved")
@@ -372,7 +373,7 @@ describe("Governance Veto", function () {
       await governor.connect(bob).castVote(ratId, Vote.Against);
 
       // Advance past voting period
-      await time.increase(SEVEN_DAYS + 1);
+      await time.increase(RATIFICATION_PERIOD + 1);
 
       const tx = governor.resolveRatification(ratId);
       await expect(tx).to.emit(governor, "ProposalRestored").withArgs(proposalId);
@@ -394,7 +395,7 @@ describe("Governance Veto", function () {
       await governor.connect(alice).castVote(ratId, Vote.Against);
       await governor.connect(bob).castVote(ratId, Vote.Against);
 
-      await time.increase(SEVEN_DAYS + 1);
+      await time.increase(RATIFICATION_PERIOD + 1);
       await governor.resolveRatification(ratId);
 
       // Proposal must be Queued, not Canceled
@@ -428,7 +429,7 @@ describe("Governance Veto", function () {
       const ratId = await vetoProposal(proposalId);
 
       await governor.connect(alice).castVote(ratId, Vote.For);
-      await time.increase(SEVEN_DAYS + 1);
+      await time.increase(RATIFICATION_PERIOD + 1);
       await governor.resolveRatification(ratId);
 
       await expect(
@@ -447,7 +448,7 @@ describe("Governance Veto", function () {
 
       await governor.connect(alice).castVote(ratId, Vote.Against);
       await governor.connect(bob).castVote(ratId, Vote.Against);
-      await time.increase(SEVEN_DAYS + 1);
+      await time.increase(RATIFICATION_PERIOD + 1);
       await governor.resolveRatification(ratId);
 
       // SC ejected, set new SC (dave)
@@ -471,7 +472,7 @@ describe("Governance Veto", function () {
 
       await governor.connect(alice).castVote(ratId1, Vote.Against);
       await governor.connect(bob).castVote(ratId1, Vote.Against);
-      await time.increase(SEVEN_DAYS + 1);
+      await time.increase(RATIFICATION_PERIOD + 1);
       await governor.resolveRatification(ratId1);
 
       // Set new SC (dave)
@@ -506,7 +507,7 @@ describe("Governance Veto", function () {
       // Vote FOR so it would be "Succeeded"
       await governor.connect(alice).castVote(ratId, Vote.For);
       await governor.connect(bob).castVote(ratId, Vote.For);
-      await time.increase(SEVEN_DAYS + 1);
+      await time.increase(RATIFICATION_PERIOD + 1);
 
       await expect(
         governor.queue(ratId)
@@ -520,7 +521,7 @@ describe("Governance Veto", function () {
       // Vote FOR
       await governor.connect(alice).castVote(ratId, Vote.For);
       await governor.connect(bob).castVote(ratId, Vote.For);
-      await time.increase(SEVEN_DAYS + 1);
+      await time.increase(RATIFICATION_PERIOD + 1);
 
       // Ratification proposals are never queued (they bypass normal execution path),
       // so execute() reverts at the Queued state check before reaching the type guard.
@@ -540,7 +541,7 @@ describe("Governance Veto", function () {
       const ratId = await vetoProposal(proposalId1);
       await governor.connect(alice).castVote(ratId, Vote.Against);
       await governor.connect(bob).castVote(ratId, Vote.Against);
-      await time.increase(SEVEN_DAYS + 1);
+      await time.increase(RATIFICATION_PERIOD + 1);
       await governor.resolveRatification(ratId);
 
       expect(await governor.securityCouncil()).to.equal(ethers.ZeroAddress);
@@ -593,7 +594,7 @@ describe("Governance Veto", function () {
       await governor.connect(bob).castVote(ratId, Vote.For);
 
       // 5. Voting ends
-      await time.increase(SEVEN_DAYS + 1);
+      await time.increase(RATIFICATION_PERIOD + 1);
 
       // 6. Resolve
       await governor.resolveRatification(ratId);
@@ -619,7 +620,7 @@ describe("Governance Veto", function () {
       await governor.connect(bob).castVote(ratId, Vote.Against);
 
       // 4. Resolve → proposal restored
-      await time.increase(SEVEN_DAYS + 1);
+      await time.increase(RATIFICATION_PERIOD + 1);
       await governor.resolveRatification(ratId);
 
       // 5. SC ejected

@@ -493,15 +493,14 @@ describe("RevenueLock max revenue increase per day", () => {
 });
 
 // GOVERNANCE.md §Treasury Outflow Limits: 30-day rolling window; limit is the greater of the
-// absolute amount and the percentage of treasury balance; the floor is immutable once set.
+// absolute amount and the percentage of treasury balance; no floor (it is fixed at deploy).
 const SPEC_OUTFLOW = {
-  usdc: { windowDuration: 30 * 86400, limitBps: 1000, limitAbsolute: "100000000000", floorAbsolute: "50000000000" },
+  usdc: { windowDuration: 30 * 86400, limitBps: 1000, limitAbsolute: "100000000000", floorAbsolute: "0" },
   arm: {
     windowDuration: 30 * 86400, limitBps: 300,
-    limitAbsolute: "250000000000000000000000", floorAbsolute: "100000000000000000000000",
+    limitAbsolute: "250000000000000000000000", floorAbsolute: "0",
   },
-  // USDC pattern: 30-day window, 10%, 25 ETH absolute (~$100k); floor 0 because floors can
-  // only ever be raised.
+  // USDC pattern: 30-day window, 10%, 25 ETH absolute (~$100k), no floor.
   eth: { windowDuration: 30 * 86400, limitBps: 1000, limitAbsolute: "25000000000000000000", floorAbsolute: "0" },
 };
 

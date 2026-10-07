@@ -314,17 +314,17 @@ describe("Crowdfund Adversarial", function () {
       await crowdfund.addSeeds([allSigners[1].address]);
 
 
-      await fundAndApprove(allSigners[1], USDC(15_010));
+      await fundAndApprove(allSigners[1], USDC(15_050));
       await crowdfund.connect(allSigners[1]).commit(0, USDC(15_000));
 
-      // $10 more (meets MIN_COMMIT, exceeds hop cap — accepted for refund at settlement)
-      await crowdfund.connect(allSigners[1]).commit(0, USDC(10));
+      // $50 more (meets MIN_COMMIT, exceeds hop cap — accepted for refund at settlement)
+      await crowdfund.connect(allSigners[1]).commit(0, USDC(50));
 
       const committed = await crowdfund.getCommitment(allSigners[1].address, 0);
-      expect(committed).to.equal(USDC(15_010));
+      expect(committed).to.equal(USDC(15_050));
 
       const [tc0] = await crowdfund.getHopStats(0);
-      expect(tc0).to.equal(USDC(15_010));
+      expect(tc0).to.equal(USDC(15_050));
     });
 
     it("totalCommitted exactly at MIN_SALE finalizes (not cancel)", async function () {
@@ -507,26 +507,26 @@ describe("Crowdfund Adversarial", function () {
       expect(await crowdfund.refundMode()).to.be.true;
     });
 
-    it("commit below MIN_COMMIT ($10 USDC) reverts", async function () {
+    it("commit below MIN_COMMIT ($50 USDC) reverts", async function () {
       await crowdfund.addSeeds([allSigners[1].address]);
 
 
-      await fundAndApprove(allSigners[1], USDC(10));
+      await fundAndApprove(allSigners[1], USDC(50));
 
       // 1 wei reverts
       await expect(
         crowdfund.connect(allSigners[1]).commit(0, 1n)
       ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
 
-      // $9.999999 reverts
+      // $49.999999 reverts
       await expect(
-        crowdfund.connect(allSigners[1]).commit(0, USDC(10) - 1n)
+        crowdfund.connect(allSigners[1]).commit(0, USDC(50) - 1n)
       ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
 
-      // Exactly $10 succeeds
-      await crowdfund.connect(allSigners[1]).commit(0, USDC(10));
+      // Exactly $50 succeeds
+      await crowdfund.connect(allSigners[1]).commit(0, USDC(50));
       const committed = await crowdfund.getCommitment(allSigners[1].address, 0);
-      expect(committed).to.equal(USDC(10));
+      expect(committed).to.equal(USDC(50));
     });
 
     it("seed self-invite creates a hop-1 node (permitted in multi-node model)", async function () {

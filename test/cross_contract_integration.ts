@@ -22,6 +22,7 @@ const Vote = { Against: 0, For: 1, Abstain: 2 };
 
 const ONE_DAY = 86400;
 const TWO_DAYS = 2 * ONE_DAY;
+const THREE_DAYS = 3 * ONE_DAY;
 const FIVE_DAYS = 5 * ONE_DAY;
 const SEVEN_DAYS = 7 * ONE_DAY;
 const THREE_WEEKS = 21 * ONE_DAY;
@@ -273,8 +274,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await governor.queue(proposalId);
       expect(await governor.state(proposalId)).to.equal(ProposalState.Queued);
 
-      // 15. Wait for execution delay (2 days timelock)
-      await time.increase(TWO_DAYS + 1);
+      // 15. Wait for the Standard execution delay (3 days)
+      await time.increase(THREE_DAYS + 1);
 
       // 16. Execute
       await governor.execute(proposalId);
@@ -487,7 +488,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Queue and wait
       await governor.queue(proposalId);
-      await time.increase(TWO_DAYS + 1);
+      await time.increase(THREE_DAYS + 1);
 
       // Execute succeeds — withdrawUnallocatedArm is permissionless
       await governor.execute(proposalId);
@@ -946,7 +947,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Queue and execute
       await localGovernor.queue(proposalId);
-      await time.increase(TWO_DAYS + 1);
+      await time.increase(THREE_DAYS + 1);
       await localGovernor.execute(proposalId);
       expect(await localGovernor.state(proposalId)).to.equal(ProposalState.Executed);
     });

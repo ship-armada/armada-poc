@@ -144,7 +144,7 @@ describe("Governance UUPS Upgrade", function () {
         await governor.proposalTypeParams(0); // Standard
       expect(delay).to.equal(TWO_DAYS);
       expect(period).to.equal(7 * 24 * 60 * 60);
-      expect(execDelay).to.equal(TWO_DAYS);
+      expect(execDelay).to.equal(3 * 24 * 60 * 60);
       expect(quorum).to.equal(2000);
 
       // Upgrade
@@ -169,7 +169,7 @@ describe("Governance UUPS Upgrade", function () {
       const [d2, p2, e2, q2] = await governor.proposalTypeParams(0);
       expect(d2).to.equal(TWO_DAYS);
       expect(p2).to.equal(7 * 24 * 60 * 60);
-      expect(e2).to.equal(TWO_DAYS);
+      expect(e2).to.equal(3 * 24 * 60 * 60);
       expect(q2).to.equal(2000);
     });
   });

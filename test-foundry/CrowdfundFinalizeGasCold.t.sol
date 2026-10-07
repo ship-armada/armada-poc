@@ -29,6 +29,7 @@ contract CrowdfundFinalizeGasColdTest is Test {
 
     uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
     uint256 constant TX_GAS_CAP = 16_777_216; // EIP-7825 per-tx cap (2^24)
+    uint256 constant MIN_COMMIT = 50 * 1e6;     // ArmadaCrowdfund.MIN_COMMIT
 
     function setUp() public {
         admin = address(this);
@@ -62,7 +63,7 @@ contract CrowdfundFinalizeGasColdTest is Test {
     }
 
     /// @dev Build the invite tree for (h0, h1, h2) nodes. Commit amounts are supplied per hop so
-    ///      the same tree can drive either the refund path ($10 everywhere) or the success path.
+    ///      the same tree can drive either the refund path (MIN_COMMIT everywhere) or the success path.
     ///      July-2026 structural ceilings: h0 ≤ 180, h1 ≤ 3*h0 + 100, h2 ≤ 2*h1 + 120.
     function _build(
         uint256 h0,
@@ -74,9 +75,9 @@ contract CrowdfundFinalizeGasColdTest is Test {
     ) internal returns (ArmadaCrowdfund cf) {
         cf = _buildTree(h0, h1, h2);
 
-        // commits: hop-0 at hop0Amt; first hop1RealCount hop-1 nodes at hop1RealAmt, rest $10;
-        // all hop-2 at $10. Every node commits > 0 so the iteration body runs for it.
-        uint256 dust = 10 * 1e6;
+        // commits: hop-0 at hop0Amt; first hop1RealCount hop-1 nodes at hop1RealAmt, rest at
+        // MIN_COMMIT; all hop-2 at MIN_COMMIT. Every node commits > 0 so the iteration body runs for it.
+        uint256 dust = MIN_COMMIT;
         for (uint256 i = 0; i < h0; i++) _commitAs(cf, _seedAddr(i), 0, hop0Amt);
         for (uint256 i = 0; i < h1; i++) _commitAs(cf, _hop1Addr(i), 1, i < hop1RealCount ? hop1RealAmt : dust);
         for (uint256 i = 0; i < h2; i++) _commitAs(cf, _hop2Addr(i), 2, dust);
@@ -123,10 +124,10 @@ contract CrowdfundFinalizeGasColdTest is Test {
         }
     }
 
-    /// @dev Refund-path tree: $10 everywhere (capped demand << MIN_SALE). Iteration cost is
+    /// @dev Refund-path tree: MIN_COMMIT everywhere (capped demand << MIN_SALE). Iteration cost is
     ///      identical to the success path; this isolates the loop cost cheaply.
     function _buildRefund(uint256 h0, uint256 h1, uint256 h2) internal returns (ArmadaCrowdfund cf) {
-        return _build(h0, h1, h2, 10 * 1e6, 0, 0);
+        return _build(h0, h1, h2, MIN_COMMIT, 0, 0);
     }
 
     function _measure(ArmadaCrowdfund cf) internal returns (uint256 gasUsed) {

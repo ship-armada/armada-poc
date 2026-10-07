@@ -498,25 +498,25 @@ export function getNetworkConfig(): NetworkConfig {
 
   // Treasury outflow limits, env-overridable per token. Defaults are the GOVERNANCE.md
   // §Treasury Outflow Limits values: 30-day rolling window, limit = greater of the
-  // absolute amount and the % of treasury balance, immutable floor.
+  // absolute amount and the % of treasury balance, no floor (the floor is fixed at deploy).
   const outflowConfig: NetworkConfig["outflowConfig"] = {
     usdc: {
       windowDuration: numEnv("OUTFLOW_USDC_WINDOW", 2592000),                         // 30 days
       limitBps: numEnv("OUTFLOW_USDC_BPS", 1000),                                     // 10%
       limitAbsolute: optionalEnv("OUTFLOW_USDC_ABSOLUTE", "100000000000"),            // 100,000 USDC (6dp)
-      floorAbsolute: optionalEnv("OUTFLOW_USDC_FLOOR", "50000000000"),                // 50,000 USDC (6dp)
+      floorAbsolute: optionalEnv("OUTFLOW_USDC_FLOOR", "0"),                          // none
     },
     arm: {
       windowDuration: numEnv("OUTFLOW_ARM_WINDOW", 2592000),                          // 30 days
       limitBps: numEnv("OUTFLOW_ARM_BPS", 300),                                       // 3%
       limitAbsolute: optionalEnv("OUTFLOW_ARM_ABSOLUTE", "250000000000000000000000"), // 250,000 ARM (18dp)
-      floorAbsolute: optionalEnv("OUTFLOW_ARM_FLOOR", "100000000000000000000000"),    // 100,000 ARM (18dp)
+      floorAbsolute: optionalEnv("OUTFLOW_ARM_FLOOR", "0"),                           // none
     },
     eth: {
       windowDuration: numEnv("OUTFLOW_ETH_WINDOW", 2592000),                          // 30 days
       limitBps: numEnv("OUTFLOW_ETH_BPS", 1000),                                      // 10%
       limitAbsolute: optionalEnv("OUTFLOW_ETH_ABSOLUTE", "25000000000000000000"),     // 25 ETH (18dp)
-      floorAbsolute: optionalEnv("OUTFLOW_ETH_FLOOR", "0"),                           // none (raisable)
+      floorAbsolute: optionalEnv("OUTFLOW_ETH_FLOOR", "0"),                           // none
     },
   };
 

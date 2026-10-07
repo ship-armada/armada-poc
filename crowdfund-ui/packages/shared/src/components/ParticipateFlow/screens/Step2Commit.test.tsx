@@ -6,8 +6,8 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
 import Step2Commit from './Step2Commit.js'
 
-// Shared tests resolve the default (mainnet) profile → MIN_COMMIT = $10.
-const MIN = 10
+// Shared tests resolve the default (mainnet) profile → MIN_COMMIT = $50.
+const MIN = 50
 
 function renderSingle() {
   render(

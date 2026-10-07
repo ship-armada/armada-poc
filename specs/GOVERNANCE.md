@@ -142,7 +142,7 @@ until they delegate; sponsored batches retain this consequence by explicit desig
 4. OUTCOME  → DEFEATED (quorum not met, or majority AGAINST)
             → SUCCEEDED (quorum met + majority FOR)
 5. QUEUED   → Execution delay — Security Council may veto during this window (see §Security Council)
-              Standard: 48 hours
+              Standard:  3 days
               Extended:  7 days
 6. EXECUTED → On-chain, irreversible
 ```
@@ -184,6 +184,7 @@ loosens constraints, or increases risk exposure:
 * Security Council seat changes via governance
 * Contract upgrades (governor, fee module, revenue counter)
 * ARM token whitelist additions
+* Enabling global ARM transfers (`setTransferable(true)`, one-way and irreversible)
 * Expanding the qualifying revenue definition
 * Treasury outflow rate limit increases or window extensions
 * Quorum decreases
@@ -239,6 +240,7 @@ principle to the full proposal classification system.
 | Quorum floor | Decrease (easier to reach quorum) | Increase (harder to reach quorum) |
 | Steward budget (per-token limit / window) | Add token, increase limit, extend window | Remove token, decrease limit, shorten window |
 | Whitelist addition | Always extended | — (no removal path) |
+| Global ARM transfer enable | Always extended | — (one-way, cannot be re-restricted) |
 | Contract upgrade | Always extended | — |
 | SC replacement | Always extended | — |
 | Revenue definition expansion | Always extended | — |
@@ -264,7 +266,7 @@ entire proposal is extended.
 
 **Implementation note: outflow setters and `updateStewardBudgetToken`.** Same flat-Extended pattern applies to `setOutflowWindow`, `setOutflowLimitBps`, `setOutflowLimitAbsolute`, and `updateStewardBudgetToken`. Each takes a single directional parameter that the spec table classifies per-direction (tightening = Standard, loosening = Extended), but the current `_classifyProposal` does not decode the calldata to compare proposed-vs-current values for these selectors. They run flat-Extended at launch — conservative for safety but over-gates the tightening direction. **Tightening escape valves at launch:** for steward budgets, `removeStewardBudgetToken` is already Standard, so governance can revoke a budget at the lower bar (and re-add via Extended if needed). For outflow tightening, no escape valve exists at launch — community-driven outflow restriction takes 23 days at the Extended bar, leaving up to a 14-day frontrun window against a 9-day pass-by-default steward cycle. Directional classification for these setters is part of the post-launch governor upgrade scope (see §Future governance upgrades).
 
-**Note: veto ratification votes** (see §Security Council) are a fourth proposal category with distinct parameters — they are triggered automatically when the SC vetoes a queued proposal, have a fixed 7-day voting period, use standard quorum, and carry the unique side effect of SC ejection on AGAINST outcome. The governor contract must implement this as a separate proposal type alongside standard, extended, and signaling.
+**Note: veto ratification votes** (see §Security Council) are a fourth proposal category with distinct parameters — they are triggered automatically when the SC vetoes a queued proposal, have a fixed 14-day voting period, use standard quorum, and carry the unique side effect of SC ejection on AGAINST outcome. The governor contract must implement this as a separate proposal type alongside standard, extended, and signaling.
 
 ### Signaling proposals
 
@@ -291,13 +293,13 @@ A signaling proposal is a non-executable proposal used to measure token-holder p
 |-----------|----------|----------|
 | Proposal threshold | 5,000 ARM | 5,000 ARM |
 | Bond | 1,000 ARM | 1,000 ARM |
-| Quorum | max(20% of circulating voting power, 100,000 ARM) | max(30% of circulating voting power, 100,000 ARM) |
+| Quorum | max(20% of circulating voting power, 200,000 ARM) | max(30% of circulating voting power, 200,000 ARM) |
 | Proposal delay | 48 hours | 48 hours |
 | Voting period | 7 days | 14 days |
-| Execution delay | 48 hours | 7 days |
+| Execution delay | 3 days | 7 days |
 | Governance quiet period | 7 days post-crowdfund finalization | — (one-time only) |
 
-**Quorum floor: 100,000 ARM.** Quorum is the greater of the percentage-based threshold and this absolute floor. This prevents governance passing on near-zero turnout regardless of how much ARM has been claimed and delegated at any given time. At the base raise of 1.2M ARM, 100,000 ARM represents ~8.3% of the crowdfund allocation — meaningful coordinated participation.
+**Quorum floor: 200,000 ARM.** Quorum is the greater of the percentage-based threshold and this absolute floor. This prevents governance passing on near-zero turnout regardless of how much ARM has been claimed and delegated at any given time. At the base raise of 1.2M ARM, 200,000 ARM represents ~16.7% of the crowdfund allocation — meaningful coordinated participation. The floor sets quorum until eligible supply exceeds 1,000,000 ARM for Standard proposals (20%) or ~666,667 ARM for Extended (30%). It applies to every vote type, including steward-spend defeat and veto ratification.
 
 **Mutability:** `QUORUM_FLOOR` is a compile-time `constant` in the current implementation — adjusting it requires a UUPS governor upgrade (Extended proposal), not the directional Standard/Extended path described in the classification table. The post-launch governor upgrade will introduce a setter; until then, the floor is fixed.
 
@@ -339,6 +341,7 @@ Most reusable governance parameters listed above are themselves governable — l
 | **Revenue** | Non-stablecoin revenue attestation (`addRevenue` increment, routine; `attestRevenue` SET, confirmed-error correction) | Standard |
 | **Revenue** | Expand qualifying revenue definition | Extended |
 | **ARM token** | Add address to transfer whitelist (add-only, no removal) | Extended |
+| **ARM token** | Enable global transfers (`setTransferable(true)`, one-way) | Extended |
 | **Signaling** | Non-executable preference vote (no execution, no bond) | Standard |
 
 ### Immutable
@@ -410,7 +413,7 @@ The steward operates within a **per-token budget table** — a governance-manage
 
 Treasury Steward proposals **pass by default** unless governance votes them down within a 7-day review window.
 
-**Defeat condition:** Standard quorum (20% of circulating voting power or 100,000 ARM, whichever is greater) is reached AND a simple majority votes AGAINST. If quorum is not met, the proposal passes by default — the community isn't concerned enough to mobilize.
+**Defeat condition:** Standard quorum (20% of circulating voting power or 200,000 ARM, whichever is greater) is reached AND a simple majority votes AGAINST. If quorum is not met, the proposal passes by default — the community isn't concerned enough to mobilize.
 
 This inverts the normal proposal flow for routine operational spending: the steward acts unless the community objects, rather than requiring active support for every payment.
 
@@ -480,7 +483,7 @@ When the Security Council vetoes a queued proposal:
 
 1. **Proposal passes** with quorum during normal voting.
 2. **SC vetoes** during the execution delay window. The proposal is cancelled. SC must publish a written rationale (off-chain, with on-chain hash for verifiability).
-3. **A 7-day veto ratification vote begins automatically.** The question: "Uphold the Security Council's veto?"
+3. **A 14-day veto ratification vote begins automatically.** The question: "Uphold the Security Council's veto?"
    - **FOR (uphold veto):** The vetoed proposal is permanently cancelled. The SC acted correctly in the community's view.
    - **AGAINST (deny veto):** The original vetoed proposal is
      restored. The current Security Council multisig is ejected
@@ -494,7 +497,7 @@ When the Security Council vetoes a queued proposal:
      No re-submission is required. The community has voted twice
      (once to pass the original proposal, once to deny the veto).
    - **Quorum not met:** Veto stands by default. If the community can't mobilize to override, the SC's security judgment holds.
-4. Ratification uses **standard quorum** (20% of circulating voting power or 100,000 ARM).
+4. Ratification uses **standard quorum** (20% of circulating voting power or 200,000 ARM).
 
 **The ejection consequence is the accountability mechanism.** The SC only vetoes when they're genuinely confident the community will back them — vetoing a proposal the community wanted means losing the seat. This replaces the need for a separate SC bond or punishment mechanism.
 
@@ -771,7 +774,7 @@ Aggregate rolling-window limits on treasury outflows. These are the primary defe
 |---|---|---|
 | Rolling window | 30 days | Yes — extensions require extended proposal; reductions require standard |
 | Limit | $100,000 or 10% of USDC in treasury, **whichever is greater** | Yes — increases require extended proposal; decreases require standard |
-| Minimum floor | $50,000 (governance cannot reduce below this) | No — immutable |
+| Minimum floor | None (0) | No — fixed at deploy |
 
 ### ARM outflow
 
@@ -779,25 +782,25 @@ Aggregate rolling-window limits on treasury outflows. These are the primary defe
 |---|---|---|
 | Rolling window | 30 days | Yes — extensions require extended proposal; reductions require standard |
 | Limit | 250,000 ARM or 3% of ARM in treasury, **whichever is greater** | Yes — increases require extended proposal; decreases require standard |
-| Minimum floor | 100,000 ARM (governance cannot reduce below this) | No — immutable |
+| Minimum floor | None (0) | No — fixed at deploy |
 
 ### ETH outflow
 
-Follows the USDC pattern. The treasury is not expected to hold meaningful ETH at launch, so no floor is set; governance can raise it later (floors can only increase).
+Follows the USDC pattern, including no floor.
 
 | Parameter | Value | Governable |
 |---|---|---|
 | Rolling window | 30 days | Yes — extensions require extended proposal; reductions require standard |
 | Limit | 25 ETH (≈ $100,000) or 10% of ETH in treasury, **whichever is greater** | Yes — increases require extended proposal; decreases require standard |
-| Minimum floor | None (0) | Raise only — once raised, cannot be reduced |
+| Minimum floor | None (0) | No — fixed at deploy |
 
 ### How limits work
 
 - **Aggregate, not per-proposal.** All treasury outflows within a rolling 30-day window count against the same limit — governance proposals, steward proposals, and any authorized module (e.g., future buyback contract).
 - **Per-asset tracking.** USDC, ARM and ETH limits are tracked independently. A large USDC outflow does not consume ARM or ETH budget, and vice versa.
 - **Temporarily blocked proposals revert at execution.** If a queued proposal fits within the effective outflow limit but exceeds the currently available budget because of recent outflows, execution reverts and may be retried later once the rolling window has created room. Proposals whose aggregate spend exceeds the effective outflow limit itself are rejected earlier by the queue-time feasibility check (see below).
-- **The percentage scales with treasury size.** On a $1M treasury, the USDC limit is $100k (floor binding). On a $5M treasury, the limit is $500k (10% binding). This allows the protocol to grow without constant parameter adjustments.
-- **The minimum floors are immutable.** Governance can raise the percentage or the floor, but cannot reduce below $50k USDC or 100k ARM. This prevents captured governance from weaponizing the outflow controls by setting them so low that legitimate treasury operations become impractical. Loosening attacks are handled separately by the delayed-activation mechanism.
+- **The percentage scales with treasury size.** On a $1M treasury, the USDC limit is $100k (absolute amount binding). On a $5M treasury, the limit is $500k (10% binding). This allows the protocol to grow without constant parameter adjustments.
+- **The floor is fixed at deploy and set to zero.** `floorAbsolute` is the lowest value governance may set the absolute limit to, and there is no setter for the floor itself. With a zero floor, governance can tighten the absolute limit all the way to 0 (and the percentage to 1 bps), so a captured majority could effectively freeze outflows with a Standard proposal; recovery is a loosening change behind the Extended cycle plus the 24-day activation delay. This is an accepted trade-off at launch, backstopped by the Security Council veto. Loosening attacks are handled separately by the delayed-activation mechanism.
 
 **Queue-time feasibility check.** When a proposal is queued, the governor checks whether any treasury spend action in the proposal exceeds the current effective outflow limit for that token. Spend amounts are aggregated per token across all actions in a batched proposal. If the aggregate exceeds the effective limit, the queue call reverts — the proposal can never execute under current parameters and should not occupy the timelock queue indefinitely. This check compares against the effective limit (the ceiling), not the available budget (ceiling minus recent outflows). A proposal that fits within the limit but exceeds the currently available budget is allowed to queue and can be executed later when the rolling window creates room. This check uses the current effective limit at queue time. A proposal that is impossible under current parameters but could become possible later due to treasury growth or a later governance limit change must be re-submitted.
 

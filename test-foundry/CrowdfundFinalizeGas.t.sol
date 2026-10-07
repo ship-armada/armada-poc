@@ -29,7 +29,7 @@ contract CrowdfundFinalizeGasTest is Test {
     uint256 constant HOP0_CAP = 15_000 * 1e6;
     uint256 constant HOP1_CAP = 4_000 * 1e6;
     uint256 constant HOP2_CAP = 1_000 * 1e6;
-    uint256 constant MIN_COMMIT = 10 * 1e6;
+    uint256 constant MIN_COMMIT = 50 * 1e6;
     uint8   constant MAX_SEEDS = 180;
 
     function setUp() public {

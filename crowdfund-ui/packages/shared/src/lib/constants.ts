@@ -47,7 +47,7 @@ const CONSTANTS_BY_PROFILE: Record<CrowdfundProfile, CrowdfundConstants> = {
     MAX_SEEDS: 180,
     LAUNCH_TEAM_HOP1_BUDGET: 100,
     LAUNCH_TEAM_HOP2_BUDGET: 120,
-    MIN_COMMIT: 10n * 10n ** 6n,
+    MIN_COMMIT: 50n * 10n ** 6n,
     WINDOW_DURATION: 21 * 24 * 60 * 60, // 21 days
     LAUNCH_TEAM_INVITE_PERIOD: 21 * 24 * 60 * 60, // 21 days (equal to WINDOW_DURATION)
     CLAIM_DEADLINE_DURATION: 1095 * 24 * 60 * 60, // 3 years
@@ -64,10 +64,11 @@ const CONSTANTS_BY_PROFILE: Record<CrowdfundProfile, CrowdfundConstants> = {
     MAX_SEEDS: 25,
     LAUNCH_TEAM_HOP1_BUDGET: 15,
     LAUNCH_TEAM_HOP2_BUDGET: 15,
-    // $10, matching the contract's hardcoded `MIN_COMMIT = 10 * 1e6` constant —
-    // it is NOT a per-deployment parameter, so every instance (incl. medi)
-    // enforces $10. A lower UI value here would let users submit a commit the
-    // contract reverts with "below minimum commitment".
+    // $10, matching the `MIN_COMMIT = 10 * 1e6` the deployed medi-Sepolia contracts
+    // were compiled with. MIN_COMMIT is a contract constant, not a deploy parameter,
+    // so this must match the bytecode of the instance the profile targets. A lower UI
+    // value would let users submit a commit the contract reverts with "below minimum
+    // commitment".
     MIN_COMMIT: 10n * 10n ** 6n,
     WINDOW_DURATION: 14 * 24 * 60 * 60, // 14 days
     LAUNCH_TEAM_INVITE_PERIOD: 14 * 24 * 60 * 60, // 14 days (equal to WINDOW_DURATION on medi-Sepolia)

@@ -31,6 +31,9 @@ jobs:
       - run: npx tsc --noEmit --project tsconfig.ci.json
       # Config unit tests (mocha, config/*.test.ts) — no chains or compilation needed.
       - run: npm run test:config
+      # Crowdfund model unit + jsdom end-to-end tests (mocha) — no chains or compilation needed.
+      # Its contract-parity test (test/crowdfund_model_parity.ts) runs in the hardhat job via test:all.
+      - run: npm run test:crowdfund-model
 
   # Builds the crowdfund indexer image exactly as the VPS does. `npm ci` inside the
   # build fails if crowdfund-ui/packages/indexer/package.json drifted from its

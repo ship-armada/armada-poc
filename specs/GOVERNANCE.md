@@ -53,7 +53,19 @@ This means:
 
 Delegation is free to change at any time. Redelegating takes effect for proposals created after the next block.
 
-**Votes can be changed during the voting period.** A voter may switch between FOR, AGAINST, and ABSTAIN at any time while voting is active. Only the final vote state at voting close counts. This encourages early participation — voters aren't penalized for updating their position as discussion evolves. **Votes cannot be withdrawn entirely** — once cast, the voter's weight counts toward quorum regardless of subsequent switches. This means quorum only increases during voting, preventing quorum manipulation (vote to push above threshold, then withdraw to drop below).
+**Votes can be changed during the voting period.** A voter may switch between FOR, AGAINST, and ABSTAIN at any time while voting is active. Only the final vote state at voting close counts. This encourages early participation — voters aren't penalized for updating their position as discussion evolves. **Votes cannot be withdrawn entirely** — once cast, a vote can only be moved between FOR, AGAINST, and ABSTAIN.
+
+### Quorum counting
+
+**The side that changes state must reach quorum by itself.** AGAINST and ABSTAIN votes never help a proposal pass:
+
+| Proposal type | Passes / takes effect when |
+|---|---|
+| Standard, Extended, Signaling | FOR votes ≥ quorum **and** FOR > AGAINST |
+| Veto ratification (overturning the veto) | AGAINST votes ≥ quorum **and** AGAINST > FOR — otherwise the veto stands |
+| Steward (pass-by-default) | Defeated only when total participation (FOR + AGAINST + ABSTAIN) ≥ quorum **and** AGAINST > FOR |
+
+Counting only the deciding side prevents a participation paradox: if every vote counted toward quorum, a losing minority that voted AGAINST would help a below-quorum FOR side reach quorum, so opponents would be better off not voting at all. Under this rule voting AGAINST is never counter-productive. Steward proposals keep total participation because there the deciding side is the *defeat*, and participation counting makes blocking a bad steward spend easier, not harder.
 
 **One level of delegation only.** A delegate cannot redelegate to a third party. Voting power terminates at the delegatee.
 
@@ -139,8 +151,8 @@ until they delegate; sponsored batches retain this consequence by explicit desig
 3. ACTIVE   → Voting open: FOR / AGAINST / ABSTAIN (votes changeable during this period)
               Standard:  7 days
               Extended: 14 days
-4. OUTCOME  → DEFEATED (quorum not met, or majority AGAINST)
-            → SUCCEEDED (quorum met + majority FOR)
+4. OUTCOME  → DEFEATED (FOR below quorum, or FOR not greater than AGAINST)
+            → SUCCEEDED (FOR alone meets quorum + FOR greater than AGAINST)
 5. QUEUED   → Execution delay — Security Council may veto during this window (see §Security Council)
               Standard: 48 hours
               Extended:  7 days
@@ -493,7 +505,7 @@ When the Security Council vetoes a queued proposal:
      separate transaction — restoration does not auto-execute.
      No re-submission is required. The community has voted twice
      (once to pass the original proposal, once to deny the veto).
-   - **Quorum not met:** Veto stands by default. If the community can't mobilize to override, the SC's security judgment holds.
+   - **AGAINST below quorum:** Veto stands by default. If the community can't mobilize to override, the SC's security judgment holds. Overturning requires AGAINST votes alone to reach quorum and to exceed FOR — votes upholding the veto never count toward the overturn.
 4. Ratification uses **standard quorum** (20% of circulating voting power or 100,000 ARM).
 
 **The ejection consequence is the accountability mechanism.** The SC only vetoes when they're genuinely confident the community will back them — vetoing a proposal the community wanted means losing the seat. This replaces the need for a separate SC bond or punishment mechanism.

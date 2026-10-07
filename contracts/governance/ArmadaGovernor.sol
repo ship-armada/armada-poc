@@ -720,7 +720,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     }
 
     /// @notice Resolve a veto ratification vote after voting ends.
-    /// FOR or quorum-not-met = veto upheld. AGAINST with quorum = SC ejected.
+    /// SC ejected only if AGAINST reaches quorum by itself and beats FOR; otherwise the veto is upheld.
     /// @param ratificationId The ratification proposal to resolve
     function resolveRatification(uint256 ratificationId) external {
         uint256 vetoedId = ratificationOf[ratificationId];
@@ -733,10 +733,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         p.executed = true;
 
         // Evaluate outcome: does the community uphold or deny the veto?
-        bool quorumMet = _quorumReached(ratificationId);
-        bool majorityAgainst = quorumMet && (p.againstVotes > p.forVotes);
-
-        if (majorityAgainst) {
+        if (_ratificationOverturned(ratificationId)) {
             // Community denies the veto → eject the VETOING SC if still in slot,
             // restore proposal regardless. The vetoing SC's identity is recorded
             // as p.proposer at veto time (audit-104). If the slot has been swapped
@@ -1207,7 +1204,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
         // After voting ends: check quorum and majority
         if (ptype == ProposalType.Steward) {
-            // Pass-by-default: defeated ONLY if quorum met AND strict majority votes against
+            // Pass-by-default: defeated ONLY if quorum met AND strict majority votes against.
+            // Quorum counts total participation here, which keeps blocking a steward spend easy.
             if (_quorumReached(proposalId) && p.againstVotes > p.forVotes) {
                 return ProposalState.Defeated;
             }
@@ -1216,12 +1214,14 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             // VetoRatification has no queue/execute phase — resolution flows through
             // resolveRatification, which sets p.executed and is caught by the earlier
             // Executed branch. The QUEUE_GRACE_PERIOD expiry below must not apply here.
-            if (_quorumReached(proposalId) && p.againstVotes > p.forVotes) {
+            if (_ratificationOverturned(proposalId)) {
                 return ProposalState.Defeated;
             }
             return ProposalState.Succeeded;
         } else {
-            if (!_quorumReached(proposalId) || !_voteSucceeded(proposalId)) {
+            // The FOR side must reach quorum by itself: AGAINST and ABSTAIN votes never
+            // help a proposal pass.
+            if (p.forVotes < quorum(proposalId) || !_voteSucceeded(proposalId)) {
                 return ProposalState.Defeated;
             }
         }
@@ -1288,10 +1288,19 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     // ============ Internal ============
 
+    /// @dev Total-participation quorum (all vote types count). Used only by Steward
+    ///      proposals, where it makes defeating a pass-by-default spend easier.
     function _quorumReached(uint256 proposalId) internal view returns (bool) {
         Proposal storage p = _proposals[proposalId];
-        // Quorum measures total participation — all vote types count
         return (p.forVotes + p.againstVotes + p.abstainVotes) >= quorum(proposalId);
+    }
+
+    /// @dev A veto is overturned only if AGAINST reaches quorum by itself and beats FOR.
+    ///      Overturning ejects the Security Council and restores the proposal, so votes
+    ///      upholding the veto must never help the overturning side reach quorum.
+    function _ratificationOverturned(uint256 ratificationId) internal view returns (bool) {
+        Proposal storage p = _proposals[ratificationId];
+        return p.againstVotes >= quorum(ratificationId) && p.againstVotes > p.forVotes;
     }
 
     /// @dev Add voting weight to the appropriate tally bucket.

@@ -51,6 +51,19 @@ export interface ProposalData {
   ratificationId?: number  // set on proposals that have been vetoed
 }
 
+/**
+ * Votes that count toward quorum, mirroring ArmadaGovernor: the side that changes state
+ * must reach quorum by itself. FOR for Standard/Extended/Signaling, AGAINST (the overturn)
+ * for veto ratifications, and total participation for pass-by-default Steward proposals.
+ */
+export function quorumCountingVotes(
+  p: Pick<ProposalData, 'proposalType' | 'forVotes' | 'againstVotes' | 'abstainVotes'>,
+): bigint {
+  if (p.proposalType === ProposalType.Steward) return p.forVotes + p.againstVotes + p.abstainVotes
+  if (p.proposalType === ProposalType.VetoRatification) return p.againstVotes
+  return p.forVotes
+}
+
 /** Treasury outflow rate-limit configuration for a single token */
 export interface OutflowConfig {
   windowDuration: bigint

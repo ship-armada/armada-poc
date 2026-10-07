@@ -12,6 +12,7 @@ import {
   PROPOSAL_STATE_LABELS,
   PROPOSAL_STATE_COLORS,
   VOTE_SUPPORT_LABELS,
+  quorumCountingVotes,
 } from '../governance-types'
 import type { GovernanceContracts } from '../hooks/useGovernanceContracts'
 import type { WalletState } from '../hooks/useWallet'
@@ -32,7 +33,7 @@ export function ProposalCard({ proposal, contracts, wallet, onAction, blockTimes
 
   const p = proposal
   const totalVotes = p.forVotes + p.againstVotes + p.abstainVotes
-  const quorumVotes = totalVotes // all vote types count toward quorum
+  const quorumVotes = quorumCountingVotes(p)
   const quorumPct = p.quorumRequired > 0n
     ? Number((quorumVotes * 10000n) / p.quorumRequired) / 100
     : 0

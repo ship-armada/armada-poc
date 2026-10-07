@@ -49,6 +49,9 @@ export interface ProposalData {
   // Veto linkage (populated for relevant proposal types)
   vetoedProposalId?: number // set on VetoRatification proposals
   ratificationId?: number  // set on proposals that have been vetoed
+  // Set when the proposal contains a gated action (contract upgrade or new ARM delegator): it can
+  // only execute once the Launch Team has approved it on the governor's UpgradeGate.
+  launchTeamApproval?: { approved: boolean; launchTeam: string }
 }
 
 /**

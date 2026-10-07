@@ -191,6 +191,19 @@ export function ProposalCard({ proposal, contracts, wallet, onAction, blockTimes
         </div>
       )}
 
+      {/* Launch Team approval for gated actions (contract upgrades, new ARM delegators) */}
+      {p.launchTeamApproval && (
+        <div className={`mt-2 rounded border px-3 py-2 text-xs ${p.launchTeamApproval.approved
+          ? 'border-emerald-900 bg-emerald-950/30 text-emerald-300'
+          : 'border-amber-900 bg-amber-950/30 text-amber-300'}`}>
+          {p.launchTeamApproval.approved
+            ? 'Launch Team approved: this proposal upgrades a contract or authorizes an ARM delegator, and the Launch Team has signed off.'
+            : <>Needs Launch Team approval: this proposal upgrades a contract or authorizes an ARM delegator, so it
+              cannot execute until the Launch Team Safe ({p.launchTeamApproval.launchTeam.slice(0, 10)}...) approves it
+              (<code>npx hardhat gate-safe-approve --proposal {p.id}</code>).</>}
+        </div>
+      )}
+
       {/* Vetoed indicator on canceled proposals */}
       {p.state === ProposalState.Canceled && p.ratificationId && (
         <div className="mt-2 rounded bg-orange-950/30 border border-orange-900 px-3 py-2 text-xs text-orange-300">
@@ -319,7 +332,9 @@ export function ProposalCard({ proposal, contracts, wallet, onAction, blockTimes
           <>
             <button
               onClick={handleExecute}
-              className="rounded bg-emerald-800 px-3 py-1 text-xs text-emerald-200 hover:bg-emerald-700"
+              disabled={p.launchTeamApproval?.approved === false}
+              title={p.launchTeamApproval?.approved === false ? 'Waiting for Launch Team approval' : undefined}
+              className="rounded bg-emerald-800 px-3 py-1 text-xs text-emerald-200 hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
             >
               Execute
             </button>

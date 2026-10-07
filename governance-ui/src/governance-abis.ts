@@ -48,6 +48,7 @@ export const GOVERNOR_ABI = [
   'function windDownActive() view returns (bool)',
   'function ratificationOf(uint256 ratificationId) view returns (uint256)',
   'function vetoRatificationId(uint256 vetoedProposalId) view returns (uint256)',
+  'function upgradeGate() view returns (address)',
   // Events
   'event ProposalCreated(uint256 indexed proposalId, address indexed proposer, uint8 proposalType, uint256 voteStart, uint256 voteEnd, string description)',
   'event VoteCast(address indexed voter, uint256 indexed proposalId, uint8 support, uint256 weight)',
@@ -59,6 +60,13 @@ export const GOVERNOR_ABI = [
   'event RatificationResolved(uint256 indexed ratificationId, bool vetoUpheld)',
   'event SecurityCouncilEjected(uint256 indexed ratificationId)',
   'event SecurityCouncilUpdated(address indexed oldSC, address indexed newSC)',
+]
+
+/** Launch Team co-sign for proposals that upgrade contracts or authorize ARM delegators. */
+export const UPGRADE_GATE_ABI = [
+  'function launchTeam() view returns (address)',
+  'function requiresApproval(bytes[] calldatas) view returns (bool)',
+  'function isApproved(uint256 proposalId, address[] targets, uint256[] values, bytes[] calldatas) view returns (bool)',
 ]
 
 export const TREASURY_ABI = [

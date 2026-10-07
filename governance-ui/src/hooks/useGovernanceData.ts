@@ -6,6 +6,7 @@ import { ethers } from 'ethers'
 import type { GovernanceContracts } from './useGovernanceContracts'
 import type { ProposalData, OutflowConfig } from '../governance-types'
 import { ProposalState, ProposalType } from '../governance-types'
+import { UPGRADE_GATE_ABI } from '../governance-abis'
 
 const POLL_INTERVAL_MS = 10_000
 
@@ -152,11 +153,18 @@ export function useGovernanceData(
         ])
       }
 
+      // The governor's Launch Team gate. Deployments that predate the gate have no
+      // upgradeGate(); their proposals then carry no approval status.
+      let upgradeGate: ethers.Contract | null = null
+      try {
+        upgradeGate = new ethers.Contract(await governor.upgradeGate(), UPGRADE_GATE_ABI, provider)
+      } catch {}
+
       // Fetch proposals (most recent first, limit to last 20 for performance)
       const startId = Math.max(1, proposalCount - 19)
       const proposalPromises: Promise<ProposalData>[] = []
       for (let i = proposalCount; i >= startId; i--) {
-        proposalPromises.push(fetchProposal(governor, i, userAccount))
+        proposalPromises.push(fetchProposal(governor, upgradeGate, i, userAccount))
       }
       const proposals = await Promise.all(proposalPromises)
 
@@ -395,6 +403,7 @@ export function useGovernanceData(
 
 async function fetchProposal(
   governor: ethers.Contract,
+  upgradeGate: ethers.Contract | null,
   id: number,
   userAccount: string | null,
 ): Promise<ProposalData> {
@@ -434,6 +443,24 @@ async function fetchProposal(
     } catch {}
   }
 
+  let launchTeamApproval: ProposalData['launchTeamApproval']
+  if (upgradeGate) {
+    try {
+      // Read positionally: ethers' Result is an Array, so `.values` would be Array.prototype.values.
+      const actions = await governor.getProposalActions(id)
+      const targets = Array.from(actions[0]) as string[]
+      const values = Array.from(actions[1]) as bigint[]
+      const calldatas = Array.from(actions[2]) as string[]
+      if (await upgradeGate.requiresApproval(calldatas)) {
+        const [approved, launchTeam] = await Promise.all([
+          upgradeGate.isApproved(id, targets, values, calldatas),
+          upgradeGate.launchTeam(),
+        ])
+        launchTeamApproval = { approved: Boolean(approved), launchTeam: launchTeam as string }
+      }
+    } catch {}
+  }
+
   return {
     id,
     proposer: proposalData[0] as string,
@@ -452,5 +479,6 @@ async function fetchProposal(
     userVoteChoice,
     vetoedProposalId,
     ratificationId,
+    launchTeamApproval,
   }
 }

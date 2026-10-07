@@ -578,6 +578,20 @@ contract RevenueReserveDistributorGasTest is RevenueReserveDistributorFixture {
         assertEq(distributor.totalClaimed(), RESERVE / 10);
     }
 
+    // WHY: If a full sponsored payout exceeds a chain's transaction cap, three
+    // bounded ranges must still pay every grantee at a comfortable gas cost.
+    function testGas_claimRanges25KeepAllRecipientsLive() public {
+        _revenue(10_000e18);
+        distributor.collect();
+        for (uint256 start = 1; start < 76; start += 25) {
+            _cool();
+            uint256 beforeGas = gasleft();
+            distributor.claimRange(start, start + 25);
+            assertLt(beforeGas - gasleft(), 5_000_000);
+        }
+        assertEq(distributor.totalClaimed(), 22_500e18);
+    }
+
     function _cool() internal {
         vm.cool(address(token));
         vm.cool(address(distributor));

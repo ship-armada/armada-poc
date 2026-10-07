@@ -6,7 +6,7 @@
  * so we define them manually.
  *
  * Local devnet:
- * - Hub Chain (31338) - Where Railgun contracts are deployed
+ * - Hub Chain (31338) - Where the privacy pool is deployed
  * - Client Chain A (31337) - User-facing chain
  * - Client Chain B (31339) - Second client chain
  *
@@ -21,7 +21,7 @@ import { ChainType, Chain } from "@railgun-community/shared-models";
 // ============ Chain Definitions ============
 
 /**
- * Hub Chain - Where Railgun contracts are deployed
+ * Hub Chain - Where the privacy pool is deployed
  * Anvil instance on port 8546
  */
 export const HUB_CHAIN: Chain = {

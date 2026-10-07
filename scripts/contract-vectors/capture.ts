@@ -1,5 +1,5 @@
 /**
- * Golden-vector capture harness — Phase 1 of the clean-room contract rewrite plan.
+ * Golden-vector capture harness — Phase 1 of the contract implementation plan.
  *
  * Captures golden behavioral vectors for the deployed privacy pool system
  * (specs/PRIVACY_POOL_CONTRACT.md) against a FRESH local fixturenet (Anvil hub

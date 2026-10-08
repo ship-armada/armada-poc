@@ -629,6 +629,9 @@ describe("committed mainnet.env", () => {
       ...MAINNET_ENV,
       // Supplied by secrets.env / launch-time TODOs, not the committed template.
       DEPLOYER_PRIVATE_KEY: "test-placeholder-not-a-real-key",
+      // The template points at the gitignored mainnet list, which a CI checkout lacks and
+      // which takes precedence over the inline list below; clear it.
+      REVENUE_LOCK_BENEFICIARIES_FILE: "",
       REVENUE_LOCK_BENEFICIARIES_JSON: REVENUE_LOCK_JSON,
       CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
       INITIAL_STEWARD_ADDRESS: TEST_STEWARD, ...TEST_RESERVE,
@@ -660,6 +663,7 @@ describe("committed mainnet.env", () => {
     const c = freshConfig({
       ...MAINNET_ENV,
       DEPLOYER_PRIVATE_KEY: "test-placeholder-not-a-real-key",
+      REVENUE_LOCK_BENEFICIARIES_FILE: "",
       REVENUE_LOCK_BENEFICIARIES_JSON: REVENUE_LOCK_JSON,
       CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
       INITIAL_STEWARD_ADDRESS: TEST_STEWARD, ...TEST_RESERVE,

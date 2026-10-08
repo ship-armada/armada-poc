@@ -265,7 +265,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
     ///         because hop-0 ceiling ($564K) < MIN_SALE ($1M).
     function testFuzz_claimRefund_exactAmount(uint256 seedIdx, uint256 commitAmount) public {
         seedIdx = bound(seedIdx, 0, seeds.length - 1);
-        commitAmount = bound(commitAmount, 10 * 1e6, 15_000 * 1e6);
+        commitAmount = bound(commitAmount, 50 * 1e6, 15_000 * 1e6);
 
         // All non-target seeds commit full $15K to guarantee cappedDemand >= MIN_SALE
         for (uint256 i = 0; i < seeds.length; i++) {

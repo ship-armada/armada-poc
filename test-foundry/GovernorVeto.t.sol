@@ -42,7 +42,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
 
     uint256 constant TOTAL_SUPPLY = 12_000_000 * 1e18;
     uint256 constant TWO_DAYS = 2 days;
-    uint256 constant SEVEN_DAYS = 7 days;
+    uint256 constant RATIFICATION_PERIOD = 14 days;
     uint256 constant FOURTEEN_DAYS = 14 days;
 
     function setUp() public {
@@ -208,7 +208,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         assertEq(uint256(pType), uint256(ProposalType.VetoRatification));
         // VetoRatification has 0 voting delay, so voting starts immediately
         assertEq(voteStart, block.timestamp, "voting should start immediately");
-        assertEq(voteEnd, block.timestamp + SEVEN_DAYS, "voting period should be 7 days");
+        assertEq(voteEnd, block.timestamp + RATIFICATION_PERIOD, "voting period should be 14 days");
     }
 
     function test_veto_ratificationVotingStartsImmediately() public {
@@ -318,8 +318,8 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         vm.prank(bob);
         governor.castVote(ratId, 1); // FOR
 
-        // Advance past voting period (7 days)
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        // Advance past voting period (14 days)
+        vm.warp(block.timestamp + RATIFICATION_PERIOD + 1);
 
         vm.expectEmit(true, false, false, true);
         emit RatificationResolved(ratId, true);
@@ -342,7 +342,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         // No one votes — quorum not met
 
         // Advance past voting period
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        vm.warp(block.timestamp + RATIFICATION_PERIOD + 1);
 
         vm.expectEmit(true, false, false, true);
         emit RatificationResolved(ratId, true);
@@ -394,7 +394,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         governor.castVote(ratId2, 0); // AGAINST (deny veto)
 
         // Advance past voting period
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        vm.warp(block.timestamp + RATIFICATION_PERIOD + 1);
 
         vm.expectEmit(true, false, false, true);
         emit RatificationResolved(ratId2, true); // vetoUpheld = true
@@ -419,7 +419,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         governor.castVote(ratId, 0); // AGAINST
 
         // Advance past voting period
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        vm.warp(block.timestamp + RATIFICATION_PERIOD + 1);
 
         vm.expectEmit(true, false, false, false);
         emit ProposalRestored(proposalId);
@@ -440,7 +440,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
 
     /// @dev WHY (audit-104): the eject path must target the SC that ISSUED the veto,
     ///      not whatever address holds the live `securityCouncil` slot at resolve
-    ///      time. Pre-fix, an honest `setSecurityCouncil` rotation during the 7-day
+    ///      time. Pre-fix, an honest `setSecurityCouncil` rotation during the 14-day
     ///      ratification window punished the new SC for the prior SC's veto. The
     ///      vetoing SC is recoverable from `_proposals[ratId].proposer` (set in
     ///      `_initProposal` during `veto()`); the eject branch now reads that
@@ -475,7 +475,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         governor.castVote(ratId, 0); // AGAINST
         vm.prank(bob);
         governor.castVote(ratId, 0); // AGAINST
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        vm.warp(block.timestamp + RATIFICATION_PERIOD + 1);
 
         // Capture logs to verify SecurityCouncilEjected and SecurityCouncilUpdated do
         // NOT fire. ProposalRestored and RatificationResolved still must fire.
@@ -535,7 +535,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         governor.castVote(ratId, 0);
         vm.prank(bob);
         governor.castVote(ratId, 0);
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        vm.warp(block.timestamp + RATIFICATION_PERIOD + 1);
 
         vm.recordLogs();
         governor.resolveRatification(ratId);
@@ -568,7 +568,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         vm.prank(bob);
         governor.castVote(ratId, 0);
 
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        vm.warp(block.timestamp + RATIFICATION_PERIOD + 1);
 
         vm.expectEmit(true, false, false, false);
         emit ProposalRestored(proposalId);
@@ -603,7 +603,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         vm.prank(bob);
         governor.castVote(ratId, 0);
 
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        vm.warp(block.timestamp + RATIFICATION_PERIOD + 1);
         governor.resolveRatification(ratId);
 
         // Timelock op should be re-scheduled and pending
@@ -624,7 +624,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         vm.prank(bob);
         governor.castVote(ratId, 0);
 
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        vm.warp(block.timestamp + RATIFICATION_PERIOD + 1);
         governor.resolveRatification(ratId);
 
         // Advance past fresh timelock delay (getMinDelay = 2 days)
@@ -665,7 +665,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         vm.prank(alice);
         governor.castVote(ratId, 1);
 
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        vm.warp(block.timestamp + RATIFICATION_PERIOD + 1);
         governor.resolveRatification(ratId);
 
         // Try again
@@ -691,7 +691,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         vm.prank(bob);
         governor.castVote(ratId, 0);
 
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        vm.warp(block.timestamp + RATIFICATION_PERIOD + 1);
         governor.resolveRatification(ratId);
 
         // SC ejected, set new SC
@@ -724,7 +724,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         vm.prank(bob);
         governor.castVote(ratId1, 0);
 
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        vm.warp(block.timestamp + RATIFICATION_PERIOD + 1);
         governor.resolveRatification(ratId1);
 
         // Set new SC
@@ -759,7 +759,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         vm.prank(bob);
         governor.castVote(ratId, 1);
 
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        vm.warp(block.timestamp + RATIFICATION_PERIOD + 1);
 
         // Try to queue — should revert
         vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_UseResolveRatification.selector));
@@ -781,7 +781,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         vm.prank(bob);
         governor.castVote(ratId, 0);
 
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        vm.warp(block.timestamp + RATIFICATION_PERIOD + 1);
         governor.resolveRatification(ratId);
 
         assertEq(governor.securityCouncil(), address(0));
@@ -835,7 +835,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         governor.castVote(ratId, 1);
 
         // 5. Voting ends
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        vm.warp(block.timestamp + RATIFICATION_PERIOD + 1);
 
         // 6. Resolve
         governor.resolveRatification(ratId);
@@ -866,7 +866,7 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         governor.castVote(ratId, 0);
 
         // 4. Resolve → proposal restored
-        vm.warp(block.timestamp + SEVEN_DAYS + 1);
+        vm.warp(block.timestamp + RATIFICATION_PERIOD + 1);
         governor.resolveRatification(ratId);
 
         // 5. SC ejected

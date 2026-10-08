@@ -42,11 +42,11 @@ The protocol includes several emergency mechanisms, each with built-in accountab
 
 ### Shield Pause (ShieldPauseController)
 
-The Security Council can pause shield (deposit) operations for up to **24 hours**. Key properties:
+The SC shield pause is **disabled**: `MAX_PAUSE_DURATION` is zero, so a pause expires in the block it is made. Key properties:
 
-- **Auto-expiry:** Pauses expire automatically after 24 hours — the SC cannot permanently freeze deposits
-- **Governance override:** The timelock can unpause shields at any time
-- **Unshields unaffected:** Withdrawals are never blocked by a shield pause (pre-wind-down)
+- **No effect:** `pauseShields()` still succeeds and emits `ShieldsPaused`, but shields are never actually paused by the SC
+- **Wind-down unaffected:** after wind-down the controller still reports shields paused and withdraw-only mode, so the pool accepts only unshields
+- **Unshields unaffected:** Withdrawals are never blocked by the SC
 - **SC address:** Read live from ArmadaGovernor — SC ejection via denied veto is automatically reflected
 
 ### Security Council Veto
@@ -63,7 +63,7 @@ An irreversible protocol shutdown mechanism, activated via governance proposal:
 
 - Disables all new proposals — governance ends permanently
 - Pool enters **withdraw-only mode** — only unshields permitted
-- SC gets exactly **one** post-wind-down emergency pause (24h, non-renewable) for final user protection
+- No post-wind-down SC emergency pause (the SC pause duration is zero)
 - Yield vault continues operating for withdrawals
 
 ## Incident Response Outline
@@ -71,7 +71,7 @@ An irreversible protocol shutdown mechanism, activated via governance proposal:
 ### 1. Detection
 
 Monitor on-chain events from:
-- `ShieldPauseController` — pause/unpause activity
+- `ShieldPauseController` — `ShieldsPaused` events (no effect, since the pause duration is zero, but an SC call is still worth investigating)
 - `ArmadaGovernor` — proposal creation, vetoes, wind-down activation
 - `PrivacyPool` modules — unusual shield/unshield patterns
 
@@ -84,7 +84,7 @@ Classify severity (Critical / High / Medium / Low) based on:
 
 ### 3. Containment
 
-- **Immediate:** SC triggers shield pause (blocks new deposits for 24h)
+- **Immediate:** SC vetoes any queued malicious proposal (the SC shield pause is disabled)
 - **Short-term:** Governance proposal for targeted fix or parameter change
 - **Last resort:** Wind-down activation (irreversible — use only if protocol integrity is compromised)
 

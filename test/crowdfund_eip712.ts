@@ -511,22 +511,22 @@ describe("Crowdfund EIP-712 Invites", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
     });
 
-    it("commitWithInvite with amount < MIN_COMMIT ($10) reverts", async function () {
+    it("commitWithInvite with amount < MIN_COMMIT ($50) reverts", async function () {
       await setupWithSeeds([seed1]);
       const deadline = await futureDeadline();
       const nonce = 101;
 
       const signature = await signInvite(seed1, 0, nonce, deadline);
 
-      // $9.999999 (one wei below MIN_COMMIT)
+      // $49.999999 (one wei below MIN_COMMIT)
       await expect(
         crowdfund.connect(hop1a).commitWithInvite(
-          seed1.address, 0, nonce, deadline, signature, USDC(10) - 1n
+          seed1.address, 0, nonce, deadline, signature, USDC(50) - 1n
         )
       ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
     });
 
-    it("commitWithInvite with exactly MIN_COMMIT ($10) succeeds", async function () {
+    it("commitWithInvite with exactly MIN_COMMIT ($50) succeeds", async function () {
       await setupWithSeeds([seed1]);
       const deadline = await futureDeadline();
       const nonce = 102;
@@ -534,11 +534,11 @@ describe("Crowdfund EIP-712 Invites", function () {
       const signature = await signInvite(seed1, 0, nonce, deadline);
 
       await crowdfund.connect(hop1a).commitWithInvite(
-        seed1.address, 0, nonce, deadline, signature, USDC(10)
+        seed1.address, 0, nonce, deadline, signature, USDC(50)
       );
 
       const committed = await crowdfund.getCommitment(hop1a.address, 1);
-      expect(committed).to.equal(USDC(10));
+      expect(committed).to.equal(USDC(50));
     });
   });
 

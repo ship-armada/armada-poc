@@ -17,9 +17,9 @@ interface IShieldPauseController {
     ///         Distinct from shieldsPaused(): SC pause does NOT activate withdraw-only mode.
     function withdrawOnlyMode() external view returns (bool);
 
-    /// @notice Returns true during the post-wind-down SC emergency pause (24h, non-renewable).
+    /// @notice Returns true during the post-wind-down SC emergency pause (single, non-renewable;
+    ///         its length is the controller's pause duration, zero in ShieldPauseController).
     ///         When true, ALL pool operations are halted including unshields. This is the
-    ///         only scenario where unshields can be paused — a single 24h window to protect
-    ///         users from adapter issues discovered after wind-down.
+    ///         only scenario where unshields can be paused.
     function emergencyPaused() external view returns (bool);
 }

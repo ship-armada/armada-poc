@@ -18,7 +18,7 @@ existing RevenueLock audit does not cover this distributor or its integration.
   registered in the distributor**, including the allocator's entitlement, if any.
 - The caller pays gas; payments always go to the recorded addresses. No signatures
   from recipients, server approval, or allocator action are needed to claim.
-- The list is bounded at **50 distinct non-allocator grantees plus the allocator**.
+- The list is bounded at **75 distinct non-allocator grantees plus the allocator**.
   The allocator always occupies index 0, so its wind-down fallback cannot be blocked
   by exhausting the other slots. Top-ups do not consume extra slots.
 - Assignment authority ends as soon as `RevenueLock.frozenAtWindDown()` is true.
@@ -67,7 +67,7 @@ substitute individual airdrop recipients merely to make these scripts pass.
 
 **Sponsored batches cover only reserve assignees.** Other RevenueLock beneficiaries
 retain their existing `release()` path, which only pays its caller. The full-20%
-wrapper alternative is outside this design. The reserve's 50 non-allocator slots do
+wrapper alternative is outside this design. The reserve's 75 non-allocator slots do
 not constrain the separate airdrop. The allocator occupies its own reserved slot.
 There is no UI integration in this PR.
 
@@ -300,7 +300,7 @@ Validation against base revision `532bc0641443879e30c07b98970f6e11d5d9400c`:
 - Distributor deployed bytecode: **7,931 bytes** with the Hardhat configuration.
 
 Coverage includes cap exhaustion, irrevocable top-ups, inherited tiers, duplicate
-claims, 50 grantees plus fallback, donation isolation, rejecting recipients, failure
+claims, 75 grantees plus fallback, donation isolation, rejecting recipients, failure
 rollback, counter outage, rate limiting, delegation checkpoints, zero/full/partial
 wind-down, final-freeze milestone crossing, and both redemption orders. Stateful
 invariants use **256 runs, 50 calls per run**, with final settlement checked too.
@@ -309,11 +309,15 @@ Gas measurements use cold contract/storage access and the compiler settings abov
 
 | Scenario | Measured execution gas |
 |---|---:|
-| Collect and pay 50 undelegated grantees at first milestone | 3,224,650 |
-| Collect and pay 50 separately delegated grantees plus allocator at wind-down | 5,625,877 |
+| Collect and pay 75 undelegated grantees at first milestone | 4,869,118 |
+| Collect and pay 75 separately delegated grantees plus allocator at wind-down | 8,492,337 |
 
 These are measured call execution costs, not a live transaction fee quote. They
 exclude transaction intrinsic gas and do not subtract transaction-level refunds.
+Cross-checked with `forge test --isolate` (each call runs as its own transaction with
+fresh cold/warm state): 4,871,837 and 8,472,656 gas total, with 22,700 and 42,600
+refunded. The worst case is about 51% of the 2^24 per-transaction gas cap; `claimRange()`
+pages the payout if ever needed.
 Each gas test enforces an 8M execution-gas ceiling. Actual cost depends on state,
 compiler settings and gas price; the sponsor pays it, not each recipient.
 

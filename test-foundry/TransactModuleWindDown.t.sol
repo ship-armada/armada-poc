@@ -252,8 +252,8 @@ contract TransactModuleWindDownTest is Test {
         vm.prank(securityCouncil);
         pauseController.pauseShields();
 
-        // Shields should be paused
-        assertTrue(pauseController.shieldsPaused(), "Shields should be paused");
+        // The SC pause is disabled (zero duration), so shields are not paused
+        assertFalse(pauseController.shieldsPaused(), "SC pause should not pause shields");
         // But withdraw-only should NOT be active
         assertFalse(pauseController.withdrawOnlyMode(), "SC pause should not activate withdraw-only");
 

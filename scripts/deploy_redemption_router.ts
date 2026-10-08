@@ -5,7 +5,7 @@
  * Deploy RedemptionRouter (wind-down contingency — issue #256)
  *
  * This script is intentionally NOT wired into the setup pipeline. It is a
- * runbook artifact, executed once during the 7-day REDEMPTION_DELAY window
+ * runbook artifact, executed once during the 14-day REDEMPTION_DELAY window
  * AFTER wind-down triggers and AFTER all treasury sweeps have completed.
  *
  * What it does:

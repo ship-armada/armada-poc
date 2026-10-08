@@ -165,7 +165,7 @@ These addresses can send ARM even while transfers are globally restricted. **The
 
 Two paths, both irreversible:
 
-1. **Governance proposal.** ARM holders vote to enable transfers. There are no predeclared conditions — holders decide when.
+1. **Governance proposal.** ARM holders vote to enable transfers (Extended proposal). There are no predeclared conditions — holders decide when.
 2. **Wind-down trigger.** `triggerWindDown()` ensures transfers are enabled as a side effect. Holders must be able to move ARM to claim their pro-rata share of treasury assets — they may hold ARM on an exchange, in a multisig, or in a contract that isn't their claim address.
 
 Both paths converge on the same `transferable = true` end-state. The two paths are independent — neither requires the other to fire first, and either can fire first. **The wind-down trigger treats "transfers enabled" as a post-condition, not a precondition:** if governance has already enabled transfers, wind-down skips the redundant `setTransferable(true)` call (the token's setter reverts on already-enabled, so wind-down checks first). Once `transferable` is `true`, it cannot be reversed regardless of which path set it.
@@ -325,7 +325,7 @@ The crowdfund contract relies on pre-minted ARM only. `loadArm()` verifies `bala
 | Upgrader | None | No | N/A | N/A | See §9 |
 | Metadata role | None | No | N/A | N/A | Name and symbol are immutable |
 
-**There is no unilateral admin role on the ARM token contract.** Privileged operations require governance (extended proposal for whitelist additions, standard for revenue attestation) or are one-shot (transfer gate). The initial whitelist is constructor-set (crowdfund, treasury, revenue-lock); governance can expand it but never shrink it. `delegateOnBehalf` callers are immutably set at deployment (crowdfund + revenue-lock). `setTransferable` callers are immutably set at deployment (governor executor + wind-down contract). No single address can modify token behavior unilaterally.
+**There is no unilateral admin role on the ARM token contract.** Privileged operations require governance (extended proposal for whitelist additions and enabling transfers, standard for revenue attestation) or are one-shot (transfer gate). The initial whitelist is constructor-set (crowdfund, treasury, revenue-lock); governance can expand it but never shrink it. `delegateOnBehalf` callers are immutably set at deployment (crowdfund + revenue-lock). `setTransferable` callers are immutably set at deployment (governor executor + wind-down contract). No single address can modify token behavior unilaterally.
 
 ---
 

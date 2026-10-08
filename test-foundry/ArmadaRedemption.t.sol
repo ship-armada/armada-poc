@@ -110,7 +110,7 @@ contract ArmadaRedemptionTest is Test {
         // the happy-path tests can call redeem() without coordinating the delay.
         redemption.setWindDown(address(windDown));
         windDown.setTriggerTime(block.timestamp);
-        vm.warp(block.timestamp + 7 days + 1);
+        vm.warp(block.timestamp + redemption.REDEMPTION_DELAY() + 1);
 
         // Distribute ARM
         // Treasury gets 65%, revenue-lock gets 15%, crowdfund gets 10%, alice 5%, bob 5%
@@ -491,7 +491,7 @@ contract ArmadaRedemptionTest is Test {
     // reverted as a partial-sweep guard; under the new ethRecipient design the
     // strict-wait-for-sweep ETH semantics are dropped in exchange for empty-pool
     // resilience and silent-forfeit prevention. Sweep timing is enforced via the
-    // 7-day REDEMPTION_DELAY rather than per-call strict checks for ETH.
+    // REDEMPTION_DELAY rather than per-call strict checks for ETH.
     function test_redeem_emptyEthPool_recipientIgnored() public {
         // setUp() already minted 500_000e6 USDC to redemption. Top up to model
         // the post-sweep state. address(redemption).balance is 0 (no ETH swept).
@@ -666,7 +666,7 @@ contract ArmadaRedemptionTest is Test {
         tokens[0] = address(usdc);
 
         // Try at triggerTime + delay - 1 — still in the gate window
-        vm.warp(block.timestamp + 7 days - 1);
+        vm.warp(block.timestamp + redemption.REDEMPTION_DELAY() - 1);
         vm.prank(alice);
         vm.expectRevert("ArmadaRedemption: redemption delay not elapsed");
         redemption.redeem(aliceArm, tokens, address(0));
@@ -680,7 +680,8 @@ contract ArmadaRedemptionTest is Test {
         address[] memory tokens = new address[](1);
         tokens[0] = address(usdc);
 
-        vm.warp(block.timestamp + 7 days);
+        assertEq(redemption.REDEMPTION_DELAY(), 14 days);
+        vm.warp(block.timestamp + redemption.REDEMPTION_DELAY());
         vm.prank(alice);
         redemption.redeem(aliceArm, tokens, address(0));
         assertEq(usdc.balanceOf(alice), 250_000e6);

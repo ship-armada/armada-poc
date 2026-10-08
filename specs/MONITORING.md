@@ -553,7 +553,7 @@ Each alert must include:
 
 **Response:** Investigate the source of the incoming transfer immediately.
 - If accidental (wrong address in a governance proposal or script): coordinate with governance to recover or redirect the misplaced ARM.
-- If intentional: treat as a potential exfiltration vector. SC cannot directly reverse the transfer, but can pause or veto any follow-on governance actions that would depend on the bootstrap holder's re-activated whitelist status.
+- If intentional: treat as a potential exfiltration vector. SC cannot directly reverse the transfer, but can veto any follow-on governance actions that would depend on the bootstrap holder's re-activated whitelist status.
 
 **Configuration:** The bootstrap holder address must be recorded in deployment records (OPERATIONS.md §11 Deployment Record) and referenced here. Alert fires on any positive-balance `Transfer` to that address.
 
@@ -583,7 +583,7 @@ Each alert must include:
 
 **Signal:** `ProposalCreated(proposalId, proposer, proposalType = 3, …)`; then `ProposalQueued(proposalId, …)` for the same id.
 
-**Severity:** P1 if created before `finalizedAt + 7 days` (or while the crowdfund is still Active); P2 afterwards.
+**Severity:** P1 if created before `finalizedAt + 10 days` (or while the crowdfund is still Active); P2 afterwards.
 
 **Response:**
 - Match the proposal against the steward's published spend plan (recipients, amounts, description).

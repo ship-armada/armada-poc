@@ -3,7 +3,7 @@
 Operational procedure for the period between a wind-down trigger and the opening of
 redemptions. This runbook exists because `ArmadaRedemption` is immutable and admin-less:
 every mitigation for redemption-time footguns is either baked into contracts already
-deployed, or executed operationally during the 7-day `REDEMPTION_DELAY` window described
+deployed, or executed operationally during the 14-day `REDEMPTION_DELAY` window described
 here. **This document should be rehearsed before mainnet launch and kept current.**
 
 Related: issue #256 (forgotten-token forfeiture), issue #254 (redeem-before-sweep),
@@ -40,10 +40,10 @@ zero-effort path for both UI and direct (block-explorer) callers.
   deployment, and manifest publication are all permissionless or key-agnostic.
 - **Redeemers:** ARM holders. Their instructions are in the final section.
 
-## The 7-day window checklist
+## The 14-day window checklist
 
-`REDEMPTION_DELAY` gives 7 days between `triggerTime` and the earliest possible
-redemption. Complete these steps **in order, well before day 7**.
+`REDEMPTION_DELAY` gives 14 days between `triggerTime` and the earliest possible
+redemption. Complete these steps **in order, well before day 14**.
 
 ### 1. Sweep everything (day 0–1)
 
@@ -86,13 +86,13 @@ announcement containing:
 - The **complete swept-token list**, sorted ascending — byte-for-byte what
   `router.allTokens()` returns.
 - For direct callers: a literal `redeem()` calldata template using that list.
-- The earliest redemption timestamp (`triggerTime + 7 days`).
+- The earliest redemption timestamp (`triggerTime + 14 days`).
 - A warning to approve ARM **only** to the published router address.
 
 Anyone can independently verify the manifest against on-chain state: `TokenSwept` events
 on `ArmadaWindDown`, balances on `ArmadaRedemption`, and `router.allTokens()`.
 
-### 4. Monitor (day 7 onward)
+### 4. Monitor (day 14 onward)
 
 Optional but recommended: watch `Redeemed` events on `ArmadaRedemption` and alert if any
 redemption's `tokens[]` does not cover all non-zero contract balances — this catches a
@@ -123,7 +123,7 @@ Selling to a sophisticated redeemer at a small discount to net asset value is a
 legitimate exit that avoids composing redemption calldata entirely.
 
 **Never** redeem before confirming the manifest exists and sweeps are complete — redeeming
-early forfeits your share of anything not yet swept, and the 7-day delay exists precisely
+early forfeits your share of anything not yet swept, and the 14-day delay exists precisely
 to make waiting safe.
 
 ## Rehearsal (local)

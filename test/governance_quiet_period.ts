@@ -1,10 +1,10 @@
-// ABOUTME: Tests the immutable 7-day governance quiet period after crowdfund finalization.
+// ABOUTME: Tests the immutable 10-day governance quiet period after crowdfund finalization.
 // ABOUTME: Covers proposal blocking, boundary conditions, edge cases, and access control.
 
 /**
  * Governance Quiet Period Tests (T6.1)
  *
- * After crowdfund finalization, an immutable 7-day quiet period blocks all governance proposals.
+ * After crowdfund finalization, an immutable 10-day quiet period blocks all governance proposals.
  * This gives participants time to claim ARM and delegate before governance begins.
  */
 
@@ -16,7 +16,7 @@ import { deployGovernorProxy } from "./helpers/deploy-governor";
 
 const ProposalType = { Standard: 0, Extended: 1, VetoRatification: 2 };
 const ONE_DAY = 86400;
-const SEVEN_DAYS = 7 * ONE_DAY;
+const QUIET_PERIOD = 10 * ONE_DAY;
 const THREE_WEEKS = 21 * ONE_DAY;
 
 const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
@@ -145,28 +145,39 @@ describe("Governance Quiet Period (T6.1)", function () {
   // ============ Core quiet period behavior ============
 
   describe("Proposal blocking during quiet period", function () {
-    it("propose reverts during quiet period (day 1-6 post-finalization)", async function () {
+    it("propose reverts during quiet period (day 1-9 post-finalization)", async function () {
       await governor.setCrowdfundAddress(await crowdfund.getAddress());
       await finalizeCrowdfund();
       await lockArmForProposal();
 
-      // Day 3 — well within 7-day quiet period
+      // Day 3 — well within 10-day quiet period
       await time.increase(3 * ONE_DAY);
 
       await expect(propose()).to.be.revertedWithCustomError(governor, "Gov_QuietPeriodActive");
     });
 
-    it("propose succeeds after quiet period (day 8+)", async function () {
+    // WHY: pins the 10-day length — day 9 post-finalization is still inside the quiet period.
+    it("propose still reverts on day 9 post-finalization", async function () {
       await governor.setCrowdfundAddress(await crowdfund.getAddress());
       await finalizeCrowdfund();
       await lockArmForProposal();
 
-      await time.increase(SEVEN_DAYS + 1);
+      await time.increase(9 * ONE_DAY);
+
+      await expect(propose()).to.be.revertedWithCustomError(governor, "Gov_QuietPeriodActive");
+    });
+
+    it("propose succeeds after quiet period (day 11+)", async function () {
+      await governor.setCrowdfundAddress(await crowdfund.getAddress());
+      await finalizeCrowdfund();
+      await lockArmForProposal();
+
+      await time.increase(QUIET_PERIOD + 1);
 
       await expect(propose()).to.not.be.reverted;
     });
 
-    it("propose succeeds at exactly finalizedAt + 7 days", async function () {
+    it("propose succeeds at exactly finalizedAt + 10 days", async function () {
       await governor.setCrowdfundAddress(await crowdfund.getAddress());
       await finalizeCrowdfund();
 
@@ -174,10 +185,10 @@ describe("Governance Quiet Period (T6.1)", function () {
 
       await lockArmForProposal();
 
-      // Move to exactly finalizedAt + 7 days. The lock/mine above advanced time
+      // Move to exactly finalizedAt + 10 days. The lock/mine above advanced time
       // slightly, so compute the remaining offset.
       const currentTime = BigInt(await time.latest());
-      const target = finalizedAt + BigInt(SEVEN_DAYS);
+      const target = finalizedAt + BigInt(QUIET_PERIOD);
       if (currentTime < target) {
         await time.increaseTo(target);
       }
@@ -268,7 +279,7 @@ describe("Governance Quiet Period (T6.1)", function () {
       await expect(propose()).to.be.revertedWithCustomError(governor, "Gov_QuietPeriodActive");
 
       // After quiet period, proposal succeeds
-      await time.increase(5 * ONE_DAY);
+      await time.increase(8 * ONE_DAY);
       await expect(propose()).to.not.be.reverted;
     });
   });

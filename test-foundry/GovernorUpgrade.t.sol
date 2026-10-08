@@ -159,7 +159,7 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
             governor.proposalTypeParams(ProposalType.Standard);
         assertEq(delay, 2 days);
         assertEq(period, 7 days);
-        assertEq(execDelay, 2 days);
+        assertEq(execDelay, 3 days);
         assertEq(quorum, 2000);
 
         // Upgrade
@@ -172,7 +172,7 @@ contract GovernorUpgradeTest is Test, GovernorDeployHelper {
             governor.proposalTypeParams(ProposalType.Standard);
         assertEq(delay, 2 days);
         assertEq(period, 7 days);
-        assertEq(execDelay, 2 days);
+        assertEq(execDelay, 3 days);
         assertEq(quorum, 2000);
     }
 

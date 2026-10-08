@@ -284,8 +284,8 @@ describe("Sale-window steward exposure with a deploy-time budget (accepted risk,
     await expect(proposeSpend(governor, stewardKey, usdc, recipient.address, USDC(1)))
       .to.be.revertedWithCustomError(governor, "Gov_QuietPeriodActive");
 
-    // After the quiet period another proposal queues; the backlog drips one budget per window.
-    await time.increase(7 * ONE_DAY + 1);
+    // After the 10-day quiet period another proposal queues; the backlog drips one budget per window.
+    await time.increase(10 * ONE_DAY + 1);
     const fourth = await proposeSpend(governor, stewardKey, usdc, recipient.address, USDC(60_000));
     await time.increase(7 * ONE_DAY + 1);
     await governor.queue(fourth);

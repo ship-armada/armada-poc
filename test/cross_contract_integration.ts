@@ -22,8 +22,10 @@ const Vote = { Against: 0, For: 1, Abstain: 2 };
 
 const ONE_DAY = 86400;
 const TWO_DAYS = 2 * ONE_DAY;
+const THREE_DAYS = 3 * ONE_DAY;
 const FIVE_DAYS = 5 * ONE_DAY;
 const SEVEN_DAYS = 7 * ONE_DAY;
+const QUIET_PERIOD = 10 * ONE_DAY;
 const THREE_WEEKS = 21 * ONE_DAY;
 
 const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
@@ -215,8 +217,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // === GOVERNANCE PHASE ===
 
-      // 6b. Skip past 7-day governance quiet period
-      await time.increase(SEVEN_DAYS + 1);
+      // 6b. Skip past 10-day governance quiet period
+      await time.increase(QUIET_PERIOD + 1);
 
       // 7. Deployer and seeds delegate to activate ERC20Votes voting power
       await armToken.delegate(deployer.address);
@@ -273,8 +275,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await governor.queue(proposalId);
       expect(await governor.state(proposalId)).to.equal(ProposalState.Queued);
 
-      // 15. Wait for execution delay (2 days timelock)
-      await time.increase(TWO_DAYS + 1);
+      // 15. Wait for the Standard execution delay (3 days)
+      await time.increase(THREE_DAYS + 1);
 
       // 16. Execute
       await governor.execute(proposalId);
@@ -305,8 +307,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await crowdfund.connect(seed).claim(seed.address);
       }
 
-      // Skip past 7-day governance quiet period
-      await time.increase(SEVEN_DAYS + 1);
+      // Skip past 10-day governance quiet period
+      await time.increase(QUIET_PERIOD + 1);
     }
 
     it("ARM total supply is constant after crowdfund distribution", async function () {
@@ -399,8 +401,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await crowdfund.connect(seeds[i]).claim(seeds[i].address);
       }
 
-      // Skip past 7-day governance quiet period
-      await time.increase(SEVEN_DAYS + 1);
+      // Skip past 10-day governance quiet period
+      await time.increase(QUIET_PERIOD + 1);
 
       // Deployer delegates to activate ERC20Votes voting power
       await armToken.delegate(deployer.address);
@@ -487,7 +489,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Queue and wait
       await governor.queue(proposalId);
-      await time.increase(TWO_DAYS + 1);
+      await time.increase(THREE_DAYS + 1);
 
       // Execute succeeds — withdrawUnallocatedArm is permissionless
       await governor.execute(proposalId);
@@ -578,8 +580,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await time.increase(THREE_WEEKS + 1);
       await crowdfund.finalize();
 
-      // Skip past 7-day governance quiet period
-      await time.increase(SEVEN_DAYS + 1);
+      // Skip past 10-day governance quiet period
+      await time.increase(QUIET_PERIOD + 1);
 
       // DON'T claim — seeds have 0 ARM balance
       expect(await armToken.balanceOf(seeds[0].address)).to.equal(0);
@@ -785,7 +787,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await localCrowdfund.finalize();
 
       // Skip quiet period so governance proposals can proceed
-      await time.increase(SEVEN_DAYS + 1);
+      await time.increase(QUIET_PERIOD + 1);
 
       // Before any claims: crowdfund still holds all ARM
       const crowdfundArmBefore = await localArmToken.balanceOf(await localCrowdfund.getAddress());
@@ -908,8 +910,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
         await localCrowdfund.connect(seed).claim(seed.address);
       }
 
-      // Skip past 7-day governance quiet period
-      await time.increase(SEVEN_DAYS + 1);
+      // Skip past 10-day governance quiet period
+      await time.increase(QUIET_PERIOD + 1);
 
       // Deployer and seeds delegate to activate ERC20Votes voting power
       await localArmToken.delegate(localDeployer.address);
@@ -946,7 +948,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       // Queue and execute
       await localGovernor.queue(proposalId);
-      await time.increase(TWO_DAYS + 1);
+      await time.increase(THREE_DAYS + 1);
       await localGovernor.execute(proposalId);
       expect(await localGovernor.state(proposalId)).to.equal(ProposalState.Executed);
     });

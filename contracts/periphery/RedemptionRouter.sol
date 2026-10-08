@@ -24,7 +24,7 @@ interface IArmadaRedemptionRouter {
 ///         - NOT deployed at launch and NOT part of `npm run setup`. This contract sits
 ///           in the repo, kept compiling and tested by CI, until wind-down actually
 ///           happens.
-///         - Deployed during the 7-day REDEMPTION_DELAY window, after all sweeps have
+///         - Deployed during the 14-day REDEMPTION_DELAY window, after all sweeps have
 ///           completed, with the full swept-token list as a constructor argument
 ///           (sourced from ArmadaWindDown's TokenSwept events).
 ///         - Immutable once deployed: no admin, no setters. A wrong list means deploying

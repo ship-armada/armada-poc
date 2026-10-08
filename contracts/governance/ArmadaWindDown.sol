@@ -225,7 +225,7 @@ contract ArmadaWindDown {
     ///         imposed because protocol lifetime is uncertain and an artificial cap could
     ///         force unnecessary wind-down. Capture attempts are mitigated by the Security
     ///         Council veto on any queued proposal. The selector is currently classified as
-    ///         Standard (20% quorum, 7-day vote, 2-day execution delay); extending the
+    ///         Standard (20% quorum, 7-day vote, 3-day execution delay); extending the
     ///         deadline is a loosening action that should eventually sit at the Extended
     ///         bar per the asymmetric governance principle.
     // TODO: Raise setWindDownDeadline to Extended for the extend-direction once the

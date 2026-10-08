@@ -20,6 +20,7 @@ const Vote = { Against: 0, For: 1, Abstain: 2 };
 // Time constants
 const ONE_DAY = 86400;
 const TWO_DAYS = 2 * ONE_DAY;
+const THREE_DAYS = 3 * ONE_DAY;
 const SEVEN_DAYS = 7 * ONE_DAY;
 const FOURTEEN_DAYS = 14 * ONE_DAY;
 
@@ -82,8 +83,8 @@ describe("Governance Adapter Registry", function () {
     await governor.queue(proposalId);
     expect(await governor.state(proposalId)).to.equal(ProposalState.Queued);
 
-    // Advance past execution delay (2 days Standard, 7 days Extended)
-    await time.increase((isExtended ? SEVEN_DAYS : TWO_DAYS) + 1);
+    // Advance past execution delay (3 days Standard, 7 days Extended)
+    await time.increase((isExtended ? SEVEN_DAYS : THREE_DAYS) + 1);
 
     // Execute
     await governor.execute(proposalId);

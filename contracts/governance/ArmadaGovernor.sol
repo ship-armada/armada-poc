@@ -193,13 +193,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     // Absolute quorum floor: prevents governance passing on trivial turnout regardless
     // of how small the circulating delegated supply is. Quorum = max(percentage, floor).
-    uint256 public constant QUORUM_FLOOR = 100_000 * 1e18;
+    uint256 public constant QUORUM_FLOOR = 200_000 * 1e18;
 
     // Governance quiet period — no proposals allowed for this duration after crowdfund finalization.
     // One-time bootstrapping constant; not governable.
     address public crowdfundAddress;
     bool public crowdfundAddressLocked;
-    uint256 internal constant QUIET_PERIOD_DURATION = 7 days;
+    uint256 internal constant QUIET_PERIOD_DURATION = 10 days;
 
     // Wind-down integration: when triggered, governance permanently stops accepting new proposals.
     // The wind-down contract is registered via one-time setter; only it can flip the flag.
@@ -333,11 +333,11 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         treasuryAddress = _treasuryAddress;
         deployer = msg.sender;
 
-        // Standard proposals: 2d delay, 7d voting, 2d execution, 20% quorum
+        // Standard proposals: 2d delay, 7d voting, 3d execution, 20% quorum
         proposalTypeParams[ProposalType.Standard] = ProposalParams({
             votingDelay: 2 days,
             votingPeriod: 7 days,
-            executionDelay: 2 days,
+            executionDelay: 3 days,
             quorumBps: 2000
         });
 
@@ -349,13 +349,13 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             quorumBps: 3000
         });
 
-        // VetoRatification: immediate voting, 7d period, no execution delay, 20% quorum.
+        // VetoRatification: immediate voting, 14d period, no execution delay, 20% quorum.
         // These params bypass setProposalTypeParams() bounds (MIN_VOTING_DELAY=1d,
         // MIN_EXECUTION_DELAY=2d), making VetoRatification timing effectively immutable
         // via governance. Only the veto mechanism can create these proposals.
         proposalTypeParams[ProposalType.VetoRatification] = ProposalParams({
             votingDelay: 0,
-            votingPeriod: 7 days,
+            votingPeriod: 14 days,
             executionDelay: 0,
             quorumBps: 2000
         });
@@ -406,6 +406,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         extendedSelectors[bytes4(keccak256("electSteward(address)"))] = true;
         // ARM token transfer whitelist
         extendedSelectors[bytes4(keccak256("addToWhitelist(address)"))] = true;
+        // ARM token transfer enable — one-way and irreversible (the wind-down contract calls the
+        // token directly and does not go through governance)
+        extendedSelectors[bytes4(keccak256("setTransferable(bool)"))] = true;
         // Revenue definition expansion (on RevenueCounter)
         extendedSelectors[bytes4(keccak256("setFeeCollector(address)"))] = true;
         // ArmadaFeeModule — fee parameters (per governance spec: all fee changes → Extended)
@@ -451,8 +454,6 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         // so any governance proposal calling them via the timelock would revert.
         // Leaving them un-registered makes them fail-closed to Extended — a more
         // honest signal to proposers that these are not governance paths.
-        // ARM token transfer enable — one-way, irreversible, callable via governance or wind-down
-        standardSelectors[bytes4(keccak256("setTransferable(bool)"))] = true;
         // Steward removal — defensive/emergency action, lower bar per spec
         standardSelectors[bytes4(keccak256("removeSteward()"))] = true;
         // Permissionless crowdfund sweep — anyone can call directly, governance path is optional
@@ -740,7 +741,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             // Community denies the veto → eject the VETOING SC if still in slot,
             // restore proposal regardless. The vetoing SC's identity is recorded
             // as p.proposer at veto time (audit-104). If the slot has been swapped
-            // since (legitimate SC rotation during the 7-day ratification window),
+            // since (legitimate SC rotation during the 14-day ratification window),
             // skip the eject so the new SC isn't punished for the prior SC's veto.
             // Off-chain accountability for the original vetoer remains discoverable
             // via the ratification proposal's proposer field.

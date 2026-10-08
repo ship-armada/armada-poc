@@ -28,6 +28,7 @@ const Vote = { Against: 0, For: 1, Abstain: 2 };
 // Time constants
 const ONE_DAY = 86400;
 const TWO_DAYS = 2 * ONE_DAY;
+const THREE_DAYS = 3 * ONE_DAY;
 const SEVEN_DAYS = 7 * ONE_DAY;
 const FOURTEEN_DAYS = 14 * ONE_DAY;
 const THIRTY_DAYS = 30 * ONE_DAY;
@@ -35,7 +36,7 @@ const THIRTY_DAYS = 30 * ONE_DAY;
 // Spec-aligned timing: standard voting = 7d, extended voting = 14d, extended execution = 7d
 const STANDARD_VOTING_PERIOD = SEVEN_DAYS;
 const EXTENDED_VOTING_PERIOD = FOURTEEN_DAYS;
-const STANDARD_EXECUTION_DELAY = TWO_DAYS;
+const STANDARD_EXECUTION_DELAY = THREE_DAYS;
 const EXTENDED_EXECUTION_DELAY = SEVEN_DAYS;
 
 describe("Governance Integration", function () {
@@ -258,11 +259,11 @@ describe("Governance Integration", function () {
       const [, , , , , windDown] = await ethers.getSigners();
       await armToken.setWindDownContract(windDown.address);
 
-      // setTransferable is Standard-classified (one-way irreversible action, higher bar doesn't add protection)
+      // setTransferable is Extended-classified (one-way, irreversible)
       await passProposal(
         alice,
         [{ signer: alice, support: Vote.For }, { signer: bob, support: Vote.For }],
-        ProposalType.Standard,
+        ProposalType.Extended,
         [armTokenAddr],
         [0n],
         [calldata],
@@ -276,6 +277,17 @@ describe("Governance Integration", function () {
       await expect(
         armToken.connect(carol).transfer(dave.address, ethers.parseUnits("100", ARM_DECIMALS))
       ).to.not.be.reverted;
+    });
+
+    // WHY: enabling transfers is one-way and irreversible, so it must take the Extended bar even
+    // when the proposer declares Standard.
+    it("classifies a Standard-declared setTransferable proposal as Extended", async function () {
+      const calldata = armToken.interface.encodeFunctionData("setTransferable", [true]);
+      await governor.connect(alice).propose(
+        ProposalType.Standard, [await armToken.getAddress()], [0n], [calldata], "Enable ARM token transfers"
+      );
+      const [, proposalType] = await governor.getProposal(1);
+      expect(proposalType).to.equal(ProposalType.Extended);
     });
   });
 
@@ -492,9 +504,9 @@ describe("Governance Integration", function () {
       expect(actualQuorum).to.equal(expectedQuorum);
     });
 
-    it("should enforce quorum floor when percentage-based quorum is below 100k ARM", async function () {
+    it("should enforce quorum floor when percentage-based quorum is below 200k ARM", async function () {
       // Exclude Alice and Bob from quorum denominator, leaving eligible supply = 0.
-      // Percentage quorum = 20% of 0 = 0, which is below the 100k floor.
+      // Percentage quorum = 20% of 0 = 0, which is below the 200k floor.
       // The floor should apply.
       await governor.setExcludedAddresses([alice.address, bob.address]);
 
@@ -505,13 +517,13 @@ describe("Governance Integration", function () {
         ProposalType.Standard, targets, values, calldatas, "Quorum floor test"
       );
 
-      const QUORUM_FLOOR = ethers.parseUnits("100000", ARM_DECIMALS);
+      const QUORUM_FLOOR = ethers.parseUnits("200000", ARM_DECIMALS);
       const actualQuorum = await governor.quorum(1);
       expect(actualQuorum).to.equal(QUORUM_FLOOR);
     });
 
     it("should use percentage-based quorum when it exceeds the floor", async function () {
-      // With default setup: eligible = 4.2M ARM, 20% = 840k ARM > 100k floor.
+      // With default setup: eligible = 4.2M ARM, 20% = 840k ARM > 200k floor.
       // Percentage should win.
       const targets = [await treasury.getAddress()];
       const values = [0n];
@@ -522,7 +534,7 @@ describe("Governance Integration", function () {
 
       const expectedEligible = TOTAL_SUPPLY - TREASURY_AMOUNT;
       const expectedQuorum = (expectedEligible * 2000n) / 10000n;
-      const QUORUM_FLOOR = ethers.parseUnits("100000", ARM_DECIMALS);
+      const QUORUM_FLOOR = ethers.parseUnits("200000", ARM_DECIMALS);
 
       const actualQuorum = await governor.quorum(1);
       expect(actualQuorum).to.equal(expectedQuorum);
@@ -540,7 +552,7 @@ describe("Governance Integration", function () {
         ProposalType.Extended, targets, values, calldatas, "Extended quorum floor test"
       );
 
-      const QUORUM_FLOOR = ethers.parseUnits("100000", ARM_DECIMALS);
+      const QUORUM_FLOOR = ethers.parseUnits("200000", ARM_DECIMALS);
       expect(await governor.quorum(1)).to.equal(QUORUM_FLOOR);
     });
   });
@@ -1011,7 +1023,7 @@ describe("Governance Integration", function () {
         await governor.proposalTypeParams(ProposalType.Standard);
       expect(votingDelay).to.equal(TWO_DAYS);
       expect(votingPeriod).to.equal(SEVEN_DAYS);
-      expect(executionDelay).to.equal(TWO_DAYS);
+      expect(executionDelay).to.equal(STANDARD_EXECUTION_DELAY);
       expect(quorumBps).to.equal(2000);
     });
 
@@ -1028,7 +1040,7 @@ describe("Governance Integration", function () {
       const [votingDelay, votingPeriod, executionDelay, quorumBps] =
         await governor.proposalTypeParams(ProposalType.VetoRatification);
       expect(votingDelay).to.equal(0);
-      expect(votingPeriod).to.equal(SEVEN_DAYS);
+      expect(votingPeriod).to.equal(FOURTEEN_DAYS);
       expect(executionDelay).to.equal(0);
       expect(quorumBps).to.equal(2000);
     });
@@ -1104,7 +1116,7 @@ describe("Governance Integration", function () {
       expect(await governor.state(1)).to.equal(ProposalState.Queued);
 
       // Wait for execution delay
-      await time.increase(TWO_DAYS + 1);
+      await time.increase(STANDARD_EXECUTION_DELAY + 1);
 
       // Execute
       const carolBefore = await usdc.balanceOf(carol.address);

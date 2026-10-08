@@ -93,7 +93,7 @@ async function main() {
   const count = Number(await cf.getParticipantCount());
   console.log(`Built ${count} nodes (${seedCount} hop-0 / ${hop1.length} hop-1 / ${hop2.length} hop-2). Committing...`);
 
-  // ---- commits: success path — 180 seeds @ $15k + first 40 hop-1 @ $4k clears MIN_SALE; rest $10
+  // ---- commits: success path — 180 seeds @ $15k + first 40 hop-1 @ $4k clears MIN_SALE; rest at MIN_COMMIT
   async function commit(a: string, hop: number, amt: bigint) {
     const s = await signerFor(a);
     await (await usdc.mint(a, amt)).wait();
@@ -101,8 +101,9 @@ async function main() {
     await (await cf.connect(s).commit(hop, amt)).wait();
   }
   for (let i = 0; i < seeds.length; i++) await commit(seeds[i], 0, USDC(15_000));
-  for (let i = 0; i < hop1.length; i++) await commit(hop1[i], 1, i < 40 ? USDC(4_000) : USDC(10));
-  for (let i = 0; i < hop2.length; i++) await commit(hop2[i], 2, USDC(10));
+  const minCommit: bigint = await cf.MIN_COMMIT();
+  for (let i = 0; i < hop1.length; i++) await commit(hop1[i], 1, i < 40 ? USDC(4_000) : minCommit);
+  for (let i = 0; i < hop2.length; i++) await commit(hop2[i], 2, minCommit);
 
   // ---- finalize + measure
   await time.increase(THREE_WEEKS + 1);

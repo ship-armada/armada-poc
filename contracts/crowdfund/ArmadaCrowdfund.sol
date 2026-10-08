@@ -77,7 +77,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
     // participant invite/commit (`<= windowEnd`) remain open for that final second.
     uint256 public constant LAUNCH_TEAM_INVITE_PERIOD = WINDOW_DURATION;
     uint256 public constant CLAIM_DEADLINE_DURATION = 1095 days; // 3 years
-    uint256 public constant MIN_COMMIT = 10 * 1e6;               // $10 USDC minimum per commit
+    uint256 public constant MIN_COMMIT = 50 * 1e6;               // $50 USDC minimum per commit
     // Per-hop invite stacking caps are stored in hopConfigs[].maxInvitesReceived (1, 10, 20)
     uint8 public constant MAX_SEEDS = 180;                       // max number of seeds (hop-0 participants)
     uint8 public constant LAUNCH_TEAM_HOP1_BUDGET = 100;         // launch team direct hop-1 invite slots
@@ -145,7 +145,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
     ///         refund. Consumers that need to distinguish a successful sale from a
     ///         refundMode finalization must check `phase == Phase.Finalized && !refundMode`
     ///         in addition to `finalizedAt > 0`. Used by ArmadaGovernor to anchor the
-    ///         7-day governance quiet period (which starts on any finalization,
+    ///         10-day governance quiet period (which starts on any finalization,
     ///         including refundMode).
     uint256 public finalizedAt;
 

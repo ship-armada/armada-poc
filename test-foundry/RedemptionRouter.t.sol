@@ -93,7 +93,7 @@ contract RedemptionRouterTest is Test {
         // Wire wind-down, simulate trigger, warp past REDEMPTION_DELAY.
         redemption.setWindDown(address(windDown));
         windDown.setTriggerTime(block.timestamp);
-        vm.warp(block.timestamp + 7 days + 1);
+        vm.warp(block.timestamp + redemption.REDEMPTION_DELAY() + 1);
 
         // Distribute ARM: treasury 65%, revenueLock 15%, crowdfund 10%, alice 5%, bob 5%.
         armToken.transfer(treasuryAddr, TOTAL_SUPPLY * 65 / 100);

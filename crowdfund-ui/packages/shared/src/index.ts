@@ -16,6 +16,7 @@ export { parseCrowdfundEvent, parseCrowdfundEvents } from './lib/events.js'
 export {
   formatUsdc,
   formatUsdcPlain,
+  usdcToDollars,
   parseUsdcInput,
   formatArm,
   truncateAddress,

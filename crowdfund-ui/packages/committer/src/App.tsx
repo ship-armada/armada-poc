@@ -19,6 +19,7 @@ import {
   formatTimeLeft,
   formatTimeLeftDetail,
   formatOpensAtDetail,
+  usdcToDollars,
   truncateAddress,
   useContractState,
   estimateUserArmAllocation,
@@ -362,7 +363,7 @@ export function App() {
   // `dashRows` reference above so no O(N) work runs per tick.
   const crowdfundLiveData = useMemo<CrowdfundExperienceLiveData>(() => {
     if (eventsLoading) return { status: 'loading' }
-    const totalCommitted = Number(contractState.cappedDemand / 1_000_000n)
+    const totalCommitted = usdcToDollars(contractState.cappedDemand)
     const windowEnd = Number(contractState.windowEnd)
     const remaining = windowEnd - contractState.blockTimestamp
     const daysLeftLabel = formatRemainingLabel(remaining)

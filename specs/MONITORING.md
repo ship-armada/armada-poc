@@ -553,7 +553,7 @@ Each alert must include:
 
 **Response:** Investigate the source of the incoming transfer immediately.
 - If accidental (wrong address in a governance proposal or script): coordinate with governance to recover or redirect the misplaced ARM.
-- If intentional: treat as a potential exfiltration vector. SC cannot directly reverse the transfer, but can pause or veto any follow-on governance actions that would depend on the bootstrap holder's re-activated whitelist status.
+- If intentional: treat as a potential exfiltration vector. SC cannot directly reverse the transfer, but can veto any follow-on governance actions that would depend on the bootstrap holder's re-activated whitelist status.
 
 **Configuration:** The bootstrap holder address must be recorded in deployment records (OPERATIONS.md §11 Deployment Record) and referenced here. Alert fires on any positive-balance `Transfer` to that address.
 

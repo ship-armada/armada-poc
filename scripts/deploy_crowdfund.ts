@@ -283,7 +283,7 @@ async function main() {
   console.log(`   Crowdfund registered for 10-day governance quiet period`);
 
   // 7a. Bootstrap the governor's Security Council. Without this, the SC slot stays
-  // address(0) at launch — vetoes revert and the SC-gated emergency-pause is inert
+  // address(0) at launch — vetoes revert
   // until a passed governance proposal sets it. Governance can replace or eject the
   // SC later via timelock; this only sets the initial value.
   console.log("   Bootstrapping governor security council...");

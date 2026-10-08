@@ -273,6 +273,9 @@ export function assertDeployCommit(expectedCommit: string, repoDir: string = pro
  *  remaining deploy steps, verification, manifest publish, frontend pin and indexer start.
  *  Sized for a Ledger run, where every transaction waits for a human approval. */
 export const CROWDFUND_OPEN_MIN_LEAD_SECONDS = 6 * 60 * 60;
+/** Lowest lead an operator may set with the CROWDFUND_OPEN_MIN_LEAD_SECONDS env override.
+ *  The Sepolia rehearsal signed in about 20 minutes; an hour leaves a margin over that. */
+export const CROWDFUND_OPEN_MIN_LEAD_FLOOR_SECONDS = 60 * 60;
 /** Maximum lead — a further-out open time is treated as a typo (wrong year or month). */
 export const CROWDFUND_OPEN_MAX_LEAD_SECONDS = 60 * 86400;
 
@@ -281,11 +284,31 @@ export const CROWDFUND_OPEN_MAX_LEAD_SECONDS = 60 * 86400;
 const ISO_UTC_SECONDS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 
 /**
+ * Resolve the orchestrator's minimum open-time lead from the raw CROWDFUND_OPEN_MIN_LEAD_SECONDS
+ * override: unset returns CROWDFUND_OPEN_MIN_LEAD_SECONDS; set must be whole seconds and at
+ * least CROWDFUND_OPEN_MIN_LEAD_FLOOR_SECONDS.
+ */
+export function resolveCrowdfundOpenMinLead(raw: string | undefined): number {
+  if (raw === undefined) return CROWDFUND_OPEN_MIN_LEAD_SECONDS;
+  // Plain digits only: parseInt would read "1h" as 1 and "5400.5" as 5400.
+  if (!/^\d+$/.test(raw)) {
+    throw new Error(`CROWDFUND_OPEN_MIN_LEAD_SECONDS must be whole seconds like 3600, got "${raw}"`);
+  }
+  const lead = Number(raw);
+  if (lead < CROWDFUND_OPEN_MIN_LEAD_FLOOR_SECONDS) {
+    throw new Error(
+      `CROWDFUND_OPEN_MIN_LEAD_SECONDS must be at least ${CROWDFUND_OPEN_MIN_LEAD_FLOOR_SECONDS}, got ${raw}`
+    );
+  }
+  return lead;
+}
+
+/**
  * Resolve the crowdfund's `_openTimestamp` (unix seconds). With an absolute `openTime`
  * (ISO 8601 UTC), returns it after checking it lies between `now + minLeadSeconds` and
  * `now + CROWDFUND_OPEN_MAX_LEAD_SECONDS`. Without one, returns `now + openDelay`.
  *
- * The mainnet orchestrator calls this with CROWDFUND_OPEN_MIN_LEAD_SECONDS before sending
+ * The mainnet orchestrator calls this with resolveCrowdfundOpenMinLead's lead before sending
  * any transaction; deploy_crowdfund.ts re-checks with a zero lead against the latest block.
  */
 export function resolveCrowdfundOpenTimestamp(

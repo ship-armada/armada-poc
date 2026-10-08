@@ -10,7 +10,9 @@ import {
   SendGuardProvider, LedgerOnlyAccountsProvider, GasHeadroomProvider, withGasHeadroom,
   TRANSACTION_GAS_LIMIT_CAP, LEDGER_PLUGIN_NAME, type SendGuardIO,
 } from "../scripts/send-guard";
-import { awaitExpectedNonce, crowdfundHandoffNonce, CROWDFUND_OPEN_MIN_LEAD_SECONDS } from "../scripts/deploy-utils";
+import {
+  awaitExpectedNonce, crowdfundHandoffNonce, CROWDFUND_OPEN_MIN_LEAD_SECONDS, CROWDFUND_OPEN_MIN_LEAD_FLOOR_SECONDS,
+} from "../scripts/deploy-utils";
 import { assertLedgerSigner, assertSignedBy, ledgerPreflightMessage } from "../scripts/ledger-preflight";
 
 /** Records every request and replays scripted results (a value, or an Error to throw). */
@@ -352,6 +354,13 @@ describe("Human-paced deploy guards", function () {
     // the 21-day sale window would start while the launch is still being wired.
     it("requires at least six hours between the pre-flight and the sale opening", function () {
       expect(CROWDFUND_OPEN_MIN_LEAD_SECONDS).to.be.at.least(6 * 60 * 60);
+    });
+
+    // WHY: the Sepolia rehearsal signed its transactions in about 20 minutes, so an operator may
+    // shorten the lead (CROWDFUND_OPEN_MIN_LEAD_SECONDS) for an announced open time. One hour
+    // still leaves room for signing plus a margin; below that an overrun strands the launch.
+    it("never lets an override go below one hour", function () {
+      expect(CROWDFUND_OPEN_MIN_LEAD_FLOOR_SECONDS).to.equal(60 * 60);
     });
   });
 

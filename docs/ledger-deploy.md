@@ -36,7 +36,10 @@ Ledger. Other scripts that build a wallet from `DEPLOYER_PRIVATE_KEY` (e.g. `lin
    Setting both is refused: Hardhat would list the key's account first and sign with it.
 8. **Open time:** the orchestrator requires `CROWDFUND_OPEN_TIME` to be at least 6 hours away
    when it starts. For a Ledger run, prefer about 24 hours, so verification, manifest publish,
-   frontend pin and indexer start are not rushed.
+   frontend pin and indexer start are not rushed. If the open time is already announced and
+   closer than that, `CROWDFUND_OPEN_MIN_LEAD_SECONDS` in `config/mainnet.env` shortens the
+   lead (whole seconds, hard floor 3600). The Sepolia rehearsal signed in about 20 minutes. The
+   launch-plan banner shows `Open lead: … (OVERRIDE …)` while it is set.
 
 ## During the run
 

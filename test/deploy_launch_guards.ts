@@ -14,8 +14,10 @@ import {
   assertDeploymentComplete,
   INTERRUPTED_LAUNCH_RUNBOOK,
   resolveCrowdfundOpenTimestamp,
+  resolveCrowdfundOpenMinLead,
   assertDeployCommit,
   CROWDFUND_OPEN_MIN_LEAD_SECONDS,
+  CROWDFUND_OPEN_MIN_LEAD_FLOOR_SECONDS,
   CROWDFUND_OPEN_MAX_LEAD_SECONDS,
 } from "../scripts/deploy-utils";
 import { assertLaunchRoleMultisigs } from "../scripts/revenue-reserve";
@@ -166,6 +168,36 @@ describe("Mainnet launch deploy guards", function () {
       expect(await crowdfund.windowEnd()).to.equal(BigInt(openTs) + (await crowdfund.WINDOW_DURATION()));
     });
   });
+  describe("resolveCrowdfundOpenMinLead", function () {
+    // WHY: without an override the launch keeps the full default lead sized for a Ledger run.
+    it("returns the default lead when no override is set", function () {
+      expect(resolveCrowdfundOpenMinLead(undefined)).to.equal(CROWDFUND_OPEN_MIN_LEAD_SECONDS);
+    });
+
+    // WHY: the Sepolia rehearsal signed in about 20 minutes, so an announced open time a few
+    // hours out must be reachable without editing code.
+    it("accepts an override at or above the floor", function () {
+      expect(resolveCrowdfundOpenMinLead("3600")).to.equal(3600);
+      expect(resolveCrowdfundOpenMinLead("5400")).to.equal(5400);
+      expect(resolveCrowdfundOpenMinLead("86400")).to.equal(86400);
+    });
+
+    // WHY: below an hour the signing plus post-deploy steps may not fit, and a run that overruns
+    // fails at the crowdfund step after governance is already on chain.
+    it("rejects an override below the floor", function () {
+      expect(() => resolveCrowdfundOpenMinLead(String(CROWDFUND_OPEN_MIN_LEAD_FLOOR_SECONDS - 1)))
+        .to.throw(/at least 3600/);
+      expect(() => resolveCrowdfundOpenMinLead("0")).to.throw(/at least 3600/);
+    });
+
+    // WHY: parseInt would read "1h" as 1 second and "5400.5" as 5400; only plain whole seconds
+    // are unambiguous.
+    for (const bad of ["1h", "-3600", "5400.5", "3600 ", "0x1000", "1e4"]) {
+      it(`rejects the non-integer override "${bad}"`, function () {
+        expect(() => resolveCrowdfundOpenMinLead(bad)).to.throw(/CROWDFUND_OPEN_MIN_LEAD_SECONDS/);
+      });
+    }
+  });
   describe("mainnet config refusals (orchestrator dry-run)", function () {
     // Spawning ts-node compiles the orchestrator and config on each run.
     this.timeout(120_000);
@@ -297,6 +329,45 @@ describe("Mainnet launch deploy guards", function () {
       const result = dryRun({ HARDEN_TIMELOCK: "false" });
       expect(result.status).to.not.equal(0);
       expect(result.stderr).to.include("HARDEN_TIMELOCK must not be disabled on mainnet");
+      expect(result.stdout).to.not.include("CROWDFUND-LAUNCH DEPLOYMENT");
+    });
+
+    /** ISO 8601 UTC open time `minutes` from now, in the canonical form the orchestrator accepts. */
+    function openIn(minutes: number): string {
+      const ts = Math.floor(Date.now() / 1000) + minutes * 60;
+      return new Date(ts * 1000).toISOString().replace(/\.\d{3}Z$/, "Z");
+    }
+
+    // WHY: an announced open time a little over an hour out must be deployable with the 1h
+    // override, and the plan must show the shortened lead so the operator sees it is in force.
+    it("starts with an open time just past a 1h lead override and flags the override", function () {
+      const result = dryRun({ CROWDFUND_OPEN_MIN_LEAD_SECONDS: "3600", CROWDFUND_OPEN_TIME: openIn(65) });
+      expect(result.status, result.stderr).to.equal(0);
+      expect(result.stdout).to.match(/Open lead:\s+3600s \(OVERRIDE — default 21600s\)/);
+    });
+
+    // WHY: the override shortens the lead, it does not remove it; an open time inside the
+    // overridden lead must still stop the run before any transaction.
+    it("refuses an open time inside the overridden lead", function () {
+      const result = dryRun({ CROWDFUND_OPEN_MIN_LEAD_SECONDS: "3600", CROWDFUND_OPEN_TIME: openIn(55) });
+      expect(result.status).to.not.equal(0);
+      expect(result.stderr).to.include("must be at least 3600s after now");
+      expect(result.stdout).to.not.include("CROWDFUND-LAUNCH DEPLOYMENT");
+    });
+
+    // WHY: the 1h floor is the hard limit; an override below it must stop the run, not clamp.
+    it("refuses an override below the 1h floor", function () {
+      const result = dryRun({ CROWDFUND_OPEN_MIN_LEAD_SECONDS: "1800", CROWDFUND_OPEN_TIME: openIn(65) });
+      expect(result.status).to.not.equal(0);
+      expect(result.stderr).to.include("CROWDFUND_OPEN_MIN_LEAD_SECONDS must be at least 3600");
+      expect(result.stdout).to.not.include("CROWDFUND-LAUNCH DEPLOYMENT");
+    });
+
+    // WHY: with the override cleared, the 6h default applies again.
+    it("refuses an open time 3h out when no override is set", function () {
+      const result = dryRun({ CROWDFUND_OPEN_MIN_LEAD_SECONDS: "", CROWDFUND_OPEN_TIME: openIn(180) });
+      expect(result.status).to.not.equal(0);
+      expect(result.stderr).to.include("must be at least 21600s after now");
       expect(result.stdout).to.not.include("CROWDFUND-LAUNCH DEPLOYMENT");
     });
   });

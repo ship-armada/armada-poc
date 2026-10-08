@@ -45,6 +45,7 @@ import {
   INTERRUPTED_LAUNCH_RUNBOOK,
   assertDeployCommit,
   resolveCrowdfundOpenTimestamp,
+  resolveCrowdfundOpenMinLead,
   CROWDFUND_OPEN_MIN_LEAD_SECONDS,
 } from "./deploy-utils";
 
@@ -161,11 +162,13 @@ async function main() {
 
   // Open-time pre-flight: windowStart is immutable and the crowdfund step runs after
   // governance, so a bad or too-close open time must fail here, before any transaction.
+  let openMinLead: number;
   let openTimestamp: number;
   try {
+    openMinLead = resolveCrowdfundOpenMinLead(config.crowdfundOpenMinLead);
     openTimestamp = resolveCrowdfundOpenTimestamp(
       config.crowdfundOpenTime, config.crowdfundOpenDelay,
-      Math.floor(Date.now() / 1000), CROWDFUND_OPEN_MIN_LEAD_SECONDS
+      Math.floor(Date.now() / 1000), openMinLead
     );
   } catch (e) {
     console.error(`Error: ${(e as Error).message}`);
@@ -188,6 +191,9 @@ async function main() {
   console.log(`  Sale opens:    ${config.crowdfundOpenTime
     ? `${config.crowdfundOpenTime} (${openTimestamp})`
     : `~${new Date(openTimestamp * 1000).toISOString()} (${config.crowdfundOpenDelay}s after the crowdfund step; set CROWDFUND_OPEN_TIME for an exact time)`}`);
+  console.log(`  Open lead:     ${config.crowdfundOpenMinLead === undefined
+    ? `${openMinLead}s (default)`
+    : `${openMinLead}s (OVERRIDE — default ${CROWDFUND_OPEN_MIN_LEAD_SECONDS}s)`}`);
   const steward = config.initialSteward;
   console.log(`  Steward:       ${steward
     ? `${steward.address} — elected at deploy, budget $${steward.budgetUsdc} USDC per ${steward.budgetWindow}s`

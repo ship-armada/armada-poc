@@ -150,6 +150,10 @@ export interface NetworkConfig {
    *  launch; optional override on local/Sepolia. Format and lead time are validated by
    *  resolveCrowdfundOpenTimestamp (scripts/deploy-utils.ts). */
   crowdfundOpenTime: string | undefined;
+  /** Raw CROWDFUND_OPEN_MIN_LEAD_SECONDS override for the orchestrator's open-time lead check
+   *  (unset or empty = the 6h default). Validated, including the 1h floor, by
+   *  resolveCrowdfundOpenMinLead (scripts/deploy-utils.ts). */
+  crowdfundOpenMinLead: string | undefined;
   /** Wind-down deadline as ISO 8601 date string. Required on mainnet (WINDDOWN_DEADLINE);
    *  local/Sepolia default "2027-12-31T00:00:00Z". */
   windDownDeadline: string;
@@ -555,6 +559,7 @@ export function getNetworkConfig(): NetworkConfig {
     crowdfundOpenTime: env === "mainnet"
       ? requireEnv("CROWDFUND_OPEN_TIME")
       : process.env.CROWDFUND_OPEN_TIME || undefined,
+    crowdfundOpenMinLead: process.env.CROWDFUND_OPEN_MIN_LEAD_SECONDS || undefined,
     // No mainnet default: the deadline arms the permissionless, terminal wind-down trigger
     // and is fixed at the crowdfund deploy, so it must be chosen deliberately (#381 C2).
     windDownDeadline: env === "mainnet"

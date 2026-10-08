@@ -376,6 +376,22 @@ describe("crowdfund open time", () => {
       .getNetworkConfig();
     expect(sepolia.crowdfundOpenTime).to.equal("2026-10-08T17:00:00Z");
   });
+
+  // WHY: the lead override must reach the orchestrator verbatim so its validation (whole
+  // seconds, 1h floor) sees exactly what the operator wrote.
+  it("passes the open-time lead override through unparsed", () => {
+    const c = freshConfig({ ...MAINNET_BASE, CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z",
+      CROWDFUND_OPEN_MIN_LEAD_SECONDS: "3600" }).getNetworkConfig();
+    expect(c.crowdfundOpenMinLead).to.equal("3600");
+  });
+
+  // WHY: unset or empty must mean "no override", so the 6h default applies.
+  it("leaves the open-time lead override unset when absent or empty", () => {
+    const base = { ...MAINNET_BASE, CROWDFUND_OPEN_TIME: "2026-10-08T17:00:00Z" };
+    expect(freshConfig(base).getNetworkConfig().crowdfundOpenMinLead).to.equal(undefined);
+    expect(freshConfig({ ...base, CROWDFUND_OPEN_MIN_LEAD_SECONDS: "" }).getNetworkConfig().crowdfundOpenMinLead)
+      .to.equal(undefined);
+  });
 });
 
 describe("privacy pool treasury override", () => {

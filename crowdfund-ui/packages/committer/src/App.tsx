@@ -55,7 +55,7 @@ import { localWindowEndUnix, commitWindowSecondsLeft } from '@/lib/windowClock'
 import { formatSaleStatusLabel, isPreOpen } from '@/lib/saleStatus'
 import { getClaimAvailability, isProjectedRefund } from '@/lib/claimAvailability'
 import { shouldDismissClaimModal, CLAIM_CLOSE_CONFIRM_MESSAGE } from '@/lib/claimModal'
-import { AboutLink, PageNav, type Page } from '@/appNav'
+import { PageNav, type Page } from '@/appNav'
 
 /**
  * Map a wagmi connector id to the `walletProvider` slug WalletPillMenu uses to
@@ -860,12 +860,7 @@ export function App() {
     />
   )
 
-  const mobileActions = (
-    <>
-      <AboutLink className="text-sm" />
-      <CommitterMobileWallet usdcBalance={allowance.balance} />
-    </>
-  )
+  const mobileActions = <CommitterMobileWallet usdcBalance={allowance.balance} />
 
   const headerNav = (
     <PageNav

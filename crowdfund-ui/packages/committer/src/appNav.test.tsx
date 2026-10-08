@@ -47,6 +47,15 @@ describe('PageNav', () => {
       expect(strip!.contains(screen.getByRole('link', { name: 'About the crowdfund' }))).toBe(false)
     })
 
+    it('is hidden below a 1000px-wide viewport', () => {
+      // jsdom applies no CSS, so assert the Tailwind breakpoint class that does
+      // the hiding (`max-[1000px]` = width < 1000px in Tailwind v4).
+      render(<PageNav current="network" onChange={vi.fn()} />)
+      expect(screen.getByRole('link', { name: 'About the crowdfund' })).toHaveClass(
+        'max-[1000px]:hidden',
+      )
+    })
+
     it('renders About in the vertical nav too', () => {
       render(<PageNav current="network" onChange={vi.fn()} orientation="vertical" />)
       expect(screen.getByRole('link', { name: 'About the crowdfund' })).toHaveAttribute('href', CROWDFUND_INFO_URL)

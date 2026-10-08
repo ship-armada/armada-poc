@@ -47,7 +47,7 @@ describe('PreLaunchApp', () => {
     }
   })
 
-  it('links the logo to the project site and About the crowdfund (desktop nav and mobile logo row) to the crowdfund info page', () => {
+  it('links the logo to the project site and About the crowdfund (header nav only) to the crowdfund info page', () => {
     vi.useFakeTimers({ now: (OPENS_AT - 3600) * 1000 })
     render(<PreLaunchApp opensAtUnix={OPENS_AT} onReload={vi.fn()} />)
 
@@ -55,12 +55,13 @@ describe('PreLaunchApp', () => {
       'href',
       PROJECT_URL,
     )
-    // jsdom renders every breakpoint's copy (CSS shows one): the desktop
-    // nav's links sit inside a <nav>, the mobile logo-row copy does not.
+    // jsdom applies no CSS and the matchMedia stub reports desktop, so both
+    // copies of the header nav render About: the desktop slot and AppHeader's
+    // phone pill strip. No third copy in the phone logo row, since About is
+    // hidden below 1000px and that row only shows on phones.
     const about = screen.getAllByRole('link', { name: 'About the crowdfund' })
+    expect(about).toHaveLength(2)
     for (const link of about) expect(link).toHaveAttribute('href', CROWDFUND_INFO_URL)
-    expect(about.some((link) => link.closest('nav') !== null)).toBe(true)
-    expect(about.some((link) => link.closest('nav') === null)).toBe(true)
   })
 
   it('shows no demo participants or invite slots', () => {

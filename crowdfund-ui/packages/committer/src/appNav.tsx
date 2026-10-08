@@ -1,6 +1,6 @@
 // ABOUTME: Shared page-nav types + component and the dev-only ?mock parser.
 // ABOUTME: Left tabs: Crowdfund, Your position, Claim (Your position disabled pre-open; Claim until claim opens),
-// ABOUTME: followed by a standalone "About the crowdfund" link to the project site's crowdfund page (AboutLink, also in the mobile logo row).
+// ABOUTME: followed by a standalone "About the crowdfund" link to the project site's crowdfund page (AboutLink, hidden below 1000px).
 
 import { cn, useIsMobileLayout } from '@armada/crowdfund-shared'
 import { NavBar, type NavBarItem } from '@armada/ui'
@@ -22,6 +22,8 @@ const ABOUT_LABEL = 'About the crowdfund'
  *  opening in a new tab. Deliberately styled as a plain text link outside the
  *  page-tab pill strip so it reads as leaving the app rather than as another
  *  page, in brand lavender so it stands out from the muted inactive tabs.
+ *  Hidden below a 1000px-wide viewport (`max-[1000px]` is `width < 1000px` in
+ *  Tailwind v4), where it crowds the header; the burger menu keeps its own entry.
  */
 export function AboutLink({ className }: { className?: string }) {
   return (
@@ -30,7 +32,7 @@ export function AboutLink({ className }: { className?: string }) {
       target="_blank"
       rel="noopener noreferrer"
       className={cn(
-        'inline-flex items-center whitespace-nowrap font-medium transition-opacity hover:opacity-80',
+        'inline-flex items-center whitespace-nowrap font-medium transition-opacity hover:opacity-80 max-[1000px]:hidden',
         'text-[length:var(--semantic-component-button-primary-md-font-size)] text-[color:var(--semantic-color-brand-lavender)]',
         className,
       )}
@@ -48,10 +50,10 @@ export function AboutLink({ className }: { className?: string }) {
  *  the claim phase opens (`claimEnabled`). Your position is disabled before
  *  the commit window opens (`myPositionEnabled`) — there's no position yet.
  *
- *  The horizontal variant follows the pill strip with AboutLink. It is left
- *  out on the mobile layout (≤767px), where AppHeader renders this same nav
- *  as a full-width pill strip with no room for it; mobile pages place
- *  AboutLink in the logo row (`mobileActions`) or the burger menu instead.
+ *  The horizontal variant follows the pill strip with AboutLink (itself hidden
+ *  below 1000px). On the mobile layout (≤767px) PageNav renders the bare
+ *  NavBar, keeping the full-width pill strip AppHeader builds from this same
+ *  nav unchanged.
  */
 export function PageNav({
   current,

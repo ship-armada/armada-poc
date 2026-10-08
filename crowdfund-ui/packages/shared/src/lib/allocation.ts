@@ -1,8 +1,13 @@
 // ABOUTME: Client-side estimation of hop-level allocations mirroring the contract's _computeHopAllocations.
-// ABOUTME: Used pre-finalization to show estimated total allocation (post-ceiling) in the UI.
+// ABOUTME: Drives pre-finalization allocation estimates and the refund-mode projection (UIs + indexer alerts).
 
 import { CROWDFUND_CONSTANTS, HOP_CONFIGS } from './constants.js'
-import type { HopStatsData } from '../components/StatsBar.js'
+
+/** The per-hop aggregate the waterfall needs: on-chain capped demand at that hop.
+ *  `HopStatsData` satisfies it; the indexer builds it from graph nodes. */
+export interface HopAllocationStats {
+  cappedCommitted: bigint
+}
 
 export interface AllocationEstimate {
   /** Total USDC that would be allocated (after hop ceilings) */
@@ -26,7 +31,7 @@ export interface AllocationEstimate {
  * Pre-finalization, saleSize is 0 — use BASE_SALE or MAX_SALE based on
  * whether capped demand meets the elastic trigger.
  */
-export function estimateAllocation(hopStats: HopStatsData[], cappedDemand: bigint, saleSize: bigint): AllocationEstimate {
+export function estimateAllocation(hopStats: readonly HopAllocationStats[], cappedDemand: bigint, saleSize: bigint): AllocationEstimate {
   // Determine effective sale size
   let effectiveSaleSize: bigint
   if (saleSize > 0n) {
@@ -75,6 +80,20 @@ export function estimateAllocation(hopStats: HopStatsData[], cappedDemand: bigin
   }
 }
 
+/**
+ * Whether finalize() would enter refund mode for the given capped demand.
+ * The contract refunds when the post-waterfall allocation is below MIN_SALE —
+ * capped demand alone is not enough, because hop-0's ceiling sits below
+ * MIN_SALE at both sale sizes, so hop-0-heavy demand can clear MIN_SALE yet
+ * allocate below it. Allocation never exceeds capped demand, so this also
+ * covers the contract's earlier `cappedDemand < MIN_SALE` branch.
+ * Pre-finalize only; afterwards the contract's `refundMode` flag is authoritative.
+ */
+export function projectsRefundMode(hopStats: readonly HopAllocationStats[], cappedDemand: bigint): boolean {
+  const { totalAllocUsdc } = estimateAllocation(hopStats, cappedDemand, 0n)
+  return totalAllocUsdc < CROWDFUND_CONSTANTS.MIN_SALE
+}
+
 export interface UserHopPosition {
   hop: number
   /** User's raw committed amount in this hop (uncapped). */
@@ -91,7 +110,7 @@ export interface UserHopPosition {
  */
 export function estimateUserArmAllocation(
   positions: UserHopPosition[],
-  hopStats: HopStatsData[],
+  hopStats: readonly HopAllocationStats[],
   cappedDemand: bigint,
   saleSize: bigint,
 ): bigint {

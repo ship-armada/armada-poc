@@ -53,6 +53,19 @@ function makeEdge(fromAddress: string, fromHop: number, toAddress: string, toHop
   return { fromAddress, fromHop, toAddress, toHop }
 }
 
+/** Graph with `count` fully-committed hop-0 seeds and `hop1Count` fully-committed hop-1 nodes. */
+function demandGraph(count: number, hop1Count = 0): CrowdfundGraph {
+  const nodes = new Map<string, GraphNode>()
+  for (let i = 0; i < count; i++) nodes.set(`a${i}-0`, makeNode(`0xa${i}`, 0, HOP0_CAP))
+  for (let i = 0; i < hop1Count; i++) nodes.set(`b${i}-1`, makeNode(`0xb${i}`, 1, HOP1_CAP))
+  return { ...emptyGraph(), nodes }
+}
+
+/** $1.05M capped, all at hop-0: clears MIN_SALE but the $564k hop-0 ceiling caps allocation. */
+const hop0HeavyGraph = () => demandGraph(70)
+/** $570k hop-0 + $480k hop-1 = $1.05M capped, $1.044M projected allocation. */
+const spreadDemandGraph = () => demandGraph(38, 120)
+
 function makeEvent(
   type: CrowdfundEvent['type'],
   args: Record<string, unknown> = {},
@@ -229,6 +242,25 @@ describe('ruleA8 — minimum at risk late', () => {
     const out = ruleA8(ctx)
     expect(out[0]).toMatchObject({ id: 'A8', dedupeKey: 'A8:72h' })
   })
+  it('fires when hop-0-heavy demand clears MIN_SALE but projected allocation is below it', () => {
+    const ctx = makeContext({
+      now: COMMIT_TS - 60 * 60 * 24 * 2,
+      snapshot: { ...makeContext().snapshot, graph: hop0HeavyGraph() } as never,
+    })
+    const out = ruleA8(ctx)
+    expect(out[0]).toMatchObject({
+      id: 'A8',
+      dedupeKey: 'A8:72h',
+      context: { cappedDemand: (1_050_000n * 10n ** 6n).toString(), projectedAllocatedUsdc: (564_000n * 10n ** 6n).toString() },
+    })
+  })
+  it('does not fire when spread demand projects at or above MIN_SALE', () => {
+    const ctx = makeContext({
+      now: COMMIT_TS - 60 * 60 * 24 * 2,
+      snapshot: { ...makeContext().snapshot, graph: spreadDemandGraph() } as never,
+    })
+    expect(ruleA8(ctx)).toEqual([])
+  })
   it('does not fire after deadline', () => {
     const ctx = makeContext({ now: COMMIT_TS + 1 })
     expect(ruleA8(ctx)).toEqual([])
@@ -238,9 +270,7 @@ describe('ruleA8 — minimum at risk late', () => {
 // ============ A9a / A9b ============
 describe('ruleA9a — deadline passed, qualified', () => {
   it('fires P1 within grace, P0 beyond it', () => {
-    const nodes = new Map<string, GraphNode>()
-    for (let i = 0; i < 100; i++) nodes.set(`a${i}-0`, makeNode(`0xa${i}`, 0, HOP0_CAP))
-    const graph: CrowdfundGraph = { ...emptyGraph(), nodes }
+    const graph = spreadDemandGraph()
     const ctx = makeContext({
       now: COMMIT_TS + 60 * 60, // 1h past, within 2h grace
       snapshot: { ...makeContext().snapshot, graph } as never,
@@ -252,10 +282,15 @@ describe('ruleA9a — deadline passed, qualified', () => {
     })
     expect(ruleA9a(ctx2)[0]).toMatchObject({ severity: 'P0', dedupeKey: 'A9a:P0' })
   })
+  it('does not fire when capped demand clears MIN_SALE but projected allocation is below it', () => {
+    const ctx = makeContext({
+      now: COMMIT_TS + 60 * 60,
+      snapshot: { ...makeContext().snapshot, graph: hop0HeavyGraph() } as never,
+    })
+    expect(ruleA9a(ctx)).toEqual([])
+  })
   it('does not fire after Finalized or Cancelled', () => {
-    const nodes = new Map<string, GraphNode>()
-    for (let i = 0; i < 100; i++) nodes.set(`a${i}-0`, makeNode(`0xa${i}`, 0, HOP0_CAP))
-    const graph: CrowdfundGraph = { ...emptyGraph(), nodes }
+    const graph = spreadDemandGraph()
     const ctx = makeContext({
       now: COMMIT_TS + 60 * 60,
       snapshot: {
@@ -272,6 +307,20 @@ describe('ruleA9b — deadline passed, sub-minimum', () => {
   it('fires P1', () => {
     const ctx = makeContext({ now: COMMIT_TS + 60 })
     expect(ruleA9b(ctx)[0]).toMatchObject({ id: 'A9b', severity: 'P1' })
+  })
+  it('fires when capped demand clears MIN_SALE but projected allocation is below it', () => {
+    const ctx = makeContext({
+      now: COMMIT_TS + 60,
+      snapshot: { ...makeContext().snapshot, graph: hop0HeavyGraph() } as never,
+    })
+    expect(ruleA9b(ctx)[0]).toMatchObject({ id: 'A9b', severity: 'P1' })
+  })
+  it('does not fire when spread demand projects at or above MIN_SALE', () => {
+    const ctx = makeContext({
+      now: COMMIT_TS + 60,
+      snapshot: { ...makeContext().snapshot, graph: spreadDemandGraph() } as never,
+    })
+    expect(ruleA9b(ctx)).toEqual([])
   })
 })
 

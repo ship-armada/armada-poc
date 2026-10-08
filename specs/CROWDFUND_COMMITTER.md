@@ -669,11 +669,13 @@ This is an approximation — it doesn't account for floor rounding, multi-hop de
 |---|---|---|---|
 | Pre-open (chain time < `windowStart`; ARM is already loaded at deploy) | Disabled: "Opens soon" with a countdown to `windowStart` | Disabled: no seeds exist until the window opens | Disabled: "Not yet open" |
 | Commitment window open | Active | Active (if address has invite slots) | Disabled: "Available after finalization" |
-| Deadline passed, not finalized, capped_demand ≥ MIN | Disabled: "Deadline passed" | Disabled: "Deadline passed" | Disabled: "Awaiting finalization" |
-| Deadline passed, not finalized, capped_demand < MIN | Disabled: "Deadline passed" | Disabled: "Deadline passed" | Active: refund available |
+| Deadline passed, not finalized, projected allocation ≥ MIN | Disabled: "Deadline passed" | Disabled: "Deadline passed" | Disabled: "Awaiting finalization" |
+| Deadline passed, not finalized, projected allocation < MIN | Disabled: "Deadline passed" | Disabled: "Deadline passed" | Active: refund available |
 | Finalized (success) | Disabled: "Finalized" | Disabled: "Finalized" | Active: ARM claim + refund |
 | Finalized (refundMode) | Disabled: "Finalized" | Disabled: "Finalized" | Active: full refund only |
 | Cancelled | Disabled: "Cancelled" | Disabled: "Cancelled" | Active: full refund only |
+
+"Projected allocation" is the post-waterfall allocated USDC that `finalize()` will compute from the frozen per-hop capped demand (shared `projectsRefundMode` / `estimateAllocation`). `finalize()` enters refundMode on that value, not on capped demand: hop-0's ceiling is below MIN at both sale sizes, so hop-0-heavy demand can clear MIN yet still refund.
 
 Disabled tabs show a brief status message explaining why. They don't disappear — the participant should always see all three tabs to understand what the full lifecycle looks like.
 

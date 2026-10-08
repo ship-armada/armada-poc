@@ -78,7 +78,7 @@ const baseProps: ClaimFlowV2Props = {
   claimDeadline: 0,
   totalCommitted: 0n,
   windowEnd: 0,
-  cappedDemand: 0n,
+  projectedRefund: false,
   claimAvailable: true,
   onGoToMyPosition: () => {},
   onGoToNetwork: () => {},
@@ -95,6 +95,23 @@ beforeEach(() => {
   commitmentFor = () => Promise.resolve(0n)
   claimImpl = () => Promise.resolve({ hash: '0xclaim', wait: () => Promise.resolve({ status: 1, logs: [] }) })
   lastClaimDelegate = undefined
+})
+
+describe('ClaimFlowV2 pre-finalize gate', () => {
+  // Window closed, finalize() not yet called: the contract still reports phase 0.
+  const closedProps = { ...baseProps, phase: 0, windowEnd: 500, blockTimestamp: 1_000 }
+
+  it('shows the refund heads-up when a refund is projected', async () => {
+    renderClaim(<ClaimFlowV2 {...closedProps} projectedRefund={true} totalCommitted={15_000n * 10n ** 6n} />)
+    expect(await screen.findByText('Sale ended below minimum')).toBeTruthy()
+    expect(screen.getByText(/claim a refund of your committed \$15,000/)).toBeTruthy()
+  })
+
+  it('awaits finalization when no refund is projected', async () => {
+    renderClaim(<ClaimFlowV2 {...closedProps} projectedRefund={false} />)
+    expect(await screen.findByText('Awaiting finalization')).toBeTruthy()
+    expect(screen.queryByText('Sale ended below minimum')).toBeNull()
+  })
 })
 
 describe('ClaimFlowV2 account switch', () => {

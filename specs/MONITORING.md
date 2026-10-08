@@ -232,10 +232,10 @@ off-chain alert covers that condition.
 
 | Field | Value |
 |---|---|
-| **Signal** | Derived `capped_demand` vs `MINIMUM_RAISE` ($1,000,000) |
-| **Condition** | `capped_demand < MINIMUM_RAISE` with <72h remaining; then <24h remaining |
+| **Signal** | Projected post-waterfall allocated USDC (derived per-hop `capped_demand` run through the finalize waterfall) vs `MINIMUM_RAISE` ($1,000,000) |
+| **Condition** | `projected_allocation < MINIMUM_RAISE` with <72h remaining; then <24h remaining |
 | **Severity** | P2 |
-| **Meaning** | RefundMode risk increasing. Note: demand often concentrates near deadline. |
+| **Meaning** | RefundMode risk increasing. Fires even when `capped_demand ≥ MINIMUM_RAISE` if demand is concentrated at hop-0 (its ceiling is below the minimum at both sale sizes) — the remedy is more hop-1/hop-2 participation before the deadline. Note: demand often concentrates near deadline. |
 | **Runbook** | `OPERATIONS.md` §5 Final-week operating cadence; §11 Checkpoint 3 |
 
 ---
@@ -245,22 +245,22 @@ off-chain alert covers that condition.
 | Field | Value |
 |---|---|
 | **Signal** | Absence of `Finalized` and `Cancelled` |
-| **Condition** | `now > commitmentDeadline` AND derived `capped_demand ≥ MINIMUM_RAISE` |
+| **Condition** | `now > commitmentDeadline` AND projected post-waterfall allocation `≥ MINIMUM_RAISE` |
 | **Severity** | P1 initially; P0 if unresolved beyond configured grace window (e.g. 2 hours) |
 | **Meaning** | Sale qualified — finalization action required. Someone must call `finalize()`. |
 | **Runbook** | `OPERATIONS.md` §11 Checkpoint 3; §6 Finalization procedure |
 
 ---
 
-### A9b — Deadline passed, sub-minimum demand
+### A9b — Deadline passed, projected allocation below minimum
 
 | Field | Value |
 |---|---|
 | **Signal** | Absence of `Finalized` and `Cancelled` |
-| **Condition** | `now > commitmentDeadline` AND derived `capped_demand < MINIMUM_RAISE` |
+| **Condition** | `now > commitmentDeadline` AND projected post-waterfall allocation `< MINIMUM_RAISE` (includes `capped_demand < MINIMUM_RAISE`) |
 | **Severity** | P1 |
 | **Meaning** | Sale did not qualify. Someone must call `finalize()` (permissionless) to activate refunds. `finalize()` sets `refundMode = true`, after which participants call `claimRefund()` to withdraw their full deposited USDC. There is no auto-refund path without `finalize()`. |
-| **Runbook** | `OPERATIONS.md` §5 pre-finalization checkpoint (capped_demand < MINIMUM_RAISE branch) |
+| **Runbook** | `OPERATIONS.md` §5 pre-finalization checkpoint (sub-minimum branch) |
 
 ---
 

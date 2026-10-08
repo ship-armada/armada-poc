@@ -199,11 +199,12 @@ async function main() {
     await assertLaunchRoleMultisigs(securityCouncilAddress, launchTeamAddress);
   }
   // Reserve allocator (#582): the distributor fixed it in the governance stage; re-check it
-  // against the security council this stage fixes in the crowdfund.
+  // against the security council and launch team this stage fixes in the crowdfund.
   if (config.revenueReserve) {
     assertAllocatorDistinct(config.revenueReserve.allocator, [
       { label: "deployer", address: deployer.address },
       { label: "security council", address: securityCouncilAddress },
+      { label: "launch team", address: launchTeamAddress },
     ]);
   }
   // Initial steward (#221, #222): this stage may run days after governance with a different

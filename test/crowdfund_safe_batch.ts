@@ -273,16 +273,17 @@ describe("Safe batches for launch-team and security-council actions", function (
       const factory = await deploy(FACTORY);
       const multiSend = await deploy(MULTISEND);
       let salt = 0;
-      const createSafe = async () => {
-        const setup = singleton.interface.encodeFunctionData("setup", [[o1.address, o2.address, o3.address], 2,
+      const createSafe = async (threshold: number) => {
+        const setup = singleton.interface.encodeFunctionData("setup", [[o1.address, o2.address, o3.address], threshold,
           ethers.ZeroAddress, "0x", ethers.ZeroAddress, ethers.ZeroAddress, 0, ethers.ZeroAddress]);
         const receipt = await (await factory.createProxyWithNonce(await singleton.getAddress(), setup, salt++)).wait();
         const created = receipt.logs.map((l: any) => { try { return factory.interface.parseLog(l); } catch { return null; } })
           .find((e: any) => e?.name === "ProxyCreation");
         return new hre.ethers.Contract(created.args.proxy, SAFE.abi, deployer) as any;
       };
-      const launchSafe = await createSafe();
-      const councilSafe = await createSafe();
+      // Mainnet roles: a 1-of-3 launch team and a 2-of-3 security council.
+      const launchSafe = await createSafe(1);
+      const councilSafe = await createSafe(2);
 
       const usdc = await (await hre.ethers.getContractFactory("MockUSDCV2")).deploy("Mock USDC", "USDC");
       const arm = await (await hre.ethers.getContractFactory("ArmadaToken")).deploy(deployer.address, deployer.address);
@@ -295,13 +296,14 @@ describe("Safe batches for launch-team and security-council actions", function (
       await arm.initAuthorizedDelegators([cfAddress]);
       await arm.transfer(cfAddress, ARM(1_800_000));
       await crowdfund.loadArm();
-      return { crowdfund, cfAddress, launchSafe, councilSafe, multiSend, owners: [o1, o2], seeds: [s1, s2, s3], x, y, z };
+      return { crowdfund, cfAddress, launchSafe, councilSafe, multiSend, launchOwners: [o1], councilOwners: [o1, o2],
+        seeds: [s1, s2, s3], x, y, z };
     }
 
     /**
      * Execute one Transaction Builder file as the Safe app would: calldata encoded from the
      * file's method + values, several calls bundled through MultiSendCallOnly (delegatecall),
-     * and two owners' EIP-712 signatures over the SafeTx.
+     * and the given owners' EIP-712 signatures over the SafeTx (as many as the Safe's threshold).
      */
     async function executeFile(safe: any, multiSend: any, owners: any[], file: TxBuilderFile) {
       const calls = file.transactions.map((tx) => ({ to: tx.to, value: BigInt(tx.value), data: builderCalldata(tx) }));
@@ -328,12 +330,12 @@ describe("Safe batches for launch-team and security-council actions", function (
       Number(a.match(/batch-(\d+)/)?.[1] ?? 0) - Number(b.match(/batch-(\d+)/)?.[1] ?? 0))
       .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")) as TxBuilderFile);
 
-    // WHY: end to end — the task's files, executed through a 2-of-3 Safe exactly as the Safe app
-    // bundles them, must add every seed and launch-team invite (including a deliberate stack)
-    // and use the budgets as the summary says. Files are prepared before the sale opens and
-    // executed after, which is the intended launch-day flow.
-    it("prepares batches before open that a 2-of-3 Safe executes after open", async function () {
-      const { crowdfund, cfAddress, launchSafe, multiSend, owners, seeds, x, y, z } = await fixture();
+    // WHY: end to end — the task's files, executed through the 1-of-3 launch-team Safe with one
+    // owner's signature exactly as the Safe app bundles them, must add every seed and launch-team
+    // invite (including a deliberate stack) and use the budgets as the summary says. Files are
+    // prepared before the sale opens and executed after, which is the intended launch-day flow.
+    it("prepares batches before open that a 1-of-3 Safe executes after open", async function () {
+      const { crowdfund, cfAddress, launchSafe, multiSend, launchOwners, seeds, x, y, z } = await fixture();
       const csv = path.join(tmp, "launch.csv");
       fs.writeFileSync(csv, ["address,hop,label", ...seeds.map((s, i) => `${s.address},0,seed ${i}`),
         `${x.address},1,X`, `${y.address},1,Y`, `${z.address},2,Z`, `${x.address},1,X again`].join("\n"));
@@ -348,7 +350,7 @@ describe("Safe batches for launch-team and security-council actions", function (
       expect(logged.join("\n")).to.include("summary.md");
 
       await time.increaseTo(await crowdfund.windowStart());
-      for (const file of files) await executeFile(launchSafe, multiSend, owners, file);
+      for (const file of files) await executeFile(launchSafe, multiSend, launchOwners, file);
 
       expect((await crowdfund.hopStats(0)).whitelistCount).to.equal(3n);
       for (const s of seeds) expect((await crowdfund.participants(s.address, 0)).isWhitelisted).to.equal(true);
@@ -362,12 +364,12 @@ describe("Safe batches for launch-team and security-council actions", function (
     // WHY: re-running a CSV after its batches executed (or with an unintended stack) must refuse
     // without writing anything, so a duplicate batch can never reach the Safe queue.
     it("refuses and writes nothing when rows are already done or stack without --allow-stack", async function () {
-      const { crowdfund, cfAddress, launchSafe, multiSend, owners, seeds, x } = await fixture();
+      const { crowdfund, cfAddress, launchSafe, multiSend, launchOwners, seeds, x } = await fixture();
       await time.increaseTo(await crowdfund.windowStart());
       const csv = path.join(tmp, "launch.csv");
       fs.writeFileSync(csv, `address,hop,label\n${seeds[0].address},0,a\n${x.address},1,x\n`);
       const dir: string = await hre.run("cf-safe-batch", { file: csv, crowdfund: cfAddress, out: tmp, maxSeeds: 100, maxInvites: 60, allowStack: false, check: false });
-      for (const file of readFiles(dir)) await executeFile(launchSafe, multiSend, owners, file);
+      for (const file of readFiles(dir)) await executeFile(launchSafe, multiSend, launchOwners, file);
 
       const before = fs.readdirSync(tmp);
       await expect(hre.run("cf-safe-batch", { file: csv, crowdfund: cfAddress, out: tmp, maxSeeds: 100, maxInvites: 60, allowStack: false, check: false }))
@@ -389,11 +391,11 @@ describe("Safe batches for launch-team and security-council actions", function (
     // WHY: the security council's emergency cancel must be ready to execute from its Safe
     // without building calldata under pressure. The file must cancel the sale.
     it("writes a cancel() file that the security-council Safe executes", async function () {
-      const { crowdfund, cfAddress, councilSafe, multiSend, owners } = await fixture();
+      const { crowdfund, cfAddress, councilSafe, multiSend, councilOwners } = await fixture();
       const dir: string = await hre.run("cf-safe-cancel", { crowdfund: cfAddress, out: tmp });
       const [file] = readFiles(dir);
       expect(file.meta.createdFromSafeAddress).to.equal(await councilSafe.getAddress());
-      await executeFile(councilSafe, multiSend, owners, file);
+      await executeFile(councilSafe, multiSend, councilOwners, file);
       expect(await crowdfund.phase()).to.equal(2n);
       await expect(hre.run("cf-safe-cancel", { crowdfund: cfAddress, out: tmp })).to.be.rejectedWith(/not active/);
     });

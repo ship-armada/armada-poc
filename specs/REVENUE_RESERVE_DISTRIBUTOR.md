@@ -175,8 +175,8 @@ ETH donations are unsupported and have no rescue mechanism.
 2. Configure both `REVENUE_RESERVE_ALLOCATOR` and `REVENUE_RESERVE_AMOUNT` (ARM token units,
    e.g. `360000`). The config requires both on mainnet and on hardened
    (`HARDEN_TIMELOCK=true`) Sepolia rehearsals; elsewhere the reserve is optional.
-   Neither is defaulted or inferred. The allocator must differ from the deployer and
-   Security Council; it may be the launch team Safe.
+   Neither is defaulted or inferred. The allocator must differ from the deployer,
+   Security Council and launch team (a 1-of-3 Safe).
 3. Supply `REVENUE_LOCK_BENEFICIARIES_FILE` or `REVENUE_LOCK_BENEFICIARIES_JSON` with the
    **direct** beneficiaries only (2,040,000 ARM for the example). Do not include another
    entry for the reserve. Direct amounts plus the reserve must equal

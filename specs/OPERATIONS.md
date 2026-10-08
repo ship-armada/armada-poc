@@ -19,7 +19,7 @@ Complete this table before deployment. Every address must be confirmed before an
 |---|---|---|---|---|
 | Deployer | Deploys the contract | `[TBD]` | EOA, preferably a Ledger (`DEPLOYER_LEDGER_ADDRESS`, see `docs/ledger-deploy.md`); otherwise a fresh single-use key. The pipeline signs as one account; it holds no role or ARM after the run | — |
 | Treasury | Receives net USDC proceeds + unsold/unclaimed ARM | `[TBD]` (from the governance manifest) | Contract: `ArmadaTreasuryGov`, deployed by the launch and controlled by governance through the timelock; not a wallet | — |
-| ROOT / Launch team | `addSeed()`, `launchTeamInvite()` | `[TBD]` | Safe multisig | 2-of-3 |
+| ROOT / Launch team | `addSeed()`, `launchTeamInvite()` | `[TBD]` | Safe multisig, every signer on a hardware wallet | 1-of-3 |
 | Security Council | `cancel()` authority | `[TBD]` | Safe multisig | 2-of-3 |
 | Treasury Steward | Elected at deploy with the USDC steward budget; `proposeStewardSpend()` (GOVERNANCE.md §Treasury Steward) | `[TBD]` | Safe multisig | 2-of-3 |
 | ARM token contract | Source of preloaded ARM | `[TBD]` | — | — |
@@ -466,6 +466,14 @@ When `block.timestamp > finalization_timestamp + (3 * 365 * 24 * 3600)`:
 - Maintain a documented backup contact list for all multisig signers.
 - Test multisig signing 48 hours before the commitment window opens.
 - Security Council: 2-of-3 means 1 signer can be unavailable. Know who the 3 are at all times.
+- Launch team: 1-of-3 means any one signer can act, so 2 can be unavailable.
+
+**Launch-team signer key lost or compromised (1-of-3):** one key alone controls the launch-team
+Safe, including its owners and threshold, and can add seeds and invites for the rest of the window.
+- A remaining signer removes the compromised owner from the Safe at once. The attacker can do the
+  same to the others, so act before they do.
+- If the Safe is lost or bad seeds/invites land, escalate to the Security Council for a cancel
+  decision (§9.1, §9.8). Placements cannot be undone.
 
 ---
 

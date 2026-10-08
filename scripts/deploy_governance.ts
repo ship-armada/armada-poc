@@ -89,6 +89,7 @@ async function main() {
     assertAllocatorDistinct(config.revenueReserve.allocator, [
       { label: "deployer", address: deployer.address },
       { label: "security council", address: config.securityCouncilAddress },
+      { label: "launch team", address: config.launchTeamAddress },
     ]);
   }
   // The initial steward is elected at the end of deploy_crowdfund, after one-shot setters are
@@ -102,7 +103,8 @@ async function main() {
     ], !isLocal());
   }
   // The security council and launch team are fixed in the crowdfund this launch deploys; on
-  // mainnet refuse anything but 2-of-3 Safes before this stage's first transaction.
+  // mainnet refuse anything but a 2-of-3 council and a 1-of-3 or 2-of-3 launch team Safe before
+  // this stage's first transaction.
   if (config.env === "mainnet") {
     await assertLaunchRoleMultisigs(config.securityCouncilAddress, config.launchTeamAddress);
   }

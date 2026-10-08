@@ -301,15 +301,34 @@ describe("Mainnet launch deploy guards", function () {
     async function safes() {
       const [, a, b, c, eoa] = await hre.ethers.getSigners();
       const Mock = await hre.ethers.getContractFactory("ReserveAllocatorIntrospectionMock");
-      const twoOfThree = async () => (await Mock.deploy([a.address, b.address, c.address], 2)).getAddress();
-      const oneOfThree = await (await Mock.deploy([a.address, b.address, c.address], 1)).getAddress();
-      return { sc: await twoOfThree(), launchTeam: await twoOfThree(), oneOfThree, eoa: eoa.address };
+      const threeOwners = async (threshold: number) =>
+        (await Mock.deploy([a.address, b.address, c.address], threshold)).getAddress();
+      const twoOwners = await (await Mock.deploy([a.address, b.address], 1)).getAddress();
+      return {
+        sc: await threeOwners(2), launchTeam: await threeOwners(1), twoOfThree: await threeOwners(2),
+        oneOfThree: await threeOwners(1), threeOfThree: await threeOwners(3), twoOwners, eoa: eoa.address,
+      };
     }
 
-    // WHY: control case — two 2-of-3 Safes are the intended mainnet security council and launch team.
-    it("accepts a 2-of-3 security council and launch team", async function () {
+    // WHY: control case — a 2-of-3 security council and a 1-of-3 launch team (all three launch
+    // team signers on hardware wallets) are the intended mainnet roles.
+    it("accepts a 2-of-3 security council and a 1-of-3 launch team", async function () {
       const { sc, launchTeam } = await safes();
       await assertLaunchRoleMultisigs(sc, launchTeam);
+    });
+
+    // WHY: 2-of-3 is strictly safer than the 1-of-3 launch team the deploy allows, so the Sepolia
+    // rehearsal Safes and a team that keeps the stricter threshold must still pass.
+    it("accepts a 2-of-3 launch team", async function () {
+      const { sc, twoOfThree } = await safes();
+      await assertLaunchRoleMultisigs(sc, twoOfThree);
+    });
+
+    // WHY: the cancel veto stays behind two signatures; relaxing the launch team must not relax it.
+    it("rejects a 1-of-3 security council", async function () {
+      const { launchTeam, oneOfThree } = await safes();
+      await expect(assertLaunchRoleMultisigs(oneOfThree, launchTeam))
+        .to.be.rejectedWith("Security council must report exactly three distinct owners and threshold two");
     });
 
     // WHY: both addresses are baked into the immutable crowdfund. A single key as security council
@@ -320,12 +339,25 @@ describe("Mainnet launch deploy guards", function () {
         .to.be.rejectedWith("Security council must be a deployed multisig");
     });
 
-    // WHY: a Safe created 1-of-1 (or left at threshold 1) while owners are added must not slip
-    // through: the address alone looks right, only the owner/threshold reads tell them apart.
-    it("rejects a launch team Safe that is not 2-of-3", async function () {
-      const { sc, oneOfThree } = await safes();
-      await expect(assertLaunchRoleMultisigs(sc, oneOfThree))
-        .to.be.rejectedWith("Launch team must report exactly three distinct owners and threshold two");
+    // WHY: a single key as launch team holds every seed and launch-team invite, and a Safe left
+    // with fewer owners while being set up must not slip through: the address alone looks right,
+    // only the owner/threshold reads tell them apart. 3-of-3 loses the role if one signer is lost.
+    it("rejects an EOA launch team and a launch team Safe that is not 1-of-3 or 2-of-3", async function () {
+      const { sc, eoa, twoOwners, threeOfThree } = await safes();
+      await expect(assertLaunchRoleMultisigs(sc, eoa)).to.be.rejectedWith("Launch team must be a deployed multisig");
+      for (const launchTeam of [twoOwners, threeOfThree]) {
+        await expect(assertLaunchRoleMultisigs(sc, launchTeam))
+          .to.be.rejectedWith("Launch team must report exactly three distinct owners and threshold one or two");
+      }
+    });
+
+    // WHY: the council's cancel is the check on launch-team placements; one Safe holding both
+    // roles would check itself. A 2-of-3 Safe passes both threshold checks, so only an address
+    // comparison (case-insensitive, as env values may differ in case) catches the reuse.
+    it("rejects a security council that is also the launch team", async function () {
+      const { sc } = await safes();
+      await expect(assertLaunchRoleMultisigs(sc, sc.toLowerCase()))
+        .to.be.rejectedWith("Launch team must differ from the security council");
     });
 
     // WHY: an unset address must name the env var, not fail later with an RPC error.

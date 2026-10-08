@@ -1,6 +1,6 @@
 # Launch-team and security-council actions from a Safe
 
-On mainnet the launch team and the security council are 2-of-3 Safes. The crowdfund admin app
+On mainnet the launch team is a 1-of-3 Safe and the security council a 2-of-3 Safe. The crowdfund admin app
 signs with a browser wallet, so it cannot act for them. Instead, two Hardhat tasks write files
 for the Safe app's **Transaction Builder**:
 
@@ -76,8 +76,10 @@ For each batch file, **in order**:
 
 1. Owner 1: Safe app → **Apps → Transaction Builder** → drag in the file. Check every call
    against `summary.md` → **Create batch** → **Simulate** → **Send batch** and sign.
-2. Owner 2: **Transactions → Queue** → open the transaction, check the calls against
-   `summary.md` → **Confirm** → **Execute** (pays the gas).
+   - **Launch team (1-of-3):** one signature meets the threshold, so owner 1 executes (pays
+     the gas). No second owner reviews the batch: this check against `summary.md` is the only one.
+2. **Security council (2-of-3):** owner 2: **Transactions → Queue** → open the transaction,
+   check the calls against `summary.md` → **Confirm** → **Execute** (pays the gas).
 
 Rules:
 
@@ -95,12 +97,12 @@ before the sale opens, then execute it only on a recorded emergency decision
 
 ## Sepolia rehearsal
 
-Rehearse with a Sepolia crowdfund whose launch team and security council are 2-of-3 Safes
-(the default Sepolia roles are single keys, which the tasks refuse):
+Rehearse with a Sepolia crowdfund whose launch team is a 1-of-3 Safe and security council a
+2-of-3 Safe, as on mainnet (the default Sepolia roles are single keys, which the tasks refuse):
 
 - [ ] `cf-safe-batch --check` before the open time warns but passes.
 - [ ] Import a seed batch and an invite batch into the Transaction Builder: no checksum warning,
       and the decoded calls match `summary.md` (including `fromHop`).
-- [ ] Owner 2 confirms and executes; the seeds and invites appear on chain.
+- [ ] Owner 1 executes with one signature; the seeds and invites appear on chain.
 - [ ] Re-running the same CSV refuses (already added) and writes nothing.
 - [ ] `cf-safe-cancel` imports and simulates cleanly (execute only on a throwaway deploy).

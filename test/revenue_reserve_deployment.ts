@@ -383,16 +383,17 @@ describe("Reserve deployment funding gate", function () {
       .to.throw("Reserve allocator must differ from the deployer");
   });
 
-  // WHY: The launch team Safe may also hold the allocator role, so the scripts do not pass it.
+  // WHY: The launch team may be a 1-of-3 Safe, so one launch-team key must not also assign
+  // irrevocable reserve grants; the deploy scripts pass the launch team as a role to avoid.
   // Unset roles (local stacks without a configured security council) arrive empty and are skipped.
-  it("accepts an allocator that reuses the launch team Safe and skips unset roles", async function () {
-    const { plan, b } = await loadFixture(fixture);
+  it("rejects an allocator equal to the launch team and skips unset roles", async function () {
+    const { plan, b, c } = await loadFixture(fixture);
     const [deployer] = await ethers.getSigners();
-    const launchTeam = plan.allocator;
-    expect(() => assertAllocatorDistinct(launchTeam,
-      [{ label: "deployer", address: deployer.address }, { label: "security council", address: b.address }])).to.not.throw();
-    expect(() => assertAllocatorDistinct(plan.allocator,
-      [{ label: "deployer", address: deployer.address }, { label: "security council", address: "" }])).to.not.throw();
+    expect(() => assertAllocatorDistinct(plan.allocator, [{ label: "deployer", address: deployer.address },
+      { label: "security council", address: b.address }, { label: "launch team", address: plan.allocator }]))
+      .to.throw("Reserve allocator must differ from the launch team");
+    expect(() => assertAllocatorDistinct(plan.allocator, [{ label: "deployer", address: deployer.address },
+      { label: "security council", address: "" }, { label: "launch team", address: c.address }])).to.not.throw();
   });
 
   // WHY: The reserve comes out of the lock's existing allocation, so appending 3% to a full 20% list must fail.

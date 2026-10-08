@@ -79,9 +79,10 @@ export async function assertAllocatorMultisig(address: string): Promise<void> {
 }
 
 /**
- * The allocator may reuse the launch team Safe, so callers pass only the roles it must not share:
- * the deployer and the security council, whose cancel and veto powers check launch operations
- * (#582). Unset roles (empty strings) are skipped.
+ * Callers pass the roles the allocator must not share: the deployer, the security council, whose
+ * cancel and veto powers check launch operations (#582), and the launch team, which may be a
+ * 1-of-3 Safe and so must not also assign irrevocable grants. Unset roles (empty strings) are
+ * skipped.
  */
 export function assertAllocatorDistinct(allocator: string, otherRoles: { label: string; address: string }[]): void {
   const address = ethers.getAddress(allocator);
@@ -93,21 +94,34 @@ export function assertAllocatorDistinct(allocator: string, otherRoles: { label: 
 }
 
 /**
- * Mainnet security council and launch team must be 2-of-3 Safes, like the steward. Both are
- * fixed in the crowdfund at deploy, so the governance stage checks before its first transaction
- * and the crowdfund stage re-checks before deploying the crowdfund.
+ * Mainnet security council must be a 2-of-3 Safe, like the steward. The launch team may be a
+ * 1-of-3 or 2-of-3 Safe: its signers hold hardware wallets, and its powers end with the
+ * commitment window. The two must be different Safes: the council's cancel is the check on
+ * launch-team placements. Both are fixed in the crowdfund at deploy, so the governance stage
+ * checks before its first transaction and the crowdfund stage re-checks before deploying the
+ * crowdfund.
  */
 export async function assertLaunchRoleMultisigs(securityCouncil: string, launchTeam: string): Promise<void> {
   if (!securityCouncil) throw new Error("SECURITY_COUNCIL_ADDRESS is required (a 2-of-3 Safe)");
-  if (!launchTeam) throw new Error("LAUNCH_TEAM_ADDRESS is required (a 2-of-3 Safe)");
+  if (!launchTeam) throw new Error("LAUNCH_TEAM_ADDRESS is required (a 1-of-3 or 2-of-3 Safe)");
+  if (securityCouncil.toLowerCase() === launchTeam.toLowerCase()) {
+    throw new Error(`Launch team must differ from the security council (${launchTeam})`);
+  }
   await assertTwoOfThreeMultisig(securityCouncil, "Security council");
-  await assertTwoOfThreeMultisig(launchTeam, "Launch team");
+  await assertThreeOwnerMultisig(launchTeam, "Launch team", [1n, 2n], "one or two");
 }
 
 /** Safe-compatible 2-of-3 check shared by launch roles held by a multisig (reserve allocator,
- * initial steward, mainnet security council and launch team). Same caveat: getters do not
- * authenticate the wallet code. */
+ * initial steward and mainnet security council). */
 export async function assertTwoOfThreeMultisig(address: string, label: string): Promise<void> {
+  await assertThreeOwnerMultisig(address, label, [2n], "two");
+}
+
+/** Safe-compatible check for exactly three distinct owners and one of the accepted thresholds
+ * (`thresholdText` spells them out for the error). Same caveat: getters do not authenticate the
+ * wallet code. */
+async function assertThreeOwnerMultisig(address: string, label: string, thresholds: bigint[],
+  thresholdText: string): Promise<void> {
   if (await ethers.provider.getCode(address) === "0x") throw new Error(`${label} must be a deployed multisig`);
   const wallet = new ethers.Contract(address, [
     "function getThreshold() view returns (uint256)",
@@ -115,8 +129,8 @@ export async function assertTwoOfThreeMultisig(address: string, label: string): 
   ], ethers.provider);
   const [threshold, owners] = await Promise.all([wallet.getThreshold(), wallet.getOwners()]);
   const unique = new Set<string>(owners.map((owner: string) => ethers.getAddress(owner)));
-  if (threshold !== 2n || owners.length !== 3 || unique.size !== 3 || unique.has(ethers.ZeroAddress)) {
-    throw new Error(`${label} must report exactly three distinct owners and threshold two`);
+  if (!thresholds.includes(threshold) || owners.length !== 3 || unique.size !== 3 || unique.has(ethers.ZeroAddress)) {
+    throw new Error(`${label} must report exactly three distinct owners and threshold ${thresholdText}`);
   }
   rejectAnvilAddresses([...unique], `${label} owners`);
 }

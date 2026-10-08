@@ -583,7 +583,7 @@ Each alert must include:
 
 **Signal:** `ProposalCreated(proposalId, proposer, proposalType = 3, …)`; then `ProposalQueued(proposalId, …)` for the same id.
 
-**Severity:** P1 if created before `finalizedAt + 7 days` (or while the crowdfund is still Active); P2 afterwards.
+**Severity:** P1 if created before `finalizedAt + 10 days` (or while the crowdfund is still Active); P2 afterwards.
 
 **Response:**
 - Match the proposal against the steward's published spend plan (recipients, amounts, description).

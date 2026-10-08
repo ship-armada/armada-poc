@@ -6,6 +6,7 @@ import { act, render, screen } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { PreLaunchApp } from './PreLaunchApp'
 import { PRELAUNCH_RELOAD_CHECK_MS } from '@/config/prelaunch'
+import { CROWDFUND_INFO_URL, PROJECT_URL } from '@/config/socials'
 
 // Thu 2026-10-08 17:00:00 UTC.
 const OPENS_AT = 1791478800
@@ -44,6 +45,22 @@ describe('PreLaunchApp', () => {
       expect(tabs.length).toBeGreaterThan(0)
       for (const tab of tabs) expect(tab).toBeDisabled()
     }
+  })
+
+  it('links the logo to the project site and About the crowdfund (desktop nav and mobile logo row) to the crowdfund info page', () => {
+    vi.useFakeTimers({ now: (OPENS_AT - 3600) * 1000 })
+    render(<PreLaunchApp opensAtUnix={OPENS_AT} onReload={vi.fn()} />)
+
+    expect(screen.getByRole('link', { name: 'Armada project site' })).toHaveAttribute(
+      'href',
+      PROJECT_URL,
+    )
+    // jsdom renders every breakpoint's copy (CSS shows one): the desktop
+    // nav's links sit inside a <nav>, the mobile logo-row copy does not.
+    const about = screen.getAllByRole('link', { name: 'About the crowdfund' })
+    for (const link of about) expect(link).toHaveAttribute('href', CROWDFUND_INFO_URL)
+    expect(about.some((link) => link.closest('nav') !== null)).toBe(true)
+    expect(about.some((link) => link.closest('nav') === null)).toBe(true)
   })
 
   it('shows no demo participants or invite slots', () => {

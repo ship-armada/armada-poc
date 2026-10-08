@@ -216,6 +216,8 @@
   text-align: center;
   white-space: nowrap;
   cursor: pointer;
+  /* The About entry is an <a>; match the button items. */
+  text-decoration: none;
 }
 
 .navItem:hover {

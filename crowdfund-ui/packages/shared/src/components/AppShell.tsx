@@ -51,6 +51,8 @@ export interface AppShellProps {
    * or any other component that positions its own internal full-viewport shell.
    */
   bare?: boolean
+  /** When set, the header logo links here in a new tab. */
+  logoHref?: string
   children: ReactNode
 }
 
@@ -109,6 +111,7 @@ mobileMenu,
 mobileActions,
 footer,
 bare,
+logoHref,
 children,
 }: AppShellProps) {
   return (
@@ -122,6 +125,7 @@ children,
         mobileMenu={mobileMenu}
         mobileActions={mobileActions}
         scrollWithPageOnMobile={bare}
+        logoHref={logoHref}
       />
 
       {/* pt-20 clears the inset AppHeader (top-6 + h-14 = 24 + 56 = 80px). Bare

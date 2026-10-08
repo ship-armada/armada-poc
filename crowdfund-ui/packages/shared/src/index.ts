@@ -94,7 +94,7 @@ export {
   getExpectedCrowdfundAddress,
 } from './lib/network.js'
 export type { NetworkMode, NetworkEnv } from './lib/network.js'
-export { DISCORD_URL, X_URL } from './lib/socials.js'
+export { DISCORD_URL, X_URL, PROJECT_URL, CROWDFUND_INFO_URL } from './lib/socials.js'
 
 export { createProvider, fetchLogs, getBlockTimestamp } from './lib/rpc.js'
 export {

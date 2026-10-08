@@ -1,4 +1,4 @@
-// ABOUTME: Committer full-screen mobile menu — gradient panel with RainbowKit wallet block, nav, and Participate/Claim.
+// ABOUTME: Committer full-screen mobile menu — gradient panel with RainbowKit wallet block, nav + About link, and Participate/Claim.
 // ABOUTME: Mobile equivalent of the designer's HeaderMobileMenu, hosted inside AppHeader's full-screen Sheet.
 
 import { useEffect, useRef, useState } from 'react'
@@ -15,6 +15,7 @@ import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { ArmadaLogo, Button as ArmadaButton } from '@armada/ui'
 import { Participate, fleetPng, fleetMp4 } from '@armada/crowdfund-shared'
 import type { Page } from '@/appNav'
+import { CROWDFUND_INFO_URL } from '@/config/socials'
 import styles from './CommitterMobileMenu.module.css'
 
 const ACTION_ICON_PX = 20
@@ -262,6 +263,15 @@ export function CommitterMobileMenu({
           >
             Claim
           </button>
+          <a
+            href={CROWDFUND_INFO_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.navItem}
+            onClick={onClose}
+          >
+            About the crowdfund
+          </a>
         </nav>
 
         <hr className={styles.separator} aria-hidden />

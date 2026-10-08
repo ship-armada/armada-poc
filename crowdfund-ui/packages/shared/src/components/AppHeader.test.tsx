@@ -1,4 +1,4 @@
-// ABOUTME: Tests for AppHeader's network badge — shown on test networks, hidden on mainnet.
+// ABOUTME: Tests for AppHeader — network badge (shown on test networks, hidden on mainnet) and the logo link.
 // ABOUTME: The badge exists to flag non-production deployments; mainnet users don't need it.
 // @vitest-environment jsdom
 
@@ -20,5 +20,20 @@ describe('AppHeader network badge', () => {
   it('shows no badge on mainnet', () => {
     render(<AppHeader appName="Committer" network="mainnet" />)
     expect(screen.queryByText('mainnet')).toBeNull()
+  })
+})
+
+describe('AppHeader logo link', () => {
+  it('links the logo to logoHref in a new tab', () => {
+    render(<AppHeader appName="Committer" network="mainnet" logoHref="https://example.test" />)
+    const logo = screen.getByRole('link', { name: 'Armada project site' })
+    expect(logo.getAttribute('href')).toBe('https://example.test')
+    expect(logo.getAttribute('target')).toBe('_blank')
+    expect(logo.getAttribute('rel')).toBe('noopener noreferrer')
+  })
+
+  it('renders a plain logo without logoHref', () => {
+    render(<AppHeader appName="Committer" network="mainnet" />)
+    expect(screen.queryByRole('link')).toBeNull()
   })
 })

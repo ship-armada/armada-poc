@@ -1,8 +1,10 @@
 // ABOUTME: Shared page-nav types + component and the dev-only ?mock parser.
-// ABOUTME: Left tabs: Crowdfund, Your position, Claim (Your position disabled pre-open; Claim until claim opens).
+// ABOUTME: Left tabs: Crowdfund, Your position, Claim (Your position disabled pre-open; Claim until claim opens),
+// ABOUTME: followed by a standalone "About the crowdfund" link to the project site's crowdfund page (AboutLink, also in the mobile logo row).
 
-import { cn } from '@armada/crowdfund-shared'
+import { cn, useIsMobileLayout } from '@armada/crowdfund-shared'
 import { NavBar, type NavBarItem } from '@armada/ui'
+import { CROWDFUND_INFO_URL } from '@/config/socials'
 
 export type ActionTab = 'commit' | 'invite'
 export type Page = 'network' | 'participate' | 'claim' | 'my-position' | 'observe'
@@ -13,6 +15,31 @@ const NAV_ITEMS: ReadonlyArray<{ id: Page; label: string }> = [
   { id: 'claim', label: 'Claim' },
 ]
 
+const ABOUT_LABEL = 'About the crowdfund'
+
+/**
+ *  "About the crowdfund" — external link to the project site's crowdfund page,
+ *  opening in a new tab. Deliberately styled as a plain text link outside the
+ *  page-tab pill strip so it reads as leaving the app rather than as another
+ *  page, in brand lavender so it stands out from the muted inactive tabs.
+ */
+export function AboutLink({ className }: { className?: string }) {
+  return (
+    <a
+      href={CROWDFUND_INFO_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={cn(
+        'inline-flex items-center whitespace-nowrap font-medium transition-opacity hover:opacity-80',
+        'text-[length:var(--semantic-component-button-primary-md-font-size)] text-[color:var(--semantic-color-brand-lavender)]',
+        className,
+      )}
+    >
+      {ABOUT_LABEL}
+    </a>
+  )
+}
+
 /**
  *  Page navigation — renders as header nav on desktop, stacked list on mobile.
  *
@@ -20,6 +47,11 @@ const NAV_ITEMS: ReadonlyArray<{ id: Page; label: string }> = [
  *  as the selected page tab. Claim stays in the strip but is disabled until
  *  the claim phase opens (`claimEnabled`). Your position is disabled before
  *  the commit window opens (`myPositionEnabled`) — there's no position yet.
+ *
+ *  The horizontal variant follows the pill strip with AboutLink. It is left
+ *  out on the mobile layout (≤767px), where AppHeader renders this same nav
+ *  as a full-width pill strip with no room for it; mobile pages place
+ *  AboutLink in the logo row (`mobileActions`) or the burger menu instead.
  */
 export function PageNav({
   current,
@@ -36,6 +68,7 @@ export function PageNav({
   /** When false, Your position is visible but not navigable. */
   myPositionEnabled?: boolean
 }) {
+  const isMobileLayout = useIsMobileLayout()
   const isDisabled = (id: Page) =>
     (id === 'claim' && !claimEnabled) || (id === 'my-position' && !myPositionEnabled)
 
@@ -52,7 +85,13 @@ export function PageNav({
         onClick: disabled ? undefined : () => onChange(id),
       }
     })
-    return <NavBar items={items} />
+    if (isMobileLayout) return <NavBar items={items} />
+    return (
+      <div className="flex items-center gap-6">
+        <NavBar items={items} />
+        <AboutLink />
+      </div>
+    )
   }
 
   return (
@@ -85,6 +124,16 @@ export function PageNav({
           </li>
         )
       })}
+      <li>
+        <a
+          href={CROWDFUND_INFO_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block w-full rounded-md px-3 py-1.5 text-left text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {ABOUT_LABEL}
+        </a>
+      </li>
     </ul>
   )
 }

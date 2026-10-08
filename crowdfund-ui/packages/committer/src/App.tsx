@@ -36,6 +36,7 @@ import { Button as ArmadaButton, WalletPillMenu } from '@armada/ui'
 import { getExplorerUrl, getHubChainId, getHubRpcUrls, getMaxBlockRange, getPollIntervalMs, getNetworkMode, getIndexerUrl } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
+import { PROJECT_URL } from '@/config/socials'
 import { useWallet } from '@/hooks/useWallet'
 import { useEligibility } from '@/hooks/useEligibility'
 import { useAllowance } from '@/hooks/useAllowance'
@@ -53,7 +54,7 @@ import { localWindowEndUnix, commitWindowSecondsLeft } from '@/lib/windowClock'
 import { formatSaleStatusLabel, isPreOpen } from '@/lib/saleStatus'
 import { getClaimAvailability, isProjectedRefund } from '@/lib/claimAvailability'
 import { shouldDismissClaimModal, CLAIM_CLOSE_CONFIRM_MESSAGE } from '@/lib/claimModal'
-import { PageNav, type Page } from '@/appNav'
+import { AboutLink, PageNav, type Page } from '@/appNav'
 
 /**
  * Map a wagmi connector id to the `walletProvider` slug WalletPillMenu uses to
@@ -858,7 +859,12 @@ export function App() {
     />
   )
 
-  const mobileActions = <CommitterMobileWallet usdcBalance={allowance.balance} />
+  const mobileActions = (
+    <>
+      <AboutLink className="text-sm" />
+      <CommitterMobileWallet usdcBalance={allowance.balance} />
+    </>
+  )
 
   const headerNav = (
     <PageNav
@@ -995,6 +1001,7 @@ export function App() {
           headerNav={headerNav}
           headerRight={headerRightChrome}
           mobileActions={mobileActions}
+          logoHref={PROJECT_URL}
           bare
         >
           <CrowdfundExperience
@@ -1038,6 +1045,7 @@ export function App() {
       headerNav={headerNav}
       headerRight={headerRightChrome}
       mobileMenu={mobileMenu}
+      logoHref={PROJECT_URL}
     >
      <ErrorBoundary>
       <div className="container mx-auto p-4 space-y-4">

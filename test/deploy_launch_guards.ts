@@ -186,6 +186,9 @@ describe("Mainnet launch deploy guards", function () {
       return {
         ...env,
         DEPLOYER_PRIVATE_KEY: "test-placeholder-not-a-real-key",
+        // The template points at the gitignored mainnet list, which a CI checkout lacks and
+        // which takes precedence over the inline list below; clear it.
+        REVENUE_LOCK_BENEFICIARIES_FILE: "",
         // Direct entries plus the reserve exhaust the 2.4M lock.
         REVENUE_LOCK_BENEFICIARIES_JSON: JSON.stringify(
           [{ address: "0x0000000000000000000000000000000000000001", amount: "2040000", label: "test" }]),

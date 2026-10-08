@@ -1,3 +1,6 @@
+# Revenue unlock addresses
+config/revenue-lock-beneficiaries-mainnet.json
+
 # Dependencies
 node_modules/
 .venv/

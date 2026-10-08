@@ -4,8 +4,9 @@
 
 set -euo pipefail
 
-# Get list of staged files (added/modified, not deleted)
-STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
+# Get list of staged files (added/copied/modified/renamed, not deleted). Renames are included
+# because git reports a new file that resembles a deleted one as a rename.
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR)
 
 if [[ -z "$STAGED_FILES" ]]; then
   exit 0
@@ -52,6 +53,12 @@ if [[ -n "$ENV_VIOLATIONS" ]]; then
   echo -e "$ENV_VIOLATIONS"
   echo "Allowed .env files: $ALLOWED_ENV_FILES"
   echo "If this is intentional, add the file to ALLOWED_ENV_FILES in .githooks/pre-commit."
+  FAILED=true
+fi
+
+# --- Check 4: Names in mainnet beneficiary lists ---
+# shellcheck disable=SC2086
+if ! ./scripts/check-beneficiary-labels.sh $STAGED_FILES; then
   FAILED=true
 fi
 

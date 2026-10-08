@@ -73,6 +73,9 @@
   #      checks the opening time is well-formed and still in the future, and that
   #      no live manifest vars are set alongside it.
   #   3. Install workspace deps with --legacy-peer-deps (Railgun SDK peer-dep conflict).
+  #      package-lock.json is deleted first (npm/cli#4828), so transitive deps
+  #      resolve fresh on every build and lockfile pins do not apply here. Pin
+  #      any transitive dep that must not drift via root package.json `overrides`.
   #   4. Build the committer.
   # TODO: confirm the armada-deployments mainnet layout matches
   # `mainnet/<instance>/mainnet/crowdfund.json` once the mainnet instance is published.

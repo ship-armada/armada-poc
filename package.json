@@ -153,6 +153,9 @@
     "typescript": "^5.4.2"
   },
   "overrides": {
-    "ethers": "$ethers"
+    "ethers": "$ethers",
+    "cuer": {
+      "qr": "0.5.5"
+    }
   }
 }

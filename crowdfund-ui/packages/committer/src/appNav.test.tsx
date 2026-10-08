@@ -1,9 +1,19 @@
-// ABOUTME: Tests for PageNav — Crowdfund / Your position / Claim tabs; Claim gated until open.
-// ABOUTME: Also guards that social links stay out of the header nav.
+// ABOUTME: Tests for PageNav — Crowdfund / Your position / Claim tabs plus the external About link.
+// ABOUTME: Claim gated until open; About sits outside the pill strip, desktop only; no social links in the nav.
 
 import { render, screen } from '@testing-library/react'
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import { PageNav } from './appNav'
+import { CROWDFUND_INFO_URL } from '@/config/socials'
+
+/** Force `useIsMobileLayout` to report the ≤767px layout for one test. */
+function mockMobileViewport() {
+  const original = window.matchMedia
+  window.matchMedia = (query: string) => ({ ...original(query), matches: true })
+  return () => {
+    window.matchMedia = original
+  }
+}
 
 describe('PageNav', () => {
   it('renders Crowdfund, Your position, and Claim', () => {
@@ -13,10 +23,50 @@ describe('PageNav', () => {
     expect(screen.getByRole('button', { name: 'Claim' })).toBeInTheDocument()
   })
 
-  it('does not render The project', () => {
-    render(<PageNav current="network" onChange={vi.fn()} />)
-    expect(screen.queryByRole('button', { name: 'The project' })).toBeNull()
-    expect(screen.queryByRole('link', { name: 'The project' })).toBeNull()
+  describe('About link', () => {
+    let restoreMatchMedia: (() => void) | undefined
+    afterEach(() => {
+      restoreMatchMedia?.()
+      restoreMatchMedia = undefined
+    })
+
+    it('renders About the crowdfund after Claim as a new-tab link to the crowdfund info page', () => {
+      render(<PageNav current="network" onChange={vi.fn()} />)
+      const about = screen.getByRole('link', { name: 'About the crowdfund' })
+      expect(about).toHaveAttribute('href', CROWDFUND_INFO_URL)
+      expect(about).toHaveAttribute('target', '_blank')
+      expect(about).toHaveAttribute('rel', 'noopener noreferrer')
+      const claim = screen.getByRole('button', { name: 'Claim' })
+      expect(claim.compareDocumentPosition(about) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it('sits outside the page-tab pill strip, so it reads as leaving the app', () => {
+      render(<PageNav current="network" onChange={vi.fn()} />)
+      const strip = screen.getByRole('button', { name: 'Claim' }).closest('nav')
+      expect(strip).not.toBeNull()
+      expect(strip!.contains(screen.getByRole('link', { name: 'About the crowdfund' }))).toBe(false)
+    })
+
+    it('is hidden below a 1000px-wide viewport', () => {
+      // jsdom applies no CSS, so assert the Tailwind breakpoint class that does
+      // the hiding (`max-[1000px]` = width < 1000px in Tailwind v4).
+      render(<PageNav current="network" onChange={vi.fn()} />)
+      expect(screen.getByRole('link', { name: 'About the crowdfund' })).toHaveClass(
+        'max-[1000px]:hidden',
+      )
+    })
+
+    it('renders About in the vertical nav too', () => {
+      render(<PageNav current="network" onChange={vi.fn()} orientation="vertical" />)
+      expect(screen.getByRole('link', { name: 'About the crowdfund' })).toHaveAttribute('href', CROWDFUND_INFO_URL)
+    })
+
+    it('omits About on the mobile layout, where the nav renders as a pill strip', () => {
+      restoreMatchMedia = mockMobileViewport()
+      render(<PageNav current="network" onChange={vi.fn()} />)
+      expect(screen.queryByRole('link', { name: 'About the crowdfund' })).toBeNull()
+      expect(screen.getByRole('button', { name: 'Claim' })).toBeInTheDocument()
+    })
   })
 
   it('disables Claim until claimEnabled', () => {

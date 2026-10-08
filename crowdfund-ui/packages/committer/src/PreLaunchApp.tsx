@@ -12,6 +12,7 @@ import { getNetworkMode } from '@/config/network'
 import { PRELAUNCH_RELOAD_CHECK_MS, prelaunchShouldReload } from '@/config/prelaunch'
 import { formatSaleStatusLabel } from '@/lib/saleStatus'
 import { PageNav } from '@/appNav'
+import { PROJECT_URL } from '@/config/socials'
 
 function reloadPage() {
   window.location.reload()
@@ -67,6 +68,7 @@ export function PreLaunchApp({
       headerNav={
         <PageNav current="network" onChange={() => {}} myPositionEnabled={false} />
       }
+      logoHref={PROJECT_URL}
       bare
     >
       <CrowdfundExperience

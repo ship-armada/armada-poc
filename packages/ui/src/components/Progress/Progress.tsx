@@ -77,12 +77,11 @@ export interface ProgressProps {
   headerAction?: ReactNode
 }
 
+// Deviation from the mockup, which abbreviated to $Nk / $N.NM: the crowdfund
+// shows the exact committed amount, rounded to the nearest dollar.
 function formatCommitted(amount: number) {
   if (!Number.isFinite(amount)) return '$0'
-  const abs = Math.abs(amount)
-  if (abs >= 1_000_000) return `$${(amount / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
-  if (abs >= 1_000) return `$${Math.round(amount / 1_000)}k`
-  return `$${Math.round(amount)}`
+  return `$${Math.round(amount).toLocaleString('en-US')}`
 }
 
 function easeOutCubic(t: number) {

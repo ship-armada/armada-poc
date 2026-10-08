@@ -6,6 +6,7 @@ import { act, render, screen } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { PreLaunchApp } from './PreLaunchApp'
 import { PRELAUNCH_RELOAD_CHECK_MS } from '@/config/prelaunch'
+import { CROWDFUND_INFO_URL, PROJECT_URL } from '@/config/socials'
 
 // Thu 2026-10-08 17:00:00 UTC.
 const OPENS_AT = 1791478800
@@ -44,6 +45,23 @@ describe('PreLaunchApp', () => {
       expect(tabs.length).toBeGreaterThan(0)
       for (const tab of tabs) expect(tab).toBeDisabled()
     }
+  })
+
+  it('links the logo to the project site and About the crowdfund (header nav only) to the crowdfund info page', () => {
+    vi.useFakeTimers({ now: (OPENS_AT - 3600) * 1000 })
+    render(<PreLaunchApp opensAtUnix={OPENS_AT} onReload={vi.fn()} />)
+
+    expect(screen.getByRole('link', { name: 'Armada project site' })).toHaveAttribute(
+      'href',
+      PROJECT_URL,
+    )
+    // jsdom applies no CSS and the matchMedia stub reports desktop, so both
+    // copies of the header nav render About: the desktop slot and AppHeader's
+    // phone pill strip. No third copy in the phone logo row, since About is
+    // hidden below 1000px and that row only shows on phones.
+    const about = screen.getAllByRole('link', { name: 'About the crowdfund' })
+    expect(about).toHaveLength(2)
+    for (const link of about) expect(link).toHaveAttribute('href', CROWDFUND_INFO_URL)
   })
 
   it('shows no demo participants or invite slots', () => {

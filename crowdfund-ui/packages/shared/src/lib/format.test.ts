@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest'
 import {
   formatUsdc,
   formatUsdcPlain,
+  usdcToDollars,
   parseUsdcInput,
   formatArm,
   truncateAddress,
@@ -17,6 +18,16 @@ import {
   phaseName,
   phaseColor,
 } from './format.js'
+
+describe('usdcToDollars', () => {
+  it('keeps the cents (no truncation to whole dollars)', () => {
+    expect(usdcToDollars(11_416_800_000n)).toBe(11_416.8)
+  })
+
+  it('converts zero', () => {
+    expect(usdcToDollars(0n)).toBe(0)
+  })
+})
 
 describe('formatUsdc', () => {
   it('formats zero', () => {

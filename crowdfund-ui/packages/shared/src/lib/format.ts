@@ -7,6 +7,11 @@ export function formatUsdc(amount: bigint): string {
   return `$${dollars.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
 }
 
+/** USDC (6 decimals) as a dollar number, cents kept — for display math; round at the label. */
+export function usdcToDollars(amount: bigint): number {
+  return Number(amount) / 1e6
+}
+
 /** Format USDC as a plain number string without dollar sign, for input fields */
 export function formatUsdcPlain(amount: bigint): string {
   return (Number(amount) / 1e6).toString()

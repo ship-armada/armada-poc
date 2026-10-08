@@ -19,6 +19,7 @@ import {
   formatTimeLeft,
   formatTimeLeftDetail,
   formatOpensAtDetail,
+  usdcToDollars,
   truncateAddress,
   useContractState,
   estimateUserArmAllocation,
@@ -36,6 +37,7 @@ import { Button as ArmadaButton, WalletPillMenu } from '@armada/ui'
 import { getExplorerUrl, getHubChainId, getHubRpcUrls, getMaxBlockRange, getPollIntervalMs, getNetworkMode, getIndexerUrl } from '@/config/network'
 import { loadDeployment } from '@/config/deployments'
 import type { CrowdfundDeployment } from '@/config/deployments'
+import { PROJECT_URL } from '@/config/socials'
 import { useWallet } from '@/hooks/useWallet'
 import { useEligibility } from '@/hooks/useEligibility'
 import { useAllowance } from '@/hooks/useAllowance'
@@ -361,7 +363,7 @@ export function App() {
   // `dashRows` reference above so no O(N) work runs per tick.
   const crowdfundLiveData = useMemo<CrowdfundExperienceLiveData>(() => {
     if (eventsLoading) return { status: 'loading' }
-    const totalCommitted = Number(contractState.cappedDemand / 1_000_000n)
+    const totalCommitted = usdcToDollars(contractState.cappedDemand)
     const windowEnd = Number(contractState.windowEnd)
     const remaining = windowEnd - contractState.blockTimestamp
     const daysLeftLabel = formatRemainingLabel(remaining)
@@ -995,6 +997,7 @@ export function App() {
           headerNav={headerNav}
           headerRight={headerRightChrome}
           mobileActions={mobileActions}
+          logoHref={PROJECT_URL}
           bare
         >
           <CrowdfundExperience
@@ -1038,6 +1041,7 @@ export function App() {
       headerNav={headerNav}
       headerRight={headerRightChrome}
       mobileMenu={mobileMenu}
+      logoHref={PROJECT_URL}
     >
      <ErrorBoundary>
       <div className="container mx-auto p-4 space-y-4">

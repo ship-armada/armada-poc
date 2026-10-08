@@ -61,6 +61,8 @@ export interface AppHeaderProps {
    * no sticky frosted bar.
    */
   scrollWithPageOnMobile?: boolean
+  /** When set, the logo links here in a new tab (e.g. the project info site). */
+  logoHref?: string
   className?: string
 }
 
@@ -73,6 +75,7 @@ export function AppHeader({
   mobileMenu,
   mobileActions,
   scrollWithPageOnMobile,
+  logoHref,
   className,
 }: AppHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -101,7 +104,19 @@ export function AppHeader({
       >
         {/* Left: Armada wordmark + primary nav (desktop) */}
         <div className="flex shrink-0 items-center gap-6">
-          <ArmadaLogo />
+          {logoHref ? (
+            <a
+              href={logoHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Armada project site"
+              className="inline-flex"
+            >
+              <ArmadaLogo />
+            </a>
+          ) : (
+            <ArmadaLogo />
+          )}
 
           {/* Desktop nav — grouped with the logo on the left, per the designer's Hero header. */}
           {headerNav && (

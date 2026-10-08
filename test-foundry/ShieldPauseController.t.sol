@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// ABOUTME: Foundry tests for ShieldPauseController — SC pause, auto-expiry, and post-wind-down behavior.
-// ABOUTME: Covers SC authorization via governor, 24h expiry, timelock unpause, and single post-wind-down pause.
+// ABOUTME: Foundry tests for ShieldPauseController — disabled (zero-duration) SC pause and wind-down modes.
+// ABOUTME: Covers SC authorization via governor, same-block pause expiry, timelock unpause, and the post-wind-down budget.
 pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
@@ -60,51 +60,27 @@ contract ShieldPauseControllerTest is Test, GovernorDeployHelper {
 
     // ======== Basic Pause / Unpause ========
 
-    function test_SC_canPauseShields() public {
+    // WHY: MAX_PAUSE_DURATION is zero, so the SC pause is disabled — the call succeeds and
+    // emits, but the pause expires in the block it is made and never pauses shields.
+    function test_SC_pauseIsNoOp() public {
         vm.prank(securityCouncil);
         vm.expectEmit(true, false, false, true);
-        emit ShieldsPaused(securityCouncil, block.timestamp + TWENTY_FOUR_HOURS);
+        emit ShieldsPaused(securityCouncil, block.timestamp);
         pauseController.pauseShields();
 
-        assertTrue(pauseController.shieldsPaused());
-    }
-
-    function test_pauseAutoExpiresAfter24Hours() public {
-        vm.prank(securityCouncil);
-        pauseController.pauseShields();
-        assertTrue(pauseController.shieldsPaused());
-
-        // Just before expiry — still paused
-        vm.warp(block.timestamp + TWENTY_FOUR_HOURS - 1);
-        assertTrue(pauseController.shieldsPaused());
-
-        // At expiry — no longer paused
-        vm.warp(block.timestamp + 1);
         assertFalse(pauseController.shieldsPaused());
+        assertFalse(pauseController.emergencyPaused());
+        assertEq(pauseController.pauseExpiry(), block.timestamp);
     }
 
-    function test_SC_canRePauseAfterExpiry() public {
-        // First pause
+    // WHY: with a zero duration no pause is ever active, so repeated calls never hit the
+    // "already paused" guard and never pause shields.
+    function test_SC_canCallPauseRepeatedly() public {
         vm.prank(securityCouncil);
         pauseController.pauseShields();
-
-        // Expire
-        vm.warp(block.timestamp + TWENTY_FOUR_HOURS);
+        vm.prank(securityCouncil);
+        pauseController.pauseShields();
         assertFalse(pauseController.shieldsPaused());
-
-        // Second pause
-        vm.prank(securityCouncil);
-        pauseController.pauseShields();
-        assertTrue(pauseController.shieldsPaused());
-    }
-
-    function test_SC_cannotPauseWhenAlreadyPaused() public {
-        vm.prank(securityCouncil);
-        pauseController.pauseShields();
-
-        vm.prank(securityCouncil);
-        vm.expectRevert("ShieldPauseController: already paused");
-        pauseController.pauseShields();
     }
 
     function test_nonSC_cannotPause() public {
@@ -123,17 +99,14 @@ contract ShieldPauseControllerTest is Test, GovernorDeployHelper {
         pauseController.pauseShields();
     }
 
-    function test_timelockCanUnpauseEarly() public {
+    // WHY: a zero-duration pause is never active, so there is nothing for governance to lift.
+    function test_timelockCannotUnpauseAfterNoOpPause() public {
         vm.prank(securityCouncil);
         pauseController.pauseShields();
-        assertTrue(pauseController.shieldsPaused());
 
         vm.prank(address(timelock));
-        vm.expectEmit(true, false, false, false);
-        emit ShieldsUnpaused(address(timelock));
+        vm.expectRevert("ShieldPauseController: not paused");
         pauseController.unpauseShields();
-
-        assertFalse(pauseController.shieldsPaused());
     }
 
     function test_timelockCannotUnpauseWhenNotPaused() public {
@@ -165,10 +138,10 @@ contract ShieldPauseControllerTest is Test, GovernorDeployHelper {
         vm.expectRevert("ShieldPauseController: not SC");
         pauseController.pauseShields();
 
-        // New SC can pause
+        // New SC is authorized (the call succeeds), but the pause has no effect
         vm.prank(newSC);
         pauseController.pauseShields();
-        assertTrue(pauseController.shieldsPaused());
+        assertFalse(pauseController.shieldsPaused());
     }
 
     // ======== Wind-Down Contract Setup ========
@@ -248,10 +221,13 @@ contract ShieldPauseControllerTest is Test, GovernorDeployHelper {
         vm.prank(windDown);
         pauseController.setWindDownActive();
 
-        // SC can pause once
+        // SC can call pause once; shields stay paused by wind-down, but the emergency
+        // pause (which would also block unshields) never becomes active.
         vm.prank(securityCouncil);
         pauseController.pauseShields();
         assertTrue(pauseController.shieldsPaused());
+        assertFalse(pauseController.emergencyPaused());
+        assertTrue(pauseController.windDownPauseUsed());
     }
 
     function test_postWindDown_shieldsPermanentlyPaused() public {
@@ -290,33 +266,23 @@ contract ShieldPauseControllerTest is Test, GovernorDeployHelper {
         pauseController.pauseShields();
     }
 
-    // WHY: A pre-trigger SC pause that is still active when wind-down fires used to
-    // bleed across the trigger without consuming the single post-wind-down pause
-    // budget. The SC could then issue a fresh 24h post-trigger pause once the first
-    // expired, chaining ~48h of continuous unshield blocking against the spec's 24h.
-    // setWindDownActive now consumes the budget (windDownPauseUsed = true) when an
-    // active pause is bleeding through, so any post-trigger pause attempt reverts.
-    function test_preTriggerPauseBleed_consumesPostWindDownBudget() public {
-        // Pre-trigger SC pause
+    // WHY: setWindDownActive consumes the post-wind-down budget only when a pre-trigger
+    // pause is still active (the bleed-through guard). With a zero duration a pause made
+    // even in the same block as the trigger is never active, so nothing bleeds across
+    // and no unshield block (emergencyPaused) can occur.
+    function test_preTriggerPause_cannotBleedAcrossTrigger() public {
+        // Pre-trigger SC pause, in the same block as the trigger
         vm.prank(securityCouncil);
         pauseController.pauseShields();
-        assertTrue(pauseController.shieldsPaused());
-        assertFalse(pauseController.windDownPauseUsed());
+        assertFalse(pauseController.shieldsPaused());
 
-        // Wind-down activates while the pause is still active.
         vm.prank(address(timelock));
         pauseController.setWindDownContract(windDown);
         vm.prank(windDown);
         pauseController.setWindDownActive();
 
-        // The active pre-trigger pause now counts as the post-wind-down pause.
-        assertTrue(pauseController.windDownPauseUsed());
-
-        // After it expires, SC cannot issue a fresh post-trigger pause.
-        vm.warp(block.timestamp + TWENTY_FOUR_HOURS);
-        vm.prank(securityCouncil);
-        vm.expectRevert("ShieldPauseController: post-wind-down pause already used");
-        pauseController.pauseShields();
+        assertFalse(pauseController.windDownPauseUsed());
+        assertFalse(pauseController.emergencyPaused());
     }
 
     // WHY: Regression — wind-down with no active pre-trigger pause must leave the
@@ -360,13 +326,13 @@ contract ShieldPauseControllerTest is Test, GovernorDeployHelper {
     }
 
     function test_preWindDown_unlimitedPauses() public {
-        // Multiple pause/expire cycles before wind-down
+        // Multiple pause calls before wind-down; none ever pauses shields
         for (uint256 i = 0; i < 5; i++) {
             vm.prank(securityCouncil);
             pauseController.pauseShields();
-            assertTrue(pauseController.shieldsPaused());
+            assertFalse(pauseController.shieldsPaused());
 
-            vm.warp(block.timestamp + TWENTY_FOUR_HOURS);
+            vm.warp(block.timestamp + 1 hours);
             assertFalse(pauseController.shieldsPaused());
         }
     }
@@ -377,8 +343,8 @@ contract ShieldPauseControllerTest is Test, GovernorDeployHelper {
         assertFalse(pauseController.shieldsPaused());
     }
 
-    function test_MAX_PAUSE_DURATION_is24Hours() public view {
-        assertEq(pauseController.MAX_PAUSE_DURATION(), 24 hours);
+    function test_MAX_PAUSE_DURATION_isZero() public view {
+        assertEq(pauseController.MAX_PAUSE_DURATION(), 0);
     }
 
     function test_constructorRejectsZeroGovernor() public {

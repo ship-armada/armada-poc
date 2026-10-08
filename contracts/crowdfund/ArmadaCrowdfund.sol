@@ -145,7 +145,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
     ///         refund. Consumers that need to distinguish a successful sale from a
     ///         refundMode finalization must check `phase == Phase.Finalized && !refundMode`
     ///         in addition to `finalizedAt > 0`. Used by ArmadaGovernor to anchor the
-    ///         7-day governance quiet period (which starts on any finalization,
+    ///         10-day governance quiet period (which starts on any finalization,
     ///         including refundMode).
     uint256 public finalizedAt;
 

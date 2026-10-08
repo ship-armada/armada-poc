@@ -39,8 +39,8 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
         require(_transactions.length > 0, "TransactModule: No transactions");
 
         // Post-wind-down SC emergency pause: block ALL operations including unshields.
-        // This is the only scenario where unshields can be paused — a single 24h
-        // non-renewable window to protect users from adapter issues after wind-down.
+        // This is the only scenario where unshields can be paused — a single non-renewable
+        // window (the controller's pause duration; zero in ShieldPauseController).
         _requireNotEmergencyPaused();
 
         // In withdraw-only mode (post-wind-down), block pure private transfers.
@@ -435,7 +435,7 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
     }
 
     /**
-     * @notice Reverts during the post-wind-down SC emergency pause (24h, non-renewable).
+     * @notice Reverts during the post-wind-down SC emergency pause (single, non-renewable).
      *         This is the only scenario where unshields can be paused — protecting users
      *         from adapter issues discovered after wind-down.
      *         No-op if no pause contract is set or if emergency pause is not active.

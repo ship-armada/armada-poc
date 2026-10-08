@@ -5,7 +5,7 @@
  * Wind-Down & Redemption Integration Tests
  *
  * End-to-end testing of the wind-down lifecycle:
- * - ShieldPauseController: SC pause, auto-expiry, timelock unpause, post-wind-down single-pause
+ * - ShieldPauseController: disabled (zero-duration) SC pause, post-wind-down shield modes
  * - ArmadaWindDown: permissionless + governance trigger, hook effects, treasury sweep
  * - ArmadaRedemption: pro-rata ERC20 + ETH redemption, guards, sequential correctness
  * - Cross-contract: wind-down triggers ARM transferability, disables governance, activates pause restrictions
@@ -27,7 +27,7 @@ import {
 
 const ONE_DAY = 86400;
 const TWO_DAYS = 2 * ONE_DAY;
-const ONE_WEEK = 7 * ONE_DAY;
+const REDEMPTION_DELAY = 14 * ONE_DAY;
 const TWENTY_FOUR_HOURS = ONE_DAY;
 
 const ARM_DECIMALS = 18;
@@ -79,10 +79,10 @@ describe("Wind-Down & Redemption Integration", function () {
     ]);
   }
 
-  // Advance time past REDEMPTION_DELAY (7 days) so redeem() clears the delay gate.
+  // Advance time past REDEMPTION_DELAY (14 days) so redeem() clears the delay gate.
   // Used in tests that trigger wind-down and then redeem in the same scenario.
   async function advancePastRedemptionDelay() {
-    await time.increase(ONE_WEEK + 1);
+    await time.increase(REDEMPTION_DELAY + 1);
   }
 
   beforeEach(async function () {
@@ -286,18 +286,13 @@ describe("Wind-Down & Redemption Integration", function () {
   // ============================================================
 
   describe("ShieldPauseController", function () {
-    it("SC can pause shields and pause auto-expires after 24h", async function () {
-      // SC pauses
+    // WHY: MAX_PAUSE_DURATION is zero, so the SC pause is disabled — the call succeeds
+    // but expires in the block it is made and never pauses shields.
+    it("SC pause call succeeds but never pauses shields", async function () {
+      expect(await shieldPauseController.MAX_PAUSE_DURATION()).to.equal(0);
       await shieldPauseController.connect(carol).pauseShields();
-      expect(await shieldPauseController.shieldsPaused()).to.be.true;
-
-      // Time passes just under 24h — still paused
-      await time.increase(TWENTY_FOUR_HOURS - 10);
-      expect(await shieldPauseController.shieldsPaused()).to.be.true;
-
-      // After 24h — auto-expired
-      await time.increase(20);
       expect(await shieldPauseController.shieldsPaused()).to.be.false;
+      expect(await shieldPauseController.emergencyPaused()).to.be.false;
     });
 
     it("non-SC address cannot pause shields", async function () {
@@ -306,32 +301,20 @@ describe("Wind-Down & Redemption Integration", function () {
       ).to.be.revertedWith("ShieldPauseController: not SC");
     });
 
-    it("SC can re-pause after expiry (pre-wind-down)", async function () {
+    it("SC can call pause repeatedly (pre-wind-down); shields stay unpaused", async function () {
       await shieldPauseController.connect(carol).pauseShields();
-      await time.increase(TWENTY_FOUR_HOURS + 1);
+      await shieldPauseController.connect(carol).pauseShields();
       expect(await shieldPauseController.shieldsPaused()).to.be.false;
-
-      // Re-pause succeeds
-      await shieldPauseController.connect(carol).pauseShields();
-      expect(await shieldPauseController.shieldsPaused()).to.be.true;
     });
 
-    it("SC cannot pause while already paused", async function () {
+    it("timelock has nothing to unpause after an SC pause call", async function () {
       await shieldPauseController.connect(carol).pauseShields();
-      await expect(
-        shieldPauseController.connect(carol).pauseShields()
-      ).to.be.revertedWith("ShieldPauseController: already paused");
-    });
-
-    it("timelock can unpause shields early", async function () {
-      await shieldPauseController.connect(carol).pauseShields();
-      expect(await shieldPauseController.shieldsPaused()).to.be.true;
 
       const timelockSigner = await asTimelock();
-      await shieldPauseController.connect(timelockSigner).unpauseShields();
+      await expect(
+        shieldPauseController.connect(timelockSigner).unpauseShields()
+      ).to.be.revertedWith("ShieldPauseController: not paused");
       await stopImpersonatingTimelock();
-
-      expect(await shieldPauseController.shieldsPaused()).to.be.false;
     });
 
     it("SC change via governor propagates immediately to pause controller", async function () {
@@ -831,7 +814,7 @@ describe("Wind-Down & Redemption Integration", function () {
       // Hardhat auto-mines the next tx at `current + 1`, so advance to `boundary - 2`
       // here; the redeem tx then lands at `boundary - 1`, one second inside the gate.
       const triggeredAt = await windDown.triggerTime();
-      await time.increaseTo(Number(triggeredAt) + ONE_WEEK - 2);
+      await time.increaseTo(Number(triggeredAt) + REDEMPTION_DELAY - 2);
       const tokens = [await usdc.getAddress()];
       await expect(
         redemption.connect(alice).redeem(ALICE_AMOUNT, tokens, alice.address)
@@ -943,11 +926,11 @@ describe("Wind-Down & Redemption Integration", function () {
 
   describe("End-to-End Lifecycle", function () {
     it("full wind-down → sweep → redeem cycle", async function () {
-      // 1. SC pauses shields (pre-wind-down)
+      // 1. SC calls pause (pre-wind-down); the SC pause is disabled, so shields stay unpaused
       await shieldPauseController.connect(carol).pauseShields();
-      expect(await shieldPauseController.shieldsPaused()).to.be.true;
+      expect(await shieldPauseController.shieldsPaused()).to.be.false;
 
-      // 2. Pause auto-expires
+      // 2. Time passes; still unpaused
       await time.increase(TWENTY_FOUR_HOURS + 1);
       expect(await shieldPauseController.shieldsPaused()).to.be.false;
 
@@ -1181,7 +1164,7 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
   // Advance time past REDEMPTION_DELAY so redeem() clears the delay gate.
   // Helper for tests that call redeem() after a trigger.
   async function advancePastRedemptionDelay() {
-    await time.increase(ONE_WEEK + 1);
+    await time.increase(REDEMPTION_DELAY + 1);
   }
 
   // ═══════════════════════════════════════════════════════════════════

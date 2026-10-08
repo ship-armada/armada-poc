@@ -297,13 +297,13 @@ A signaling proposal is a non-executable proposal used to measure token-holder p
 | Proposal delay | 48 hours | 48 hours |
 | Voting period | 7 days | 14 days |
 | Execution delay | 3 days | 7 days |
-| Governance quiet period | 7 days post-crowdfund finalization | — (one-time only) |
+| Governance quiet period | 10 days post-crowdfund finalization | — (one-time only) |
 
 **Quorum floor: 200,000 ARM.** Quorum is the greater of the percentage-based threshold and this absolute floor. This prevents governance passing on near-zero turnout regardless of how much ARM has been claimed and delegated at any given time. At the base raise of 1.2M ARM, 200,000 ARM represents ~16.7% of the crowdfund allocation — meaningful coordinated participation. The floor sets quorum until eligible supply exceeds 1,000,000 ARM for Standard proposals (20%) or ~666,667 ARM for Extended (30%). It applies to every vote type, including steward-spend defeat and veto ratification.
 
 **Mutability:** `QUORUM_FLOOR` is a compile-time `constant` in the current implementation — adjusting it requires a UUPS governor upgrade (Extended proposal), not the directional Standard/Extended path described in the classification table. The post-launch governor upgrade will introduce a setter; until then, the floor is fixed.
 
-**Governance quiet period.** No proposals may be submitted for the first 7 days after crowdfund finalization. This is a **one-time constructor-set bootstrapping constant**, not a reusable governance parameter. It applies once and has no effect after expiry. Any emergency during this window is handled by the Security Council.
+**Governance quiet period.** No proposals may be submitted for the first 10 days after crowdfund finalization. This includes steward spend proposals and any proposal to remove the steward. Because voting power exists only once ARM is claimed and delegated, participants should claim promptly after finalization — a few large early claimers could otherwise meet quorum on their own once the quiet period ends. This is a **one-time constructor-set bootstrapping constant**, not a reusable governance parameter. It applies once and has no effect after expiry. Any emergency during this window is handled by the Security Council.
 
 Most reusable governance parameters listed above are themselves governable — loosening changes require an extended proposal, tightening changes require a standard proposal (see §Standard vs. extended classification). Two exceptions in the current implementation: `PROPOSAL_THRESHOLD` and `QUORUM_FLOOR` are compile-time constants (see their respective sections) — adjusting them requires a UUPS governor upgrade, scheduled for a post-launch governor revision. The one-time governance quiet period (7 days post-crowdfund finalization) is a constructor-set bootstrapping constant and is not governable — see §Governance quiet period.
 
@@ -462,7 +462,7 @@ Additional steward-like roles (e.g. a Protocol Steward for integrator and relaye
 
 | Power | Mechanism | Constraint |
 |---|---|---|
-| **Pause new shields** | On-chain pause flag on the shielded pool | Auto-expires after 24 hours. SC can re-invoke but each invocation is a visible on-chain event. Unshields are never pauseable — users can always exit. |
+| **Pause new shields** | Disabled. `ShieldPauseController.MAX_PAUSE_DURATION` is zero, so an SC pause expires in the block it is made | `pauseShields()` still succeeds and emits `ShieldsPaused`, but shields are never paused by the SC — before or after wind-down (no post-wind-down emergency pause either). Wind-down's withdraw-only mode is unaffected. Unshields are never pauseable — users can always exit. |
 | **Veto queued proposal** | Cancel a passed proposal during its execution delay, before it executes | See §Veto Mechanism below. |
 | **Crowdfund cancel** | Emergency cancel of the crowdfund pre-finalization | Pre-protocol-launch only. See CROWDFUND.md §cancel(). No ratification required. |
 
@@ -525,7 +525,7 @@ Core team (2), external security (2), community (1).
 ### Limitations
 
 - All SC actions except crowdfund cancel require retroactive ratification or produce automatic ratification votes (veto path)
-- Shield pauses auto-expire after 24h — if not renewed, the pause lifts automatically
+- The SC shield pause is disabled (zero duration) and cannot block shields or unshields
 - The SC has no spending authority, no parameter authority, and no upgrade authority
 
 ⚠️ Security Council membership must be confirmed and multisig deployed before the crowdfund opens.
@@ -732,7 +732,7 @@ The treasury, redemption contract, RevenueLock, and Crowdfund addresses are **ha
 Participants can still call `claim()` after wind-down and then redeem. The denominator already accounts for their entitled-unclaimed ARM, so claim timing does not affect payout fairness. As holders redeem, the redemption contract's ARM balance grows and its portion is excluded from the denominator, ensuring correct pro-rata math for sequential redemptions.
 
 **Properties:**
-- **Permissionless.** No governance vote needed. No snapshot. No merkle tree. No claim window. Deposit ARM, receive your share, whenever you want — subject to a one-time **7-day post-trigger redemption delay** (`REDEMPTION_DELAY` immutable). The delay provides a social-coordination window for permissionless `sweepToken` / `sweepETH` callers to move treasury assets to the redemption contract before any redemption can execute. Once the delay elapses, redemption is open indefinitely.
+- **Permissionless.** No governance vote needed. No snapshot. No merkle tree. No claim window. Deposit ARM, receive your share, whenever you want — subject to a one-time **14-day post-trigger redemption delay** (`REDEMPTION_DELAY` immutable). The delay provides a social-coordination window for permissionless `sweepToken` / `sweepETH` callers to move treasury assets to the redemption contract before any redemption can execute. Once the delay elapses, redemption is open indefinitely.
 - **Self-service.** Each holder decides when to redeem. No coordination required.
 - **Sequential correctness and claim invariance.** Claiming or releasing ARM does not change circulating supply. Before a claim/release, entitled ARM is counted as circulating (included in the denominator via allocation math, not the contract balance). After a claim/release, the same ARM is in a wallet and still counted as circulating. Redemption outcomes are therefore independent of claim/release timing. Early and late redeemers receive the same per-ARM payout regardless of whether revenue-lock beneficiaries have called `release()` or crowdfund participants have called `claim()`.
 - **Gift-induced asymmetry (caveat).** Once `setTransferable(true)` runs (during `_executeWindDown`), any external actor can transfer ARM to the treasury address. Treasury balance growth shrinks `circulatingSupply` (treasury is excluded from the denominator), inflating the per-ARM rate for all *subsequent* redeemers. Pre-gift redeemers got the natural rate; post-gift redeemers get the inflated rate. **The math remains conservative**: total payouts always equal initial treasury value, treasury never depletes prematurely (the rate invariant `treasury / circulating` is preserved across redemptions, so the last redeemer always finds enough to cover their share). The only "loser" is the gifter, who voluntarily destroys the redemption value of their gifted ARM — value redistributes pro-rata to post-gift redeemers. Gifting is strictly worse than direct redemption at any market price, so this vector has no economic griefing motive. Accidental cause: a confused user mistaking treasury for a burn address. Bounded harm: only redistributes value among redeemers, never out of the system. Snapshotting `circulating` at trigger time would close this asymmetry but is not implemented at launch.

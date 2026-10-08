@@ -199,7 +199,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     // One-time bootstrapping constant; not governable.
     address public crowdfundAddress;
     bool public crowdfundAddressLocked;
-    uint256 internal constant QUIET_PERIOD_DURATION = 7 days;
+    uint256 internal constant QUIET_PERIOD_DURATION = 10 days;
 
     // Wind-down integration: when triggered, governance permanently stops accepting new proposals.
     // The wind-down contract is registered via one-time setter; only it can flip the flag.

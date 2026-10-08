@@ -132,12 +132,15 @@ These values are defined in GOVERNANCE.md and affect the ARM token / governor co
 
 | Parameter | Value | Source | Notes |
 |---|---|---|---|
-| Quiet period | 7 days post-finalization | GOVERNANCE.md | No proposals until day 8 |
+| Quiet period | 10 days post-finalization | `ArmadaGovernor.QUIET_PERIOD_DURATION` | No proposals (including steward spends) until day 11. Constant. |
 | Claim deadline | 3 years (94,608,000 seconds) | CROWDFUND.md §Finalization | Fixed term — but the crowdfund contract derives this from `finalizationTimestamp`, not a constructor arg |
 | Proposal threshold | 5,000 ARM | GOVERNANCE.md | |
 | Quorum | max(20% Standard / 30% Extended × eligible supply, 200,000 ARM) | `ArmadaGovernor` | Eligible supply = total supply − treasury − quorum-excluded addresses (crowdfund, RevenueLock, reserve distributor), snapshotted at proposal creation. Quorum % is governance-settable within 5–50%; the 200,000 ARM floor (`QUORUM_FLOOR`) is a constant and applies to every vote type, including steward-spend defeat and veto ratification. |
 | Standard proposal timing | 2-day voting delay, 7-day vote, 3-day execution delay | `ArmadaGovernor.initialize` | Initial values; governance-settable via `setProposalTypeParams` (Extended; delay 1–14d, vote 1–30d, execution 2–14d). Minimum lifecycle 12 days. |
 | Veto ratification vote | 14 days, starts at the veto, 20% quorum | `ArmadaGovernor.initialize` | Fixed — excluded from `setProposalTypeParams`. Voting power is snapshotted at the block before the veto. |
+| SC shield pause | Disabled (`MAX_PAUSE_DURATION` = 0) | `ShieldPauseController` | An SC pause expires in the block it is made; no post-wind-down emergency pause. Wind-down withdraw-only mode unaffected. Constant. |
+| Redemption delay | 14 days after the wind-down trigger | `ArmadaRedemption.REDEMPTION_DELAY` | Sweep-coordination window before the first redemption; redemption is open indefinitely afterwards. Constant. |
+| Reserve beneficiaries | Up to 75 grantees plus the allocator | `RevenueReserveDistributor.MAX_BENEFICIARIES` (76) | Worst-case `distribute()` ≈ 8.5M gas (51% of the 2^24 tx cap); `claimRange()` pages it. Constant. |
 | Enabling ARM transfers (`setTransferable(true)`) | Extended proposal | `ArmadaGovernor.initialize` (`extendedSelectors`) | One-way. The wind-down contract calls the token directly and is unaffected. |
 | `LIMIT_ACTIVATION_DELAY` | 24 days (2,073,600 seconds) | GOVERNANCE.md §Treasury Outflow Limits | Hardcoded constant in `ArmadaTreasuryGov`. Not governance-settable. `ArmadaGovernor.setProposalTypeParams` reverts if the Extended cycle (voting delay + voting period + execution delay) would reach its mirror constant `TREASURY_OUTFLOW_ACTIVATION_DELAY` (24 days). |
 

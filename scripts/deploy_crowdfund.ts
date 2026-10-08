@@ -280,7 +280,7 @@ async function main() {
   // 7. Register crowdfund address for governance quiet period
   console.log("7. Registering crowdfund in governor for quiet period...");
   await (await governor.setCrowdfundAddress(crowdfundAddress, nm.override())).wait();
-  console.log(`   Crowdfund registered for 7-day governance quiet period`);
+  console.log(`   Crowdfund registered for 10-day governance quiet period`);
 
   // 7a. Bootstrap the governor's Security Council. Without this, the SC slot stays
   // address(0) at launch — vetoes revert and the SC-gated emergency-pause is inert

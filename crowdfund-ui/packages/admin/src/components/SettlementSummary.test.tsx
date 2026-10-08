@@ -57,18 +57,18 @@ describe('SettlementSummary', () => {
   })
 
   it('shows governance quiet period countdown when still active', () => {
-    // finalizedAt=150_000, quiet period=7d=604800, so quietEnd=754_800
-    // blockTimestamp=160_000 → 594_800 seconds remaining
+    // finalizedAt=150_000, quiet period=10d=864000, so quietEnd=1_014_000
+    // blockTimestamp=160_000 → 854_000 seconds remaining
     render(<SettlementSummary state={makeState()} events={[]} />)
     expect(screen.getByText(/Governance quiet period/)).toBeInTheDocument()
     expect(screen.getByText(/ends in/)).toBeInTheDocument()
   })
 
   it('shows governance quiet period as ended when past', () => {
-    // finalizedAt=150_000, quietEnd=754_800, blockTimestamp=800_000 → ended
+    // finalizedAt=150_000, quietEnd=1_014_000, blockTimestamp=1_100_000 → ended
     render(
       <SettlementSummary
-        state={makeState({ blockTimestamp: 800_000 })}
+        state={makeState({ blockTimestamp: 1_100_000 })}
         events={[]}
       />,
     )

@@ -24,6 +24,10 @@ them, all reachable from URL state:
   (chain time < `windowStart` — not `!armLoaded`, since the deploy loads ARM
   up front) the Progress card reads `OPENS SOON` with an "OPENS IN …"
   countdown and a `PreOpenCard` countdown takes the Participate card's slot.
+  Once the connected wallet has committed and holds invite slots, the
+  invite-slot card (the same instance as on Your position) takes that slot
+  instead; "Commit again" stays in the header (desktop) and on the Your
+  position card.
 - **Your position** (`page === 'my-position'`) — same `CrowdfundExperience`
   shell, view switched to `'myposition'`. Drives the user's per-hop summary
   card + invite-slot card. Disabled in the nav before the window opens.

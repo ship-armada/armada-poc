@@ -64,7 +64,7 @@ import shellStyles from './CrowdfundExperience.module.css'
 export type CrowdfundView = 'crowdfund' | 'myposition'
 
 /**
- * Controlled invite-slot rendering for the MyPosition view's "Your invites" card.
+ * Controlled invite-slot rendering for the "Your invites" card (MyPosition view, and the Crowdfund view once committed).
  * Pass a populated config to render real invite-slot rows + wire real handlers;
  * omit to keep the internal demo behavior (used by the showcase / mock previews).
  */
@@ -305,8 +305,10 @@ export interface CrowdfundExperienceProps {
   header?: ReactNode
   /**
    * Controlled per-hop invite-slot sections for the MyPosition view's "Your
-   * invites" card. One section per eligible hop; single-hop wallets pass an
-   * array of length 1 and the card renders without a hop header. Omit to
+   * invites" card (also shown on the Crowdfund view in place of Participate
+   * once the wallet has committed). One section per eligible hop; single-hop
+   * wallets pass an array of length 1 and the card renders without a hop
+   * header. Omit to
    * keep the showcase / preview demo behavior (which uses internal mock
    * `DEMO_SLOTS` and stubbed handlers).
    */
@@ -357,8 +359,8 @@ export interface CrowdfundExperienceProps {
    * When `false`, hides every surface whose underlying contract call requires
    * an open commit window: the Crowdfund hero's `<Participate>` card,
    * the default header's "Participate" gradient button, the My Position
-   * card header CTA ("Participate" / "Commit again"), and the MyPosition
-   * view's "Your invites" card. Set this to the consumer's `windowOpen`
+   * card header CTA ("Participate" / "Commit again"), and the "Your invites"
+   * card on either view. Set this to the consumer's `windowOpen`
    * signal so the UI mirrors the chain's post-window-close gating. Defaults
    * to `true` — preserves showcase / preview behavior.
    */
@@ -811,6 +813,22 @@ export function CrowdfundExperience({
     [liveSections],
   )
 
+  // Deviation from the mockup: once the wallet has committed and holds invite
+  // slots, the invite card also takes the Participate card's slot on the
+  // Crowdfund view — inviting is the action left for a committed wallet. The
+  // same card instance serves both views, so in-progress invite state survives
+  // a view switch. Keyed on the slot allowance rather than slots left, so the
+  // card can't unmount mid-confirmation when the last slot is used. Live data
+  // only; the showcase keeps the mockup's Participate card.
+  const invitesOnCrowdfund =
+    participationEnabled &&
+    !myPositionCancelled &&
+    myPositionReady !== null &&
+    myPositionCommittedUsd > 0 &&
+    liveAllowance !== null &&
+    liveAllowance.hop1 + liveAllowance.hop2 > 0
+  const invitesPanelVisible = invitesOnCrowdfund || myPositionPanelVisible
+
   const invitesSlots = useMemo(() => {
     if (!liveSections) {
       return [...pendingInvitesRef.current.values(), ...demoSlots]
@@ -1085,7 +1103,7 @@ export function CrowdfundExperience({
               walletAddress={myPositionWalletAddress}
               lockOnWallet={isGraphMyPosition}
               inviteGraph={isGraphMyPosition}
-              hideNodePopover={isGraphMyPosition && inviteListOpen}
+              hideNodePopover={(isGraphMyPosition || invitesOnCrowdfund) && inviteListOpen}
               etherscanBaseUrl={etherscanBaseUrl}
             />
           ) : null}
@@ -1423,7 +1441,7 @@ export function CrowdfundExperience({
           </div>
         )}
 
-        {participationEnabled && (
+        {participationEnabled && !invitesOnCrowdfund && (
           <div
             className={[
               layerClass(crowdfundPanelVisible, motionReady, crowdfundPanelAnimates),
@@ -1444,8 +1462,8 @@ export function CrowdfundExperience({
 
         {participationEnabled && !myPositionCancelled && myPositionEmptyKind === null && (
         <div
-          className={layerClass(myPositionPanelVisible, motionReady, myPositionPanelAnimates)}
-          aria-hidden={!myPositionPanelVisible}
+          className={layerClass(invitesPanelVisible, motionReady, myPositionPanelAnimates)}
+          aria-hidden={!invitesPanelVisible}
         >
           {liveSections &&
           (liveSections.length === 0 ||
@@ -1474,7 +1492,7 @@ export function CrowdfundExperience({
               copiedSlotId={copiedId}
               loadingHop={loadingHop}
               onInviteListOpenChange={handleInviteListOpenChange}
-              panelActive={isMyPosition}
+              panelActive={isMyPosition || invitesOnCrowdfund}
               onViewRedeemed={(address) =>
                 startPanelTransition('crowdfund', { selectAddress: address })
               }

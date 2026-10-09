@@ -1,12 +1,13 @@
-// ABOUTME: Tests for the My Position card header CTA in CrowdfundExperience.
-// ABOUTME: "Commit again" only when the connected wallet has committed; otherwise "Participate".
+// ABOUTME: Tests for CrowdfundExperience's hero cards: My Position CTAs, Progress actions, pre-open card.
+// ABOUTME: Also covers the invite card taking the Participate card's slot once the wallet has committed.
 // @vitest-environment jsdom
 
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 import {
   CrowdfundExperience,
   type CrowdfundExperienceMyPositionData,
+  type CrowdfundInviteSlotSection,
 } from './CrowdfundExperience'
 
 // The WebGL graph isn't under test and can't render in jsdom.
@@ -164,5 +165,94 @@ describe('CrowdfundExperience pre-open card', { timeout: 20_000 }, () => {
   it('shows no pre-open card once the window is past opening', () => {
     renderCrowdfund(undefined)
     expect(screen.queryByRole('region', { name: 'Sale opens soon' })).toBeNull()
+  })
+})
+
+function inviteSection(hop: 0 | 1 | 2, totalSlots: number): CrowdfundInviteSlotSection {
+  return {
+    hop,
+    hopLabel: `HOP-${hop}`,
+    hopColor: '#ffffff',
+    totalSlots,
+    config: {
+      slots: Array.from({ length: totalSlots }, (_, i) => ({
+        id: hop * 100 + i,
+        status: 'empty' as const,
+      })),
+      copiedId: null,
+      loadingId: null,
+      onGenerateLink: vi.fn().mockResolvedValue(undefined),
+      onCopy: vi.fn(),
+      onRevoke: vi.fn(),
+      onInviteOnchain: vi.fn().mockResolvedValue(false),
+    },
+  }
+}
+
+// Once a wallet has committed and holds invite slots, the invite card takes
+// the Participate card's place on the Crowdfund view.
+describe('CrowdfundExperience invite card on the Crowdfund view', { timeout: 20_000 }, () => {
+  function experience(
+    view: 'crowdfund' | 'myposition',
+    committedUsdc: bigint,
+    sections: CrowdfundInviteSlotSection[],
+    participationEnabled = true,
+  ) {
+    return (
+      <CrowdfundExperience
+        view={view}
+        header={null}
+        inviteSlotSections={sections}
+        myPositionData={readyPosition(committedUsdc)}
+        onParticipate={vi.fn()}
+        participationEnabled={participationEnabled}
+        liveData={{ status: 'ready', dashRows: [], totalCommitted: 0 }}
+      />
+    )
+  }
+
+  const participateCard = () => screen.queryByRole('button', { name: 'Participate: Join the fleet' })
+  const inviteCard = () => screen.queryByRole('region', { name: 'Whitelist a friend' })
+
+  it('replaces the Participate card once the wallet has committed and has invite slots', () => {
+    render(experience('crowdfund', 500n * 1_000_000n, [inviteSection(0, 3)]))
+    expect(inviteCard()).toBeTruthy()
+    expect(participateCard()).toBeNull()
+  })
+
+  it('keeps the Participate card for an invited wallet that has not committed yet', () => {
+    render(experience('crowdfund', 0n, [inviteSection(0, 3)]))
+    expect(participateCard()).toBeTruthy()
+    expect(inviteCard()).toBeNull()
+  })
+
+  it('keeps the Participate card for a committed wallet with no invite slots', () => {
+    // Hop-2 is the last hop — its participants cannot invite further.
+    render(experience('crowdfund', 500n * 1_000_000n, [inviteSection(2, 0)]))
+    expect(participateCard()).toBeTruthy()
+    expect(inviteCard()).toBeNull()
+  })
+
+  it('shows neither card once the commit window has closed', () => {
+    render(experience('crowdfund', 500n * 1_000_000n, [inviteSection(0, 3)], false))
+    expect(participateCard()).toBeNull()
+    expect(inviteCard()).toBeNull()
+  })
+
+  it('keeps the same invite card mounted when switching to Your position', () => {
+    vi.useFakeTimers()
+    try {
+      const { rerender } = render(experience('crowdfund', 500n * 1_000_000n, [inviteSection(0, 3)]))
+      const card = inviteCard()
+      expect(card).toBeTruthy()
+      rerender(experience('myposition', 500n * 1_000_000n, [inviteSection(0, 3)]))
+      act(() => {
+        vi.runAllTimers()
+      })
+      // Same DOM node — a single card instance, so in-progress invite state survives the switch.
+      expect(inviteCard()).toBe(card)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

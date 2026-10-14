@@ -560,9 +560,9 @@ Early network tokens unlock based on cumulative protocol fee revenue.
 **No time-based fallback.** If revenue never reaches $1M, tokens never fully unlock.
 
 **What counts as revenue:**
-- Shield fees (USDC and stablecoins) recognized through the fee-collector / RevenueCounter path (permissionless sync — see §Revenue Counter Mechanism)
-- Yield fees (USDC and stablecoins) recognized through the same fee-collector / RevenueCounter path
-- Non-stablecoin fees (ETH, etc.) require a governance proposal to attest the USD value at time of receipt and credit it to the RevenueCounter — avoids oracle dependencies while keeping the counter honest
+- Shield fees paid in USDC, recognized through the fee-collector / RevenueCounter path (permissionless sync — see §Revenue Counter Mechanism). The fee collector records only USDC shield fees (issue #605).
+- Yield fees (USDC) recognized through the same fee-collector / RevenueCounter path
+- Fees in any other token (ETH, other stablecoins, etc.) require a governance proposal to attest the USD value at time of receipt and credit it to the RevenueCounter — avoids oracle dependencies while keeping the counter honest
 
 Governance can expand the definition of qualifying revenue via extended proposal (see §Revenue Counter Mechanism).
 

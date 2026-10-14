@@ -316,7 +316,7 @@ The crowdfund contract relies on pre-minted ARM only. `loadArm()` verifies `bala
 | Role | Power | Exists at deploy? | Can be renounced? | Time-limited? | Intended disposition |
 |---|---|---|---|---|---|
 | Transfer gate controller | `setTransferable(true)` | Yes (governor executor: constructor-set; wind-down contract: post-deploy one-shot setter, locks after first call) | N/A — one-shot | No | Called once — either by governor executor (governance proposal) or by wind-down contract (side effect of triggerWindDown). Function becomes no-op after first call. |
-| Revenue counter updater | Credits cumulative revenue to the milestone counter. Stablecoin fees are directly countable; non-stablecoin fees require governance attestation. | Yes (governance) | No — ongoing | No | Governance-controlled; no external oracle dependency |
+| Revenue counter updater | Credits cumulative revenue to the milestone counter. USDC fees are directly countable; fees in any other token require governance attestation. | Yes (governance) | No — ongoing | No | Governance-controlled; no external oracle dependency |
 | Claim/release delegation caller | `delegateOnBehalf(account, delegatee)` | Yes (crowdfund contract + revenue-lock contract) | N/A — immutable | Naturally expires when crowdfund claims and lock releases complete | Set in constructor; only these two contracts can call |
 | Whitelist adder | `addToWhitelist(address)` — add-only, no removal | Yes (governance via extended proposal) | No — ongoing | No | Allows governance to whitelist new infrastructure contracts, recover from deployment address errors, or enable pre-unlock distribution channels. Cannot remove existing whitelisted addresses. |
 | Admin / owner | None | No | N/A | N/A | No admin role exists |

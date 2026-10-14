@@ -21,8 +21,10 @@ contract ArmadaFeeModuleTest is Test {
     address public integrator1 = address(0x1111);
     address public integrator2 = address(0x2222);
     address public nonOwner = address(0xBAD);
-    /// @dev Placeholder asset address — these unit tests don't deploy a real ERC20.
+    /// @dev Placeholder for the configured USDC address — these unit tests don't deploy a real ERC20.
     address public asset = address(0xA55E7);
+    /// @dev Any shieldable token other than USDC.
+    address public otherToken = address(0x07E4);
 
     // Events (for expectEmit)
     event IntegratorRegistered(address indexed integrator, uint256 baseFee);
@@ -48,7 +50,7 @@ contract ArmadaFeeModuleTest is Test {
         ArmadaFeeModule impl = new ArmadaFeeModule();
         bytes memory initData = abi.encodeCall(
             ArmadaFeeModule.initialize,
-            (owner, treasury, privacyPool, yieldVault)
+            (owner, treasury, privacyPool, yieldVault, asset)
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         feeModule = ArmadaFeeModule(address(proxy));
@@ -64,6 +66,7 @@ contract ArmadaFeeModuleTest is Test {
         assertEq(feeModule.treasury(), treasury);
         assertEq(feeModule.privacyPool(), privacyPool);
         assertEq(feeModule.yieldVault(), yieldVault);
+        assertEq(feeModule.usdc(), asset);
         assertEq(feeModule.getTierCount(), 1);
 
         IArmadaFeeModule.Tier[] memory tiers = feeModule.getTiers();
@@ -73,17 +76,83 @@ contract ArmadaFeeModuleTest is Test {
 
     function test_initialize_cannotReinitialize() public {
         vm.expectRevert("Initializable: contract is already initialized");
-        feeModule.initialize(owner, treasury, privacyPool, yieldVault);
+        feeModule.initialize(owner, treasury, privacyPool, yieldVault, asset);
     }
 
     function test_initialize_revertsOnZeroAddress() public {
         ArmadaFeeModule impl = new ArmadaFeeModule();
         bytes memory badInit = abi.encodeCall(
             ArmadaFeeModule.initialize,
-            (address(0), treasury, privacyPool, yieldVault)
+            (address(0), treasury, privacyPool, yieldVault, asset)
         );
         vm.expectRevert("ArmadaFeeModule: zero owner");
         new ERC1967Proxy(address(impl), badInit);
+    }
+
+    function test_initialize_revertsOnZeroUsdc() public {
+        ArmadaFeeModule impl = new ArmadaFeeModule();
+        bytes memory badInit = abi.encodeCall(
+            ArmadaFeeModule.initialize,
+            (owner, treasury, privacyPool, yieldVault, address(0))
+        );
+        vm.expectRevert("ArmadaFeeModule: zero usdc");
+        new ERC1967Proxy(address(impl), badInit);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Non-USDC shield fees (issue #605)
+    // ══════════════════════════════════════════════════════════════════════
+
+    /// @dev WHY: RevenueCounter reads cumulativeFeesCollected() as 6-decimal USDC. A fee paid in any
+    ///      other token (18 decimals, or worthless) must not count as protocol revenue — non-stablecoin
+    ///      revenue is recognised only through governance attestation.
+    function test_recordShieldFee_nonUsdc_notCountedAsRevenue() public {
+        vm.prank(integrator1);
+        feeModule.setIntegratorFee(30);
+
+        vm.prank(privacyPool);
+        feeModule.recordShieldFee(otherToken, integrator1, 1e24, 5e21, 3e21);
+
+        assertEq(feeModule.cumulativeArmadaFees(), 0);
+        assertEq(feeModule.cumulativeFeesCollected(), 0);
+        assertEq(feeModule.cumulativeIntegratorFees(), 0);
+        IArmadaFeeModule.IntegratorInfo memory info = feeModule.getIntegratorInfo(integrator1);
+        assertEq(info.cumulativeVolume, 0);
+        assertEq(info.cumulativeEarnings, 0);
+    }
+
+    /// @dev WHY: volume tiers are denominated in USDC units; non-USDC volume must not unlock a tier.
+    function test_recordShieldFee_nonUsdc_doesNotAdvanceTier() public {
+        vm.prank(integrator1);
+        feeModule.setIntegratorFee(30);
+
+        vm.prank(privacyPool);
+        feeModule.recordShieldFee(otherToken, integrator1, 300_000e6, 0, 0);
+
+        assertEq(feeModule.getArmadaTake(integrator1), 50); // still the base rate
+    }
+
+    /// @dev WHY: off-chain analytics still need to see non-USDC shields.
+    function test_recordShieldFee_nonUsdc_stillEmitsEvent() public {
+        vm.prank(integrator1);
+        feeModule.setIntegratorFee(30);
+
+        vm.expectEmit(true, true, false, true);
+        emit ShieldFeeRecorded(otherToken, integrator1, 1000e18, 50, 5e18, 3e18, 0);
+        vm.prank(privacyPool);
+        feeModule.recordShieldFee(otherToken, integrator1, 1000e18, 5e18, 3e18);
+    }
+
+    function test_recordShieldFee_usdc_countedAsRevenue() public {
+        vm.prank(integrator1);
+        feeModule.setIntegratorFee(30);
+
+        vm.prank(privacyPool);
+        feeModule.recordShieldFee(asset, integrator1, 10_000e6, 5e6, 3e6);
+
+        assertEq(feeModule.cumulativeFeesCollected(), 5e6);
+        assertEq(feeModule.cumulativeIntegratorFees(), 3e6);
+        assertEq(feeModule.getIntegratorInfo(integrator1).cumulativeVolume, 10_000e6);
     }
 
     // ══════════════════════════════════════════════════════════════════════

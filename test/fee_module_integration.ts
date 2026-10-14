@@ -178,6 +178,7 @@ describe("Fee Module Integration", function () {
       treasuryAddress,      // treasury
       privacyPoolAddress,   // privacyPool
       vaultAddress,         // yieldVault
+      usdcAddress,          // usdc (only asset whose fees are recorded)
     ]);
     const ERC1967Proxy = await ethers.getContractFactory("ERC1967Proxy");
     const feeModuleProxy = await ERC1967Proxy.deploy(await feeModuleImpl.getAddress(), initData);
@@ -270,11 +271,11 @@ describe("Fee Module Integration", function () {
     return ethers.zeroPadValue(ethers.toBeHex(raw % SNARK_SCALAR_FIELD), 32);
   }
 
-  function makeShieldRequest(amount: bigint, npkSeed?: string) {
+  function makeShieldRequest(amount: bigint, npkSeed?: string, tokenAddress: string = usdcAddress) {
     return {
       preimage: {
         npk: validNpk(npkSeed ?? `shield-${Date.now()}-${Math.random()}`),
-        token: { tokenType: 0, tokenAddress: usdcAddress, tokenSubID: 0 },
+        token: { tokenType: 0, tokenAddress, tokenSubID: 0 },
         value: amount,
       },
       ciphertext: {
@@ -374,6 +375,43 @@ describe("Fee Module Integration", function () {
 
       expect(infoAfter.cumulativeVolume - infoBefore.cumulativeVolume).to.equal(SHIELD_AMOUNT);
       expect(infoAfter.cumulativeEarnings).to.be.gt(infoBefore.cumulativeEarnings);
+    });
+  });
+
+  describe("Non-USDC shield with fee module (#605)", function () {
+    const AMOUNT = ethers.parseUnits("1000", 18);
+    let other: Contract;
+    let otherAddress: string;
+
+    before(async function () {
+      // The pool is multi-asset; this token stands in for any non-USDC ERC-20 (e.g. WETH).
+      const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
+      other = await MockUSDCV2.deploy("Other", "OTH");
+      otherAddress = await other.getAddress();
+      await other.mint(await alice.getAddress(), AMOUNT);
+    });
+
+    // WHY: RevenueCounter reads cumulativeFeesCollected() as 6-decimal USDC and integrator tiers are
+    // USDC thresholds. A fee in any other token is still charged, but must not be counted — otherwise
+    // one shield of a worthless or 18-decimal token inflates recognised revenue and unlocks tiers.
+    it("charges the fee in the shielded token but records nothing", async function () {
+      const revenueBefore = await feeModule.cumulativeFeesCollected();
+      const integratorFeesBefore = await feeModule.cumulativeIntegratorFees();
+      const infoBefore = await feeModule.getIntegratorInfo(integratorAddress);
+      const treasuryBefore = await other.balanceOf(treasuryAddress);
+      const integratorBalBefore = await other.balanceOf(integratorAddress);
+
+      await other.connect(alice).approve(privacyPoolAddress, AMOUNT);
+      await privacyPool.connect(alice).shield([makeShieldRequest(AMOUNT, "non-usdc", otherAddress)], integratorAddress);
+
+      expect((await other.balanceOf(treasuryAddress)) - treasuryBefore).to.equal(AMOUNT * 50n / BPS_DENOMINATOR);
+      expect(await other.balanceOf(integratorAddress)).to.be.gt(integratorBalBefore);
+
+      expect(await feeModule.cumulativeFeesCollected()).to.equal(revenueBefore);
+      expect(await feeModule.cumulativeIntegratorFees()).to.equal(integratorFeesBefore);
+      const infoAfter = await feeModule.getIntegratorInfo(integratorAddress);
+      expect(infoAfter.cumulativeVolume).to.equal(infoBefore.cumulativeVolume);
+      expect(infoAfter.cumulativeEarnings).to.equal(infoBefore.cumulativeEarnings);
     });
   });
 

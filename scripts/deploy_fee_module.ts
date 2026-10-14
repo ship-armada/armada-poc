@@ -82,6 +82,7 @@ async function main() {
     treasuryAddress,
     privacyPoolAddress,
     yieldVaultAddress,
+    poolDeployment.cctp.usdc, // only asset whose shield fees/volume are recorded (#605)
   ]);
 
   const ERC1967Proxy = await ethers.getContractFactory("ERC1967Proxy");

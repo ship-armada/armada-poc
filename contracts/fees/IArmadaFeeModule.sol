@@ -149,6 +149,7 @@ interface IArmadaFeeModule is IFeeCollector {
     function treasury() external view returns (address);
     function privacyPool() external view returns (address);
     function yieldVault() external view returns (address);
+    function usdc() external view returns (address);
     function cumulativeArmadaFees() external view returns (uint256);
     function cumulativeIntegratorFees() external view returns (uint256);
 

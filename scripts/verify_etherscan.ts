@@ -339,6 +339,7 @@ async function buildHubProtocolTasks(): Promise<VerifyTask[]> {
       gov.contracts.treasury,
       pool.contracts.privacyPool,
       yieldD.contracts.armadaYieldVault,
+      pool.cctp.usdc,
     ]);
     tasks.push(
       { name: "ArmadaFeeModule (implementation)", address: feeMod.contracts.feeModuleImpl, constructorArguments: [] },

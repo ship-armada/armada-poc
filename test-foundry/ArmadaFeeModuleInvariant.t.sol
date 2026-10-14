@@ -87,13 +87,15 @@ contract ArmadaFeeModuleInvariantTest is Test {
     address public privacyPool = address(0xBEEF);
     address public yieldVault = address(0xCAFE);
     address public integrator = address(0x1111);
+    /// @dev Configured USDC: the same placeholder the handler records as ASSET, so every fee counts.
+    address public constant USDC = address(0xA55E7);
 
     function setUp() public {
         // Deploy proxy
         ArmadaFeeModule impl = new ArmadaFeeModule();
         bytes memory initData = abi.encodeCall(
             ArmadaFeeModule.initialize,
-            (owner, treasury, privacyPool, yieldVault)
+            (owner, treasury, privacyPool, yieldVault, USDC)
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         feeModule = ArmadaFeeModule(address(proxy));

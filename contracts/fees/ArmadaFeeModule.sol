@@ -70,6 +70,11 @@ contract ArmadaFeeModule is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     /// @notice Authorized caller for recordYieldFee
     address public override yieldVault;
 
+    /// @notice USDC — the only asset whose shield fees and volume are recorded. Fees paid in any
+    ///         other shielded token are still charged by the pool but are not counted here; they
+    ///         reach recognised revenue only through governance attestation.
+    address public override usdc;
+
     // ══════════════════════════════════════════════════════════════════════════
     // INITIALIZER
     // ══════════════════════════════════════════════════════════════════════════
@@ -78,16 +83,19 @@ contract ArmadaFeeModule is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
     /// @param _treasury ArmadaTreasuryGov address
     /// @param _privacyPool PrivacyPool address (authorized recordShieldFee caller)
     /// @param _yieldVault ArmadaYieldVault address (authorized recordYieldFee caller)
+    /// @param _usdc USDC address (the only asset whose shield fees and volume are recorded)
     function initialize(
         address _owner,
         address _treasury,
         address _privacyPool,
-        address _yieldVault
+        address _yieldVault,
+        address _usdc
     ) external initializer {
         require(_owner != address(0), "ArmadaFeeModule: zero owner");
         require(_treasury != address(0), "ArmadaFeeModule: zero treasury");
         require(_privacyPool != address(0), "ArmadaFeeModule: zero privacyPool");
         require(_yieldVault != address(0), "ArmadaFeeModule: zero yieldVault");
+        require(_usdc != address(0), "ArmadaFeeModule: zero usdc");
 
         __Ownable_init();
         __UUPSUpgradeable_init();
@@ -96,6 +104,7 @@ contract ArmadaFeeModule is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
         treasury = _treasury;
         privacyPool = _privacyPool;
         yieldVault = _yieldVault;
+        usdc = _usdc;
 
         // Defaults per spec
         baseArmadaTakeBps = 50;    // 0.50%
@@ -160,16 +169,22 @@ contract ArmadaFeeModule is Initializable, UUPSUpgradeable, OwnableUpgradeable, 
         // emitted bps would reflect the tier this shield just unlocked, not the tier
         // that priced it.
         uint256 armadaTakeBps = _getEffectiveArmadaTake(integrator);
+        bool integratorRegistered = integrator != address(0) && _integrators[integrator].registered;
 
-        cumulativeArmadaFees += armadaTakePaid;
-
-        uint256 cumulativeVolumeAfter = 0;
-        if (integrator != address(0) && _integrators[integrator].registered) {
-            _integrators[integrator].cumulativeVolume += amount;
-            _integrators[integrator].cumulativeEarnings += integratorFeePaid;
-            cumulativeIntegratorFees += integratorFeePaid;
-            cumulativeVolumeAfter = _integrators[integrator].cumulativeVolume;
+        // Only USDC fees and volume are recorded. cumulativeArmadaFees feeds RevenueCounter, which
+        // reads it as 6-decimal USDC, and tier thresholds are USDC amounts; a fee or volume in any
+        // other token (different decimals, or worthless) would inflate both. Non-USDC fees are still
+        // charged and paid out by the pool, and the event below is emitted for every asset.
+        if (asset == usdc) {
+            cumulativeArmadaFees += armadaTakePaid;
+            if (integratorRegistered) {
+                _integrators[integrator].cumulativeVolume += amount;
+                _integrators[integrator].cumulativeEarnings += integratorFeePaid;
+                cumulativeIntegratorFees += integratorFeePaid;
+            }
         }
+
+        uint256 cumulativeVolumeAfter = integratorRegistered ? _integrators[integrator].cumulativeVolume : 0;
 
         emit ShieldFeeRecorded(
             asset,

@@ -89,7 +89,7 @@ function setIntegratorFee(uint256 feeBps) external {
 
 No approval required. No stake required. Permissionless.
 
-Volume accumulates automatically when users shield with integrator's address as referrer.
+Volume accumulates automatically when users shield **USDC** with integrator's address as referrer. Shields of any other token still pay the fee (in that token, to the treasury and integrator) but count toward neither volume tiers nor protocol revenue: tier thresholds and `cumulativeFeesCollected()` are USDC amounts (issue #605).
 
 ---
 
@@ -182,7 +182,8 @@ event Shield(
     uint256 integratorFeeEarned
 );
 
-// As implemented on the fee module today:
+// As implemented on the fee module today. Emitted for every shielded asset; only USDC shields
+// update cumulativeArmadaFees, cumulativeIntegratorFees and integrator volume/earnings (#605).
 event ShieldFeeRecorded(
     address indexed asset,
     address indexed integrator,

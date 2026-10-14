@@ -35,6 +35,7 @@ ALLOWED_DIRS=(
   "deployments/"              # Script-generated manifests: public addresses and creation tx hashes (32-byte hex, not keys)
   "test-foundry/fixtures/contract-vectors/"  # M8 golden-vector corpus: deterministic public test vectors (calldata, commitments, EdDSA sig components)
   "test-foundry/fixtures/contract-vectors-v2/"  # M8 post-drift delta corpus (same rationale)
+  "test-foundry/fixtures/snark/"  # Real Groth16 proof fixture: public verifying key, proof and public inputs (curve points, not keys)
 )
 
 # Patterns that indicate secrets. Each entry: "LABEL:::REGEX"

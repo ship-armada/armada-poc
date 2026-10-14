@@ -22,7 +22,10 @@ libraries = [
 ]
 
 # Allow tests to read the generated Poseidon bytecode fixture (PoseidonLinker).
-fs_permissions = [{ access = "read", path = "./lib/poseidon_bytecode.json" }]
+fs_permissions = [
+    { access = "read", path = "./lib/poseidon_bytecode.json" },
+    { access = "read", path = "./test-foundry/fixtures/snark" },  # real-proof verifier fixture (#604)
+]
 
 # Invariant test config
 [invariant]

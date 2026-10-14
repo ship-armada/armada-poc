@@ -142,6 +142,46 @@ contract YieldFeeAccountingInvariantTest is YieldFeeSetup {
         vm.warp(block.timestamp + 365 days);
         _assertFeeMatchesYield();
     }
+
+    /// @dev WHY: a fee-rate change must apply only to yield earned after it. Otherwise raising the
+    ///      rate would instantly claim the higher rate on all uncollected past yield.
+    function test_feeRateChangeIsNotRetroactive() public {
+        handler.deposit(0, 1_000_000e6);
+        vm.warp(block.timestamp + 365 days);
+        uint256 yieldAtOldRate = handler.yieldGenerated();
+
+        vault.setYieldFeeBps(2000); // 10% -> 20%
+        vm.warp(block.timestamp + 365 days);
+        uint256 yieldAtNewRate = handler.yieldGenerated() - yieldAtOldRate;
+
+        uint256 expected = (yieldAtOldRate * 1000) / 10000 + (yieldAtNewRate * 2000) / 10000;
+        uint256 actual = vault.cumulativeProtocolFee() + vault.pendingProtocolFee();
+        assertApproxEqAbs(actual, expected, 1_000, "rate change applied retroactively");
+    }
+
+    /// @dev WHY: after a loss, yield that only recovers the loss is not new yield and must not be
+    ///      charged again (high-water mark). Fees resume only on yield above the previous peak.
+    function test_noFeeOnRecoveringALoss() public {
+        handler.deposit(0, 1_000_000e6);
+        vm.warp(block.timestamp + 365 days);
+        handler.harvest(); // fee on year 1 collected; high-water mark = year-1 yield
+        uint256 collected = vault.cumulativeProtocolFee();
+        assertGt(collected, 0, "year-1 fee collected");
+
+        // Simulate a 30k loss in the spoke, then check nothing is owed while below the peak.
+        uint256 assets = vault.totalAssets();
+        vm.mockCall(
+            address(vault.spoke()),
+            abi.encodeWithSelector(IAaveSpoke.getUserSuppliedAssets.selector, uint256(0), address(vault)),
+            abi.encode(assets - 30_000e6)
+        );
+        assertEq(vault.pendingProtocolFee(), 0, "fee owed while below the high-water mark");
+        vm.clearMockedCalls();
+
+        // Back to the peak: still nothing owed, and nothing new was collected.
+        assertEq(vault.pendingProtocolFee(), 0, "fee owed on recovered loss");
+        assertEq(vault.cumulativeProtocolFee(), collected);
+    }
 }
 
 /// @title Shares change hands before redemption (F5)

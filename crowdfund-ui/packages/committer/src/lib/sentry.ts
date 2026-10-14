@@ -3,6 +3,7 @@
 
 import * as Sentry from '@sentry/react'
 import type { ErrorEvent, Breadcrumb } from '@sentry/react'
+import { isChunkReloadPending } from './chunkReload'
 
 let initialized = false
 
@@ -31,6 +32,16 @@ export function scrubEventUrls(event: ErrorEvent): ErrorEvent {
     }
   }
   return event
+}
+
+/**
+ * The committer's `beforeSend`: drop errors raised while a chunk-failure
+ * reload is in flight (fallout from the failed download, not new bugs; see
+ * `chunkReload.ts`), and scrub URLs from everything else.
+ */
+export function filterErrorEvent(event: ErrorEvent): ErrorEvent | null {
+  if (isChunkReloadPending()) return null
+  return scrubEventUrls(event)
 }
 
 /**
@@ -105,7 +116,7 @@ export function initSentry(): void {
     // window.location.href and stack-frame source URLs. Strip query strings so
     // an invite-link signature can't ride out on a render error.
     beforeSend(event) {
-      return scrubEventUrls(event)
+      return filterErrorEvent(event)
     },
     // Default breadcrumbs capture navigation/fetch/xhr URLs verbatim. Scrub
     // their query strings for the same reason.

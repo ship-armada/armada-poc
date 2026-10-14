@@ -325,6 +325,11 @@ library MessageV2 {
         return bytes32(message[SENDER_OFFSET:SENDER_OFFSET + 32]);
     }
 
+    function getRecipient(bytes calldata message) internal pure returns (bytes32) {
+        require(message.length >= MIN_MESSAGE_LENGTH, "MessageV2: message too short");
+        return bytes32(message[RECIPIENT_OFFSET:RECIPIENT_OFFSET + 32]);
+    }
+
     function getDestinationCaller(bytes calldata message) internal pure returns (bytes32) {
         require(message.length >= MIN_MESSAGE_LENGTH, "MessageV2: message too short");
         return bytes32(message[DESTINATION_CALLER_OFFSET:DESTINATION_CALLER_OFFSET + 32]);

@@ -179,6 +179,11 @@ contract MockTokenMessengerV2 is ITokenMessengerV2 {
         address relayerAddress
     ) external returns (bool) {
         require(msg.sender == messageTransmitter, "Only MessageTransmitter");
+        // TODO: real TokenMessengerV2 also requires `sender == remoteTokenMessengers[sourceDomain]`.
+        // Not enforced here yet because the golden-vector corpora fabricate burn messages with a
+        // dummy envelope sender; adding the check needs those corpora re-captured. Until then a test
+        // can mint by sending a burn-shaped generic message *to the TokenMessenger*, which real CCTP
+        // would reject — do not read such a test as a pool vulnerability.
 
         // Decode BurnMessageV2 to get amount, feeExecuted, and hookData
         (
@@ -297,6 +302,33 @@ contract MockMessageTransmitterV2 is IMessageTransmitterV2 {
     function setRelayer(address _relayer) external {
         require(msg.sender == relayer, "Only relayer");
         relayer = _relayer;
+    }
+
+    /**
+     * @notice Send a generic (non-burn) cross-chain message
+     * @dev Mirrors real CCTP V2 `MessageTransmitterV2.sendMessage`: permissionless, the envelope
+     *      sender is the caller, and the body is arbitrary. In the mock, finalityThresholdExecuted
+     *      is set to the requested minimum (as for burns).
+     */
+    function sendMessage(
+        uint32 destinationDomain,
+        bytes32 recipient,
+        bytes32 destinationCaller,
+        uint32 minFinalityThreshold,
+        bytes calldata messageBody
+    ) external {
+        uint64 nonce = nextMessageNonce++;
+        emit MessageSent(MessageV2.encode(
+            localDomain,
+            destinationDomain,
+            bytes32(uint256(nonce)),
+            MessageV2.addressToBytes32(msg.sender),
+            recipient,
+            destinationCaller,
+            minFinalityThreshold,
+            minFinalityThreshold,
+            messageBody
+        ));
     }
 
     /**
@@ -435,16 +467,42 @@ contract MockMessageTransmitterV2 is IMessageTransmitterV2 {
 
         emit MessageReceived(msg.sender, sourceDomain, nonceBytes, sender, finalityThresholdExecuted, MessageV2.getMessageBody(message));
 
-        // Forward to TokenMessenger to handle minting
-        // The recipient in the message header is the remote TokenMessenger
-        // The actual mint recipient is inside the BurnMessageV2 body
-        MockTokenMessengerV2(tokenMessenger).handleReceiveMessage(
-            sourceDomain,
-            sender,
-            finalityThresholdExecuted,
-            MessageV2.getMessageBody(message),
-            msg.sender  // relayer address (for CCTP fee payment)
-        );
+        // Dispatch to the envelope recipient, as real CCTP V2 does. Burn messages are addressed to
+        // the local TokenMessenger (which mints to the mintRecipient inside the BurnMessageV2 body);
+        // any other recipient is a generic message and gets the IMessageHandlerV2 callback instead.
+        address recipient = MessageV2.bytes32ToAddress(MessageV2.getRecipient(message));
+        if (recipient == tokenMessenger) {
+            MockTokenMessengerV2(tokenMessenger).handleReceiveMessage(
+                sourceDomain,
+                sender,
+                finalityThresholdExecuted,
+                MessageV2.getMessageBody(message),
+                msg.sender  // relayer address (for CCTP fee payment)
+            );
+        } else {
+            _dispatchGenericMessage(recipient, sourceDomain, sender, finalityThresholdExecuted, message);
+        }
+    }
+
+    /**
+     * @dev Delivers a generic message to its recipient's IMessageHandlerV2 callback, choosing the
+     *      finalized or unfinalized handler by the executed finality (as real CCTP V2 does).
+     */
+    function _dispatchGenericMessage(
+        address recipient,
+        uint32 sourceDomain,
+        bytes32 sender,
+        uint32 finalityThresholdExecuted,
+        bytes calldata message
+    ) internal {
+        bool handled = finalityThresholdExecuted >= 2000
+            ? IMessageHandlerV2(recipient).handleReceiveFinalizedMessage(
+                sourceDomain, sender, finalityThresholdExecuted, MessageV2.getMessageBody(message)
+            )
+            : IMessageHandlerV2(recipient).handleReceiveUnfinalizedMessage(
+                sourceDomain, sender, finalityThresholdExecuted, MessageV2.getMessageBody(message)
+            );
+        require(handled, "Mock: message handler returned false");
     }
 }
 

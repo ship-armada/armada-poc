@@ -51,9 +51,11 @@ async function deployFaucet(
   // to the Anvil default key (local dev only — same pattern as hardhat.config.ts).
   const provider = new ethers.JsonRpcProvider(rpcUrl);
   const privateKey = process.env.DEPLOYER_PRIVATE_KEY || ANVIL_DEFAULT_KEY;
-  const deployer = new ethers.Wallet(privateKey, provider);
+  // NonceManager tracks nonces locally; a bare Wallet can reuse a stale cached nonce when the deploy
+  // is mined quickly and the next transaction follows straight away ("nonce too low").
+  const deployer = new ethers.NonceManager(new ethers.Wallet(privateKey, provider));
 
-  console.log(`Deployer: ${deployer.address}`);
+  console.log(`Deployer: ${await deployer.getAddress()}`);
 
   // Try V3 deployment first, fall back to V2
   const v3Deployment = loadDeployment(v3DeploymentName);

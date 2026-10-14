@@ -92,7 +92,10 @@ export async function linkClient(
   // + the deployer wallet), independent of the hub network's nonce manager.
   if (clientDeployment.contracts.hookRouter) {
     const clientProvider = new ethers.JsonRpcProvider(client.rpc);
-    const clientSigner = new ethers.Wallet(config.deployerPrivateKey, clientProvider);
+    // NonceManager tracks nonces locally. A bare Wallet re-reads the nonce from the provider before
+    // each send, and ethers caches identical RPC results for ~250ms, so a transaction mined quickly
+    // followed straight away by the next one can reuse a stale nonce ("nonce too low").
+    const clientSigner = new ethers.NonceManager(new ethers.Wallet(config.deployerPrivateKey, clientProvider));
 
     const clientPoolContract = new ethers.Contract(
       clientDeployment.contracts.privacyPoolClient,

@@ -1,0 +1,402 @@
+// ABOUTME: Invariant suite: for every token, the pool's balance covers the notes it treats as unspent.
+// ABOUTME: Drives multi-asset shields, transfers, local and cross-chain unshields, and CCTP shield-ins (#608).
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.17;
+
+import "forge-std/Test.sol";
+import "../contracts/privacy-pool/PrivacyPool.sol";
+import "../contracts/privacy-pool/modules/ShieldModule.sol";
+import "../contracts/privacy-pool/modules/TransactModule.sol";
+import "../contracts/privacy-pool/modules/MerkleModule.sol";
+import "../contracts/privacy-pool/modules/VerifierModule.sol";
+import "../contracts/privacy-pool/CCTPBindingLib.sol";
+import "../contracts/privacy-pool/types/PoseidonLibs.sol";
+import "../contracts/cctp/MockUSDCV2.sol";
+import "../contracts/cctp/MockCCTPV2.sol";
+import "../contracts/cctp/CCTPHookRouter.sol";
+import "../contracts/test/MockMessageHandlerV2.sol";
+import "./helpers/PoseidonLinker.sol";
+
+/// @title SolvencyHandler — drives the pool and mirrors the notes it treats as unspent
+/// @dev The suite runs in testing mode, so proofs are not checked: the handler plays an honest
+///      prover and only spends notes in its ghost ledger. Whenever the pool ACCEPTS an action, the
+///      ledger is updated to match what the pool now treats as spent or unspent — including actions
+///      that should be rejected (a non-USDC cross-chain unshield, a forged CCTP message). If one of
+///      those were ever accepted, the per-token balance check in the invariant would fail.
+///      Fees use the pool's flat shield fee; the fee-module branch is not driven here.
+///      TODO: add yield lend/redeem actions (ArmadaYieldAdapter + vault + mock Aave wiring) so the
+///      ayUSDC leg is covered too — scoped in issue #608, deferred to keep this suite self-contained.
+contract SolvencyHandler is Test {
+    struct Note {
+        address token;
+        uint120 value;
+    }
+
+    uint32 public constant HUB_DOMAIN = 0;
+    uint32 public constant CLIENT_DOMAIN = 1;
+    uint120 public constant SHIELD_FEE_BPS = 50;
+
+    PrivacyPool public pool;
+    MockUSDCV2 public usdc;
+    MockUSDCV2 public other;
+    CCTPHookRouter public router;
+    address public tokenMessenger;
+    address public clientPool;
+    address public forgedRecipient;
+
+    address public shielder = address(0x5111E1D);
+    address public recipient = address(0xBEEF);
+
+    /// @notice Notes the pool currently treats as unspent (ghost ledger).
+    Note[] public notes;
+    uint256 internal _nonce = 1;
+
+    // Coverage counters (successful calls).
+    uint256 public calls_shield;
+    uint256 public calls_transfer;
+    uint256 public calls_unshieldLocal;
+    uint256 public calls_unshieldCrossChain;
+    uint256 public calls_shieldIn;
+    uint256 public rejected_crossChainNonUsdc;
+    uint256 public rejected_forgedShieldIn;
+
+    constructor(
+        PrivacyPool _pool,
+        MockUSDCV2 _usdc,
+        MockUSDCV2 _other,
+        CCTPHookRouter _router,
+        address _tokenMessenger,
+        address _clientPool
+    ) {
+        pool = _pool;
+        usdc = _usdc;
+        other = _other;
+        router = _router;
+        tokenMessenger = _tokenMessenger;
+        clientPool = _clientPool;
+        forgedRecipient = address(new MockMessageHandlerV2());
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // VIEWS
+    // ═══════════════════════════════════════════════════════════════════
+
+    function noteCount() external view returns (uint256) {
+        return notes.length;
+    }
+
+    /// @notice Sum of the values of unspent notes in `token`.
+    function ghostTotal(address token) external view returns (uint256 total) {
+        for (uint256 i = 0; i < notes.length; i++) {
+            if (notes[i].token == token) total += notes[i].value;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // ACTIONS
+    // ═══════════════════════════════════════════════════════════════════
+
+    /// @notice Local shield of USDC or the other token.
+    function shield(uint256 tokenSeed, uint256 amount) external {
+        MockUSDCV2 token = tokenSeed % 2 == 0 ? usdc : other;
+        amount = bound(amount, 1, 1_000_000e6);
+        token.mint(shielder, amount);
+
+        ShieldRequest[] memory requests = new ShieldRequest[](1);
+        requests[0] = ShieldRequest({
+            preimage: CommitmentPreimage({npk: _npk(), token: _erc20(address(token)), value: uint120(amount)}),
+            ciphertext: ShieldCiphertext({encryptedBundle: [bytes32(0), bytes32(0), bytes32(0)], shieldKey: bytes32(0)})
+        });
+
+        uint256 before = token.balanceOf(address(pool));
+        vm.startPrank(shielder);
+        token.approve(address(pool), amount);
+        try pool.shield(requests, address(0)) {
+            // The note is worth exactly what stayed in the pool (amount minus the fee).
+            notes.push(Note(address(token), uint120(token.balanceOf(address(pool)) - before)));
+            calls_shield++;
+        } catch {}
+        vm.stopPrank();
+    }
+
+    /// @notice Private transfer: spend one note into two notes of the same token.
+    function transfer(uint256 noteSeed, uint256 splitSeed) external {
+        if (notes.length == 0) return;
+        uint256 i = bound(noteSeed, 0, notes.length - 1);
+        Note memory note = notes[i];
+        uint120 first = uint120(bound(splitSeed, 0, note.value));
+
+        bytes32[] memory commitments = new bytes32[](2);
+        commitments[0] = keccak256(abi.encode("out", _nonce, 0));
+        commitments[1] = keccak256(abi.encode("out", _nonce, 1));
+        Transaction memory txn = _transaction(commitments, 2, UnshieldType.NONE, bytes32(0));
+
+        if (_transact(txn)) {
+            _removeNote(i);
+            if (first > 0) notes.push(Note(note.token, first));
+            if (note.value - first > 0) notes.push(Note(note.token, note.value - first));
+            calls_transfer++;
+        }
+    }
+
+    /// @notice Local unshield of part of a note, keeping the rest as change.
+    function unshieldLocal(uint256 noteSeed, uint256 amountSeed) external {
+        if (notes.length == 0) return;
+        uint256 i = bound(noteSeed, 0, notes.length - 1);
+        Note memory note = notes[i];
+        uint120 value = uint120(bound(amountSeed, 1, note.value));
+
+        CommitmentPreimage memory preimage = CommitmentPreimage({
+            npk: bytes32(uint256(uint160(recipient))),
+            token: _erc20(note.token),
+            value: value
+        });
+        Transaction memory txn = _unshieldTransaction(note, preimage, bytes32(0));
+
+        if (_transact(txn)) {
+            _spendWithChange(i, note, value);
+            calls_unshieldLocal++;
+        }
+    }
+
+    /// @notice Cross-chain unshield of part of a note. Must only succeed for USDC notes (#611).
+    function unshieldCrossChain(uint256 noteSeed, uint256 amountSeed) external {
+        if (notes.length == 0) return;
+        uint256 i = bound(noteSeed, 0, notes.length - 1);
+        Note memory note = notes[i];
+        uint120 value = uint120(bound(amountSeed, 1, note.value));
+
+        CommitmentPreimage memory preimage = CommitmentPreimage({
+            npk: bytes32(uint256(uint160(address(pool)))),
+            token: _erc20(note.token),
+            value: value
+        });
+        Transaction memory txn = _unshieldTransaction(
+            note, preimage, CCTPBindingLib.encode(recipient, CLIENT_DOMAIN, 0)
+        );
+
+        try pool.atomicCrossChainUnshield(txn, CLIENT_DOMAIN, recipient, 0, bytes32(0)) {
+            // Mirror the pool even if it wrongly accepted a non-USDC note: it burned USDC and
+            // spent this note, which the USDC balance check would then catch.
+            _spendWithChange(i, note, value);
+            calls_unshieldCrossChain++;
+        } catch {
+            if (note.token != address(usdc)) rejected_crossChainNonUsdc++;
+        }
+    }
+
+    /// @notice Genuine cross-chain shield: a burn message addressed to the TokenMessenger.
+    function shieldIn(uint256 amount) external {
+        amount = bound(amount, 1, 1_000_000e6);
+        bytes memory message = _shieldInMessage(tokenMessenger, amount);
+
+        uint256 before = usdc.balanceOf(address(pool));
+        try router.relayWithHook(message, "") {
+            notes.push(Note(address(usdc), uint120(usdc.balanceOf(address(pool)) - before)));
+            calls_shieldIn++;
+        } catch {}
+    }
+
+    /// @notice Forged shield: a generic message with a burn-shaped body that mints nothing (#613).
+    function forgedShieldIn(uint256 amount) external {
+        amount = bound(amount, 1, 1_000_000e6);
+        bytes memory message = _shieldInMessage(forgedRecipient, amount);
+
+        try router.relayWithHook(message, "") {
+            // Mirror the pool: it would have credited a note worth amount minus the shield fee
+            // while receiving no USDC — the USDC balance check would then catch it.
+            notes.push(Note(address(usdc), uint120(amount - (amount * SHIELD_FEE_BPS) / 10000)));
+        } catch {
+            rejected_forgedShieldIn++;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // HELPERS
+    // ═══════════════════════════════════════════════════════════════════
+
+    function _npk() internal returns (bytes32) {
+        return bytes32(uint256(keccak256(abi.encode("npk", _nonce++))) % SNARK_SCALAR_FIELD);
+    }
+
+    function _erc20(address token) internal pure returns (TokenData memory) {
+        return TokenData({tokenType: TokenType.ERC20, tokenAddress: token, tokenSubID: 0});
+    }
+
+    function _transaction(
+        bytes32[] memory commitments,
+        uint256 ciphertextCount,
+        UnshieldType unshield,
+        bytes32 adaptParams
+    ) internal returns (Transaction memory txn) {
+        bytes32[] memory nullifiers = new bytes32[](1);
+        nullifiers[0] = keccak256(abi.encode("nullifier", _nonce++));
+        txn.merkleRoot = pool.merkleRoot();
+        txn.nullifiers = nullifiers;
+        txn.commitments = commitments;
+        txn.boundParams.treeNumber = uint16(pool.treeNumber());
+        txn.boundParams.unshield = unshield;
+        txn.boundParams.chainID = uint64(block.chainid);
+        txn.boundParams.adaptParams = adaptParams;
+        txn.boundParams.commitmentCiphertext = new CommitmentCiphertext[](ciphertextCount);
+    }
+
+    /// @dev Unshield of `preimage` from `note`; a change commitment is added when value remains.
+    function _unshieldTransaction(
+        Note memory note,
+        CommitmentPreimage memory preimage,
+        bytes32 adaptParams
+    ) internal returns (Transaction memory) {
+        bool change = preimage.value < note.value;
+        bytes32[] memory commitments = new bytes32[](change ? 2 : 1);
+        if (change) commitments[0] = keccak256(abi.encode("change", _nonce));
+        commitments[commitments.length - 1] = PoseidonT4.poseidon([
+            preimage.npk,
+            bytes32(uint256(uint160(preimage.token.tokenAddress))),
+            bytes32(uint256(preimage.value))
+        ]);
+        Transaction memory txn = _transaction(commitments, commitments.length - 1, UnshieldType.NORMAL, adaptParams);
+        txn.unshieldPreimage = preimage;
+        return txn;
+    }
+
+    function _transact(Transaction memory txn) internal returns (bool) {
+        Transaction[] memory txns = new Transaction[](1);
+        txns[0] = txn;
+        try pool.transact(txns) {
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    function _spendWithChange(uint256 i, Note memory note, uint120 spent) internal {
+        _removeNote(i);
+        if (note.value > spent) notes.push(Note(note.token, note.value - spent));
+    }
+
+    function _removeNote(uint256 i) internal {
+        notes[i] = notes[notes.length - 1];
+        notes.pop();
+    }
+
+    /// @dev A CCTP message from the client pool carrying a SHIELD of `amount` USDC, addressed to
+    ///      `envelopeRecipient` (the TokenMessenger for a genuine burn; anything else is forged).
+    function _shieldInMessage(address envelopeRecipient, uint256 amount) internal returns (bytes memory) {
+        ShieldData[] memory shieldNotes = new ShieldData[](1);
+        shieldNotes[0] = ShieldData({
+            npk: _npk(),
+            value: uint120(amount),
+            encryptedBundle: [bytes32(0), bytes32(0), bytes32(0)],
+            shieldKey: bytes32(0),
+            integrator: address(0)
+        });
+        bytes memory body = BurnMessageV2.encode(
+            MessageV2.addressToBytes32(address(usdc)),
+            MessageV2.addressToBytes32(address(pool)),
+            amount,
+            MessageV2.addressToBytes32(clientPool),
+            0, // maxFee
+            0, // feeExecuted
+            0, // expirationBlock
+            CCTPPayloadLib.encodeShield(shieldNotes)
+        );
+        return MessageV2.encode(
+            CLIENT_DOMAIN,
+            HUB_DOMAIN,
+            bytes32(_nonce++),
+            bytes32(uint256(0xC11E47)), // envelope sender (the mock TokenMessenger does not check it)
+            MessageV2.addressToBytes32(envelopeRecipient),
+            MessageV2.addressToBytes32(address(router)),
+            2000,
+            2000,
+            body
+        );
+    }
+}
+
+/// @title PrivacyPoolSolvencyInvariantTest — per-token solvency of the shielded pool
+contract PrivacyPoolSolvencyInvariantTest is Test, PoseidonLinker {
+    PrivacyPool public pool;
+    MockUSDCV2 public usdc;
+    MockUSDCV2 public other;
+    SolvencyHandler public handler;
+
+    function setUp() public {
+        _linkRealPoseidon();
+
+        usdc = new MockUSDCV2("Mock USDC", "USDC");
+        other = new MockUSDCV2("Other", "OTH");
+
+        MockMessageTransmitterV2 transmitter = new MockMessageTransmitterV2(0, address(this));
+        MockTokenMessengerV2 messenger = new MockTokenMessengerV2(address(transmitter), address(usdc), 0);
+        transmitter.setTokenMessenger(address(messenger));
+        usdc.addMinter(address(messenger));
+
+        pool = new PrivacyPool();
+        pool.initialize(
+            address(new ShieldModule()),
+            address(new TransactModule()),
+            address(new MerkleModule()),
+            address(new VerifierModule()),
+            address(messenger),
+            address(transmitter),
+            address(usdc),
+            0, // localDomain
+            address(this),
+            payable(address(0xFEE))
+        );
+        pool.setTestingMode(true);
+        pool.setShieldFee(50);
+
+        CCTPHookRouter router = new CCTPHookRouter(address(transmitter), address(messenger));
+        pool.setHookRouter(address(router));
+        transmitter.setRelayer(address(router));
+
+        address clientPool = address(0xC11E);
+        pool.setRemotePool(1, MessageV2.addressToBytes32(clientPool));
+        pool.setRemoteHookRouter(1, MessageV2.addressToBytes32(address(0xC11E4007)));
+
+        handler = new SolvencyHandler(pool, usdc, other, router, address(messenger), clientPool);
+        usdc.addMinter(address(handler));
+        other.addMinter(address(handler));
+        targetContract(address(handler));
+    }
+
+    /// @notice For every token, the pool holds at least the value of the notes it treats as unspent.
+    /// @dev WHY: the pool is multi-asset, so every outflow must be paid in the token of the note being
+    ///      spent and every credited note must be backed by tokens actually received. A path that pays
+    ///      USDC for another token's note (OQ-9, #611) or credits a note for a forged CCTP message
+    ///      (#613) breaks this for USDC; both regressions were confirmed to fail this invariant.
+    function invariant_poolCoversUnspentNotesPerToken() public view {
+        assertGe(usdc.balanceOf(address(pool)), handler.ghostTotal(address(usdc)), "USDC notes not backed");
+        assertGe(other.balanceOf(address(pool)), handler.ghostTotal(address(other)), "OTH notes not backed");
+    }
+
+    /// @notice WHY: guards against a vacuous invariant — if the handler's actions all reverted, the
+    ///         ghost ledger would stay empty and the invariant would pass trivially. Every action must
+    ///         be able to succeed here, and the two forbidden ones must be rejected.
+    function test_handlerActionsAreLive() public {
+        handler.shield(0, 1_000e6);          // USDC
+        handler.shield(1, 1_000e6);          // other token
+        handler.shieldIn(500e6);
+        handler.transfer(0, 400e6);
+        handler.unshieldLocal(0, 100e6);
+        assertEq(handler.calls_shield(), 2, "shield");
+        assertEq(handler.calls_shieldIn(), 1, "shieldIn");
+        assertEq(handler.calls_transfer(), 1, "transfer");
+        assertEq(handler.calls_unshieldLocal(), 1, "unshieldLocal");
+
+        // A USDC cross-chain unshield succeeds; a non-USDC one is rejected.
+        for (uint256 i = 0; i < handler.noteCount(); i++) {
+            handler.unshieldCrossChain(i, 1);
+        }
+        assertGt(handler.calls_unshieldCrossChain(), 0, "cross-chain USDC unshield");
+        assertGt(handler.rejected_crossChainNonUsdc(), 0, "cross-chain non-USDC rejected");
+
+        handler.forgedShieldIn(100e6);
+        assertEq(handler.rejected_forgedShieldIn(), 1, "forged shield-in rejected");
+
+        invariant_poolCoversUnspentNotesPerToken();
+    }
+}

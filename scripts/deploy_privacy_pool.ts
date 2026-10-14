@@ -244,7 +244,7 @@ async function deployHub(): Promise<HubDeploymentInfo> {
   // 8. Deploy CCTPHookRouter
   console.log("\n8. Deploying CCTPHookRouter...");
   const CCTPHookRouter = await ethers.getContractFactory("CCTPHookRouter");
-  const hookRouter = await CCTPHookRouter.deploy(messageTransmitterAddress, nm.override());
+  const hookRouter = await CCTPHookRouter.deploy(messageTransmitterAddress, tokenMessengerAddress, nm.override());
   await hookRouter.deploymentTransaction()!.wait();
   const hookRouterAddress = await hookRouter.getAddress();
   console.log(`   CCTPHookRouter: ${hookRouterAddress}`);
@@ -372,7 +372,7 @@ async function deployClient(role: ChainRole): Promise<ClientDeploymentInfo> {
   // 3. Deploy CCTPHookRouter
   console.log("\n3. Deploying CCTPHookRouter...");
   const CCTPHookRouter = await ethers.getContractFactory("CCTPHookRouter");
-  const hookRouter = await CCTPHookRouter.deploy(messageTransmitterAddress, nm.override());
+  const hookRouter = await CCTPHookRouter.deploy(messageTransmitterAddress, tokenMessengerAddress, nm.override());
   await hookRouter.deploymentTransaction()!.wait();
   const hookRouterAddress = await hookRouter.getAddress();
   console.log(`   CCTPHookRouter: ${hookRouterAddress}`);

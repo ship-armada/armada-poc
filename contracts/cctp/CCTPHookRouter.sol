@@ -18,6 +18,13 @@ import "./ICCTPV2.sol";
  *
  *      If the hook call reverts, the entire transaction reverts (no stranded funds).
  *
+ *      Only burn messages are dispatched: the envelope recipient must be the local
+ *      TokenMessenger. CCTP V2's `sendMessage` is permissionless, so anyone can get an
+ *      attested message with an arbitrary body (including one shaped like a burn) delivered
+ *      to a recipient of their choosing, which mints nothing. A message addressed to the
+ *      TokenMessenger is instead processed by it during receiveMessage: it authenticates the
+ *      source TokenMessenger and mints the USDC before any hook runs.
+ *
  *      Deployed on every chain (hub + each client). The relayer calls relayWithHook()
  *      instead of receiveMessage() directly.
  *
@@ -27,9 +34,16 @@ contract CCTPHookRouter {
     /// @notice CCTP MessageTransmitter contract
     IMessageTransmitterV2 public immutable messageTransmitter;
 
-    constructor(address _messageTransmitter) {
-        require(_messageTransmitter != address(0), "CCTPHookRouter: zero address");
+    /// @notice Local CCTP TokenMessenger — the envelope recipient of every burn message
+    address public immutable tokenMessenger;
+
+    constructor(address _messageTransmitter, address _tokenMessenger) {
+        require(
+            _messageTransmitter != address(0) && _tokenMessenger != address(0),
+            "CCTPHookRouter: zero address"
+        );
         messageTransmitter = IMessageTransmitterV2(_messageTransmitter);
+        tokenMessenger = _tokenMessenger;
     }
 
     /**
@@ -43,6 +57,13 @@ contract CCTPHookRouter {
         bytes calldata message,
         bytes calldata attestation
     ) external returns (bool) {
+        // 0. Only burn messages carry minted USDC: anything not addressed to the local
+        //    TokenMessenger is a generic message whose body must never reach a pool hook.
+        require(
+            MessageV2.getRecipient(message) == MessageV2.addressToBytes32(tokenMessenger),
+            "CCTPHookRouter: not a burn message"
+        );
+
         // 1. Call receiveMessage — mints USDC to mintRecipient
         messageTransmitter.receiveMessage(message, attestation);
 

@@ -204,7 +204,10 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     ) external override returns (bool) {
         require(msg.sender == hookRouter || msg.sender == tokenMessenger, "PrivacyPool: Unauthorized caller");
         require(finalityThresholdExecuted >= CCTPFinality.STANDARD, "PrivacyPool: Insufficient finality");
-        (sender); // envelope sender is the source TokenMessenger; source pool is authenticated in _handleCCTPMessage
+        // Envelope sender is the source TokenMessenger: CCTPHookRouter only dispatches messages addressed
+        // to the local TokenMessenger, which authenticates it and mints before the hook runs. The source
+        // pool is authenticated in _handleCCTPMessage.
+        (sender);
 
         return _handleCCTPMessage(sourceDomain, messageBody);
     }
@@ -228,7 +231,10 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     ) external override returns (bool) {
         require(msg.sender == hookRouter || msg.sender == tokenMessenger, "PrivacyPool: Unauthorized caller");
         require(finalityThresholdExecuted >= CCTPFinality.FAST, "PrivacyPool: Finality below minimum");
-        (sender); // envelope sender is the source TokenMessenger; source pool is authenticated in _handleCCTPMessage
+        // Envelope sender is the source TokenMessenger: CCTPHookRouter only dispatches messages addressed
+        // to the local TokenMessenger, which authenticates it and mints before the hook runs. The source
+        // pool is authenticated in _handleCCTPMessage.
+        (sender);
 
         return _handleCCTPMessage(sourceDomain, messageBody);
     }

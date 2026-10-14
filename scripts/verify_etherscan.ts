@@ -285,8 +285,8 @@ async function buildHubProtocolTasks(): Promise<VerifyTask[]> {
     tasks.push(
       { name: "PrivacyPool (hub router)", address: pc.privacyPool, constructorArguments: [] },
       { name: "VerifierModule", address: pc.verifierModule, constructorArguments: [] },
-      // hookRouter constructor: (messageTransmitter)
-      { name: "CCTPHookRouter (hub)", address: pc.hookRouter, constructorArguments: [pool.cctp.messageTransmitter] },
+      // hookRouter constructor: (messageTransmitter, tokenMessenger)
+      { name: "CCTPHookRouter (hub)", address: pc.hookRouter, constructorArguments: [pool.cctp.messageTransmitter, pool.cctp.tokenMessenger] },
     );
     // GaslessShieldWrapper constructor: (usdc, pool). Unlike the Poseidon-linked modules it has no
     // library linking, so it verifies cleanly. Guarded because older manifests predate the wrapper.
@@ -367,8 +367,8 @@ async function buildClientChainTasks(role: ChainRole): Promise<VerifyTask[]> {
   const cc = client.contracts;
   const tasks: VerifyTask[] = [
     { name: "PrivacyPoolClient", address: cc.privacyPoolClient, constructorArguments: [] },
-    // hookRouter constructor: (messageTransmitter)
-    { name: "CCTPHookRouter (client)", address: cc.hookRouter, constructorArguments: [client.cctp.messageTransmitter] },
+    // hookRouter constructor: (messageTransmitter, tokenMessenger)
+    { name: "CCTPHookRouter (client)", address: cc.hookRouter, constructorArguments: [client.cctp.messageTransmitter, client.cctp.tokenMessenger] },
   ];
   // GaslessShieldWrapperClient constructor: (usdc, pool) — mirrors the hub wrapper. Guarded because
   // older client manifests predate the permit-gasless wrapper.

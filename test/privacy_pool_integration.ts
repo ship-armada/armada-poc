@@ -196,7 +196,7 @@ describe("Privacy Pool Integration", function () {
 
     // Deploy CCTPHookRouter for hub
     const CCTPHookRouter = await ethers.getContractFactory("CCTPHookRouter");
-    hubHookRouter = await CCTPHookRouter.deploy(await hubMessageTransmitter.getAddress());
+    hubHookRouter = await CCTPHookRouter.deploy(await hubMessageTransmitter.getAddress(), await hubTokenMessenger.getAddress());
     await hubHookRouter.waitForDeployment();
 
     // Load verification keys for SNARK proof verification
@@ -252,7 +252,7 @@ describe("Privacy Pool Integration", function () {
 
     // Deploy CCTPHookRouter for client
     const CCTPHookRouter = await ethers.getContractFactory("CCTPHookRouter");
-    clientHookRouter = await CCTPHookRouter.deploy(await clientMessageTransmitter.getAddress());
+    clientHookRouter = await CCTPHookRouter.deploy(await clientMessageTransmitter.getAddress(), await clientTokenMessenger.getAddress());
     await clientHookRouter.waitForDeployment();
 
     console.log("  PrivacyPoolClient:", clientAddress);

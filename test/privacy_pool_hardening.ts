@@ -26,6 +26,7 @@ import {
   loadVerificationKeys,
   TESTING_ARTIFACT_CONFIGS,
 } from "../lib/artifacts";
+import { encodeBurnMessageV2 } from "../scripts/contract-vectors/lib/cctp-message";
 
 const DOMAINS = { hub: 100, client: 101 };
 
@@ -165,8 +166,8 @@ describe("Privacy Pool Integration Hardening", function () {
 
     // Deploy CCTPHookRouters
     const CCTPHookRouter = await ethers.getContractFactory("CCTPHookRouter");
-    hubHookRouter = await CCTPHookRouter.deploy(await hubMessageTransmitter.getAddress());
-    clientHookRouter = await CCTPHookRouter.deploy(await clientMessageTransmitter.getAddress());
+    hubHookRouter = await CCTPHookRouter.deploy(await hubMessageTransmitter.getAddress(), await hubTokenMessenger.getAddress());
+    clientHookRouter = await CCTPHookRouter.deploy(await clientMessageTransmitter.getAddress(), await clientTokenMessenger.getAddress());
 
     // Set hookRouter on contracts
     await privacyPool.setHookRouter(await hubHookRouter.getAddress());
@@ -705,6 +706,99 @@ describe("Privacy Pool Integration Hardening", function () {
       const before = await hubUsdc.balanceOf(charlieAddress);
       await privacyPool.transact([unshieldTx(BigInt(charlieAddress), VALUE, root, "valid-local")]);
       expect((await hubUsdc.balanceOf(charlieAddress)) - before).to.equal(VALUE);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Forged CCTP messages
+  // ═══════════════════════════════════════════════════════════════════
+
+  describe("Forged CCTP Messages", function () {
+    const coder = ethers.AbiCoder.defaultAbiCoder();
+    let handlerAddress: string;
+
+    before(async function () {
+      // An attacker-chosen recipient for a generic CCTP message: accepts it and mints nothing.
+      const Handler = await ethers.getContractFactory("MockMessageHandlerV2");
+      handlerAddress = await (await Handler.deploy()).getAddress();
+    });
+
+    function shieldHookData(npk: string, value: bigint): string {
+      const notes = coder.encode(
+        ["tuple(bytes32 npk, uint120 value, bytes32[3] encryptedBundle, bytes32 shieldKey, address integrator)[]"],
+        [[[npk, value, [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash], ethers.ZeroHash, ethers.ZeroAddress]]]
+      );
+      return coder.encode(["tuple(uint8 messageType, bytes data)"], [[0, notes]]);
+    }
+
+    function unshieldHookData(recipient: string): string {
+      const data = coder.encode(["tuple(address recipient, bytes32 uniqueNonce)"], [[recipient, ethers.ZeroHash]]);
+      return coder.encode(["tuple(uint8 messageType, bytes data)"], [[1, data]]);
+    }
+
+    // A generic message (CCTP V2 sendMessage is permissionless) whose body is shaped like a burn.
+    async function sendForged(transmitter: Contract, destDomain: number, destCaller: string, body: string) {
+      const receipt = await (await transmitter.connect(charlie).sendMessage(
+        destDomain,
+        ethers.zeroPadValue(handlerAddress, 32),
+        ethers.zeroPadValue(destCaller, 32),
+        2000,
+        body
+      )).wait();
+      for (const log of receipt!.logs) {
+        try {
+          const parsed = transmitter.interface.parseLog(log);
+          if (parsed?.name === "MessageSent") return parsed.args.message as string;
+        } catch { /* skip */ }
+      }
+      throw new Error("MessageSent not found");
+    }
+
+    // WHY: a generic message addressed to an attacker handler is delivered without any mint, but
+    // its body can claim to be a shield burn from the registered client pool. If the router
+    // dispatched it, the hub would credit a USDC note that nothing backs.
+    it("hub rejects a forged shield message that minted nothing", async function () {
+      const amount = ethers.parseUnits("1000", 6);
+      const body = encodeBurnMessageV2({
+        burnToken: await clientUsdc.getAddress(),
+        mintRecipient: privacyPoolAddress,
+        amount,
+        messageSender: ethers.zeroPadValue(clientAddress, 32),
+        maxFee: 0n,
+        feeExecuted: 0n,
+        expirationBlock: 0n,
+        hookData: shieldHookData(validNpk("forged-shield"), amount),
+      });
+      const message = await sendForged(clientMessageTransmitter, DOMAINS.hub, await hubHookRouter.getAddress(), body);
+
+      const rootBefore = await privacyPool.merkleRoot();
+      const usdcBefore = await hubUsdc.balanceOf(privacyPoolAddress);
+      await expect(hubHookRouter.connect(relayer).relayWithHook(message, "0x"))
+        .to.be.revertedWith("CCTPHookRouter: not a burn message");
+      expect(await privacyPool.merkleRoot()).to.equal(rootBefore);
+      expect(await hubUsdc.balanceOf(privacyPoolAddress)).to.equal(usdcBefore);
+    });
+
+    // WHY: the same forgery against a client pool would pay out any USDC the client holds.
+    it("client rejects a forged unshield message that minted nothing", async function () {
+      const amount = ethers.parseUnits("5", 6);
+      await clientUsdc.mint(clientAddress, amount); // stray USDC on the client pool
+      const body = encodeBurnMessageV2({
+        burnToken: await hubUsdc.getAddress(),
+        mintRecipient: clientAddress,
+        amount,
+        messageSender: ethers.zeroPadValue(privacyPoolAddress, 32),
+        maxFee: 0n,
+        feeExecuted: 0n,
+        expirationBlock: 0n,
+        hookData: unshieldHookData(charlieAddress),
+      });
+      const message = await sendForged(hubMessageTransmitter, DOMAINS.client, await clientHookRouter.getAddress(), body);
+
+      const before = await clientUsdc.balanceOf(charlieAddress);
+      await expect(clientHookRouter.connect(relayer).relayWithHook(message, "0x"))
+        .to.be.revertedWith("CCTPHookRouter: not a burn message");
+      expect(await clientUsdc.balanceOf(charlieAddress)).to.equal(before);
     });
   });
 

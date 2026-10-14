@@ -233,8 +233,8 @@ describe("Fee Module Integration", function () {
 
     // Hook routers
     const CCTPHookRouter = await ethers.getContractFactory("CCTPHookRouter");
-    hubHookRouter = await CCTPHookRouter.deploy(await hubMessageTransmitter.getAddress());
-    clientHookRouter = await CCTPHookRouter.deploy(await clientMessageTransmitter.getAddress());
+    hubHookRouter = await CCTPHookRouter.deploy(await hubMessageTransmitter.getAddress(), await hubTokenMessenger.getAddress());
+    clientHookRouter = await CCTPHookRouter.deploy(await clientMessageTransmitter.getAddress(), await clientTokenMessenger.getAddress());
 
     // Link hub ↔ client
     const hubPoolBytes32 = ethers.zeroPadValue(privacyPoolAddress, 32);

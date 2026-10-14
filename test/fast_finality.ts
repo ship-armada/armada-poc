@@ -154,7 +154,7 @@ describe("CCTP V2 Fast Finality", function () {
     );
 
     const CCTPHookRouter = await ethers.getContractFactory("CCTPHookRouter");
-    hubHookRouter = await CCTPHookRouter.deploy(await hubMessageTransmitter.getAddress());
+    hubHookRouter = await CCTPHookRouter.deploy(await hubMessageTransmitter.getAddress(), await hubTokenMessenger.getAddress());
     await hubHookRouter.waitForDeployment();
 
     // Load verification keys
@@ -197,7 +197,7 @@ describe("CCTP V2 Fast Finality", function () {
     );
 
     const CCTPHookRouter = await ethers.getContractFactory("CCTPHookRouter");
-    clientHookRouter = await CCTPHookRouter.deploy(await clientMessageTransmitter.getAddress());
+    clientHookRouter = await CCTPHookRouter.deploy(await clientMessageTransmitter.getAddress(), await clientTokenMessenger.getAddress());
     await clientHookRouter.waitForDeployment();
   }
 

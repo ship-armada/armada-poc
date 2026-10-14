@@ -59,6 +59,18 @@ contract SolvencyHandler is Test {
     uint256 public calls_shieldIn;
     uint256 public rejected_crossChainNonUsdc;
     uint256 public rejected_forgedShieldIn;
+    uint256 public rejected_tampered;
+
+    /// @notice Tampered transactions (proof-unbound calldata changes, replays) the pool ACCEPTED.
+    ///         Must stay zero.
+    uint256 public tamperedAccepted;
+
+    /// @notice Total of each token that honest local unshields paid to `recipient`.
+    mapping(address => uint256) public paidToRecipient;
+
+    /// @dev Nullifier of the most recent successful spend, for double-spend attempts.
+    bytes32 internal _lastNullifier;
+    bool internal _haveSpent;
 
     constructor(
         PrivacyPool _pool,
@@ -132,6 +144,7 @@ contract SolvencyHandler is Test {
         Transaction memory txn = _transaction(commitments, 2, UnshieldType.NONE, bytes32(0));
 
         if (_transact(txn)) {
+            _recordSpend(txn);
             _removeNote(i);
             if (first > 0) notes.push(Note(note.token, first));
             if (note.value - first > 0) notes.push(Note(note.token, note.value - first));
@@ -154,7 +167,9 @@ contract SolvencyHandler is Test {
         Transaction memory txn = _unshieldTransaction(note, preimage, bytes32(0));
 
         if (_transact(txn)) {
+            _recordSpend(txn);
             _spendWithChange(i, note, value);
+            paidToRecipient[note.token] += value;
             calls_unshieldLocal++;
         }
     }
@@ -212,8 +227,113 @@ contract SolvencyHandler is Test {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // TAMPERED TRANSACTIONS (must all be rejected)
+    // ═══════════════════════════════════════════════════════════════════
+    // Each action builds an honest pending transaction for a ghost note, then changes something the
+    // proof does not bind (or replays it on another path) the way a mempool watcher or relayer could.
+    // If the pool accepts it, `tamperedAccepted` is bumped and the ledger mirrors what the pool did.
+
+    /// @notice Local unshield with `npk + k·q`: same commitment hash, different payout address (#606).
+    function tamperAliasedNpk(uint256 noteSeed, uint256 amountSeed, uint256 kSeed) external {
+        if (notes.length == 0) return;
+        uint256 i = bound(noteSeed, 0, notes.length - 1);
+        Note memory note = notes[i];
+        uint120 value = uint120(bound(amountSeed, 1, note.value));
+        uint256 k = bound(kSeed, 1, 5);
+
+        CommitmentPreimage memory honest = CommitmentPreimage({
+            npk: bytes32(uint256(uint160(recipient))),
+            token: _erc20(note.token),
+            value: value
+        });
+        Transaction memory txn = _unshieldTransaction(note, honest, bytes32(0));
+        txn.unshieldPreimage.npk = bytes32(uint256(uint160(recipient)) + k * SNARK_SCALAR_FIELD);
+
+        if (_transact(txn)) {
+            tamperedAccepted++;
+            _spendWithChange(i, note, value); // paid to the aliased address, not `recipient`
+        } else {
+            rejected_tampered++;
+        }
+    }
+
+    /// @notice A pending cross-chain proof (npk = pool) replayed through transact() (#364 / P1).
+    function tamperReplayCrossChainAsLocal(uint256 noteSeed, uint256 amountSeed, bool aliasPool) external {
+        if (notes.length == 0) return;
+        uint256 i = bound(noteSeed, 0, notes.length - 1);
+        Note memory note = notes[i];
+        if (note.token != address(usdc)) return;
+        uint120 value = uint120(bound(amountSeed, 1, note.value));
+
+        CommitmentPreimage memory preimage = CommitmentPreimage({
+            npk: bytes32(uint256(uint160(address(pool)))),
+            token: _erc20(note.token),
+            value: value
+        });
+        Transaction memory txn = _unshieldTransaction(
+            note, preimage, CCTPBindingLib.encode(recipient, CLIENT_DOMAIN, 0)
+        );
+        if (aliasPool) {
+            txn.unshieldPreimage.npk = bytes32(uint256(uint160(address(pool))) + SNARK_SCALAR_FIELD);
+        }
+
+        if (_transact(txn)) {
+            tamperedAccepted++;
+            _spendWithChange(i, note, value);
+        } else {
+            rejected_tampered++;
+        }
+    }
+
+    /// @notice A pending cross-chain proof submitted with a different final recipient (#364 / #378).
+    function tamperRedirectCrossChain(uint256 noteSeed, uint256 amountSeed) external {
+        if (notes.length == 0) return;
+        uint256 i = bound(noteSeed, 0, notes.length - 1);
+        Note memory note = notes[i];
+        if (note.token != address(usdc)) return;
+        uint120 value = uint120(bound(amountSeed, 1, note.value));
+
+        CommitmentPreimage memory preimage = CommitmentPreimage({
+            npk: bytes32(uint256(uint160(address(pool)))),
+            token: _erc20(note.token),
+            value: value
+        });
+        Transaction memory txn = _unshieldTransaction(
+            note, preimage, CCTPBindingLib.encode(recipient, CLIENT_DOMAIN, 0)
+        );
+
+        try pool.atomicCrossChainUnshield(txn, CLIENT_DOMAIN, address(0xA77AC4E5), 0, bytes32(0)) {
+            tamperedAccepted++;
+            _spendWithChange(i, note, value);
+        } catch {
+            rejected_tampered++;
+        }
+    }
+
+    /// @notice Spends a nullifier that an earlier successful transaction already used.
+    function tamperDoubleSpend(uint256 splitSeed) external {
+        if (!_haveSpent) return;
+        bytes32[] memory commitments = new bytes32[](1);
+        commitments[0] = keccak256(abi.encode("double", _nonce, splitSeed));
+        Transaction memory txn = _transaction(commitments, 1, UnshieldType.NONE, bytes32(0));
+        txn.nullifiers[0] = _lastNullifier;
+        // Same tree as the original spend: the handler never fills a tree, so this is tree 0.
+
+        if (_transact(txn)) {
+            tamperedAccepted++;
+        } else {
+            rejected_tampered++;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // HELPERS
     // ═══════════════════════════════════════════════════════════════════
+
+    function _recordSpend(Transaction memory txn) internal {
+        _lastNullifier = txn.nullifiers[0];
+        _haveSpent = true;
+    }
 
     function _npk() internal returns (bytes32) {
         return bytes32(uint256(keccak256(abi.encode("npk", _nonce++))) % SNARK_SCALAR_FIELD);
@@ -363,14 +483,33 @@ contract PrivacyPoolSolvencyInvariantTest is Test, PoseidonLinker {
         targetContract(address(handler));
     }
 
-    /// @notice For every token, the pool holds at least the value of the notes it treats as unspent.
+    /// @notice For every token, the pool holds exactly the value of the notes it treats as unspent.
     /// @dev WHY: the pool is multi-asset, so every outflow must be paid in the token of the note being
     ///      spent and every credited note must be backed by tokens actually received. A path that pays
     ///      USDC for another token's note (OQ-9, #611) or credits a note for a forged CCTP message
     ///      (#613) breaks this for USDC; both regressions were confirmed to fail this invariant.
+    ///      Equality (not just >=) also catches value stuck in the pool with no note to spend it,
+    ///      e.g. a cross-chain proof replayed as a pool->pool local unshield (#364).
     function invariant_poolCoversUnspentNotesPerToken() public view {
-        assertGe(usdc.balanceOf(address(pool)), handler.ghostTotal(address(usdc)), "USDC notes not backed");
-        assertGe(other.balanceOf(address(pool)), handler.ghostTotal(address(other)), "OTH notes not backed");
+        assertEq(usdc.balanceOf(address(pool)), handler.ghostTotal(address(usdc)), "USDC notes not backed");
+        assertEq(other.balanceOf(address(pool)), handler.ghostTotal(address(other)), "OTH notes not backed");
+    }
+
+    /// @notice No tampered transaction is ever accepted.
+    /// @dev WHY: changing what the proof does not bind — an aliased npk (#606), a cross-chain proof
+    ///      replayed as a local unshield (#364/P1), a redirected cross-chain recipient (#378), or a
+    ///      spent nullifier — must always revert, whatever its economic effect.
+    function invariant_tamperedTransactionsRejected() public view {
+        assertEq(handler.tamperedAccepted(), 0, "tampered transaction accepted");
+    }
+
+    /// @notice The honest recipient receives exactly what honest local unshields paid it, per token.
+    /// @dev WHY: a payout redirected away from the intended recipient (or paid twice) leaves the pool
+    ///      balanced but the recipient wrong; this ledger catches it.
+    function invariant_recipientPaidExactly() public view {
+        address r = handler.recipient();
+        assertEq(usdc.balanceOf(r), handler.paidToRecipient(address(usdc)), "USDC recipient ledger");
+        assertEq(other.balanceOf(r), handler.paidToRecipient(address(other)), "OTH recipient ledger");
     }
 
     /// @notice WHY: guards against a vacuous invariant — if the handler's actions all reverted, the
@@ -397,6 +536,18 @@ contract PrivacyPoolSolvencyInvariantTest is Test, PoseidonLinker {
         handler.forgedShieldIn(100e6);
         assertEq(handler.rejected_forgedShieldIn(), 1, "forged shield-in rejected");
 
+        // Every tampering action is rejected.
+        handler.shield(0, 1_000e6);
+        uint256 last = handler.noteCount() - 1;
+        handler.tamperAliasedNpk(last, 10e6, 1);
+        handler.tamperReplayCrossChainAsLocal(last, 10e6, false);
+        handler.tamperReplayCrossChainAsLocal(last, 10e6, true);
+        handler.tamperRedirectCrossChain(last, 10e6);
+        handler.tamperDoubleSpend(0);
+        assertEq(handler.rejected_tampered(), 5, "tampered transactions rejected");
+        assertEq(handler.tamperedAccepted(), 0, "no tampered transaction accepted");
+
         invariant_poolCoversUnspentNotesPerToken();
+        invariant_recipientPaidExactly();
     }
 }

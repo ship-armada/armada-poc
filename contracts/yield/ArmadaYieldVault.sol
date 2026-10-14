@@ -100,11 +100,12 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
     /// @dev When address(0), uses local yieldFeeBps. When set, reads fee from fee module.
     address public feeModule;
 
-    /// @notice Total principal deposited (for yield calculation)
+    /// @notice Aggregate cost-basis principal of outstanding shares.
+    /// @dev Informational only (paired with per-user cost basis for `getUserYield`); the protocol
+    ///      fee is computed from lifetime flows, not from cost basis (see `_lifetimeYield`).
     uint256 public totalPrincipal;
 
     /// @notice Lifetime protocol fee swept to treasury (in underlying units).
-    /// @dev Used to compute pending fee as `(yieldEver * feeBps / 10000) - cumulativeProtocolFee`.
     uint256 public cumulativeProtocolFee;
 
     /// @notice Timestamp of the last protocol fee settle (via redeem or external harvest).
@@ -119,6 +120,20 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
 
     /// @notice Precision scalar for cost basis (1e18)
     uint256 internal constant COST_BASIS_PRECISION = 1e18;
+
+    /// @notice Lifetime underlying deposited by all depositors.
+    uint256 public totalDeposited;
+
+    /// @notice Lifetime underlying paid out to redeemers (protocol fees excluded).
+    uint256 public totalPaidOut;
+
+    /// @notice Highest lifetime gross yield recorded at a fee checkpoint (underlying units).
+    /// @dev Fees accrue only on yield above this mark, so yield that merely recovers an earlier
+    ///      loss is not charged twice.
+    uint256 public yieldHighWaterMark;
+
+    /// @notice Lifetime protocol fee accrued at checkpoints, collected or not (underlying units).
+    uint256 public accruedProtocolFee;
 
     // ============ Events ============
 
@@ -209,6 +224,8 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
         require(feeModule == address(0), "ArmadaYieldVault: use fee module");
         require(_feeBps >= MIN_YIELD_FEE_BPS, "ArmadaYieldVault: below min fee");
         require(_feeBps <= MAX_YIELD_FEE_BPS, "ArmadaYieldVault: above max fee");
+        // Lock in the fee on yield earned so far at the old rate; the new rate applies only after.
+        _checkpointProtocolFee();
         emit YieldFeeUpdated(yieldFeeBps, _feeBps);
         yieldFeeBps = _feeBps;
     }
@@ -218,6 +235,8 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
      * @param _feeModule Address of the fee module (or address(0) to use local yieldFeeBps)
      */
     function setFeeModule(address _feeModule) external onlyOwner {
+        // Switching the rate source changes the effective rate; lock in yield so far at the old one.
+        _checkpointProtocolFee();
         emit FeeModuleUpdated(feeModule, _feeModule);
         feeModule = _feeModule;
     }
@@ -278,7 +297,9 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
         shares = _convertToShares(assets);
         require(shares > 0, "ArmadaYieldVault: zero shares");
 
-        // Track principal via weighted average cost basis
+        totalDeposited += assets;
+
+        // Track principal via weighted average cost basis (informational; see totalPrincipal)
         totalPrincipal += assets;
         uint256 existingShares = balanceOf(receiver);
         if (existingShares == 0) {
@@ -344,6 +365,8 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
         }
         totalPrincipal -= principalPortion;
 
+        totalPaidOut += assets;
+
         // Burn shares before external call
         _burn(owner_, shares);
 
@@ -357,35 +380,53 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
     // ============ Protocol Fee Settlement (internal) ============
 
     /**
-     * @dev Pending protocol fee in underlying units. Pure function over current state.
-     *      Lifetime gross yield = totalAssets() + cumulativeProtocolFee - totalPrincipal
-     *      Protocol's lifetime claim = lifetime gross yield * effectiveFeeBps / 10000
-     *      Pending = claim - cumulativeProtocolFee (clamped at 0).
-     *
-     *      This formulation is invariant to deposits/redeems between harvests — both
-     *      change totalPrincipal and totalAssets by matching amounts, leaving the
-     *      yield/cut tally accurate.
+     * @dev Lifetime gross yield: everything still in the vault, swept to the treasury or paid to
+     *      redeemers, minus everything deposited. Deposits, redemptions and fee sweeps leave it
+     *      unchanged; only yield (or a loss) in the spoke moves it. It does not depend on who
+     *      deposited or who redeems, so shares changing hands do not affect the fee.
      */
-    function _pendingProtocolFee() internal view returns (uint256) {
-        uint256 currentAssets = totalAssets();
-        uint256 grossYieldEver = currentAssets + cumulativeProtocolFee;
-        if (grossYieldEver <= totalPrincipal) {
-            return 0;
-        }
-        grossYieldEver -= totalPrincipal;
-        uint256 owedEver = (grossYieldEver * _effectiveYieldFeeBps()) / BPS_DENOMINATOR;
-        if (owedEver <= cumulativeProtocolFee) {
-            return 0;
-        }
-        return owedEver - cumulativeProtocolFee;
+    function _lifetimeYield() internal view returns (uint256) {
+        uint256 accountedFor = totalAssets() + cumulativeProtocolFee + totalPaidOut;
+        return accountedFor > totalDeposited ? accountedFor - totalDeposited : 0;
+    }
+
+    /// @dev Fee on yield earned above the high-water mark since the last checkpoint, at the
+    ///      current rate.
+    function _unaccruedProtocolFee() internal view returns (uint256) {
+        uint256 lifetime = _lifetimeYield();
+        if (lifetime <= yieldHighWaterMark) return 0;
+        return ((lifetime - yieldHighWaterMark) * _effectiveYieldFeeBps()) / BPS_DENOMINATOR;
     }
 
     /**
-     * @dev Sweep any pending protocol fee from the spoke to the treasury and update trackers.
-     *      Called by deposit, redeem, and the external harvestProtocolFee (cadence-gated).
+     * @dev Locks in the fee on yield earned above the high-water mark at the current rate.
+     *      Run before every settle and before every rate change, so a new rate applies only to
+     *      yield earned after it. A rate change made inside the fee module cannot trigger this;
+     *      it applies to yield earned since the vault's last checkpoint (at most one harvest
+     *      interval when harvests run on schedule).
+     */
+    function _checkpointProtocolFee() internal {
+        uint256 lifetime = _lifetimeYield();
+        if (lifetime > yieldHighWaterMark) {
+            accruedProtocolFee += ((lifetime - yieldHighWaterMark) * _effectiveYieldFeeBps()) / BPS_DENOMINATOR;
+            yieldHighWaterMark = lifetime;
+        }
+    }
+
+    /// @dev Pending protocol fee in underlying units: accrued plus not-yet-accrued fee, minus what
+    ///      has already been swept.
+    function _pendingProtocolFee() internal view returns (uint256) {
+        uint256 owed = accruedProtocolFee + _unaccruedProtocolFee();
+        return owed > cumulativeProtocolFee ? owed - cumulativeProtocolFee : 0;
+    }
+
+    /**
+     * @dev Checkpoint, then sweep any pending protocol fee from the spoke to the treasury.
+     *      Called by redeem and the external harvestProtocolFee (cadence-gated).
      */
     function _settleProtocolFee() internal {
-        uint256 fee = _pendingProtocolFee();
+        _checkpointProtocolFee();
+        uint256 fee = accruedProtocolFee - cumulativeProtocolFee;
         if (fee > 0) {
             spoke.withdraw(reserveId, fee, address(this));
             underlying.safeTransfer(treasury, fee);

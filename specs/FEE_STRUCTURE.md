@@ -230,6 +230,12 @@ Separate from shield fees. Charged when users redeem yield from the Aave integra
 
 Example: User earns $100 in yield. At redemption, $15 goes to treasury, $85 to user.
 
+How the vault measures it (`ArmadaYieldVault`, issue #617):
+- The fee applies to **all yield the vault earns**, measured from flows: what is still in the vault, swept to the treasury or paid to redeemers, minus everything deposited. It does not depend on who deposited or who redeems, so shares changing hands do not change the fee.
+- The fee is collected when anyone redeems and by the permissionless periodic harvest.
+- A **rate change applies only to yield earned after it.** `setYieldFeeBps` and `setFeeModule` lock in the fee on yield so far at the old rate. A rate changed inside the fee module applies to yield earned since the vault's last checkpoint, which is at most one harvest interval when harvests run on schedule.
+- **No fee on recovering a loss.** Fees accrue only on yield above the previous high (a high-water mark), so yield that merely makes up an earlier loss is not charged again.
+
 ---
 
 ## Relayer Fees
@@ -253,5 +259,5 @@ Users can self-relay (pay their own gas) to avoid relayer fees, trading privacy 
 |----------|------|-----------|------|
 | Armada take | 40-50 bps (volume tiered) | Treasury | At shield |
 | Integrator fee | 0+ bps (integrator-set) + bonus | Integrator | At shield |
-| Yield fee | 15% of yield | Treasury | At redemption |
+| Yield fee | 15% of yield | Treasury | At redemption or harvest |
 | Relayer fee | Market rate | Relayer | Per transaction |

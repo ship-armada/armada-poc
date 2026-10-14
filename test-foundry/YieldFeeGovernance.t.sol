@@ -113,37 +113,37 @@ contract YieldFeeGovernanceTest is Test {
     // Fee application in redeem and previewRedeem
     // ══════════════════════════════════════════════════════════════════════
 
-    function test_changedFee_appliedOnRedeem() public {
+    /// @dev WHY: a fee-rate change applies only to yield earned after it (#617). Raising the rate
+    ///      must not re-price yield already earned; the new rate applies from then on, and redeem
+    ///      pays exactly what previewRedeem quoted.
+    function test_changedFee_appliesOnlyToYieldAfterTheChange() public {
         // Deposit
         vm.startPrank(alice);
         usdc.approve(address(vault), DEPOSIT_AMOUNT);
         uint256 shares = vault.deposit(DEPOSIT_AMOUNT, alice);
         vm.stopPrank();
 
-        // Accrue yield
+        // Year 1 at the default 10% fee
         vm.warp(block.timestamp + 365 days);
+        uint256 previewBeforeChange = vault.previewRedeem(shares, alice);
+        uint256 assetsAfterYear1 = vault.totalAssets();
 
-        // Check redeem with default 10% fee
-        uint256 previewDefault = vault.previewRedeem(shares, alice);
-
-        // Change fee to 50%
+        // Raising the fee to 50% does not re-price year 1
         vault.setYieldFeeBps(5000);
+        assertEq(vault.previewRedeem(shares, alice), previewBeforeChange, "rate change re-priced past yield");
 
-        // Preview should return less (higher fee)
-        uint256 previewHighFee = vault.previewRedeem(shares, alice);
-        assertLt(previewHighFee, previewDefault, "higher fee should reduce payout");
+        // Year 2 is charged at 50%
+        vm.warp(block.timestamp + 365 days);
+        uint256 assetsAfterYear2 = vault.totalAssets();
+        uint256 expectedFee = ((assetsAfterYear1 - DEPOSIT_AMOUNT) * 1000) / 10000
+            + ((assetsAfterYear2 - assetsAfterYear1) * 5000) / 10000;
+        assertApproxEqAbs(vault.pendingProtocolFee(), expectedFee, 2, "fee across the rate change");
 
-        // Change fee to 1%
-        vault.setYieldFeeBps(100);
-
-        // Preview should return more (lower fee)
-        uint256 previewLowFee = vault.previewRedeem(shares, alice);
-        assertGt(previewLowFee, previewDefault, "lower fee should increase payout");
-
-        // Actually redeem with 1% fee and verify
+        // Redeem pays what preview quoted
+        uint256 preview = vault.previewRedeem(shares, alice);
         vm.prank(alice);
         uint256 assets = vault.redeem(shares, alice, alice);
-        assertEq(assets, previewLowFee, "redeem should match preview");
+        assertEq(assets, preview, "redeem should match preview");
     }
 
     // ══════════════════════════════════════════════════════════════════════

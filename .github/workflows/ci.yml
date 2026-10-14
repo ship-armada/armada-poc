@@ -75,8 +75,9 @@ jobs:
           node-version: "20"
           cache: "npm"
       - run: npm ci --legacy-peer-deps
-      # Integration tests prove/verify against real Armada circuits. The artifact set is
-      # pinned in scripts/fetch-circuits.sh; keep the cache key in sync with CIRCUITS_TAG.
+      # Integration tests register the Armada verifying keys (fresh real proofs run in the
+      # real-proof-e2e job). The artifact set is pinned in scripts/fetch-circuits.sh; keep every
+      # cache key in sync with CIRCUITS_TAG.
       # CIRCUITS_RELEASE_TOKEN: fine-grained PAT with contents:read on ship-armada/armada-circuits
       # (the default GITHUB_TOKEN cannot read another private repo's releases).
       - name: Cache Armada circuit artifacts
@@ -90,6 +91,102 @@ jobs:
           GH_TOKEN: ${{ secrets.CIRCUITS_RELEASE_TOKEN }}
       - run: npm run compile
       - run: npm run test:all
+
+  # End-to-end with real Armada proofs and testing mode OFF (#604). Deploys the full local stack on
+  # Anvil, then shields, privately transfers, unshields and runs a yield lend/redeem, each proved
+  # with the pinned circuits and verified on-chain. Fresh proofs every run, so SDK, circuit and
+  # contract drift all fail here.
+  real-proof-e2e:
+    name: Real-Proof E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --legacy-peer-deps
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: Cache Armada circuit artifacts
+        uses: actions/cache@v4
+        with:
+          path: ../armada-circuits/build
+          key: armada-circuits-v0.1.0-dev
+      - name: Fetch Armada circuit artifacts
+        run: ./scripts/fetch-circuits.sh
+        env:
+          GH_TOKEN: ${{ secrets.CIRCUITS_RELEASE_TOKEN }}
+      - name: Start local chains
+        run: |
+          ./scripts/setup_chains.sh > anvil.log 2>&1 &
+          for i in $(seq 1 30); do
+            nc -z localhost 8545 && nc -z localhost 8546 && nc -z localhost 8547 && exit 0
+            sleep 1
+          done
+          cat anvil.log; exit 1
+      - name: Deploy local stack
+        run: source config/local.env && npm run setup
+      - name: Real-proof end-to-end
+        run: source config/local.env && npx hardhat run scripts/capture/e2e-armada-circuits.ts --network hub
+
+  # Golden-vector replay (#604): the v2 corpus against a fixturenet deployed from this branch, with
+  # the chain clock pinned to the corpus capture time (its EIP-2612 permit has a 1h deadline).
+  # `single` replays one vector by REPLAY_IDS on its own fresh chain to exercise selection.
+  golden-vector-replay:
+    name: Golden-Vector Replay (${{ matrix.mode }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [all, single]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --legacy-peer-deps
+      - uses: foundry-rs/foundry-toolchain@v1
+      # deploy:privacy-pool:hub registers the Armada verifying keys.
+      - name: Cache Armada circuit artifacts
+        uses: actions/cache@v4
+        with:
+          path: ../armada-circuits/build
+          key: armada-circuits-v0.1.0-dev
+      - name: Fetch Armada circuit artifacts
+        run: ./scripts/fetch-circuits.sh
+        env:
+          GH_TOKEN: ${{ secrets.CIRCUITS_RELEASE_TOKEN }}
+      - name: Boot fixturenet pinned to the corpus capture time
+        run: |
+          TS=$(node -p "Math.floor(Date.parse(require('./test-foundry/fixtures/contract-vectors-v2/manifest.json').generatedAt)/1000)")
+          anvil --port 8545 --chain-id 31337 --block-time 1 --accounts 200 --timestamp "$TS" > anvil.log 2>&1 &
+          for i in $(seq 1 30); do nc -z localhost 8545 && exit 0; sleep 1; done
+          cat anvil.log; exit 1
+      - name: Deploy hub stack
+        run: |
+          source config/local.env
+          npm run compile
+          npm run deploy:cctp:hub
+          npm run deploy:aave:hub
+          npm run deploy:governance
+          npm run deploy:privacy-pool:hub
+          npm run deploy:gasless-wrapper:hub
+          npm run deploy:yield:hub
+          npm run deploy:fee-module
+      - name: Replay v2 corpus
+        if: matrix.mode == 'all'
+        run: |
+          source config/local.env
+          REPLAY_FIXTURES_DIR=test-foundry/fixtures/contract-vectors-v2 REPLAY_ALL=1 REPLAY_GENESIS=1 \
+            npx hardhat run scripts/contract-vectors/replay-check.ts --network hub
+      - name: Replay one vector by id
+        if: matrix.mode == 'single'
+        run: |
+          source config/local.env
+          REPLAY_FIXTURES_DIR=test-foundry/fixtures/contract-vectors-v2 REPLAY_GENESIS=1 REPLAY_IDS=v2-admin-set-testing-mode-true \
+            npx hardhat run scripts/contract-vectors/replay-check.ts --network hub | tee replay.log
+          grep -q "replay-check: 1/1 matched" replay.log
 
   # Foundry fuzz and invariant tests
   forge:

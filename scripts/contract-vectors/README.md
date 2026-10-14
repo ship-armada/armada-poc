@@ -96,6 +96,10 @@ original cross-chain vectors used an EOA. Only those three vectors changed in su
 replays 24/24 against the contracts with #606 and the OQ-9 USDC check (gas +795 on the
 cross-chain unshield path, +239 on local unshield).
 
+CI (`.github/workflows/ci.yml`, job `golden-vector-replay`) replays the full v2 corpus and, on a
+separate fresh fixturenet, one vector selected by `REPLAY_IDS`, on every PR. The v1 corpus is not
+in CI: it intentionally diverges on the D-15/D-16/D-18 surface (see below).
+
 Replay the v2 corpus:
 
 ```bash

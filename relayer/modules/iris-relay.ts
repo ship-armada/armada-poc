@@ -120,6 +120,8 @@ interface ChainState {
   provider: ethers.JsonRpcProvider;
   wallet: ethers.Wallet;
   messageTransmitter: string;
+  /** This chain's CCTP TokenMessenger: the envelope sender/recipient of every genuine burn. */
+  tokenMessenger: string;
   hookRouter: string | null;
   /** Known contract addresses that can receive CCTP messages on this chain (lowercase, zero-padded bytes32) */
   knownRecipients: Set<string>;
@@ -199,6 +201,8 @@ const MSG_SOURCE_DOMAIN_OFFSET = 4;
 const MSG_DEST_DOMAIN_OFFSET = 8;
 const MSG_NONCE_OFFSET = 12;
 const MSG_NONCE_LENGTH = 32; // bytes32 in real CCTP V2 (NOT 8-byte uint64)
+const MSG_SENDER_OFFSET = 44;
+const MSG_RECIPIENT_OFFSET = 76;
 const MSG_DEST_CALLER_OFFSET = 108;
 const MSG_DEST_CALLER_LENGTH = 32;
 /** finalityThresholdExecuted — 4 bytes Iris fills in on the corrected message (volatile field). */
@@ -278,8 +282,13 @@ function parseBurnAmount(messageHex: string): string | undefined {
  * one of our pool contracts:
  *   1. length ≥ MIN_BURN_MESSAGE_BYTES (else it can't be a BurnMessageV2 — reject, don't fail open)
  *   2. body version == BURN_MESSAGE_VERSION
- *   3. mintRecipient ∈ knownRecipients (MANDATORY — empty set or unknown recipient ⇒ reject)
- *   4. destinationCaller is either zero (allowed — user's choice) OR equals our hookRouter
+ *   3. envelope recipient is the destination TokenMessenger and envelope sender is the source
+ *      TokenMessenger. CCTP V2 `sendMessage` is permissionless, so a generic message can carry a
+ *      burn-shaped body (our pool as mintRecipient, our hookRouter as destinationCaller) while being
+ *      addressed elsewhere — nothing is minted, and the hook router rejects it (#613). Only messages
+ *      between TokenMessengers are burns.
+ *   4. mintRecipient ∈ knownRecipients (MANDATORY — empty set or unknown recipient ⇒ reject)
+ *   5. destinationCaller is either zero (allowed — user's choice) OR equals our hookRouter
  *
  * `destinationCaller == 0` is explicitly accepted: Armada's burn paths
  * (`TransactModule.atomicCrossChainUnshield`, `PrivacyPoolClient.crossChainShield`) pass a
@@ -290,6 +299,7 @@ export function classifyMessageForRelay(
   messageHex: string,
   knownRecipients: ReadonlySet<string>,
   hookRouter: string | null,
+  tokenMessengers: { source: string; destination: string },
 ): { relay: true; mintRecipient: string } | { relay: false; reason: string } {
   const hex = messageHex.startsWith("0x") ? messageHex.slice(2) : messageHex;
   const byteLen = Math.floor(hex.length / 2);
@@ -298,6 +308,21 @@ export function classifyMessageForRelay(
     return {
       relay: false,
       reason: `not a BurnMessageV2 — ${byteLen}B < ${MIN_BURN_MESSAGE_BYTES}B minimum`,
+    };
+  }
+  const envelopeWord = (offset: number) => "0x" + hex.slice(offset * 2, (offset + 32) * 2).toLowerCase();
+  const recipient = envelopeWord(MSG_RECIPIENT_OFFSET);
+  if (recipient !== ethers.zeroPadValue(tokenMessengers.destination, 32).toLowerCase()) {
+    return {
+      relay: false,
+      reason: `envelope recipient ${recipient.slice(0, 20)}... is not the destination TokenMessenger (not a burn)`,
+    };
+  }
+  const sender = envelopeWord(MSG_SENDER_OFFSET);
+  if (sender !== ethers.zeroPadValue(tokenMessengers.source, 32).toLowerCase()) {
+    return {
+      relay: false,
+      reason: `envelope sender ${sender.slice(0, 20)}... is not the source TokenMessenger (not a burn)`,
     };
   }
   const bodyVersion = parseInt(hex.slice(MSG_BODY_OFFSET * 2, (MSG_BODY_OFFSET + 4) * 2), 16);
@@ -780,9 +805,13 @@ export class IrisRelayModule {
         return null;
       }
 
-      const { messageTransmitter } = deployment.contracts;
+      const { messageTransmitter, tokenMessenger } = deployment.contracts;
       if (!messageTransmitter) {
         console.error(`    Missing messageTransmitter in deployment`);
+        return null;
+      }
+      if (!tokenMessenger) {
+        console.error(`    Missing tokenMessenger in deployment`);
         return null;
       }
 
@@ -854,6 +883,7 @@ export class IrisRelayModule {
         provider,
         wallet,
         messageTransmitter,
+        tokenMessenger,
         hookRouter,
         knownRecipients,
         domain: chainConfig.cctpDomain,
@@ -1151,6 +1181,7 @@ export class IrisRelayModule {
       messageBytes,
       destState.knownRecipients,
       destState.hookRouter,
+      { source: sourceState.tokenMessenger, destination: destState.tokenMessenger },
     );
     if (!classification.relay) {
       // Count so a probe / deployment-drift is visible on /health, not just in logs.

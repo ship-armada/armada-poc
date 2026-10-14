@@ -361,6 +361,70 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
     });
   });
 
+  describe("Adapter unshield checks (#610 F6)", function () {
+    const encryptedBundle: [string, string, string] = [
+      ethers.keccak256(ethers.toUtf8Bytes("f6-enc1")),
+      ethers.keccak256(ethers.toUtf8Bytes("f6-enc2")),
+      ethers.keccak256(ethers.toUtf8Bytes("f6-enc3")),
+    ];
+    const shieldKey = ethers.keccak256(ethers.toUtf8Bytes("f6-key"));
+    const amount = ethers.parseUnits("100", 6);
+
+    // Stray USDC sitting in the adapter (e.g. sent by mistake) — what a malformed lend would spend.
+    async function strayUsdcInAdapter() {
+      await hubUsdc.mint(adapterAddress, amount);
+    }
+
+    // Recover any stray USDC so later tests see an empty adapter.
+    afterEach(async function () {
+      const stray = await hubUsdc.balanceOf(adapterAddress);
+      if (stray > 0n) await armadaYieldAdapter.rescueTokens(usdcAddress, await alice.getAddress(), stray);
+    });
+
+    // WHY: with unshield type NONE the pool never hash-checks unshieldPreimage and pays nothing to the
+    // adapter, so a lend must not proceed on the claimed value (it would spend the adapter's own funds).
+    it("rejects a lend whose unshield type is not NORMAL", async function () {
+      await strayUsdcInAdapter();
+      const root = await shieldAndGetRoot(amount);
+      const npk = validNpk();
+      const tx: any = await makeLendTransaction({
+        merkleRoot: root,
+        nullifier: ethers.keccak256(ethers.toUtf8Bytes("f6-none")),
+        unshieldPreimage: { npk: ethers.zeroPadValue(adapterAddress, 32), tokenAddress: usdcAddress, value: amount },
+        adaptContract: adapterAddress,
+        adaptParams: encodeYieldAdaptParams(npk, encryptedBundle, shieldKey),
+        npk, encryptedBundle, shieldKey,
+      });
+      tx.boundParams.unshield = 0; // NONE: every commitment then needs a ciphertext
+      tx.boundParams.commitmentCiphertext = [{
+        ciphertext: [ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash, ethers.ZeroHash],
+        blindedSenderViewingKey: ethers.ZeroHash, blindedReceiverViewingKey: ethers.ZeroHash,
+        annotationData: "0x", memo: "0x",
+      }];
+      await expect(armadaYieldAdapter.lendAndShield(tx, npk, { encryptedBundle, shieldKey }))
+        .to.be.revertedWith("ArmadaYieldAdapter: not a normal unshield");
+    });
+
+    // WHY: the unshield must pay the adapter. If it paid someone else, the adapter would act on the
+    // claimed value using its own balance.
+    it("rejects a lend that does not unshield to the adapter", async function () {
+      await strayUsdcInAdapter();
+      const root = await shieldAndGetRoot(amount);
+      const npk = validNpk();
+      const tx = await makeLendTransaction({
+        merkleRoot: root,
+        nullifier: ethers.keccak256(ethers.toUtf8Bytes("f6-npk")),
+        unshieldPreimage: { npk: ethers.zeroPadValue(await alice.getAddress(), 32), tokenAddress: usdcAddress, value: amount },
+        adaptContract: adapterAddress,
+        adaptParams: encodeYieldAdaptParams(npk, encryptedBundle, shieldKey),
+        npk, encryptedBundle, shieldKey,
+      });
+      await expect(armadaYieldAdapter.lendAndShield(tx, npk, { encryptedBundle, shieldKey }))
+        .to.be.revertedWith("ArmadaYieldAdapter: unshield not to adapter");
+    });
+
+  });
+
   describe("lendAndShield", function () {
     it("should allow trustless lend: shielded USDC -> shielded ayUSDC", async function () {
       const amount = ethers.parseUnits("1000", 6);
@@ -835,6 +899,20 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
       ).to.be.revertedWith("ArmadaYieldAdapter: fee exceeds proceeds");
     });
 
+    // WHY: the redeem unshield must pay the adapter too (#610 F6); otherwise the adapter would act on
+    // the claimed share amount using its own balance.
+    it("rejects a redeem that does not unshield to the adapter", async function () {
+      const io = await lendThenRedeemInputs("f6-redeem", ethers.ZeroHash, 0n);
+      const alicePadded = ethers.zeroPadValue(await alice.getAddress(), 32);
+      io.redeemTx.unshieldPreimage.npk = alicePadded;
+      io.redeemTx.commitments = [computeCommitmentHash(BigInt(alicePadded), BigInt(vaultAddress), io.redeemTx.unshieldPreimage.value)];
+      await expect(
+        armadaYieldAdapter.redeemAndShield(
+          io.redeemTx, io.npk, { encryptedBundle: io.encryptedBundle, shieldKey: io.shieldKey },
+          ethers.ZeroHash, { encryptedBundle: io.feeBundle, shieldKey: io.feeShieldKey }, 0n
+        )
+      ).to.be.revertedWith("ArmadaYieldAdapter: unshield not to adapter");
+    });
     // WHY: a fund-custody contract must not silently burn a fee to an unspendable note. A non-zero fee
     // committed with a zero destination npk (e.g. a frontend bug) must revert, not shield to npk 0.
     it("reverts when a non-zero fee has a zero destination npk", async function () {

@@ -164,6 +164,8 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
      *
      *      2. Adapter verifies adaptParams match provided shield parameters
      *         - If mismatch → revert (adapter cannot change destination)
+     *         and that the unshield is a NORMAL unshield paying this adapter; after transact() it
+     *         confirms the unshielded amount actually arrived (#610 F6)
      *
      *      3. PrivacyPool.transact() verifies:
      *         - SNARK proof validity
@@ -202,11 +204,12 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
             "ArmadaYieldAdapter: adaptParams mismatch"
         );
 
-        // 3. Verify this is an unshield for USDC
+        // 3. Verify this is a NORMAL unshield of USDC paying this adapter
         require(
             _transaction.unshieldPreimage.token.tokenAddress == address(usdc),
             "ArmadaYieldAdapter: not USDC unshield"
         );
+        _requireUnshieldToAdapter(_transaction);
 
         // 4. Execute unshield via PrivacyPool
         //    - PrivacyPool verifies SNARK proof
@@ -214,11 +217,16 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
         //    - USDC is transferred to this adapter
         Transaction[] memory txs = new Transaction[](1);
         txs[0] = _transaction;
+        uint256 usdcBefore = usdc.balanceOf(address(this));
         IPrivacyPool(privacyPool).transact(txs);
 
-        // 5. Get amount from unshield preimage
+        // 5. Get amount from unshield preimage, and confirm it actually arrived
         uint256 amount = _transaction.unshieldPreimage.value;
         require(amount > 0, "ArmadaYieldAdapter: zero amount");
+        require(
+            usdc.balanceOf(address(this)) - usdcBefore == amount,
+            "ArmadaYieldAdapter: unshield amount not received"
+        );
 
         // 6. Deposit USDC to vault, receive shares to this adapter
         shares = vault.deposit(amount, address(this));
@@ -290,20 +298,26 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
             "ArmadaYieldAdapter: adaptParams mismatch"
         );
 
-        // 3. Verify this is an unshield for vault shares
+        // 3. Verify this is a NORMAL unshield of vault shares paying this adapter
         require(
             _transaction.unshieldPreimage.token.tokenAddress == address(shareToken),
             "ArmadaYieldAdapter: not share token unshield"
         );
+        _requireUnshieldToAdapter(_transaction);
 
         // 4. Execute unshield via PrivacyPool
         Transaction[] memory txs = new Transaction[](1);
         txs[0] = _transaction;
+        uint256 sharesBefore = shareToken.balanceOf(address(this));
         IPrivacyPool(privacyPool).transact(txs);
 
-        // 5. Get shares from unshield preimage
+        // 5. Get shares from unshield preimage, and confirm they actually arrived
         uint256 shares = _transaction.unshieldPreimage.value;
         require(shares > 0, "ArmadaYieldAdapter: zero shares");
+        require(
+            shareToken.balanceOf(address(this)) - sharesBefore == shares,
+            "ArmadaYieldAdapter: unshield amount not received"
+        );
 
         // 6. Redeem shares from vault (10% yield fee applied by vault)
         shareToken.approve(address(vault), shares);
@@ -384,6 +398,23 @@ contract ArmadaYieldAdapter is ReentrancyGuard {
     }
 
     // ============ Emergency Functions ============
+
+    /**
+     * @dev The unshield must be a NORMAL unshield paying this adapter. With unshield type NONE the pool
+     *      does not hash-check the preimage and pays nothing; with REDIRECT or another recipient the
+     *      payout goes elsewhere. Either way the adapter would act on the claimed value using its own
+     *      balance.
+     */
+    function _requireUnshieldToAdapter(Transaction calldata _transaction) internal view {
+        require(
+            _transaction.boundParams.unshield == UnshieldType.NORMAL,
+            "ArmadaYieldAdapter: not a normal unshield"
+        );
+        require(
+            _transaction.unshieldPreimage.npk == bytes32(uint256(uint160(address(this)))),
+            "ArmadaYieldAdapter: unshield not to adapter"
+        );
+    }
 
     /**
      * @notice Rescue stuck tokens

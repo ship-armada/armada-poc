@@ -1,0 +1,4 @@
+# Prospective-commit scenarios are private planning data: share them directly with the
+# team, never through the repo. The tool itself ships empty.
+*.csv
+*.json

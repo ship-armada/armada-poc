@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Armada Crowdfund Monitor</title>
+<style>
+:root{--bg:#071522;--panel:#0b1e30;--panel2:#0f273d;--line:#1d405b;--text:#eef6fc;--muted:#8fa7b8;--teal:#58d7d0;--green:#7dd9a1;--red:#ff7d8d;--amber:#ffd071;--blue:#83baff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:1500px;margin:auto;padding:24px}.header,.row,.toolbar{display:flex;gap:12px;align-items:center}.header{justify-content:space-between;margin-bottom:16px}.title{font-size:23px;font-weight:800}.sub,.muted{color:var(--muted)}.sub{font-size:12px;margin-top:3px}.pill{border:1px solid var(--line);border-radius:999px;padding:7px 10px;font-size:12px}.pill.live{color:var(--green)}.grid2{display:grid;grid-template-columns:1.2fr .8fr;gap:12px;margin-bottom:12px}.panel,.stat{border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,var(--panel),#091a2a)}.pad{padding:15px}.panelTitle{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800;margin-bottom:10px}textarea,input,select{width:100%;background:#061521;color:var(--text);border:1px solid var(--line);border-radius:9px;padding:10px;outline:none}textarea{min-height:88px;resize:vertical}button,.filebtn{border:1px solid var(--line);border-radius:9px;background:#0c2941;color:var(--text);padding:9px 12px;font-weight:700;cursor:pointer}.primary{background:var(--teal);color:#052024;border-color:transparent}.ghost{background:transparent}.controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.hint{font-size:11px;color:var(--muted);margin-top:8px;line-height:1.45}.status{font-size:11px;color:var(--muted);margin-top:8px}.status.good{color:var(--green)}.status.bad{color:var(--red)}.stats{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:12px}.stat{padding:13px}.stat .k{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800}.stat .v{font-size:20px;font-weight:800;margin-top:6px}.stat .s{font-size:10px;color:var(--muted);margin-top:3px}.hopgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}.hop{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:12px;display:flex;justify-content:space-between}.hop strong{display:block}.hop small{color:var(--muted)}.toolbar{padding:11px;border-bottom:1px solid var(--line)}.toolbar input{flex:1}.tablewrap{overflow:auto;max-height:calc(100vh - 380px);min-height:380px}table{width:100%;border-collapse:separate;border-spacing:0;min-width:1180px}th{position:sticky;top:0;background:#0b1e30;z-index:2;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.07em;text-align:left;padding:10px;border-bottom:1px solid var(--line)}td{padding:10px;border-bottom:1px solid rgba(29,64,91,.6);font-size:12px;vertical-align:middle}tr:hover td{background:rgba(88,215,208,.025)}tr.need td{background:rgba(255,125,141,.04)}.addr{font:11px ui-monospace,SFMono-Regular,Menlo,monospace}.name{border:0;background:transparent;padding:4px 0}.badge{display:inline-block;border:1px solid var(--line);border-radius:999px;padding:4px 7px;font-size:10px;font-weight:800}.good{color:var(--green)}.warn{color:var(--amber)}.bad{color:var(--red)}.chips{display:flex;gap:4px;flex-wrap:wrap}.chip{border:1px solid var(--line);border-radius:7px;padding:4px 6px;font-size:10px;color:#70889a}.chip.on{color:var(--text);background:#0d2b43}.money{font-weight:800;white-space:nowrap}.tiny{font-size:10px;color:var(--muted);margin-top:2px}.details td{background:#061521!important}.detailbox{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;padding:14px}.detailbox h4{font-size:10px;text-transform:uppercase;color:var(--muted);letter-spacing:.07em;margin:0 0 7px}.dline{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px dashed rgba(29,64,91,.5);font-size:11px}.progress{height:4px;background:#061521;border-radius:999px;overflow:hidden;margin-top:9px;display:none}.progress i{display:block;height:100%;background:var(--teal);width:0}.provider{display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid var(--line);border-radius:10px;padding:10px}.empty{text-align:center;color:var(--muted);padding:45px 15px}.footer{font-size:10px;color:#668297;text-align:right;margin-top:7px}@media(max-width:1000px){.grid2{grid-template-columns:1fr}.stats{grid-template-columns:repeat(3,1fr)}.hopgrid{grid-template-columns:1fr}.detailbox{grid-template-columns:1fr}}@media(max-width:650px){.wrap{padding:13px}.header{align-items:flex-start;flex-direction:column}.stats{grid-template-columns:repeat(2,1fr)}.toolbar{align-items:stretch;flex-direction:column}.tablewrap{max-height:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header">
+    <div><div class="title">Armada Crowdfund Monitor</div><div class="sub">Ethereum mainnet · 0xB4b0BBac50Df6c9479180AA788dAd8f88D520163</div></div>
+    <div id="live" class="pill">Connecting…</div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel pad">
+      <div class="panelTitle">Track participants</div>
+      <textarea id="paste" placeholder="Paste addresses or names + addresses, one per line.&#10;Alice,0x1234…&#10;0xabcd…,Bob&#10;&#10;Also accepts address,hop,label CSV."></textarea>
+      <div class="controls">
+        <button id="add" class="primary">Add to watchlist</button>
+        <label class="filebtn" for="csv">Upload CSV</label>
+        <input id="csv" type="file" accept=".csv,text/csv" hidden>
+        <button id="clear" class="ghost">Clear</button>
+      </div>
+      <div class="hint">Uploaded CSV data never leaves the browser. Names and your watchlist are saved in this browser only.</div>
+      <div id="importStatus" class="status"></div>
+    </div>
+    <div class="panel pad">
+      <div class="panelTitle">Ethereum RPC</div>
+      <div class="provider"><div><strong id="provider">Pocket Network</strong><div id="providerSub" class="tiny">Primary · automatic failover enabled</div></div><button id="refresh">Refresh</button></div>
+      <div class="hint">Primary: Pocket Network. Automatic backups: PublicNode, then LlamaRPC. RPC requests are proxied by the Cloudflare Pages Function.</div>
+      <div id="progress" class="progress"><i id="bar"></i></div>
+      <div id="rpcStatus" class="status">Ready.</div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="k">Committed</div><div id="committed" class="v">—</div><div class="s">raw USDC</div></div>
+    <div class="stat"><div class="k">Effective demand</div><div id="effective" class="v">—</div><div class="s">capped by invite slots</div></div>
+    <div class="stat"><div class="k">Addresses</div><div id="addresses" class="v">—</div><div id="nodes" class="s">—</div></div>
+    <div class="stat"><div class="k">Need whitelist</div><div id="need" class="v">—</div><div class="s">tracked but not onchain</div></div>
+    <div class="stat"><div class="k">Window</div><div id="window" class="v">—</div><div id="windowSub" class="s">—</div></div>
+    <div class="stat"><div class="k">Chain head</div><div id="head" class="v">—</div><div id="updated" class="s">—</div></div>
+  </div>
+
+  <div class="hopgrid">
+    <div class="hop"><div><strong>Hop 0</strong><small>$15,000 / slot · seeds</small></div><div style="text-align:right"><strong id="h0a">—</strong><small id="h0c">—</small></div></div>
+    <div class="hop"><div><strong>Hop 1</strong><small>$4,000 / slot</small></div><div style="text-align:right"><strong id="h1a">—</strong><small id="h1c">—</small></div></div>
+    <div class="hop"><div><strong>Hop 2</strong><small>$1,000 / slot</small></div><div style="text-align:right"><strong id="h2a">—</strong><small id="h2c">—</small></div></div>
+  </div>
+
+  <div class="panel">
+    <div class="toolbar">
+      <input id="search" placeholder="Search name or address…">
+      <select id="filter">
+        <option value="all">All addresses</option>
+        <option value="known">Known / watchlist</option>
+        <option value="need">Needs whitelist</option>
+        <option value="whitelisted">Whitelisted</option>
+        <option value="committed">Committed</option>
+        <option value="invited">Invited others</option>
+      </select>
+      <button id="export" class="ghost">Export CSV</button>
+    </div>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Name</th><th>Address</th><th>Status</th><th>Whitelisted / amount by hop</th><th>Committed</th><th>Invited others</th><th>Invited by</th><th></th></tr></thead>
+      <tbody id="body"><tr><td colspan="8"><div class="empty">Loading crowdfund…</div></td></tr></tbody>
+    </table></div>
+  </div>
+  <div class="footer">Read-only · local names/watchlist · 12-second refresh</div>
+</div>
+
+<script>
+'use strict';
+const CONTRACT='0xb4b0bbac50df6c9479180aa788dad8f88d520163';
+const P='armada-cf-cloud:v1:'+CONTRACT+':';
+const CAP=[15000000000n,4000000000n,1000000000n];
+const SEL={phase:'0xb1c9fe6e',total:'0x1d3231d4',capped:'0x96e90aec',start:'0xb0c2783a',end:'0x7db1f101',count:'0xad605729',hop:'0x63cbdfb9'};
+const TOP={
+ SeedAdded:'0xae52fc87d766017692fb19da49110134dcc1bd3b87a0307a55c9c013301eedd6',
+ Invited:'0x78c408764833f60f456e610cfe6645dee5b9b81b53c7e395deccac1a8071e048',
+ LaunchTeamInvited:'0xb65b163611a336faf64c7903c0be7be779066773b584501a7f1e9eb7888a2ec9',
+ Committed:'0xbc7bdda267e5c726afbcde455d14b88592c1da5a104c08ab399ee082d592c9f4'
+};
+const $=x=>document.getElementById(x);
+const state={events:[],rows:[],status:null,head:0,sync:false};
+const load=(k,d)=>{try{const v=localStorage.getItem(P+k);return v?JSON.parse(v):d}catch{return d}};
+const save=(k,v)=>localStorage.setItem(P+k,JSON.stringify(v));
+let names=load('names',{}),known=new Set(load('known',[]));
+const norm=x=>/^0x[0-9a-f]{40}$/.test(String(x||'').trim().toLowerCase())?String(x).trim().toLowerCase():null;
+const short=a=>a?a.slice(0,6)+'…'+a.slice(-4):'—';
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+const usd=(v,c=false)=>{if(v==null)return'—';const n=Number(v)/1e6;if(c&&Math.abs(n)>=1e6)return'$'+(n/1e6).toFixed(2).replace(/\.00$/,'')+'m';if(c&&Math.abs(n)>=1e3)return'$'+(n/1e3).toFixed(n>=100e3?0:1).replace(/\.0$/,'')+'k';return'$'+n.toLocaleString(undefined,{maximumFractionDigits:2})};
+const hex=n=>'0x'+Number(n).toString(16);
+const word=(d,i)=>BigInt('0x'+d.slice(2+i*64,2+(i+1)*64));
+const taddr=t=>'0x'+t.slice(-40).toLowerCase();
+const tuint=t=>Number(BigInt(t));
+const pad=n=>BigInt(n).toString(16).padStart(64,'0');
+
+function providerHeaders(r){const n=r.headers.get('X-Armada-RPC-Provider'),i=r.headers.get('X-Armada-RPC-Index');if(n){$('provider').textContent=n;$('providerSub').textContent=(i==='0'?'Primary':'Fallback #'+i)+' · automatic failover enabled'}}
+async function rpc(method,params=[]){
+ const r=await fetch('/api/rpc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:Date.now(),method,params})});providerHeaders(r);const t=await r.text();if(!r.ok)throw new Error(t||'RPC proxy '+r.status);let j;try{j=JSON.parse(t)}catch{throw new Error('Invalid RPC JSON')}if(j.error)throw new Error(j.error.message||JSON.stringify(j.error));return j.result;
+}
+async function batch(calls){
+ const q=calls.map((c,i)=>({jsonrpc:'2.0',id:i+1,method:c.method,params:c.params}));const r=await fetch('/api/rpc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(q)});providerHeaders(r);const t=await r.text();if(!r.ok)throw new Error(t||'RPC proxy '+r.status);const j=JSON.parse(t),m=new Map(j.map(x=>[x.id,x]));return q.map(x=>{const y=m.get(x.id);if(!y)throw new Error('Missing batch response');if(y.error)throw new Error(y.error.message);return y.result});
+}
+async function readStatus(){
+ const ds=[SEL.phase,SEL.total,SEL.capped,SEL.start,SEL.end,SEL.count,SEL.hop+pad(0),SEL.hop+pad(1),SEL.hop+pad(2)];
+ const r=await batch(ds.map(data=>({method:'eth_call',params:[{to:CONTRACT,data},'latest']})));
+ const h=d=>({total:word(d,0),capped:word(d,1),committers:Number(word(d,2)),whitelist:Number(word(d,3))});
+ return{phase:Number(word(r[0],0)),total:word(r[1],0),capped:word(r[2],0),per:[word(r[2],1),word(r[2],2),word(r[2],3)],start:Number(word(r[3],0)),end:Number(word(r[4],0)),count:Number(word(r[5],0)),hops:[h(r[6]),h(r[7]),h(r[8])]};
+}
+async function blockAtTs(ts,head){let lo=0,hi=head;while(lo<hi){const m=Math.floor((lo+hi)/2),b=await rpc('eth_getBlockByNumber',[hex(m),false]),bt=Number(BigInt(b.timestamp));if(bt<ts)lo=m+1;else hi=m}return lo}
+async function startBlock(head,startTs){
+ const c=load('startBlock',null);if(c&&c<=head)return c;
+ try{const code=await rpc('eth_getCode',[CONTRACT,'latest']);if(!code||code==='0x')throw 0;let lo=0,hi=head;while(lo<hi){const m=Math.floor((lo+hi)/2),v=await rpc('eth_getCode',[CONTRACT,hex(m)]);if(v&&v!=='0x')hi=m;else lo=m+1}save('startBlock',lo);return lo}catch{const ob=await blockAtTs(startTs,head),v=Math.max(0,ob-250000);save('startBlock',v);return v}
+}
+function parseLog(l){
+ const t=(l.topics?.[0]||'').toLowerCase(),b={block:Number(BigInt(l.blockNumber)),tx:l.transactionHash.toLowerCase(),idx:Number(BigInt(l.logIndex))};
+ try{
+  if(t===TOP.SeedAdded)return{...b,type:'SeedAdded',seed:taddr(l.topics[1])};
+  if(t===TOP.Invited)return{...b,type:'Invited',inviter:taddr(l.topics[1]),invitee:taddr(l.topics[2]),hop:tuint(l.topics[3])};
+  if(t===TOP.LaunchTeamInvited)return{...b,type:'LaunchTeamInvited',invitee:taddr(l.topics[1]),hop:Number(word(l.data,0))};
+  if(t===TOP.Committed)return{...b,type:'Committed',participant:taddr(l.topics[1]),hop:tuint(l.topics[2]),amount:word(l.data,0).toString()};
+ }catch{}return null;
+}
+const rangeErr=e=>/range|too many|too large|response size|result set|exceed|limit/i.test(String(e));
+async function logs(from,to){
+ const out=[];let cur=from,range=10000;while(cur<=to){const end=Math.min(to,cur+range-1);try{const a=await rpc('eth_getLogs',[{address:CONTRACT,fromBlock:hex(cur),toBlock:hex(end),topics:[[TOP.SeedAdded,TOP.Invited,TOP.LaunchTeamInvited,TOP.Committed]]}]);for(const l of a){const p=parseLog(l);if(p)out.push(p)}cur=end+1;if(range<10000)range=Math.min(10000,range*2);$('bar').style.width=Math.max(3,Math.round(((cur-from)/(to-from+1))*100))+'%'}catch(e){if(range>10&&rangeErr(e.message)){range=Math.max(10,Math.floor(range/2));continue}throw e}}return out;
+}
+function build(events){
+ const lt=new Set(events.filter(e=>e.type==='LaunchTeamInvited').map(e=>e.tx+':'+e.invitee+':'+e.hop));
+ const es=events.filter(e=>!(e.type==='Invited'&&lt.has(e.tx+':'+e.invitee+':'+e.hop)));
+ const nodes=new Map(),edges=[];const k=(a,h)=>a+':'+h;
+ const n=(a,h)=>{const x=k(a,h);if(!nodes.has(x))nodes.set(x,{address:a,hop:h,slots:0,by:[],raw:0n,eff:0n});return nodes.get(x)};
+ for(const e of es){
+  if(e.type==='SeedAdded'){const x=n(e.seed,0);x.slots++;x.by.push('armada')}
+  else if(e.type==='LaunchTeamInvited'){const x=n(e.invitee,e.hop);x.slots++;x.by.push('armada')}
+  else if(e.type==='Invited'){const x=n(e.invitee,e.hop);x.slots++;x.by.push(e.inviter);edges.push({from:e.inviter,to:e.invitee,toHop:e.hop})}
+  else if(e.type==='Committed'){n(e.participant,e.hop).raw+=BigInt(e.amount)}
+ }
+ for(const x of nodes.values()){const cap=(CAP[x.hop]||0n)*BigInt(x.slots);x.eff=x.raw<cap?x.raw:cap}
+ const by=new Map(),ens=a=>{if(!by.has(a))by.set(a,{address:a,nodes:[],raw:0n,eff:0n,out:[],incoming:new Set(),self:[]});return by.get(a)};
+ for(const x of nodes.values()){const s=ens(x.address);s.nodes.push(x);s.raw+=x.raw;s.eff+=x.eff}
+ for(const e of edges){const a=ens(e.from),b=ens(e.to);if(e.from===e.to)a.self.push(e);else{a.out.push(e);b.incoming.add(e.from)}}
+ for(const a of known)ens(a);
+ for(const s of by.values()){s.known=known.has(s.address);s.name=names[s.address]||'';s.whitelisted=s.nodes.length>0;s.others=[...new Set(s.out.map(e=>e.to))].map(ens);s.othersEff=s.others.reduce((z,x)=>z+x.eff,0n)}
+ return[...by.values()];
+}
+function inviter(s){const q=new Set();for(const n of s.nodes)for(const a of n.by)q.add(a);if(!q.size)return'—';const xs=[...q].map(a=>a==='armada'?'Armada':(names[a]||short(a)));return xs.slice(0,3).join(', ')+(xs.length>3?'…':'')}
+function detail(s){
+ const m=new Map(s.nodes.map(n=>[n.hop,n]));
+ const hs=[0,1,2].map(h=>{const n=m.get(h);return n?'<div class="dline"><span>Hop '+h+' · '+n.slots+' slot'+(n.slots===1?'':'s')+'</span><span>'+usd(n.raw,true)+(n.raw!==n.eff?' / '+usd(n.eff,true)+' eff.':'')+'</span></div>':'<div class="dline"><span>Hop '+h+'</span><span class="muted">not whitelisted</span></div>'}).join('');
+ const os=s.others.length?s.others.map(x=>'<div class="dline"><span>'+esc(names[x.address]||short(x.address))+'</span><span>'+usd(x.eff,true)+'</span></div>').join(''):'<span class="muted">No other addresses invited.</span>';
+ const si=s.self.length?[...new Set(s.self.map(e=>'H'+e.toHop))].map(x=>'<span class="badge">'+x+'</span>').join(' '):'<span class="muted">None</span>';
+ return'<div class="detailbox"><div><h4>This address</h4>'+hs+'</div><div><h4>Invited other addresses</h4>'+os+'</div><div><h4>Self-invites, consolidated</h4>'+si+'<h4 style="margin-top:14px">Tracking</h4><div class="addr">'+s.address+'</div></div></div>';
+}
+function render(){
+ state.rows=build(state.events);const q=$('search').value.trim().toLowerCase(),f=$('filter').value;
+ let rs=state.rows.filter(r=>(!q||r.address.includes(q)||r.name.toLowerCase().includes(q))&&(f==='all'||f==='known'&&r.known||f==='need'&&r.known&&!r.whitelisted||f==='whitelisted'&&r.whitelisted||f==='committed'&&r.raw>0n||f==='invited'&&r.others.length));
+ rs.sort((a,b)=>{const ar=a.known&&!a.whitelisted?0:a.known?1:2,br=b.known&&!b.whitelisted?0:b.known?1:2;if(ar!==br)return ar-br;if(a.eff!==b.eff)return a.eff>b.eff?-1:1;return(a.name||a.address).localeCompare(b.name||b.address)});
+ if(!rs.length){$('body').innerHTML='<tr><td colspan="8"><div class="empty">No addresses match this view.</div></td></tr>';return}
+ let o='';for(const r of rs){const need=r.known&&!r.whitelisted,st=need?'<span class="badge bad">Needs whitelist</span>':r.raw>0n?'<span class="badge good">Committed</span>':r.whitelisted?'<span class="badge warn">Whitelisted</span>':'<span class="badge">Watching</span>';const m=new Map(r.nodes.map(n=>[n.hop,n]));const hc=[0,1,2].map(h=>{const n=m.get(h);return n?'<span class="chip on"><b>H'+h+'</b> '+usd(n.eff,true)+(n.slots>1?' ×'+n.slots:'')+'</span>':'<span class="chip">H'+h+' —</span>'}).join('');o+='<tr class="'+(need?'need':'')+'"><td><input class="name" data-name="'+r.address+'" value="'+esc(r.name)+'" placeholder="Add name"></td><td><span class="addr">'+short(r.address)+'</span></td><td>'+st+'</td><td><div class="chips">'+hc+'</div></td><td><div class="money">'+usd(r.raw,true)+'</div>'+(r.raw!==r.eff?'<div class="tiny">'+usd(r.eff,true)+' effective</div>':'')+'</td><td>'+(r.others.length?'<b>'+r.others.length+'</b> · '+usd(r.othersEff,true):'<span class="muted">—</span>')+'</td><td>'+esc(inviter(r))+'</td><td><button data-open="'+r.address+'">⌄</button></td></tr><tr class="details" id="d-'+r.address+'" style="display:none"><td colspan="8">'+detail(r)+'</td></tr>'}
+ $('body').innerHTML=o;
+}
+function renderStats(){
+ const s=state.status;if(!s)return;$('committed').textContent=usd(s.total,true);$('effective').textContent=usd(s.capped,true);$('addresses').textContent=state.rows.filter(r=>r.whitelisted).length.toLocaleString();$('nodes').textContent=s.count+' onchain nodes';$('need').textContent=state.rows.filter(r=>r.known&&!r.whitelisted).length;const now=Math.floor(Date.now()/1000),pn=['Active','Finalized','Canceled'];$('window').textContent=pn[s.phase]||('Phase '+s.phase);$('windowSub').textContent=s.phase===0&&now<=s.end?Math.max(0,Math.floor((s.end-now)/86400))+'d remaining':'window ended';$('head').textContent=state.head.toLocaleString();$('updated').textContent='updated '+new Date().toLocaleTimeString();for(let h=0;h<3;h++){$('h'+h+'a').textContent=usd(s.per[h],true);$('h'+h+'c').textContent=s.hops[h].whitelist+' whitelisted · '+s.hops[h].committers+' committed'}const rebuilt=state.rows.reduce((z,r)=>z+r.nodes.length,0);if(rebuilt!==s.count)msg('Warning: reconstructed '+rebuilt+' nodes; contract reports '+s.count+'. Event scan may be incomplete.',true)
+}
+function msg(t,bad=false){$('rpcStatus').textContent=t;$('rpcStatus').className='status '+(bad?'bad':'good')}
+async function sync(full=false){
+ if(state.sync)return;state.sync=true;$('refresh').disabled=true;$('progress').style.display='block';$('bar').style.width='2%';$('live').textContent='Syncing…';
+ try{const chain=Number(BigInt(await rpc('eth_chainId')));if(chain!==1)throw new Error('RPC is chain '+chain+', expected Ethereum mainnet');const [hh,s]=await Promise.all([rpc('eth_blockNumber'),readStatus()]);state.head=Number(BigInt(hh));state.status=s;const start=await startBlock(state.head,s.start);let cached=full?[]:load('events',[]),last=full?null:load('last',null);if(!Array.isArray(cached))cached=[];const from=last==null?start:Math.max(start,Number(last)-24);const base=cached.filter(e=>e.block<from);msg('Scanning '+from.toLocaleString()+' → '+state.head.toLocaleString()+'…');const fresh=await logs(from,state.head),m=new Map([...base,...fresh].map(e=>[e.tx+':'+e.idx,e]));state.events=[...m.values()].sort((a,b)=>a.block-b.block||a.idx-b.idx);save('events',state.events);save('last',state.head);render();renderStats();msg('Synced '+state.events.length.toLocaleString()+' relevant events.',false);$('live').textContent='Live · block '+state.head.toLocaleString();$('live').className='pill live'}catch(e){msg(e.message||String(e),true);$('live').textContent='Connection problem';$('live').className='pill'}finally{state.sync=false;$('refresh').disabled=false;$('bar').style.width='100%';setTimeout(()=>$('progress').style.display='none',500)}
+}
+function importText(text){
+ let added=0,named=0,invalid=0;for(const line of text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean)){if(/^name\s*,\s*address/i.test(line)||/^address\s*,/i.test(line))continue;const c=line.split(/[\t,;]/).map(x=>x.trim()).filter(Boolean);let a=null;for(const x of c){if(norm(x)){a=norm(x);break}}if(!a){invalid++;continue}let label='';if(norm(c[0])===a&&c.length>=3&&/^\d+$/.test(c[1]))label=c.slice(2).join(' ');else label=c.filter(x=>norm(x)!==a&&!/^\d+$/.test(x)).join(' ').trim();if(!known.has(a)){known.add(a);added++}if(label){names[a]=label;named++}}save('known',[...known]);save('names',names);return{added,named,invalid}
+}
+$('add').onclick=()=>{const r=importText($('paste').value);$('importStatus').textContent='Added '+r.added+' address'+(r.added===1?'':'es')+(r.named?'; saved '+r.named+' name'+(r.named===1?'':'s'):'')+(r.invalid?'; '+r.invalid+' line(s) skipped':'');$('importStatus').className='status good';render();renderStats()};
+$('csv').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{const r=importText(await f.text());$('importStatus').textContent='Imported '+f.name+': '+r.added+' new address'+(r.added===1?'':'es')+(r.named?'; '+r.named+' names':'')+(r.invalid?'; '+r.invalid+' line(s) skipped':'');$('importStatus').className='status good';render();renderStats()}catch(x){$('importStatus').textContent='Could not read CSV: '+x.message;$('importStatus').className='status bad'}e.target.value=''};
+$('clear').onclick=()=>{$('paste').value='';$('importStatus').textContent=''};$('refresh').onclick=()=>sync(false);$('search').oninput=render;$('filter').onchange=render;
+$('body').addEventListener('input',e=>{const a=e.target.dataset?.name;if(a){names[a]=e.target.value;save('names',names)}});
+$('body').addEventListener('click',e=>{const b=e.target.closest('[data-open]');if(b){const d=$('d-'+b.dataset.open),open=d.style.display==='none';d.style.display=open?'table-row':'none';b.textContent=open?'⌃':'⌄'}});
+$('export').onclick=()=>{const q=s=>'"'+String(s??'').replace(/"/g,'""')+'"',ls=[['name','address','tracked','whitelisted','hop0','hop1','hop2','raw_usdc','effective_usdc','invited_others'].join(',')];for(const r of state.rows){const hs=new Set(r.nodes.map(n=>n.hop));ls.push([q(r.name),r.address,r.known?'yes':'no',r.whitelisted?'yes':'no',hs.has(0)?'yes':'no',hs.has(1)?'yes':'no',hs.has(2)?'yes':'no',Number(r.raw)/1e6,Number(r.eff)/1e6,r.others.length].join(','))}const b=new Blob([ls.join('\n')],{type:'text/csv'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='armada-crowdfund-monitor.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)};
+sync(false);setInterval(()=>sync(false),12000);
+</script>
+</body>
+</html>

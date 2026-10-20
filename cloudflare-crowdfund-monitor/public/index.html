@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Armada Crowdfund Monitor</title>
+<style>
+:root{--bg:#061525;--panel:#0b1d2f;--line:#1b3a55;--text:#edf6ff;--muted:#8fa7ba;--cyan:#58d7d0;--good:#79d69b;--warn:#ffd071;--bad:#ff7587}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 Inter,system-ui,-apple-system,sans-serif}
+.wrap{max-width:1500px;margin:auto;padding:24px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}
+h1{margin:0;font-size:24px}.muted{color:var(--muted)}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:14px}
+.grid{display:grid;grid-template-columns:1.1fr .9fr;gap:14px}.stats{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin:14px 0}
+.stat{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}.stat b{font-size:20px;display:block}.stat span{font-size:11px;color:var(--muted)}
+input,textarea,select,button{font:inherit}input,textarea,select{background:#061522;color:var(--text);border:1px solid var(--line);border-radius:9px;padding:9px}
+textarea{width:100%;min-height:84px}.btn{background:#0d2941;color:var(--text);border:1px solid var(--line);border-radius:9px;padding:9px 12px;cursor:pointer}
+.btn.primary{background:var(--cyan);color:#062024;border-color:transparent}.pill{border:1px solid var(--line);border-radius:999px;padding:4px 8px;font-size:11px}
+.good{color:var(--good)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+table{width:100%;border-collapse:collapse;min-width:1120px}th,td{padding:9px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{color:var(--muted);font-size:11px;position:sticky;top:0;background:var(--panel)}.tablewrap{overflow:auto;max-height:62vh}
+.addr{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.hop{display:inline-block;border:1px solid var(--line);padding:3px 6px;border-radius:7px;margin:1px;font-size:11px}
+.name{width:150px;border:0;border-bottom:1px solid transparent;background:transparent;border-radius:0;padding:3px}.name:focus{outline:none;border-bottom-color:var(--cyan)}
+.status{font-size:12px}.need{background:rgba(255,117,135,.04)}.known{background:rgba(123,184,255,.025)}
+@media(max-width:1000px){.grid{grid-template-columns:1fr}.stats{grid-template-columns:repeat(3,1fr)}}@media(max-width:650px){.stats{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="row between">
+    <div><h1>Armada Crowdfund Monitor</h1><div class="muted">Ethereum mainnet · 0xB4b0BBac50Df6c9479180AA788dAd8f88D520163</div></div>
+    <div class="pill">RPC: <span id="rpcProvider">Connecting…</span></div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <b>Track known participants</b>
+      <div class="muted" style="margin:4px 0 8px">Paste names + addresses or upload a CSV. Names and watchlist stay in this browser.</div>
+      <textarea id="paste" placeholder="Alice,0x1234…&#10;0xabcd…,Bob&#10;0x9876…"></textarea>
+      <div class="row" style="margin-top:8px">
+        <button class="btn primary" id="add">Add to watchlist</button>
+        <label class="btn" for="csv">Upload CSV</label>
+        <input id="csv" type="file" accept=".csv,text/csv" hidden>
+        <button class="btn" id="clear">Clear</button>
+        <span id="importMsg" class="status muted"></span>
+      </div>
+    </div>
+    <div class="panel">
+      <b>RPC failover</b>
+      <div class="muted" style="margin-top:5px">Pocket Network → PublicNode → LlamaRPC. Cloudflare switches automatically when the current provider errors or times out.</div>
+      <div class="row" style="margin-top:10px"><button class="btn" id="refresh">Refresh now</button><span id="syncMsg" class="status muted">Ready.</span></div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><span>Total committed</span><b id="total">—</b></div>
+    <div class="stat"><span>Effective demand</span><b id="effective">—</b></div>
+    <div class="stat"><span>Onchain addresses</span><b id="addresses">—</b></div>
+    <div class="stat"><span>Participant nodes</span><b id="nodes">—</b></div>
+    <div class="stat"><span>Known need whitelist</span><b id="need">—</b></div>
+    <div class="stat"><span>Head block</span><b id="head">—</b></div>
+  </div>
+
+  <div class="panel">
+    <div class="row" style="margin-bottom:10px">
+      <input id="search" placeholder="Search name or address…" style="min-width:260px">
+      <select id="filter">
+        <option value="all">All addresses</option>
+        <option value="known">Known / watchlist</option>
+        <option value="need">Needs whitelist</option>
+        <option value="whitelisted">Whitelisted</option>
+        <option value="committed">Committed</option>
+        <option value="invited">Invited others</option>
+      </select>
+      <button class="btn" id="export">Export CSV</button>
+    </div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Name</th><th>Address</th><th>Status</th><th>Whitelisted / amount by hop</th><th>Committed</th><th>Invited others</th><th>Invited by</th></tr></thead>
+        <tbody id="tbody"><tr><td colspan="7" class="muted">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<script>
+const CONTRACT='0xb4b0bbac50df6c9479180aa788dad8f88d520163';
+const PREFIX='armada-monitor-v4:'+CONTRACT+':';
+const HOP_CAP=[15000_000000n,4000_000000n,1000_000000n];
+const SEL={total:'0x1d3231d4',capped:'0x96e90aec',count:'0xad605729'};
+const TOP={
+ SeedAdded:'0xae52fc87d766017692fb19da49110134dcc1bd3b87a0307a55c9c013301eedd6',
+ Invited:'0x78c408764833f60f456e610cfe6645dee5b9b81b53c7e395deccac1a8071e048',
+ LaunchTeamInvited:'0xb65b163611a336faf64c7903c0be7be779066773b584501a7f1e9eb7888a2ec9',
+ Committed:'0xbc7bdda267e5c726afbcde455d14b88592c1da5a104c08ab399ee082d592c9f4'
+};
+const $=x=>document.getElementById(x);
+const load=(k,d)=>{try{return JSON.parse(localStorage.getItem(PREFIX+k))??d}catch{return d}};
+const save=(k,v)=>localStorage.setItem(PREFIX+k,JSON.stringify(v));
+let names=load('names',{}),known=new Set(load('known',[])),events=load('events',[]),last=load('last',null),startBlock=load('start',null),rows=[];
+
+function norm(x){x=String(x||'').trim().toLowerCase();return /^0x[0-9a-f]{40}$/.test(x)?x:null}
+function short(a){return a.slice(0,6)+'…'+a.slice(-4)}
+function word(d,i){return BigInt('0x'+d.slice(2+i*64,2+(i+1)*64))}
+function topicAddr(t){return '0x'+t.slice(-40).toLowerCase()}
+function usd(v){let n=Number(v)/1e6;if(n>=1e6)return '$'+(n/1e6).toFixed(2).replace(/0+$/,'').replace(/\.$/,'')+'m';if(n>=1000)return '$'+(n/1000).toFixed(1).replace(/\.0$/,'')+'k';return '$'+n.toLocaleString(undefined,{maximumFractionDigits:2})}
+function hex(n){return '0x'+Number(n).toString(16)}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
+
+async function rpc(method,params=[]){
+ const r=await fetch('/api/rpc',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
+ const p=r.headers.get('x-armada-rpc-provider');if(p)$('rpcProvider').textContent=p;
+ const t=await r.text();if(!r.ok)throw Error(t);const j=JSON.parse(t);if(j.error)throw Error(j.error.message||JSON.stringify(j.error));return j.result
+}
+async function call(data){return rpc('eth_call',[{to:CONTRACT,data},'latest'])}
+
+async function findDeploy(head){
+ if(startBlock)return startBlock;
+ let lo=0,hi=head;
+ while(lo<hi){let m=Math.floor((lo+hi)/2),c=await rpc('eth_getCode',[CONTRACT,hex(m)]);if(c&&c!=='0x')hi=m;else lo=m+1}
+ startBlock=lo;save('start',lo);return lo
+}
+
+function parseLog(l){
+ const t=(l.topics?.[0]||'').toLowerCase(),b=Number(BigInt(l.blockNumber)),i=Number(BigInt(l.logIndex)),tx=l.transactionHash.toLowerCase();
+ if(t===TOP.SeedAdded)return{type:'SeedAdded',seed:topicAddr(l.topics[1]),blockNumber:b,logIndex:i,transactionHash:tx};
+ if(t===TOP.Invited)return{type:'Invited',inviter:topicAddr(l.topics[1]),invitee:topicAddr(l.topics[2]),hop:Number(BigInt(l.topics[3])),blockNumber:b,logIndex:i,transactionHash:tx};
+ if(t===TOP.LaunchTeamInvited)return{type:'LaunchTeamInvited',invitee:topicAddr(l.topics[1]),hop:Number(word(l.data,0)),blockNumber:b,logIndex:i,transactionHash:tx};
+ if(t===TOP.Committed)return{type:'Committed',participant:topicAddr(l.topics[1]),hop:Number(BigInt(l.topics[2])),amount:word(l.data,0).toString(),blockNumber:b,logIndex:i,transactionHash:tx};
+ return null
+}
+
+async function scan(from,to){
+ let cur=from,range=5000,out=[];
+ while(cur<=to){
+   let end=Math.min(to,cur+range-1);
+   try{
+     let logs=await rpc('eth_getLogs',[{address:CONTRACT,fromBlock:hex(cur),toBlock:hex(end),topics:[[TOP.SeedAdded,TOP.Invited,TOP.LaunchTeamInvited,TOP.Committed]]}]);
+     for(const l of logs){let p=parseLog(l);if(p)out.push(p)}
+     cur=end+1;if(range<5000)range=Math.min(5000,range*2);
+   }catch(e){
+     if(range>10){range=Math.max(10,Math.floor(range/2));continue}
+     throw e
+   }
+ }
+ return out
+}
+
+function build(){
+ const shadow=new Set(events.filter(e=>e.type==='LaunchTeamInvited').map(e=>e.transactionHash+':'+e.invitee+':'+e.hop));
+ const ev=events.filter(e=>!(e.type==='Invited'&&shadow.has(e.transactionHash+':'+e.invitee+':'+e.hop)));
+ const nm=new Map(),edge=[],key=(a,h)=>a+':'+h;
+ const node=(a,h)=>{let k=key(a,h);if(!nm.has(k))nm.set(k,{address:a,hop:h,slots:0,raw:0n,by:[]});return nm.get(k)};
+ for(const e of ev){
+   if(e.type==='SeedAdded'){let n=node(e.seed,0);n.slots++;n.by.push('armada')}
+   if(e.type==='LaunchTeamInvited'){let n=node(e.invitee,e.hop);n.slots++;n.by.push('armada')}
+   if(e.type==='Invited'){let n=node(e.invitee,e.hop);n.slots++;n.by.push(e.inviter);edge.push({from:e.inviter,to:e.invitee,toHop:e.hop})}
+   if(e.type==='Committed'){let n=node(e.participant,e.hop);n.raw+=BigInt(e.amount)}
+ }
+ for(const n of nm.values()){let cap=(HOP_CAP[n.hop]||0n)*BigInt(n.slots);n.eff=n.raw<cap?n.raw:cap}
+ const m=new Map(),ensure=a=>{if(!m.has(a))m.set(a,{address:a,nodes:[],out:[],incoming:new Set(),self:[],raw:0n,eff:0n});return m.get(a)};
+ for(const n of nm.values()){let r=ensure(n.address);r.nodes.push(n);r.raw+=n.raw;r.eff+=n.eff}
+ for(const e of edge){let a=ensure(e.from),b=ensure(e.to);if(e.from===e.to)a.self.push(e);else{a.out.push(e);b.incoming.add(e.from)}}
+ for(const a of known)ensure(a);
+ rows=[...m.values()].map(r=>({...r,name:names[r.address]||'',known:known.has(r.address),whitelisted:r.nodes.length>0}));
+}
+
+function render(){
+ build();
+ const q=$('search').value.toLowerCase().trim(),f=$('filter').value;
+ let show=rows.filter(r=>{
+   if(q&&!r.address.includes(q)&&!r.name.toLowerCase().includes(q))return false;
+   if(f==='known'&&!r.known)return false;if(f==='need'&&!(r.known&&!r.whitelisted))return false;if(f==='whitelisted'&&!r.whitelisted)return false;
+   if(f==='committed'&&r.raw===0n)return false;if(f==='invited'&&r.out.length===0)return false;return true
+ });
+ show.sort((a,b)=>((a.known&&!a.whitelisted)?0:a.known?1:2)-((b.known&&!b.whitelisted)?0:b.known?1:2)||Number(b.eff-a.eff));
+ $('tbody').innerHTML=show.length?show.map(r=>{
+   let hops=[0,1,2].map(h=>{let n=r.nodes.find(n=>n.hop===h);return '<span class="hop">'+(n?'H'+h+' '+usd(n.eff):'H'+h+' —')+'</span>'}).join('');
+   let others=[...new Set(r.out.map(e=>e.to))],otherAmt=others.reduce((z,a)=>z+(rows.find(x=>x.address===a)?.eff||0n),0n);
+   let by=[...new Set(r.nodes.flatMap(n=>n.by))].map(a=>a==='armada'?'Armada':(names[a]||short(a))).join(', ')||'—';
+   let status=r.known&&!r.whitelisted?'<span class="bad">Needs whitelist</span>':r.raw>0n?'<span class="good">Committed</span>':r.whitelisted?'<span class="warn">Whitelisted</span>':'Watching';
+   let self=r.self.length?'<div class="muted">self → '+[...new Set(r.self.map(e=>'H'+e.toHop))].join(', ')+'</div>':'';
+   return '<tr class="'+(r.known?'known ':'')+(r.known&&!r.whitelisted?'need':'')+'"><td><input class="name" data-name="'+r.address+'" value="'+esc(r.name)+'" placeholder="Name…"></td><td class="addr">'+short(r.address)+self+'</td><td>'+status+'</td><td>'+hops+'</td><td>'+usd(r.raw)+(r.raw!==r.eff?'<div class="muted">'+usd(r.eff)+' effective</div>':'')+'</td><td>'+(others.length||'—')+(others.length?'<div class="muted">'+usd(otherAmt)+' committed</div>':'')+'</td><td>'+esc(by)+'</td></tr>'
+ }).join(''):'<tr><td colspan="7" class="muted">No matches.</td></tr>';
+ $('addresses').textContent=rows.filter(r=>r.whitelisted).length;
+ $('need').textContent=rows.filter(r=>r.known&&!r.whitelisted).length;
+}
+
+function parseImport(text){
+ let added=0,named=0,bad=0;
+ for(const line of text.split(/\r?\n/).map(x=>x.trim()).filter(Boolean)){
+   if(/^name\s*,|^address\s*,/i.test(line))continue;
+   const c=line.split(/[\t,;]/).map(x=>x.trim()).filter(Boolean),a=c.map(norm).find(Boolean);
+   if(!a){bad++;continue}
+   if(!known.has(a)){known.add(a);added++}
+   let label=c.filter(x=>norm(x)!==a&&!/^\d+$/.test(x)).join(' ').trim();
+   if(label){names[a]=label;named++}
+ }
+ save('known',[...known]);save('names',names);render();return{added,named,bad}
+}
+
+async function sync(){
+ $('syncMsg').textContent='Syncing…';$('syncMsg').className='status muted';
+ try{
+   if(Number(BigInt(await rpc('eth_chainId')))!==1)throw Error('RPC is not Ethereum mainnet');
+   const head=Number(BigInt(await rpc('eth_blockNumber')));$('head').textContent=head.toLocaleString();
+   const [tot,cap,count]=await Promise.all([call(SEL.total),call(SEL.capped),call(SEL.count)]);
+   $('total').textContent=usd(word(tot,0));$('effective').textContent=usd(word(cap,0));$('nodes').textContent=Number(word(count,0)).toLocaleString();
+   const start=await findDeploy(head),from=last?Math.max(start,last-24):start,base=events.filter(e=>e.blockNumber<from),fresh=await scan(from,head);
+   const map=new Map([...base,...fresh].map(e=>[e.transactionHash+':'+e.logIndex,e]));
+   events=[...map.values()].sort((a,b)=>a.blockNumber-b.blockNumber||a.logIndex-b.logIndex);
+   last=head;save('events',events);save('last',last);render();$('syncMsg').textContent='Synced '+new Date().toLocaleTimeString();
+ }catch(e){$('syncMsg').textContent=e.message||String(e);$('syncMsg').className='status bad'}
+}
+
+$('add').onclick=()=>{let r=parseImport($('paste').value);$('importMsg').textContent='Added '+r.added+'; named '+r.named+(r.bad?'; skipped '+r.bad:'')};
+$('csv').onchange=async e=>{let f=e.target.files?.[0];if(!f)return;let r=parseImport(await f.text());$('importMsg').textContent=f.name+': added '+r.added+'; named '+r.named+(r.bad?'; skipped '+r.bad:'');e.target.value=''};
+$('clear').onclick=()=>{$('paste').value='';$('importMsg').textContent=''};
+$('refresh').onclick=sync;$('search').oninput=render;$('filter').onchange=render;
+$('tbody').oninput=e=>{let a=e.target.dataset.name;if(a){names[a]=e.target.value;save('names',names)}};
+$('export').onclick=()=>{let lines=['name,address,tracked,whitelisted,total_usdc_raw,total_usdc_effective,invited_others'];for(const r of rows)lines.push([JSON.stringify(r.name),r.address,r.known?'yes':'no',r.whitelisted?'yes':'no',Number(r.raw)/1e6,Number(r.eff)/1e6,new Set(r.out.map(e=>e.to)).size].join(','));let b=new Blob([lines.join('\n')],{type:'text/csv'}),a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='armada-crowdfund.csv';a.click()};
+render();sync();setInterval(sync,12000);
+</script>
+</body>
+</html>

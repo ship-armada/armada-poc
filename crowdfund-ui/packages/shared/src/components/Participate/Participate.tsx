@@ -22,6 +22,14 @@ export interface ParticipateProps {
   buttonFullWidth?: boolean
 }
 
+// Deviation from the mockup port: play() returns a promise that browsers reject
+// with an AbortError when pause() lands before playback starts (hover-off, blur,
+// unmount). The video is decorative, so swallow the rejection instead of letting
+// it surface as an unhandled rejection (and a Sentry error).
+function playQuietly(v: HTMLVideoElement) {
+  v.play().catch(() => {})
+}
+
 export function Participate({
   eyebrow = 'Participate now',
   heading = 'Join the fleet',
@@ -59,7 +67,7 @@ export function Participate({
     // preload="none": the media isn't fetched until first interaction. Kick off
     // loading on hover; onLoadedData plays it once buffered (if still hovered).
     if (videoReady) {
-      void v.play()
+      playQuietly(v)
     } else {
       v.load()
     }
@@ -126,7 +134,7 @@ export function Participate({
             // If the user is still hovering when buffering finishes, start
             // playing; otherwise leave it reset at the first frame.
             if (isHovered) {
-              void v.play()
+              playQuietly(v)
             } else {
               v.pause()
               try {

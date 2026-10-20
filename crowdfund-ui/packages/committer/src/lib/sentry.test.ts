@@ -1,8 +1,11 @@
 // ABOUTME: Unit tests for the Sentry URL-scrubbing helpers.
 // ABOUTME: Ensures invite-link signatures never leave the app via Sentry.
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { ErrorEvent, Breadcrumb } from '@sentry/react'
-import { stripQueryString, scrubEventUrls, scrubBreadcrumbUrls } from './sentry'
+import { stripQueryString, scrubEventUrls, scrubBreadcrumbUrls, filterErrorEvent } from './sentry'
+
+const chunkReload = vi.hoisted(() => ({ isChunkReloadPending: vi.fn(() => false) }))
+vi.mock('./chunkReload', () => chunkReload)
 
 const INVITE_URL =
   'https://fund.armada.blue/invite?inviter=0xabc&nonce=1&deadline=2&sig=0xdeadbeef'
@@ -47,6 +50,28 @@ describe('scrubEventUrls', () => {
   it('passes through events without URLs untouched', () => {
     const event = { message: 'boom' } as ErrorEvent
     expect(scrubEventUrls(event)).toEqual({ message: 'boom' })
+  })
+})
+
+describe('filterErrorEvent', () => {
+  beforeEach(() => {
+    chunkReload.isChunkReloadPending.mockReturnValue(false)
+  })
+
+  it('scrubs and keeps events when no chunk reload is pending', () => {
+    const event = { request: { url: INVITE_URL } } as ErrorEvent
+    expect(filterErrorEvent(event)?.request?.url).toBe('https://fund.armada.blue/invite')
+  })
+
+  it('drops events while a chunk-failure reload is in flight', () => {
+    // The page is already reloading; errors from code that received the
+    // failed chunk's empty result (e.g. reading `.default` of undefined) are
+    // fallout, not new bugs.
+    chunkReload.isChunkReloadPending.mockReturnValue(true)
+    const event = {
+      exception: { values: [{ type: 'TypeError', value: "undefined is not an object (evaluating 'e.App')" }] },
+    } as ErrorEvent
+    expect(filterErrorEvent(event)).toBeNull()
   })
 })
 

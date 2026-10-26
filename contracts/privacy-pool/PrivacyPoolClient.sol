@@ -69,6 +69,11 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
     /// @dev Used as fallback when user passes 0 to crossChainShield
     uint32 public defaultFinalityThreshold;
 
+    /// @notice Owner proposed by `transferOwnership`, pending its `acceptOwnership` (issue #349).
+    /// @dev address(0) when no transfer is pending. Ownership moves only when this address accepts,
+    ///      so a mistyped proposal can be replaced or cancelled instead of losing the admin key.
+    address public override pendingOwner;
+
     // ══════════════════════════════════════════════════════════════════════════
     // INITIALIZATION
     // ══════════════════════════════════════════════════════════════════════════
@@ -374,6 +379,29 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
     // ══════════════════════════════════════════════════════════════════════════
     // ADMIN FUNCTIONS
     // ══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * @notice Propose a new owner (step 1 of 2)
+     * @dev Ownership does not move until `newOwner` calls `acceptOwnership`, so a mistyped address
+     *      cannot lose the admin key. A new proposal replaces a pending one; address(0) cancels it.
+     * @param newOwner Proposed owner
+     */
+    function transferOwnership(address newOwner) external override {
+        require(msg.sender == owner, "PrivacyPoolClient: Only owner");
+        pendingOwner = newOwner;
+        emit OwnershipTransferStarted(owner, newOwner);
+    }
+
+    /**
+     * @notice Accept a pending ownership proposal (step 2 of 2)
+     */
+    function acceptOwnership() external override {
+        require(msg.sender == pendingOwner, "PrivacyPoolClient: not pending owner");
+        address previousOwner = owner;
+        owner = msg.sender;
+        pendingOwner = address(0);
+        emit OwnershipTransferred(previousOwner, msg.sender);
+    }
 
     /**
      * @notice Update the Hub pool configuration

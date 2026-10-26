@@ -296,6 +296,29 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     // ══════════════════════════════════════════════════════════════════════════
 
     /**
+     * @notice Propose a new owner (step 1 of 2)
+     * @dev Ownership does not move until `newOwner` calls `acceptOwnership`, so a mistyped address
+     *      cannot lose the admin key. A new proposal replaces a pending one; address(0) cancels it.
+     * @param newOwner Proposed owner
+     */
+    function transferOwnership(address newOwner) external override {
+        require(msg.sender == owner, "PrivacyPool: Only owner");
+        pendingOwner = newOwner;
+        emit OwnershipTransferStarted(owner, newOwner);
+    }
+
+    /**
+     * @notice Accept a pending ownership proposal (step 2 of 2)
+     */
+    function acceptOwnership() external override {
+        require(msg.sender == pendingOwner, "PrivacyPool: not pending owner");
+        address previousOwner = owner;
+        owner = msg.sender;
+        pendingOwner = address(0);
+        emit OwnershipTransferred(previousOwner, msg.sender);
+    }
+
+    /**
      * @notice Set the address of a remote PrivacyPool/Client
      * @param domain CCTP domain ID of the remote chain
      * @param poolAddress Address of the remote contract (as bytes32)

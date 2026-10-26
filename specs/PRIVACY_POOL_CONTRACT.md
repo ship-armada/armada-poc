@@ -40,12 +40,13 @@ Out of scope for this document: `PrivacyPoolClient` (client-chain contract), CCT
 | `initialize` | Permissionless, exactly once (first call wins) — **OQ-7** |
 | `shield`, `transact`, `atomicCrossChainUnshield` | Permissionless |
 | `handleReceiveFinalizedMessage`, `handleReceiveUnfinalizedMessage` | `msg.sender == hookRouter` **or** `msg.sender == tokenMessenger` |
-| All admin setters (§5.2) | `msg.sender == owner` |
+| All admin setters (§5.2), `transferOwnership` | `msg.sender == owner` |
+| `acceptOwnership` | `msg.sender == pendingOwner` |
 | `insertLeaves` (router) | `msg.sender == address(this)` (self-call only) |
 | `verify`, `getVerificationKey`, `getInsertionTreeNumberAndStartingIndex` | Permissionless views |
 | Every module external function | `onlyDelegatecall` (reachable only through the router) |
 
-`owner` is a single `address` set at `initialize`. There is **no** ownership-transfer or renounce function.
+`owner` is a single `address` set at `initialize`. It moves by a two-step transfer (D-23, #349): the owner proposes with `transferOwnership(newOwner)` (recorded in `pendingOwner`; a new proposal replaces it, `address(0)` cancels), and ownership changes only when the proposed owner calls `acceptOwnership()`. There is **no** renounce function.
 
 ---
 
@@ -254,7 +255,8 @@ Defined in `PrivacyPoolStorage` and inherited identically by the router and all 
 | 60 | — | — | `remoteHookRouters` | `mapping(uint32 => bytes32)` | public (added post-drift, D-16) |
 | 61 | 0 | 32 | `_reentrancyStatus` | `uint256` (0 = not entered) | internal (added post-drift, D-18) |
 | 62 | 0 | 20 | `adapterRegistry` | `address` (timelock-governed privilege source) | public (added post-drift, D-18) |
-| 63–105 | — | — | `__gap` | `uint256[43]` | private (reserved) |
+| 63 | 0 | 20 | `pendingOwner` | `address` (proposed owner, `address(0)` if none) | public (added D-23, #349) |
+| 64–105 | — | — | `__gap` | `uint256[42]` | private (reserved) |
 
 Slot 11 (`privilegedShieldCallers`) is **retired but retained** (never removed/reordered): shield-fee exemption is now derived from `adapterRegistry` (slot 62), and the legacy mapping is always the zero default.
 
@@ -285,7 +287,7 @@ Behavior, in order:
 4. `delegatecall` `merkleModule.initializeMerkle()` (§6.1).
 5. Set `initialized = true`.
 
-No event is emitted. `treasury` has no setter (documented as immutable after init); `owner` has no setter either.
+No event is emitted. `treasury` has no setter (documented as immutable after init); `owner` changes only through the two-step transfer in §5.4.
 
 ### 5.2 User-facing operations
 
@@ -326,6 +328,8 @@ All revert with `"PrivacyPool: Only owner"` unless `msg.sender == owner`.
 | `setDefaultFinalityThreshold(uint32 threshold)` | `0x50fe9314` | `require(threshold == 1000 \|\| threshold == 2000, "PrivacyPool: Invalid threshold")` | `DefaultFinalityThresholdSet(threshold)` |
 | `setShieldPauseContract(address)` | `0x6960c7da` | sets `shieldPauseContract` (note: declared on the contract but absent from the router interface) | `ShieldPauseContractSet(addr)` |
 | `setFeeModule(address)` | `0x2088df1b` | sets `feeModule` (`address(0)` = flat-fee fallback) | `FeeModuleSet(addr)` |
+| `transferOwnership(address newOwner)` | `0xf2fde38b` | sets `pendingOwner = newOwner` (replaces a pending proposal; `address(0)` cancels); `owner` unchanged (D-23) | `OwnershipTransferStarted(owner, newOwner)` |
+| `acceptOwnership()` | `0x79ba5097` | **not owner-gated:** `require(msg.sender == pendingOwner, "PrivacyPool: not pending owner")`; `owner = msg.sender`, `pendingOwner = address(0)` (D-23) | `OwnershipTransferred(previousOwner, newOwner)` |
 
 ### 5.5 Views and self-call functions implemented directly on the router
 
@@ -580,6 +584,8 @@ For each nullifier `n`: `require(!nullifiers[boundParams.treeNumber][n], "Transa
 | `VerifyingKeySet(uint256 nullifiers, uint256 commitments, VerifyingKey key)` | `0x3d09e10d1c966d01c4a2c14d0ac9af253486aa5e99b6cffe9019c4d43eb1fb23` | §9.1 |
 | `AddToBlocklist(address indexed token)` | `0x46742f555939247f80b50a8ca895a561933c48bc9a06ccb0c812e97ac723d33f` | §5.4 (post-drift, D-18) |
 | `RemoveFromBlocklist(address indexed token)` | `0x2ef13bd1aff17b0f9c85afaf228e84266c8394d9d381735e83fe23f607113e2e` | §5.4 (post-drift, D-18) |
+| `OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner)` | `0x38d16b8cac22d99fc7c124b9cd0de2d3fa1faef420bfe791d8c362d765e22700` | §5.4 (D-23) |
+| `OwnershipTransferred(address indexed previousOwner, address indexed newOwner)` | `0x8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e0` | §5.4 (D-23) |
 
 `lastEventBlock = block.number` is written on every successful `shield`, `processIncomingShield`, `transact`, and `atomicCrossChainUnshield` (wallet-sync support).
 

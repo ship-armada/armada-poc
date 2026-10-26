@@ -46,7 +46,8 @@ abstract contract PrivacyPoolStorage {
     ///      PrivacyPool (fees, treasury, adapter registry (set-once), hook routers, fee module,
     ///      pause controller). NOTE: the VerifierModule contract is immutable, but its verification KEYS
     ///      remain owner-settable via setVerificationKey (needed for circuit/key upgrades) — that
-    ///      key-custody risk is tracked separately in issue #349. See .claude/ARCHITECTURE_NOTES.md.
+    ///      key-custody risk depends on who owns the pool: #349 added a two-step ownership transfer,
+    ///      and handing ownership to governance is tracked in #381. See .claude/ARCHITECTURE_NOTES.md.
 
     /// @notice Address of ShieldModule implementation
     address public shieldModule;
@@ -216,11 +217,16 @@ abstract contract PrivacyPoolStorage {
     ///      privilegedShieldCallers flag.
     address public adapterRegistry;
 
+    /// @notice Owner proposed by `transferOwnership`, pending its `acceptOwnership` (issue #349).
+    /// @dev address(0) when no transfer is pending. Ownership moves only when this address accepts,
+    ///      so a mistyped proposal can be replaced or cancelled instead of losing the admin key.
+    address public pendingOwner;
+
     // ══════════════════════════════════════════════════════════════════════════
     // RESERVED FOR FUTURE USE
     // ══════════════════════════════════════════════════════════════════════════
 
     /// @dev Reserved storage slots for future upgrades
     ///      When adding new state variables above, decrement this gap
-    uint256[43] private __gap;
+    uint256[42] private __gap;
 }

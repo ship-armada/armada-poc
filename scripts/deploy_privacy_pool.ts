@@ -234,6 +234,9 @@ async function deployHub(): Promise<HubDeploymentInfo> {
     messageTransmitterAddress,
     usdcAddress,
     domain,
+    // TODO(#381 §3): the deployer stays owner until the new governance system exists. Hand ownership
+    // over with the two-step transfer (pool.transferOwnership(gov), then gov calls acceptOwnership(),
+    // #349) before a mainnet pool holds value.
     deployer.address,
     treasuryAddress,
     nm.override()
@@ -363,6 +366,8 @@ async function deployClient(role: ChainRole): Promise<ClientDeploymentInfo> {
     domain,
     hubDomain,
     hubPoolBytes32,
+    // TODO(#381 §3): deployer stays owner until the new governance system exists; hand over with the
+    // two-step transfer (#349) before mainnet.
     deployer.address,
     { ...nm.override(), gasLimit: CLIENT_INIT_GAS_LIMIT }
   );

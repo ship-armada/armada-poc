@@ -35,6 +35,12 @@ interface IPrivacyPool is IMessageHandlerV2 {
     /// @notice Emitted when the governance adapter registry is set (set-once, issue #370)
     event AdapterRegistrySet(address indexed adapterRegistry);
 
+    /// @notice Emitted when the owner proposes a new owner (address(0) cancels a pending proposal)
+    event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
+
+    /// @notice Emitted when the proposed owner accepts and ownership moves
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
     // ══════════════════════════════════════════════════════════════════════════
     // INITIALIZATION
     // ══════════════════════════════════════════════════════════════════════════
@@ -143,6 +149,18 @@ interface IPrivacyPool is IMessageHandlerV2 {
         uint256 commitments,
         VerifyingKey calldata key
     ) external;
+
+    /**
+     * @notice Propose a new owner. Ownership moves only when `newOwner` calls `acceptOwnership`.
+     * @dev Replaces any pending proposal; address(0) cancels it (issue #349).
+     * @param newOwner Proposed owner
+     */
+    function transferOwnership(address newOwner) external;
+
+    /**
+     * @notice Accept a pending ownership proposal. Callable only by the proposed owner.
+     */
+    function acceptOwnership() external;
 
     /**
      * @notice Set the shield fee in basis points

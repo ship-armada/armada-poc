@@ -35,7 +35,7 @@
     "pool.treeNumber": "0x0",
     "pool.nextLeafIndex": "0x2",
     "pool.merkleRoot": "0x281ca60c48f66c59afc21f4489fa7a93d01f4378330ed1ebfc5632d1ca79dd10",
-    "pool.lastEventBlock": "0x7d",
+    "pool.lastEventBlock": "0x86",
     "usdc.balanceOf[POOL]": "0x260d360",
     "usdc.balanceOf[ALICE]": "0x2540be400",
     "usdc.balanceOf[BOB]": "0x3a699d00",
@@ -46,9 +46,9 @@
   },
   "result": {
     "status": 1,
-    "txHash": "0x4d289b88743b35362190cbdb8f7a401a4c1e10e879a0ee52cc75777b007bbbc8",
-    "blockNumber": 132,
-    "gasUsed": "0xefb9e",
+    "txHash": "0x500daec9059b6b69840804e229b46fe3fce9b4735662b9c6bc3e82e8f91705a4",
+    "blockNumber": 141,
+    "gasUsed": "0xf0907",
     "returnData": "0x0000000000000000000000000000000000000000000000000000000000000001",
     "revert": null,
     "events": [
@@ -130,7 +130,7 @@
       },
       {
         "logIndex": 4,
-        "address": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+        "address": "0x7bc06c482DEAd17c0e297aFbC32f6e63d3846650",
         "topics": [
           "0xf2d09e5dc036f4cda21d7edc0981a4832c028c92094ced4b4b311687638d9e24",
           "0x0000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3",
@@ -158,7 +158,7 @@
       },
       {
         "logIndex": 6,
-        "address": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+        "address": "0x7bc06c482DEAd17c0e297aFbC32f6e63d3846650",
         "topics": [
           "0xf2d09e5dc036f4cda21d7edc0981a4832c028c92094ced4b4b311687638d9e24",
           "0x0000000000000000000000005fbdb2315678afecb367f032d93f642f64180aa3",
@@ -180,7 +180,7 @@
     "pool.treeNumber": "0x0",
     "pool.nextLeafIndex": "0x4",
     "pool.merkleRoot": "0x2123b526e0b2f0b1d1a504f277d0cb4c5bcc62066e1c9b1027d8b4f9fa4a5bc9",
-    "pool.lastEventBlock": "0x84",
+    "pool.lastEventBlock": "0x8d",
     "usdc.balanceOf[POOL]": "0x1fe9b550",
     "usdc.balanceOf[ALICE]": "0x2540be400",
     "usdc.balanceOf[BOB]": "0x3a699d00",
@@ -210,13 +210,13 @@
       "TOKEN_MESSENGER": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
       "MESSAGE_TRANSMITTER": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
       "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-      "FEE_MODULE": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+      "FEE_MODULE": "0x7bc06c482DEAd17c0e297aFbC32f6e63d3846650",
       "CLIENT_POOL": "0x0000000000000000000000000000000000C11EA7",
-      "MOCK_PAUSE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
-      "MOCK_FEE_MODULE": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f",
-      "MOCK_ADAPTER_REGISTRY": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d",
-      "MALICIOUS_TOKEN": "0xdbC43Ba45381e02825b14322cDdd15eC4B3164E6"
+      "MOCK_PAUSE": "0x162A433068F51e18b7d13932F27e66a3f99E6890",
+      "MOCK_FEE_MODULE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+      "MOCK_ADAPTER_REGISTRY": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f",
+      "MALICIOUS_TOKEN": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d"
     }
   },
-  "capturedAt": "2026-10-14T13:56:16.891Z"
+  "capturedAt": "2026-10-26T17:46:52.172Z"
 }

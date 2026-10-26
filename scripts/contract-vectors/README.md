@@ -96,6 +96,14 @@ original cross-chain vectors used an EOA. Only those three vectors changed in su
 replays 24/24 against the contracts with #606 and the OQ-9 USDC check (gas +795 on the
 cross-chain unshield path, +239 on local unshield).
 
+It was re-captured again on 2026-10-26 for #365, which removed the vault's `setAdapter()` call
+from `deploy_yield.ts`. That is one fewer deployer transaction, so everything deployed after the
+yield step (the fee module and the genesis mocks) lands one nonce lower and the recorded
+addresses no longer matched. No pool contract changed: with addresses mapped by label and
+block numbers, hashes and gas ignored, the vectors are unchanged apart from the PrivacyPool
+creation bytecode's metadata hash in `v2-initialize-nondeployer-revert`. Any deploy-script change
+that adds or removes a deployer transaction before the fee module needs the same re-capture.
+
 CI (`.github/workflows/ci.yml`, job `golden-vector-replay`) replays the full v2 corpus and, on a
 separate fresh fixturenet, one vector selected by `REPLAY_IDS`, on every PR. The v1 corpus is not
 in CI: it intentionally diverges on the D-15/D-16/D-18 surface (see below).

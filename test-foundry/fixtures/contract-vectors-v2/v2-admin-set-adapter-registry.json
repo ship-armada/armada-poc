@@ -21,7 +21,7 @@
     {
       "from": "DEPLOYER",
       "to": "MOCK_ADAPTER_REGISTRY",
-      "toAddress": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d",
+      "toAddress": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f",
       "calldata": "0x711bf9b200000000000000000000000090f79bf6eb2c4f870365e785982e1f101e93b9060000000000000000000000000000000000000000000000000000000000000001",
       "description": "authorize CAROL in the mock registry"
     }
@@ -31,12 +31,12 @@
     "fromAddress": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "to": "POOL",
     "toAddress": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
-    "calldata": "0x5b34b8230000000000000000000000001fa02b2d6a771842690194cf62d91bdd92bfe28d",
+    "calldata": "0x5b34b8230000000000000000000000005081a39b8a5f0e35a8d959395a630b68b74dd30f",
     "value": "0x0",
     "decodedCall": {
       "function": "setAdapterRegistry",
       "args": {
-        "registry": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d"
+        "registry": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f"
       }
     }
   },
@@ -55,8 +55,8 @@
   },
   "result": {
     "status": 1,
-    "txHash": "0xeb084a79e769a90929aecf945a8d4361606e278be8999ea5d819c7f2177eb413",
-    "blockNumber": 122,
+    "txHash": "0xcc7ca42c1b2fa61dffd4daef9f27c7c186af3eaa9e8c2ce47d1ab3bc3ab43418",
+    "blockNumber": 131,
     "gasUsed": "0xb962",
     "returnData": null,
     "revert": null,
@@ -66,13 +66,13 @@
         "address": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
         "topics": [
           "0xa171d8fb18a12bf1de13705d955959f7d7581ae025e856e8bfa2c80febbdca32",
-          "0x0000000000000000000000001fa02b2d6a771842690194cf62d91bdd92bfe28d"
+          "0x0000000000000000000000005081a39b8a5f0e35a8d959395a630b68b74dd30f"
         ],
         "data": "0x",
         "decoded": {
           "name": "AdapterRegistrySet",
           "args": {
-            "adapterRegistry": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d"
+            "adapterRegistry": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f"
           }
         }
       }
@@ -90,7 +90,7 @@
     "usdc.balanceOf[TREASURY]": "0x0",
     "usdc.balanceOf[DEPLOYER]": "0x0",
     "usdc.balanceOf[HOOK_ROUTER]": "0x0",
-    "pool.adapterRegistry": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d"
+    "pool.adapterRegistry": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f"
   },
   "context": {
     "chainId": 31337,
@@ -113,13 +113,13 @@
       "TOKEN_MESSENGER": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
       "MESSAGE_TRANSMITTER": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
       "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-      "FEE_MODULE": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+      "FEE_MODULE": "0x7bc06c482DEAd17c0e297aFbC32f6e63d3846650",
       "CLIENT_POOL": "0x0000000000000000000000000000000000C11EA7",
-      "MOCK_PAUSE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
-      "MOCK_FEE_MODULE": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f",
-      "MOCK_ADAPTER_REGISTRY": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d",
-      "MALICIOUS_TOKEN": "0xdbC43Ba45381e02825b14322cDdd15eC4B3164E6"
+      "MOCK_PAUSE": "0x162A433068F51e18b7d13932F27e66a3f99E6890",
+      "MOCK_FEE_MODULE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+      "MOCK_ADAPTER_REGISTRY": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f",
+      "MALICIOUS_TOKEN": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d"
     }
   },
-  "capturedAt": "2026-10-14T13:56:06.883Z"
+  "capturedAt": "2026-10-26T17:46:42.170Z"
 }

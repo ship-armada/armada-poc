@@ -18,13 +18,13 @@
     "fromAddress": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
     "to": "POOL",
     "toAddress": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
-    "calldata": "0xab63e69c00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000001000000000000000000000000922d6956c99e12dfeb3224dea977d0939758a1fe",
+    "calldata": "0xab63e69c00000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000001000000000000000000000000162a433068f51e18b7d13932f27e66a3f99e6890",
     "value": "0x0",
     "decodedCall": {
       "function": "removeFromBlocklist",
       "args": [
         [
-          "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe"
+          "0x162A433068F51e18b7d13932F27e66a3f99E6890"
         ]
       ]
     }
@@ -33,7 +33,7 @@
     "pool.treeNumber": "0x0",
     "pool.nextLeafIndex": "0x2",
     "pool.merkleRoot": "0x281ca60c48f66c59afc21f4489fa7a93d01f4378330ed1ebfc5632d1ca79dd10",
-    "pool.lastEventBlock": "0x7d",
+    "pool.lastEventBlock": "0x86",
     "usdc.balanceOf[POOL]": "0x260d360",
     "usdc.balanceOf[ALICE]": "0x2540be400",
     "usdc.balanceOf[BOB]": "0x3a699d00",
@@ -44,8 +44,8 @@
   },
   "result": {
     "status": 1,
-    "txHash": "0xdb5bbf1a25bcbe4cb8aadc71c1df29000939c901de88f2272bf277aca4692495",
-    "blockNumber": 129,
+    "txHash": "0xccdda3abd9561bd36323cbcd29ea5a5844ae99f796f59677910a7e2e90f4088c",
+    "blockNumber": 138,
     "gasUsed": "0x6926",
     "returnData": null,
     "revert": null,
@@ -55,13 +55,13 @@
         "address": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
         "topics": [
           "0x2ef13bd1aff17b0f9c85afaf228e84266c8394d9d381735e83fe23f607113e2e",
-          "0x000000000000000000000000922d6956c99e12dfeb3224dea977d0939758a1fe"
+          "0x000000000000000000000000162a433068f51e18b7d13932f27e66a3f99e6890"
         ],
         "data": "0x",
         "decoded": {
           "name": "RemoveFromBlocklist",
           "args": {
-            "token": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe"
+            "token": "0x162A433068F51e18b7d13932F27e66a3f99E6890"
           }
         }
       }
@@ -71,7 +71,7 @@
     "pool.treeNumber": "0x0",
     "pool.nextLeafIndex": "0x2",
     "pool.merkleRoot": "0x281ca60c48f66c59afc21f4489fa7a93d01f4378330ed1ebfc5632d1ca79dd10",
-    "pool.lastEventBlock": "0x7d",
+    "pool.lastEventBlock": "0x86",
     "usdc.balanceOf[POOL]": "0x260d360",
     "usdc.balanceOf[ALICE]": "0x2540be400",
     "usdc.balanceOf[BOB]": "0x3a699d00",
@@ -79,7 +79,7 @@
     "usdc.balanceOf[TREASURY]": "0x186a0",
     "usdc.balanceOf[DEPLOYER]": "0x0",
     "usdc.balanceOf[HOOK_ROUTER]": "0x0",
-    "pool.tokenBlocklist[0x922D6956C99E12DFeB3224DEA977D0939758A1Fe]": false
+    "pool.tokenBlocklist[0x162A433068F51e18b7d13932F27e66a3f99E6890]": false
   },
   "context": {
     "chainId": 31337,
@@ -102,13 +102,13 @@
       "TOKEN_MESSENGER": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
       "MESSAGE_TRANSMITTER": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
       "USDC": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
-      "FEE_MODULE": "0xc351628EB244ec633d5f21fBD6621e1a683B1181",
+      "FEE_MODULE": "0x7bc06c482DEAd17c0e297aFbC32f6e63d3846650",
       "CLIENT_POOL": "0x0000000000000000000000000000000000C11EA7",
-      "MOCK_PAUSE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
-      "MOCK_FEE_MODULE": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f",
-      "MOCK_ADAPTER_REGISTRY": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d",
-      "MALICIOUS_TOKEN": "0xdbC43Ba45381e02825b14322cDdd15eC4B3164E6"
+      "MOCK_PAUSE": "0x162A433068F51e18b7d13932F27e66a3f99E6890",
+      "MOCK_FEE_MODULE": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
+      "MOCK_ADAPTER_REGISTRY": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f",
+      "MALICIOUS_TOKEN": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d"
     }
   },
-  "capturedAt": "2026-10-14T13:56:13.868Z"
+  "capturedAt": "2026-10-26T17:46:49.160Z"
 }

@@ -528,9 +528,8 @@ address, `feesCacheId`, TTL). Fees are bound in-band on both paths:
   fee is applied — the gross-up math is part of the SDK's fee model, not left to callers.
 
 The SDK's fee math MUST be tested against `FEE_STRUCTURE.md` and the fee-module contract
-behavior on both paths (this is where the tracked shield-fee formula mismatch shortcut is
-retired — the SDK computes what the contract enforces, verified by integration test, not a
-parallel formula).
+behavior on both paths (the SDK computes what the contract enforces, verified by integration
+test, not a parallel formula).
 
 ### 4.7 Preflight
 

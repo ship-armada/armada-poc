@@ -71,7 +71,7 @@ The following are known security shortcuts inherited from the POC phase. They ar
 - `setTestingMode()` in PrivacyPool bypasses ZK proof verification
 - `VERIFICATION_BYPASS` at `tx.origin == 0xdead` (constant in `contracts/privacy-pool/types/PoolTypes.sol`, checked in `PrivacyPool.verify`)
 - Hardcoded Anvil private keys in config (acceptable for local only)
-- Shield fee formula mismatch between contract and SDK
+- ~~Shield fee formula mismatch between contract and SDK~~ (Obsolete: the separate Railgun fee code is gone, and the SDK reads after-fee note values from the pool's `Shield` events; see #51)
 - ~~Missing `onlyDelegatecall` guards on pool modules~~ (Fixed: guards added to all module external functions)
 
 **NEVER enable testing mode (`setTestingMode()`) or any SNARK verification bypass without explicit human instruction.** These exist for specific test scenarios and must not be turned on as a convenience shortcut.

@@ -30,9 +30,10 @@ interface IArmadaFeeModule is IFeeCollector {
     }
 
     /// @notice Governance-assigned custom terms for a specific integrator.
+    /// @dev While active, `customArmadaTakeBps` applies to every shield the integrator routes,
+    ///      from the first dollar; it overrides the volume tiers (#169).
     struct CustomTerms {
         uint256 customArmadaTakeBps;
-        uint256 customVolumeThreshold;
         bool active;
     }
 
@@ -65,7 +66,7 @@ interface IArmadaFeeModule is IFeeCollector {
     event TierRemoved(uint256 index);
     event YieldFeeUpdated(uint256 oldBps, uint256 newBps);
     event HarvestIntervalUpdated(uint256 oldInterval, uint256 newInterval);
-    event IntegratorTermsSet(address indexed integrator, uint256 takeBps, uint256 threshold, bool active);
+    event IntegratorTermsSet(address indexed integrator, uint256 takeBps, bool active);
     event PrivacyPoolUpdated(address indexed oldPool, address indexed newPool);
     event YieldVaultUpdated(address indexed oldVault, address indexed newVault);
 
@@ -136,7 +137,7 @@ interface IArmadaFeeModule is IFeeCollector {
     function removeTier(uint256 index) external;
     function setYieldFee(uint256 bps) external;
     function setHarvestInterval(uint256 interval) external;
-    function setIntegratorTerms(address integrator, uint256 takeBps, uint256 threshold, bool active) external;
+    function setIntegratorTerms(address integrator, uint256 takeBps, bool active) external;
     function setPrivacyPool(address _privacyPool) external;
     function setYieldVault(address _yieldVault) external;
 

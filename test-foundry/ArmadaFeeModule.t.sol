@@ -43,7 +43,7 @@ contract ArmadaFeeModuleTest is Test {
     event TierUpdated(uint256 index, uint256 volumeThreshold, uint256 armadaTakeBps);
     event TierRemoved(uint256 index);
     event YieldFeeUpdated(uint256 oldBps, uint256 newBps);
-    event IntegratorTermsSet(address indexed integrator, uint256 takeBps, uint256 threshold, bool active);
+    event IntegratorTermsSet(address indexed integrator, uint256 takeBps, bool active);
 
     function setUp() public {
         // Deploy implementation + proxy
@@ -234,8 +234,8 @@ contract ArmadaFeeModuleTest is Test {
         vm.prank(integrator1);
         feeModule.setIntegratorFee(30);
 
-        // Set custom terms: 20 bps armada take, 100k threshold
-        feeModule.setIntegratorTerms(integrator1, 20, 100_000e6, true);
+        // Set custom terms: 20 bps armada take, from the first dollar of volume
+        feeModule.setIntegratorTerms(integrator1, 20, true);
 
         (uint256 armadaTake, uint256 integratorFee, uint256 totalFee) =
             feeModule.calculateShieldFee(integrator1, 10_000e6);
@@ -491,18 +491,17 @@ contract ArmadaFeeModuleTest is Test {
 
     function test_setIntegratorTerms() public {
         vm.expectEmit(true, false, false, true);
-        emit IntegratorTermsSet(integrator1, 25, 100_000e6, true);
-        feeModule.setIntegratorTerms(integrator1, 25, 100_000e6, true);
+        emit IntegratorTermsSet(integrator1, 25, true);
+        feeModule.setIntegratorTerms(integrator1, 25, true);
 
         IArmadaFeeModule.CustomTerms memory terms = feeModule.getIntegratorTerms(integrator1);
         assertTrue(terms.active);
         assertEq(terms.customArmadaTakeBps, 25);
-        assertEq(terms.customVolumeThreshold, 100_000e6);
     }
 
     function test_setIntegratorTerms_revertsOnZeroAddress() public {
         vm.expectRevert("ArmadaFeeModule: zero integrator");
-        feeModule.setIntegratorTerms(address(0), 25, 100_000e6, true);
+        feeModule.setIntegratorTerms(address(0), 25, true);
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -569,7 +568,7 @@ contract ArmadaFeeModuleTest is Test {
         feeModule.setYieldFee(2000);
 
         vm.expectRevert("Ownable: caller is not the owner");
-        feeModule.setIntegratorTerms(integrator1, 25, 100_000e6, true);
+        feeModule.setIntegratorTerms(integrator1, 25, true);
 
         vm.expectRevert("Ownable: caller is not the owner");
         feeModule.setPrivacyPool(alice);

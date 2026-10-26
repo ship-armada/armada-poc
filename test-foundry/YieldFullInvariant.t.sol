@@ -249,6 +249,8 @@ contract YieldFullInvariantTest is Test {
         for (uint256 i = 0; i < actors.length; i++) {
             sumBalances += vault.balanceOf(actors[i]);
         }
+        // Shares locked by the first deposit (#365) belong to no actor.
+        sumBalances += vault.balanceOf(vault.LOCKED_SHARES_HOLDER());
         assertEq(supply, sumBalances, "INV-Y2: totalSupply != sum of balances");
     }
 
@@ -325,6 +327,15 @@ contract YieldNoProfitTest is Test {
             "Armada Yield USDC",
             "ayUSDC"
         );
+
+        // Seed the vault so the tested user is not the first depositor: the first deposit pays for
+        // the permanent share lock (LOCKED_SHARES, #365), which these round-trip checks don't model.
+        address seeder = address(0x5EED);
+        usdc.mint(seeder, 1_000 * 1e6);
+        vm.startPrank(seeder);
+        usdc.approve(address(vault), 1_000 * 1e6);
+        vault.deposit(1_000 * 1e6, seeder);
+        vm.stopPrank();
     }
 
     /// @notice INV-Y4: deposit(x) then immediately redeem(shares) returns <= x
@@ -333,7 +344,7 @@ contract YieldNoProfitTest is Test {
     function testFuzz_noFreeProfit(uint256 depositAmount) public {
         depositAmount = bound(depositAmount, 1, 1_000_000 * 1e6);
 
-        address user = address(0xDEAD);
+        address user = address(0xB0B);
         usdc.mint(user, depositAmount);
 
         vm.startPrank(user);
@@ -367,7 +378,7 @@ contract YieldNoProfitTest is Test {
         amount1 = bound(amount1, 1, 500_000 * 1e6);
         amount2 = bound(amount2, 1, 500_000 * 1e6);
 
-        address user = address(0xDEAD);
+        address user = address(0xB0B);
         usdc.mint(user, amount1 + amount2);
 
         // First deposit
@@ -395,7 +406,7 @@ contract YieldNoProfitTest is Test {
         depositAmount = bound(depositAmount, 1_000 * 1e6, 1_000_000 * 1e6); // min $1000
         timeElapsed = bound(timeElapsed, 1 days, 365 days);
 
-        address user = address(0xDEAD);
+        address user = address(0xB0B);
         usdc.mint(user, depositAmount);
 
         vm.startPrank(user);

@@ -71,6 +71,19 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
     ///      from `IArmadaFeeModule.getHarvestInterval()` and this constant is unused.
     uint256 public constant FALLBACK_HARVEST_INTERVAL = 7 days;
 
+    /// @notice Shares the first deposit locks forever (1 ayUSDC; worth 1 USDC when minted).
+    /// @dev Defense against the first-depositor share-inflation attack (#365). `totalAssets` is
+    ///      donatable (anyone can supply to the spoke on the vault's behalf), so a holder of a few
+    ///      shares could inflate one share's price and make the next deposit lose up to a whole
+    ///      share to rounding. With these shares locked, total supply never drops below
+    ///      LOCKED_SHARES, so a donation is spread mostly over shares nobody can redeem: the
+    ///      attacker loses nearly all of it, and a depositor loses at most ~donation / LOCKED_SHARES.
+    uint256 public constant LOCKED_SHARES = 1e6;
+
+    /// @notice Holder of the locked shares: an address nobody holds a key for, so its shares can
+    ///         never be redeemed, transferred or approved.
+    address public constant LOCKED_SHARES_HOLDER = 0x000000000000000000000000000000000000dEaD;
+
     /// @notice Yield fee in basis points, governable via extended proposal.
     uint256 public yieldFeeBps = 1000; // 10% at launch
 
@@ -296,6 +309,13 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
         // protocol's pending claim is preserved.
         shares = _convertToShares(assets);
         require(shares > 0, "ArmadaYieldVault: zero shares");
+
+        // The first deposit pays for the permanent share lock (#365, see LOCKED_SHARES).
+        if (totalSupply() == 0) {
+            require(shares > LOCKED_SHARES, "ArmadaYieldVault: first deposit too small");
+            _mint(LOCKED_SHARES_HOLDER, LOCKED_SHARES);
+            shares -= LOCKED_SHARES;
+        }
 
         totalDeposited += assets;
 

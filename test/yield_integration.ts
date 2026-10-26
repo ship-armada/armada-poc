@@ -111,9 +111,11 @@ describe("Yield Integration", function () {
       );
       await tx.wait();
 
-      // Check balances (allow small rounding tolerance)
+      // Check balances (allow small rounding tolerance). The first deposit is priced 1:1 but pays
+      // for the permanent share lock (LOCKED_SHARES, #365), so the user receives the rest.
+      const lockedShares = await armadaYieldVault.LOCKED_SHARES();
       const shares = await armadaYieldVault.balanceOf(user.address);
-      expect(shares).to.be.closeTo(DEPOSIT_AMOUNT, 10n); // 1:1 for first deposit
+      expect(shares).to.be.closeTo(DEPOSIT_AMOUNT - lockedShares, 10n);
 
       const userUSDC = await usdc.balanceOf(user.address);
       expect(userUSDC).to.be.closeTo(INITIAL_BALANCE - DEPOSIT_AMOUNT, 10n);
@@ -134,9 +136,11 @@ describe("Yield Integration", function () {
       );
       await armadaYieldVault.connect(user).deposit(DEPOSIT_AMOUNT, user.address);
 
-      // Check initial assets (allow small rounding tolerance)
+      // Check initial assets (allow small rounding tolerance). As the first depositor the user paid
+      // for the permanent share lock (LOCKED_SHARES, #365).
+      const userPrincipal = DEPOSIT_AMOUNT - (await armadaYieldVault.LOCKED_SHARES());
       const initialAssets = await armadaYieldVault.getUserAssets(user.address);
-      expect(initialAssets).to.be.closeTo(DEPOSIT_AMOUNT, 10n);
+      expect(initialAssets).to.be.closeTo(userPrincipal, 10n);
 
       // Fast forward 1 year
       await time.increase(ONE_YEAR);
@@ -147,9 +151,9 @@ describe("Yield Integration", function () {
       //      For a single depositor that's principal + net-of-protocol-cut yield.
       const assetsAfterYear = await armadaYieldVault.getUserAssets(user.address);
 
-      const expectedGrossYield = (DEPOSIT_AMOUNT * BigInt(YIELD_BPS)) / 10000n;
+      const expectedGrossYield = (userPrincipal * BigInt(YIELD_BPS)) / 10000n;
       const expectedNetYield = (expectedGrossYield * (10000n - BigInt(YIELD_FEE_BPS))) / 10000n;
-      const expectedTotal = DEPOSIT_AMOUNT + expectedNetYield;
+      const expectedTotal = userPrincipal + expectedNetYield;
 
       // Allow 1 USDC tolerance for rounding
       expect(assetsAfterYear).to.be.closeTo(expectedTotal, ONE_USDC);
@@ -221,9 +225,11 @@ describe("Yield Integration", function () {
       const treasuryAfter = await armadaTreasury.getBalance(await usdc.getAddress());
       expect(treasuryAfter).to.equal(treasuryBefore);
 
-      // User should get back approximately what they deposited (tiny rounding tolerance)
+      // User should get back what they deposited, less the share lock their first deposit paid for
+      // (LOCKED_SHARES, #365), within a tiny rounding tolerance
+      const lockedShares = await armadaYieldVault.LOCKED_SHARES();
       const userFinal = await usdc.balanceOf(user.address);
-      expect(userFinal).to.be.closeTo(INITIAL_BALANCE, 10n);
+      expect(userFinal).to.be.closeTo(INITIAL_BALANCE - lockedShares, 10n);
     });
   });
 

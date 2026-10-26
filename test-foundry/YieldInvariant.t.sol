@@ -173,6 +173,8 @@ contract YieldInvariantTest is Test {
         for (uint256 i = 0; i < actors.length; i++) {
             sumBalances += vault.balanceOf(actors[i]);
         }
+        // Shares locked by the first deposit (#365) belong to no actor.
+        sumBalances += vault.balanceOf(vault.LOCKED_SHARES_HOLDER());
         assertEq(supply, sumBalances, "totalSupply != sum of balances");
     }
 }

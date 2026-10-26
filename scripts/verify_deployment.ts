@@ -404,18 +404,6 @@ async function checkYieldFeeWiring(
 
   const vault = await ethers.getContractAt("ArmadaYieldVault", vaultAddr);
 
-  // Adapter set on vault
-  try {
-    const adapter = await vault.adapter();
-    if (adapter.toLowerCase() === adapterAddr.toLowerCase()) {
-      pass(GROUP, "YieldVault adapter set");
-    } else {
-      fail(GROUP, "YieldVault adapter set", `Expected ${adapterAddr}, got ${adapter}`);
-    }
-  } catch {
-    fail(GROUP, "YieldVault adapter set", "Error reading adapter");
-  }
-
   // Treasury wired to ArmadaTreasuryGov from governance manifest
   if (govManifest?.contracts?.treasury) {
     try {

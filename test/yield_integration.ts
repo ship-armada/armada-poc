@@ -89,10 +89,7 @@ describe("Yield Integration", function () {
     await armadaYieldAdapter.waitForDeployment();
     await mockRegistry.setAuthorized(await armadaYieldAdapter.getAddress(), true);
 
-    // 8. Configure vault adapter
-    await armadaYieldVault.setAdapter(await armadaYieldAdapter.getAddress());
-
-    // 9. Mint USDC to user
+    // 8. Mint USDC to user
     await usdc.mint(user.address, INITIAL_BALANCE);
   });
 

@@ -106,9 +106,6 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
     /// @notice Contract owner
     address public owner;
 
-    /// @notice Privileged adapter (can bypass fees)
-    address public adapter;
-
     /// @notice Fee module address (ArmadaFeeModule proxy) for centralized yield fee config.
     /// @dev When address(0), uses local yieldFeeBps. When set, reads fee from fee module.
     address public feeModule;
@@ -166,7 +163,6 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
         uint256 yieldFee
     );
 
-    event AdapterUpdated(address indexed oldAdapter, address indexed newAdapter);
     event OwnershipTransferred(address indexed oldOwner, address indexed newOwner);
     event YieldFeeUpdated(uint256 oldFeeBps, uint256 newFeeBps);
     event FeeModuleUpdated(address indexed oldModule, address indexed newModule);
@@ -208,15 +204,6 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
     }
 
     // ============ Admin Functions ============
-
-    /**
-     * @notice Set privileged adapter address
-     * @param _adapter New adapter address (can be zero to disable)
-     */
-    function setAdapter(address _adapter) external onlyOwner {
-        emit AdapterUpdated(adapter, _adapter);
-        adapter = _adapter;
-    }
 
     /**
      * @notice Transfer ownership

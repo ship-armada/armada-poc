@@ -201,7 +201,6 @@ describe("Fee Module Integration", function () {
     );
     adapterAddress = await armadaYieldAdapter.getAddress();
     await mockRegistry.setAuthorized(adapterAddress, true);
-    await armadaYieldVault.setAdapter(adapterAddress);
     await armadaYieldAdapter.setPrivacyPool(privacyPoolAddress);
     // Shield-fee exemption is driven by the registry (#370): the adapter is authorized above,
     // so pointing the pool at the same registry grants it the fee-exempt shield path.

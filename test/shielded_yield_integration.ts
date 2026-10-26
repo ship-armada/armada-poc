@@ -207,7 +207,6 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
     await mockRegistry.setAuthorized(adapterAddress, true);
     usdcAddress = await hubUsdc.getAddress();
 
-    await armadaYieldVault.setAdapter(adapterAddress);
     await armadaYieldAdapter.setPrivacyPool(privacyPoolAddress);
     // Shield-fee exemption is driven by the registry (#370): the adapter is authorized above,
     // so pointing the pool at the same registry grants it the fee-exempt shield path.

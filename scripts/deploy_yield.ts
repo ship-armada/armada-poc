@@ -132,11 +132,6 @@ async function main() {
   const armadaYieldAdapterAddress = await armadaYieldAdapter.getAddress();
   console.log(`   ArmadaYieldAdapter: ${armadaYieldAdapterAddress}`);
 
-  // 3. Configure ArmadaYieldVault to recognize adapter
-  console.log("\n3. Configuring ArmadaYieldVault...");
-  await (await armadaYieldVault.setAdapter(armadaYieldAdapterAddress, nm.override())).wait();
-  console.log(`   Adapter set to: ${armadaYieldAdapterAddress}`);
-
   // Yield contract ownership transfers to timelock are handled by deploy_fee_module.ts
   // after all owner-gated configuration (link + fee module wiring) is complete.
 

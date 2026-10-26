@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ABOUTME: Fetches the pinned armada-circuits release artifacts (WASM/ZKEY/VKEY) and installs
-# ABOUTME: them at <repo-parent>/armada-circuits/build/, where lib/sdk/armada-artifacts.ts expects them.
+# ABOUTME: them where lib/sdk/armada-artifacts.ts expects them (<repo-parent>/armada-circuits/build/ by default).
 set -euo pipefail
 
 # The trusted setup is non-reproducible: the release asset IS the canonical artifact
@@ -15,9 +15,10 @@ SUMSFILE_SHA256="e5e21a52db55e776a6ad7d9c2fbd368a9ed93cfe376954e242ad299341fe3f2
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-# Destination: sibling of the repo checkout (see lib/sdk/armada-artifacts.ts).
-# Override with $1 for non-standard layouts.
-DEST="${1:-"$(dirname "$REPO_ROOT")/armada-circuits/build"}"
+# Destination, matching lib/sdk/armada-artifacts.ts: $ARMADA_CIRCUITS_DIR/build when set,
+# otherwise a sibling of the repo checkout. An explicit $1 overrides both.
+CIRCUITS_DIR="${ARMADA_CIRCUITS_DIR:-"$(dirname "$REPO_ROOT")/armada-circuits"}"
+DEST="${1:-"$CIRCUITS_DIR/build"}"
 STAMP="$DEST/.fetched-${CIRCUITS_TAG}"
 
 sha256() {

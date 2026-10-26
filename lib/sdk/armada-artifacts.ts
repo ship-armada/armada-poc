@@ -4,7 +4,8 @@
 /**
  * Armada Circuit Artifact Provider
  *
- * Build artifacts live in <repo-parent>/armada-circuits/build/<N>x<M>/ and are
+ * Build artifacts live in <repo-parent>/armada-circuits/build/<N>x<M>/ (or
+ * $ARMADA_CIRCUITS_DIR/build/<N>x<M>/ when that env var is set) and are
  * installed from the pinned canonical release by:
  *   scripts/fetch-circuits.sh
  * (or built from source: cd armada-circuits && npm run compile && npm run setup:dev —
@@ -21,8 +22,17 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // ── Path to armada-circuits build output ───────────────────
-// Relative to this file: ../../armada-circuits/build/
-const CIRCUITS_BUILD = path.resolve(__dirname, '../../..', 'armada-circuits', 'build');
+// Default is a sibling of the repo checkout, relative to this file: ../../../armada-circuits/
+const DEFAULT_CIRCUITS_DIR = path.resolve(__dirname, '../../..', 'armada-circuits');
+
+/**
+ * Directory holding the <N>x<M>/ shape folders. Read on every call so the
+ * ARMADA_CIRCUITS_DIR override (an armada-circuits checkout or install root)
+ * takes effect without reloading the module.
+ */
+export function circuitsBuildDir(): string {
+  return path.join(process.env.ARMADA_CIRCUITS_DIR || DEFAULT_CIRCUITS_DIR, 'build');
+}
 
 // ── Shapes produced by armada-circuits/scripts/compile.sh ──
 export const ARMADA_SHAPES: Array<{ nullifiers: number; commitments: number }> = [
@@ -54,6 +64,8 @@ interface CachedArtifact {
   vkey: any;
 }
 
+// Keyed by shape directory, so changing ARMADA_CIRCUITS_DIR never serves artifacts
+// loaded from a different location.
 const cache = new Map<string, CachedArtifact>();
 
 function shapeKey(n: number, m: number): string {
@@ -61,7 +73,7 @@ function shapeKey(n: number, m: number): string {
 }
 
 function shapeDir(n: number, m: number): string {
-  return path.join(CIRCUITS_BUILD, shapeKey(n, m));
+  return path.join(circuitsBuildDir(), shapeKey(n, m));
 }
 
 /**
@@ -70,11 +82,11 @@ function shapeDir(n: number, m: number): string {
  */
 export function getArtifact(nullifiers: number, commitments: number): CachedArtifact {
   const key = shapeKey(nullifiers, commitments);
+  const dir = shapeDir(nullifiers, commitments);
 
-  const cached = cache.get(key);
+  const cached = cache.get(dir);
   if (cached) return cached;
 
-  const dir = shapeDir(nullifiers, commitments);
   const wasmFile = path.join(dir, `main_${key}_js`, `main_${key}.wasm`);
   const zkeyFile = path.join(dir, 'final.zkey');
   const vkeyFile = path.join(dir, 'vkey.json');
@@ -92,7 +104,7 @@ export function getArtifact(nullifiers: number, commitments: number): CachedArti
   const vkey = JSON.parse(fs.readFileSync(vkeyFile, 'utf-8'));
 
   const artifact: CachedArtifact = { wasm, zkey, vkey };
-  cache.set(key, artifact);
+  cache.set(dir, artifact);
   return artifact;
 }
 

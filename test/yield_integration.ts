@@ -120,9 +120,6 @@ describe("Yield Integration", function () {
       // Check vault state
       const totalAssets = await armadaYieldVault.totalAssets();
       expect(totalAssets).to.be.closeTo(DEPOSIT_AMOUNT, 10n);
-
-      const totalPrincipal = await armadaYieldVault.totalPrincipal();
-      expect(totalPrincipal).to.equal(DEPOSIT_AMOUNT);
     });
 
     it("should accrue yield over time", async function () {
@@ -170,12 +167,15 @@ describe("Yield Integration", function () {
       // Get shares
       const shares = await armadaYieldVault.balanceOf(user.address);
 
-      // WHY: After issue #75, getUserYield and pendingProtocolFee together describe
-      //      the split: getUserYield = the user's net yield (post-protocol-cut),
-      //      pendingProtocolFee = the protocol's currently-owed cut. Sum is gross.
-      const userYieldNet = await armadaYieldVault.getUserYield(user.address);
+      // WHY: After issue #75, getUserAssets and pendingProtocolFee together describe the split:
+      //      getUserAssets = what the user's shares are worth net of the protocol's cut,
+      //      pendingProtocolFee = the protocol's currently-owed cut. The user's shares were worth
+      //      DEPOSIT_AMOUNT less the share lock their first deposit paid for (#365), so anything
+      //      above that is net yield.
+      const userPrincipal = DEPOSIT_AMOUNT - (await armadaYieldVault.LOCKED_SHARES());
+      const userAssetsNet = await armadaYieldVault.getUserAssets(user.address);
       const pendingFee = await armadaYieldVault.pendingProtocolFee();
-      expect(userYieldNet).to.be.gt(0);
+      expect(userAssetsNet).to.be.gt(userPrincipal);
       expect(pendingFee).to.be.gt(0);
 
       // Treasury balance before
@@ -193,9 +193,9 @@ describe("Yield Integration", function () {
       const feeReceived = treasuryAfter - treasuryBefore;
       expect(feeReceived).to.be.closeTo(pendingFee, ONE_USDC);
 
-      // User received principal + net yield.
+      // User received what their shares were worth: principal + net yield.
       const userFinal = await usdc.balanceOf(user.address);
-      const expectedUserFinal = INITIAL_BALANCE + userYieldNet;
+      const expectedUserFinal = INITIAL_BALANCE - DEPOSIT_AMOUNT + userAssetsNet;
       expect(userFinal).to.be.closeTo(expectedUserFinal, ONE_USDC);
     });
 
@@ -373,7 +373,7 @@ describe("Yield Integration", function () {
       await time.increase(ONE_YEAR);
 
       const assetsAfterYear = await armadaYieldVault.getUserAssets(user.address);
-      const yieldAccrued = await armadaYieldVault.getUserYield(user.address);
+      const yieldAccrued = assetsAfterYear - (DEPOSIT_AMOUNT - (await armadaYieldVault.LOCKED_SHARES()));
       console.log(`   Assets after 1 year: ${ethers.formatUnits(assetsAfterYear, 6)} USDC`);
       console.log(`   Yield accrued: ${ethers.formatUnits(yieldAccrued, 6)} USDC`);
 

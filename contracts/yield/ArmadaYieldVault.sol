@@ -110,26 +110,11 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
     /// @dev When address(0), uses local yieldFeeBps. When set, reads fee from fee module.
     address public feeModule;
 
-    /// @notice Aggregate cost-basis principal of outstanding shares.
-    /// @dev Informational only (paired with per-user cost basis for `getUserYield`); the protocol
-    ///      fee is computed from lifetime flows, not from cost basis (see `_lifetimeYield`).
-    uint256 public totalPrincipal;
-
     /// @notice Lifetime protocol fee swept to treasury (in underlying units).
     uint256 public cumulativeProtocolFee;
 
     /// @notice Timestamp of the last protocol fee settle (via redeem or external harvest).
     uint256 public lastHarvestTime;
-
-    /// @notice Per-user cost basis per share, scaled by 1e18
-    /// @dev Tracks weighted average deposit price. On deposit, the cost basis is updated
-    ///      as a weighted average of existing and new shares. On redeem, principal is
-    ///      computed as shares * costBasis / COST_BASIS_PRECISION, which is independent
-    ///      of balanceOf() and works correctly with the ArmadaYieldAdapter pattern.
-    mapping(address => uint256) public userCostBasisPerShare;
-
-    /// @notice Precision scalar for cost basis (1e18)
-    uint256 internal constant COST_BASIS_PRECISION = 1e18;
 
     /// @notice Lifetime underlying deposited by all depositors.
     uint256 public totalDeposited;
@@ -306,18 +291,6 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
 
         totalDeposited += assets;
 
-        // Track principal via weighted average cost basis (informational; see totalPrincipal)
-        totalPrincipal += assets;
-        uint256 existingShares = balanceOf(receiver);
-        if (existingShares == 0) {
-            // First deposit: cost basis = assets per share
-            userCostBasisPerShare[receiver] = (assets * COST_BASIS_PRECISION) / shares;
-        } else {
-            // Weighted average: ((oldBasis * oldShares) + (assets * PRECISION)) / (oldShares + newShares)
-            uint256 oldBasis = userCostBasisPerShare[receiver];
-            userCostBasisPerShare[receiver] = (oldBasis * existingShares + assets * COST_BASIS_PRECISION) / (existingShares + shares);
-        }
-
         // Transfer underlying from caller
         underlying.safeTransferFrom(msg.sender, address(this), assets);
 
@@ -361,16 +334,6 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
 
         // Now compute payout against the post-settle share price.
         assets = _convertToAssets(shares);
-
-        // Decrement aggregate principal by the user's cost-basis portion. The per-user
-        // cost basis (userCostBasisPerShare) is intentionally NOT decremented — it is
-        // an average price that stays valid for the user's remaining shares.
-        uint256 costBasis = userCostBasisPerShare[owner_];
-        uint256 principalPortion = (shares * costBasis) / COST_BASIS_PRECISION;
-        if (principalPortion > totalPrincipal) {
-            principalPortion = totalPrincipal;
-        }
-        totalPrincipal -= principalPortion;
 
         totalPaidOut += assets;
 
@@ -497,18 +460,6 @@ contract ArmadaYieldVault is ERC20, ReentrancyGuard {
      */
     function getUserAssets(address user) external view returns (uint256) {
         return _convertToAssets(balanceOf(user));
-    }
-
-    /**
-     * @notice Get user's accrued yield
-     * @param user User address
-     * @return yield_ User's yield (assets - principal)
-     */
-    function getUserYield(address user) external view returns (uint256 yield_) {
-        uint256 userShares = balanceOf(user);
-        uint256 assets = _convertToAssets(userShares);
-        uint256 principal = (userShares * userCostBasisPerShare[user]) / COST_BASIS_PRECISION;
-        yield_ = assets > principal ? assets - principal : 0;
     }
 
     /**

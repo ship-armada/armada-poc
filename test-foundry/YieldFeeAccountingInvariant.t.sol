@@ -196,4 +196,19 @@ contract YieldFeeAccountingWithTransfersInvariantTest is YieldFeeSetup {
     function invariant_protocolFeeMatchesYieldWhenSharesMove() public view {
         _assertFeeMatchesYield();
     }
+
+    /// @dev WHY: deterministic form of #609. A depositor (the adapter's role) earns a year of yield,
+    ///      half its shares move to a holder that never deposited (an ayUSDC note unshielded to a
+    ///      wallet), that holder redeems directly, and a second year of yield accrues. The fee must
+    ///      still be yieldFeeBps of all yield. The old cost-basis accounting read the fee as zero
+    ///      after such a redemption until the "phantom principal" was earned back.
+    function test_feeCorrectAfterRedemptionByNonDepositor() public {
+        handler.deposit(0, 1_000_000e6);
+        vm.warp(block.timestamp + 365 days);
+        handler.transferShares(0, 1, vault.balanceOf(handler.actors(0)) / 2);
+        handler.redeem(1, vault.balanceOf(handler.actors(1)));
+        assertEq(vault.balanceOf(handler.actors(1)), 0, "non-depositor redeemed everything it held");
+        vm.warp(block.timestamp + 365 days);
+        _assertFeeMatchesYield();
+    }
 }

@@ -161,10 +161,6 @@ contract YieldInvariantTest is Test {
         assertEq(vault.totalAssets(), spokeAssets, "totalAssets should equal spoke assets");
     }
 
-    /// @notice totalPrincipal tracks deposits; may exceed totalAssets by 1 wei due to share/principal rounding
-    /// @dev Removed strict invariant - vault redeem uses principalPortion = (shares * costBasis) / PRECISION
-    ///      which can round down, leaving totalPrincipal slightly above totalAssets in edge cases.
-
     /// @notice ARM token supply conserved (not applicable - this is USDC vault)
     /// @notice Share supply matches sum of balances (ERC20 invariant)
     function invariant_shareSupplyConsistency() public view {

@@ -2,7 +2,6 @@
  * SDK Network Loading and Merkle Tree Sync
  *
  * Integrates with the SDK's network management for:
- * - Loading deployed contract addresses
  * - Setting up merkle tree syncing from on-chain events
  * - Scanning for shielded balances
  *
@@ -19,33 +18,8 @@ import {
 import { Chain } from '@railgun-community/shared-models';
 import { ethers, FallbackProvider, JsonRpcProvider } from 'ethers';
 import { getEngine } from './init';
-import { HUB_CHAIN, CLIENT_CHAIN, HUB_RPC, CLIENT_RPC, DEPLOYMENT_BLOCK } from './chain-config';
-import * as fs from 'fs';
-import * as path from 'path';
 
 // ============ Types ============
-
-export interface DeploymentInfo {
-  chainId: number;
-  deployer: string;
-  contracts: {
-    poseidonT3: string;
-    poseidonT4: string;
-    proxyAdmin: string;
-    treasuryImpl: string;
-    treasuryProxy: string;
-    railgunImpl: string;
-    railgunProxy: string;
-  };
-  config: {
-    shieldFee: number;
-    unshieldFee: number;
-    nftFee: number;
-    testingMode: boolean;
-    verificationKeysLoaded: string[];
-  };
-  timestamp: string;
-}
 
 export interface NetworkLoadResult {
   chain: Chain;
@@ -55,44 +29,6 @@ export interface NetworkLoadResult {
     shield: bigint;
     unshield: bigint;
   };
-}
-
-// ============ Deployment Loading ============
-
-const DEPLOYMENTS_DIR = path.join(__dirname, '../../deployments');
-
-/**
- * Load deployment info from file
- *
- * @param filename - Deployment file name (without .json)
- */
-export function loadDeployment(filename: string): DeploymentInfo {
-  const filepath = path.join(DEPLOYMENTS_DIR, `${filename}.json`);
-  if (!fs.existsSync(filepath)) {
-    throw new Error(`Deployment file not found: ${filepath}`);
-  }
-  return JSON.parse(fs.readFileSync(filepath, 'utf-8'));
-}
-
-/**
- * Get Railgun proxy address from deployment
- */
-export function getRailgunProxyAddress(filename: string = 'railgun'): string {
-  const deployment = loadDeployment(filename);
-  return deployment.contracts.railgunProxy;
-}
-
-/**
- * List available deployments
- */
-export function listDeployments(): string[] {
-  if (!fs.existsSync(DEPLOYMENTS_DIR)) {
-    return [];
-  }
-  return fs
-    .readdirSync(DEPLOYMENTS_DIR)
-    .filter((f) => f.endsWith('.json'))
-    .map((f) => f.replace('.json', ''));
 }
 
 // ============ Provider Creation ============
@@ -210,30 +146,6 @@ export async function loadNetworkIntoEngine(
       unshield: fees.unshield,
     },
   };
-}
-
-/**
- * Load hub chain network from deployment file
- *
- * Convenience function for loading the hub chain using
- * the saved deployment info.
- */
-export async function loadHubNetwork(): Promise<NetworkLoadResult> {
-  const deployment = loadDeployment('railgun');
-
-  if (deployment.chainId !== HUB_CHAIN.id) {
-    throw new Error(
-      `Deployment chain ID (${deployment.chainId}) doesn't match HUB_CHAIN (${HUB_CHAIN.id})`
-    );
-  }
-
-  return loadNetworkIntoEngine(
-    HUB_CHAIN,
-    deployment.contracts.railgunProxy,
-    ethers.ZeroAddress, // No RelayAdapt in our deployment
-    HUB_RPC,
-    DEPLOYMENT_BLOCK
-  );
 }
 
 // ============ Merkle Tree Scanning ============

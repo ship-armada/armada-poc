@@ -48,41 +48,6 @@ export const HUB_RPC = "http://localhost:8546";
 export const CLIENT_RPC = "http://localhost:8545";
 export const CLIENT_B_RPC = "http://localhost:8547";
 
-// ============ All Chains ============
-
-/**
- * Array of all supported chains
- */
-export const ALL_CHAINS: Chain[] = [HUB_CHAIN, CLIENT_CHAIN, CLIENT_CHAIN_B];
-
-/**
- * Array of all client chains (non-hub)
- */
-export const CLIENT_CHAINS: Chain[] = [CLIENT_CHAIN, CLIENT_CHAIN_B];
-
-// ============ Deployment Configuration ============
-
-/**
- * Deployment block for local devnet (always 0)
- */
-export const DEPLOYMENT_BLOCK = 0;
-
-/**
- * Whether the chain supports V3 contracts (Poseidon merkle tree)
- * Our POC uses V2-style contracts
- */
-export const SUPPORTS_V3 = false;
-
-// ============ Network Name ============
-
-/**
- * Custom network name for our local devnet
- * Used for SDK network lookups
- */
-export const HUB_NETWORK_NAME = "LocalDevnetHub";
-export const CLIENT_NETWORK_NAME = "LocalDevnetClient";
-export const CLIENT_B_NETWORK_NAME = "LocalDevnetClientB";
-
 // ============ Helper Functions ============
 
 /**
@@ -102,42 +67,5 @@ export function getRpcUrl(chain: Chain): string {
   if (chain.id === HUB_CHAIN.id) return HUB_RPC;
   if (chain.id === CLIENT_CHAIN.id) return CLIENT_RPC;
   if (chain.id === CLIENT_CHAIN_B.id) return CLIENT_B_RPC;
-  throw new Error(`Unknown chain ID: ${chain.id}`);
-}
-
-/**
- * Check if chain is our hub chain
- */
-export function isHubChain(chain: Chain): boolean {
-  return chain.id === HUB_CHAIN.id && chain.type === ChainType.EVM;
-}
-
-/**
- * Check if chain is a client chain (A or B)
- */
-export function isClientChain(chain: Chain): boolean {
-  return (
-    (chain.id === CLIENT_CHAIN.id || chain.id === CLIENT_CHAIN_B.id) &&
-    chain.type === ChainType.EVM
-  );
-}
-
-/**
- * Get network name for chain
- */
-export function getNetworkName(chain: Chain): string {
-  if (chain.id === HUB_CHAIN.id) return HUB_NETWORK_NAME;
-  if (chain.id === CLIENT_CHAIN.id) return CLIENT_NETWORK_NAME;
-  if (chain.id === CLIENT_CHAIN_B.id) return CLIENT_B_NETWORK_NAME;
-  throw new Error(`Unknown chain ID: ${chain.id}`);
-}
-
-/**
- * Get deployment file name for chain
- */
-export function getDeploymentFileName(chain: Chain): string {
-  if (chain.id === HUB_CHAIN.id) return "hub.json";
-  if (chain.id === CLIENT_CHAIN.id) return "client.json";
-  if (chain.id === CLIENT_CHAIN_B.id) return "clientB.json";
   throw new Error(`Unknown chain ID: ${chain.id}`);
 }

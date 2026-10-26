@@ -4,7 +4,6 @@
  * Sets up RailgunEngine with:
  * - LevelDB storage for wallet data
  * - Artifact loading using test artifacts (for local devnet)
- * - Custom chain configuration
  * - Stub implementations for quick sync (not needed for local devnet)
  */
 
@@ -29,8 +28,6 @@ import {
 import leveldown from 'leveldown';
 import * as path from 'path';
 import * as fs from 'fs';
-import { HUB_CHAIN, HUB_RPC, CLIENT_RPC, DEPLOYMENT_BLOCK } from './chain-config';
-import { ethers, FallbackProvider } from 'ethers';
 
 // Armada's own circuit artifacts (replaces unlicensed railgun-circuit-test-artifacts)
 import { getArtifact } from './armada-artifacts';
@@ -264,51 +261,6 @@ export async function initializeEngine(
   console.log('Engine initialized successfully');
 
   return engine;
-}
-
-/**
- * Load network into engine
- * Must be called after initializeEngine()
- *
- * Note: This is a simplified version for local devnet.
- * The full loadNetwork requires V3 contract addresses and polling providers.
- * For our POC, we don't need the full network loading - we interact
- * with contracts directly via ethers.
- *
- * @param chain - Chain to load
- * @param railgunProxyAddress - Address of RailgunSmartWallet proxy
- */
-export async function loadNetwork(
-  chain: Chain,
-  railgunProxyAddress: string
-): Promise<void> {
-  const eng = getEngine();
-
-  console.log(`Loading network for chain ${chain.id}...`);
-  console.log(`  Railgun proxy: ${railgunProxyAddress}`);
-
-  // Get RPC URL for chain
-  const rpcUrl = chain.id === HUB_CHAIN.id ? HUB_RPC : CLIENT_RPC;
-
-  // Create provider
-  const provider = new ethers.JsonRpcProvider(rpcUrl);
-
-  // Create deployment blocks record
-  const deploymentBlocks: Record<TXIDVersion, number> = {
-    [TXIDVersion.V2_PoseidonMerkle]: DEPLOYMENT_BLOCK,
-    [TXIDVersion.V3_PoseidonMerkle]: DEPLOYMENT_BLOCK,
-  };
-
-  // Note: The full loadNetwork requires:
-  // - PollingJsonRpcProvider (for event listening)
-  // - V3 contract addresses (PoseidonMerkleAccumulator, PoseidonMerkleVerifier, TokenVault)
-  // - RelayAdapt address
-  //
-  // For our POC, we'll skip full network loading and use direct contract calls.
-  // The engine is still useful for wallet creation and key derivation.
-
-  console.log(`  Note: Skipping full network load (not needed for POC wallet operations)`);
-  console.log(`Network setup complete for chain ${chain.id}`);
 }
 
 /**

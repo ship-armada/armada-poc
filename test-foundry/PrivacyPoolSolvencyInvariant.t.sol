@@ -1,5 +1,5 @@
 // ABOUTME: Invariant suite: for every token, the pool's balance covers the notes it treats as unspent.
-// ABOUTME: Drives multi-asset shields, transfers, local and cross-chain unshields, and CCTP shield-ins (#608).
+// ABOUTME: Drives multi-asset shields, transfers, local and cross-chain unshields, CCTP shield-ins and yield (#608).
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
 
@@ -15,6 +15,12 @@ import "../contracts/cctp/MockUSDCV2.sol";
 import "../contracts/cctp/MockCCTPV2.sol";
 import "../contracts/cctp/CCTPHookRouter.sol";
 import "../contracts/test/MockMessageHandlerV2.sol";
+import "../contracts/yield/ArmadaYieldVault.sol";
+import "../contracts/yield/ArmadaYieldAdapter.sol";
+import "../contracts/yield/YieldAdaptParams.sol";
+import "../contracts/aave-mock/MockAaveSpoke.sol";
+import "../contracts/governance/MockAdapterRegistry.sol";
+import "../contracts/governance/ArmadaTreasuryGov.sol";
 import "./helpers/PoseidonLinker.sol";
 
 /// @title SolvencyHandler — drives the pool and mirrors the notes it treats as unspent
@@ -24,8 +30,10 @@ import "./helpers/PoseidonLinker.sol";
 ///      that should be rejected (a non-USDC cross-chain unshield, a forged CCTP message). If one of
 ///      those were ever accepted, the per-token balance check in the invariant would fail.
 ///      Fees use the pool's flat shield fee; the fee-module branch is not driven here.
-///      TODO: add yield lend/redeem actions (ArmadaYieldAdapter + vault + mock Aave wiring) so the
-///      ayUSDC leg is covered too — scoped in issue #608, deferred to keep this suite self-contained.
+///      Yield runs through the real ArmadaYieldAdapter + ArmadaYieldVault + MockAaveSpoke, so value
+///      moves between USDC notes and ayUSDC (vault share) notes. Those ghost notes take their values
+///      from what the adapter reports (shares minted, assets redeemed), not from the pool's balance
+///      change, so the per-token check verifies the pool really received what it credited.
 contract SolvencyHandler is Test {
     struct Note {
         address token;
@@ -40,6 +48,8 @@ contract SolvencyHandler is Test {
     MockUSDCV2 public usdc;
     MockUSDCV2 public other;
     CCTPHookRouter public router;
+    ArmadaYieldAdapter public adapter;
+    ArmadaYieldVault public vault;
     address public tokenMessenger;
     address public clientPool;
     address public forgedRecipient;
@@ -57,6 +67,10 @@ contract SolvencyHandler is Test {
     uint256 public calls_unshieldLocal;
     uint256 public calls_unshieldCrossChain;
     uint256 public calls_shieldIn;
+    uint256 public calls_lend;
+    uint256 public calls_redeem;
+    uint256 public calls_redeemWithFee;
+    uint256 public calls_accrueYield;
     uint256 public rejected_crossChainNonUsdc;
     uint256 public rejected_forgedShieldIn;
     uint256 public rejected_tampered;
@@ -77,6 +91,7 @@ contract SolvencyHandler is Test {
         MockUSDCV2 _usdc,
         MockUSDCV2 _other,
         CCTPHookRouter _router,
+        ArmadaYieldAdapter _adapter,
         address _tokenMessenger,
         address _clientPool
     ) {
@@ -84,6 +99,8 @@ contract SolvencyHandler is Test {
         usdc = _usdc;
         other = _other;
         router = _router;
+        adapter = _adapter;
+        vault = ArmadaYieldVault(address(_adapter.vault()));
         tokenMessenger = _tokenMessenger;
         clientPool = _clientPool;
         forgedRecipient = address(new MockMessageHandlerV2());
@@ -224,6 +241,66 @@ contract SolvencyHandler is Test {
         } catch {
             rejected_forgedShieldIn++;
         }
+    }
+
+    /// @notice Yield lend: spend part of a USDC note into the vault; the adapter re-shields ayUSDC.
+    function lend(uint256 noteSeed, uint256 amountSeed) external {
+        (bool found, uint256 i) = _findNote(noteSeed, address(usdc));
+        if (!found) return;
+        Note memory note = notes[i];
+        uint120 value = uint120(bound(amountSeed, 1, note.value));
+
+        bytes32 npk = _npk();
+        ShieldCiphertext memory ciphertext = _emptyCiphertext();
+        Transaction memory txn = _adapterUnshield(
+            note, value, YieldAdaptParams.encode(npk, ciphertext.encryptedBundle, ciphertext.shieldKey)
+        );
+
+        try adapter.lendAndShield(txn, npk, ciphertext) returns (uint256 shares) {
+            _recordSpend(txn);
+            _spendWithChange(i, note, value);
+            notes.push(Note(address(vault), uint120(shares)));
+            calls_lend++;
+        } catch {}
+    }
+
+    /// @notice Yield redeem: spend part of an ayUSDC note; the adapter re-shields the USDC proceeds,
+    ///         split between the user and (optionally) a relayer fee note bound in adaptParams.
+    function redeem(uint256 noteSeed, uint256 sharesSeed, uint256 feeSeed) external {
+        (bool found, uint256 i) = _findNote(noteSeed, address(vault));
+        if (!found) return;
+        Note memory note = notes[i];
+        uint120 shares = uint120(bound(sharesSeed, 1, note.value));
+        uint256 fee = bound(feeSeed, 0, adapter.previewRedeem(shares) / 2);
+
+        bytes32 npk = _npk();
+        bytes32 feeNpk = fee > 0 ? _npk() : bytes32(0);
+        ShieldCiphertext memory ciphertext = _emptyCiphertext();
+        Transaction memory txn = _adapterUnshield(
+            note,
+            shares,
+            YieldAdaptParams.encode(
+                npk, ciphertext.encryptedBundle, ciphertext.shieldKey,
+                feeNpk, ciphertext.encryptedBundle, ciphertext.shieldKey, fee
+            )
+        );
+
+        try adapter.redeemAndShield(txn, npk, ciphertext, feeNpk, ciphertext, fee) returns (uint256 assets) {
+            _recordSpend(txn);
+            _spendWithChange(i, note, shares);
+            if (assets > fee) notes.push(Note(address(usdc), uint120(assets - fee)));
+            if (fee > 0) {
+                notes.push(Note(address(usdc), uint120(fee)));
+                calls_redeemWithFee++;
+            }
+            calls_redeem++;
+        } catch {}
+    }
+
+    /// @notice Let time pass so the mock Aave reserve accrues interest and redeems pay yield.
+    function accrueYield(uint256 secondsSeed) external {
+        vm.warp(block.timestamp + bound(secondsSeed, 1 hours, 30 days));
+        calls_accrueYield++;
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -380,6 +457,35 @@ contract SolvencyHandler is Test {
         return txn;
     }
 
+    /// @dev First note in `token`, scanning from a fuzzed start index.
+    function _findNote(uint256 seed, address token) internal view returns (bool, uint256) {
+        if (notes.length == 0) return (false, 0);
+        uint256 start = bound(seed, 0, notes.length - 1);
+        for (uint256 k = 0; k < notes.length; k++) {
+            uint256 i = (start + k) % notes.length;
+            if (notes[i].token == token) return (true, i);
+        }
+        return (false, 0);
+    }
+
+    function _emptyCiphertext() internal pure returns (ShieldCiphertext memory) {
+        return ShieldCiphertext({encryptedBundle: [bytes32(0), bytes32(0), bytes32(0)], shieldKey: bytes32(0)});
+    }
+
+    /// @dev NORMAL unshield of `value` from `note` to the yield adapter, bound to it via adaptContract.
+    function _adapterUnshield(Note memory note, uint120 value, bytes32 adaptParams)
+        internal
+        returns (Transaction memory txn)
+    {
+        CommitmentPreimage memory preimage = CommitmentPreimage({
+            npk: bytes32(uint256(uint160(address(adapter)))),
+            token: _erc20(note.token),
+            value: value
+        });
+        txn = _unshieldTransaction(note, preimage, adaptParams);
+        txn.boundParams.adaptContract = address(adapter);
+    }
+
     function _transact(Transaction memory txn) internal returns (bool) {
         Transaction[] memory txns = new Transaction[](1);
         txns[0] = txn;
@@ -440,6 +546,7 @@ contract PrivacyPoolSolvencyInvariantTest is Test, PoseidonLinker {
     PrivacyPool public pool;
     MockUSDCV2 public usdc;
     MockUSDCV2 public other;
+    ArmadaYieldVault public vault;
     SolvencyHandler public handler;
 
     function setUp() public {
@@ -477,7 +584,21 @@ contract PrivacyPoolSolvencyInvariantTest is Test, PoseidonLinker {
         pool.setRemotePool(1, MessageV2.addressToBytes32(clientPool));
         pool.setRemoteHookRouter(1, MessageV2.addressToBytes32(address(0xC11E4007)));
 
-        handler = new SolvencyHandler(pool, usdc, other, router, address(messenger), clientPool);
+        // Yield stack, wired as in production: the adapter is authorized in the registry the pool
+        // reads, so its re-shields are fee-exempt.
+        MockAaveSpoke spoke = new MockAaveSpoke();
+        usdc.addMinter(address(spoke));
+        spoke.addReserve(address(usdc), 500, true); // 5% APY, yield minted on withdrawal
+        vault = new ArmadaYieldVault(
+            address(spoke), 0, address(new ArmadaTreasuryGov(address(this))), "Armada Yield USDC", "ayUSDC"
+        );
+        MockAdapterRegistry registry = new MockAdapterRegistry();
+        ArmadaYieldAdapter adapter = new ArmadaYieldAdapter(address(usdc), address(vault), address(registry));
+        registry.setAuthorized(address(adapter), true);
+        adapter.setPrivacyPool(address(pool));
+        pool.setAdapterRegistry(address(registry));
+
+        handler = new SolvencyHandler(pool, usdc, other, router, adapter, address(messenger), clientPool);
         usdc.addMinter(address(handler));
         other.addMinter(address(handler));
         targetContract(address(handler));
@@ -490,9 +611,12 @@ contract PrivacyPoolSolvencyInvariantTest is Test, PoseidonLinker {
     ///      (#613) breaks this for USDC; both regressions were confirmed to fail this invariant.
     ///      Equality (not just >=) also catches value stuck in the pool with no note to spend it,
     ///      e.g. a cross-chain proof replayed as a pool->pool local unshield (#364).
+    ///      The ayUSDC leg covers yield: a lend must leave the pool holding exactly the shares it
+    ///      credited, and a redeem must bring back exactly the USDC it credited to the user and relayer.
     function invariant_poolCoversUnspentNotesPerToken() public view {
         assertEq(usdc.balanceOf(address(pool)), handler.ghostTotal(address(usdc)), "USDC notes not backed");
         assertEq(other.balanceOf(address(pool)), handler.ghostTotal(address(other)), "OTH notes not backed");
+        assertEq(vault.balanceOf(address(pool)), handler.ghostTotal(address(vault)), "ayUSDC notes not backed");
     }
 
     /// @notice No tampered transaction is ever accepted.
@@ -510,6 +634,7 @@ contract PrivacyPoolSolvencyInvariantTest is Test, PoseidonLinker {
         address r = handler.recipient();
         assertEq(usdc.balanceOf(r), handler.paidToRecipient(address(usdc)), "USDC recipient ledger");
         assertEq(other.balanceOf(r), handler.paidToRecipient(address(other)), "OTH recipient ledger");
+        assertEq(vault.balanceOf(r), handler.paidToRecipient(address(vault)), "ayUSDC recipient ledger");
     }
 
     /// @notice WHY: guards against a vacuous invariant — if the handler's actions all reverted, the
@@ -546,6 +671,18 @@ contract PrivacyPoolSolvencyInvariantTest is Test, PoseidonLinker {
         handler.tamperDoubleSpend(0);
         assertEq(handler.rejected_tampered(), 5, "tampered transactions rejected");
         assertEq(handler.tamperedAccepted(), 0, "no tampered transaction accepted");
+
+        // Yield: lend part of a USDC note, accrue interest, then redeem with and without a relayer fee.
+        handler.shield(0, 1_000e6);
+        handler.lend(handler.noteCount() - 1, 600e6);
+        assertEq(handler.calls_lend(), 1, "lend");
+        handler.accrueYield(30 days);
+        assertEq(handler.calls_accrueYield(), 1, "accrueYield");
+        handler.redeem(0, 100e6, 0);
+        handler.redeem(0, 100e6, 1e6);
+        assertEq(handler.calls_redeem(), 2, "redeem");
+        assertEq(handler.calls_redeemWithFee(), 1, "redeem with relayer fee");
+        assertGt(vault.balanceOf(address(pool)), 0, "pool holds ayUSDC for the unredeemed shares");
 
         invariant_poolCoversUnspentNotesPerToken();
         invariant_recipientPaidExactly();

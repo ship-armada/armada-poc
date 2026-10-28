@@ -36,6 +36,11 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
     /// @notice Denominator for basis-point fee rates (100% = 10000).
     uint120 private constant BASIS_POINTS = 10000;
 
+    /// @notice Cap on a fee-module shield fee, in basis points of the shielded amount (15%: the
+    ///         shipped fee module's worst case of a 10% Armada take plus a 5% integrator fee).
+    ///         Bounds what a replaced or upgraded fee module can charge a shielder.
+    uint256 private constant MAX_FEE_MODULE_SHIELD_FEE_BPS = 1500;
+
     /// @notice Shields one or more notes in a single atomic batch.
     /// @dev Emits `Shield` with the PRE-insertion tree position (rollover-aware, spec §5.5) before the
     ///      leaves are inserted, so wallets can scan logs in emission order. Any failed
@@ -182,6 +187,7 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
                 uint256 amount = uint256(preimage.value);
                 (uint256 armadaTake, uint256 integratorFee, uint256 totalFee) =
                     IArmadaFeeModule(feeModule).calculateShieldFee(integrator, amount);
+                _requireValidFeeSplit(amount, integrator, armadaTake, integratorFee, totalFee);
 
                 adjustedPreimage.value = uint120(amount - totalFee);
                 fee = totalFee;
@@ -221,6 +227,27 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
     // ══════════════════════════════════════════════════════════════════════════
     // INTERNAL HELPERS
     // ══════════════════════════════════════════════════════════════════════════
+
+    /// @notice Validates a fee module's shield-fee split before any tokens move.
+    /// @dev The pool deducts `totalFee` from the note but pays `armadaTake` and `integratorFee`
+    ///      separately (from its own balance on a shield-in), so an inconsistent split would pay
+    ///      out other users' funds or charge fee that nobody receives. Requires the parts to sum to
+    ///      the total, an integrator to exist for any integrator fee, and the total to be within
+    ///      MAX_FEE_MODULE_SHIELD_FEE_BPS of `amount`.
+    function _requireValidFeeSplit(
+        uint256 amount,
+        address integrator,
+        uint256 armadaTake,
+        uint256 integratorFee,
+        uint256 totalFee
+    ) internal pure {
+        require(armadaTake + integratorFee == totalFee, "ShieldModule: inconsistent fee split");
+        require(integratorFee == 0 || integrator != address(0), "ShieldModule: integrator fee without integrator");
+        require(
+            totalFee * BASIS_POINTS <= amount * MAX_FEE_MODULE_SHIELD_FEE_BPS,
+            "ShieldModule: fee module fee too high"
+        );
+    }
 
     /// @notice True if `caller` is a trusted yield adapter per the governance registry.
     /// @dev Fee-exempt shield path (issue #370). The gate is `authorized OR withdraw-only`, mirroring the
@@ -300,6 +327,7 @@ contract ShieldModule is PrivacyPoolStorage, IShieldModule {
             uint256 amount = uint256(_note.value);
             (uint256 armadaTake, uint256 integratorFee, uint256 totalFee) =
                 IArmadaFeeModule(feeModule).calculateShieldFee(integrator, amount);
+            _requireValidFeeSplit(amount, integrator, armadaTake, integratorFee, totalFee);
 
             uint120 base = uint120(amount - totalFee);
             adjustedNote = CommitmentPreimage({

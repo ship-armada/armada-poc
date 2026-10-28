@@ -141,6 +141,8 @@ The contract hard-caps every governance-tunable fee input. All setters revert ou
 
 Harvest cadence is separately bounded by `MIN_HARVEST_INTERVAL`/`MAX_HARVEST_INTERVAL` (`setHarvestInterval`).
 
+**Pool-side check.** The privacy pool doesn't trust the fee module's numbers. On every fee-module shield it reverts unless `armadaTake + integratorFee == totalFee`, there is no integrator fee without an integrator, and `totalFee` is at most 15% of the shield (`MAX_FEE_MODULE_SHIELD_FEE_BPS = 1500` in `ShieldModule`, the worst case these bounds allow: 10% take + 5% integrator fee). Raising the fee module's caps beyond a 15% total therefore also needs a new pool (#640, deviation D-27).
+
 **Emergency flat-fee mode.** If the fee module breaks or misbehaves, the pool owner can detach it (`PrivacyPool.setFeeModule(address(0))`). Shields then pay the pool's flat `shieldFee` (capped at 10%, all to treasury, no integrator split) instead of the fee module's rates. The flat fee can be set only in this mode: `setShieldFee` reverts while a fee module is wired (#155).
 
 ---

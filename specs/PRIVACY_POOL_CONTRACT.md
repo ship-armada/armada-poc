@@ -55,7 +55,6 @@ Out of scope for this document: `PrivacyPoolClient` (client-chain contract), CCT
 | Name | Value | Notes |
 |---|---|---|
 | `SNARK_SCALAR_FIELD` | `21888242871839275222246405745257275088548364400416034343698204186575808495617` | BN254 scalar field order. All field-valued inputs must be `<` this. |
-| `VERIFICATION_BYPASS` | `0x000000000000000000000000000000000000dEaD` | If `tx.origin` equals this address, `verify` returns `true` (gas-estimation escape hatch — **OQ-4**). |
 | `ZERO_VALUE` | `0x0488f89b25bc7011eaf6a5edce71aeafb9fe706faa3c0a5cd9cbe868ae3b9ffc` (decimal `2051258411002736885948763699317990061539314419500486054347250703186609807356`) | Level-0 zero leaf of the Merkle tree. **This exact value is a consensus fact** — the tree's empty root and every zero node derive from it. Its derivation is recorded in the deviation register (D-1); implementations MUST hard-code the value above. |
 | `TREE_DEPTH` | `16` | Binary tree; 65,536 (`2**16`) leaves per tree. |
 | `BASIS_POINTS` | `10000` | Fee denominator (module-private constant in ShieldModule). |
@@ -242,7 +241,7 @@ Defined in `PrivacyPoolStorage` and inherited identically by the router and all 
 | 50 | — | — | `rootHistory` | `mapping(uint256 => mapping(bytes32 => bool))` | public |
 | 51 | — | — | `nullifiers` | `mapping(uint256 => mapping(bytes32 => bool))` | public |
 | 52 | — | — | `verificationKeys` | `mapping(uint256 => mapping(uint256 => VerifyingKey))` | internal |
-| 53 | 0 | 1 | `testingMode` | `bool` | public |
+| 53 | 0 | 1 | `testingMode` | `bool` (deprecated, always false: testing mode removed, D-26) | public |
 | 54 | — | — | `snarkSafetyVector` | `mapping(uint256 => bool)` | public (**never read or written** — reserved) |
 | 55 | 0 | 32 | `lastEventBlock` | `uint256` | public |
 | 56 | 0 | 20 | `owner` | `address` | public |
@@ -319,7 +318,6 @@ All revert with `"PrivacyPool: Only owner"` unless `msg.sender == owner`.
 | `setRemotePool(uint32 domain, bytes32 poolAddress)` | `0x37bc0324` | `remotePools[domain] = poolAddress` | `RemotePoolSet(domain, poolAddress)` |
 | `setVerificationKey(uint256 n, uint256 m, VerifyingKey calldata key)` | `0x2ec0f359` | `delegatecall` → `VerifierModule.setVerificationKey` (§9.1; owner re-checked inside the module) | `VerifyingKeySet` (from module) |
 | `setShieldFee(uint120 feeBps)` | `0x47338389` | `require(feeModule == address(0), "PrivacyPool: use fee module")` (D-24: the flat fee is live only without a fee module), then `require(feeBps <= MAX_SHIELD_FEE_BPS (1000 = 10%), "PrivacyPool: Fee too high")`; sets `shieldFee` | none |
-| `setTestingMode(bool enabled)` | `0x596d7a68` | `delegatecall` → `VerifierModule.setTestingMode`, then emits `TestingModeSet` **again** — two identical events per call (**OQ-8**) | `TestingModeSet` ×2 |
 | `setHookRouter(address)` | `0xdf4af94b` | sets `hookRouter` | none |
 | `setRemoteHookRouter(uint32 domain, bytes32 routerAddress)` | `0x7c1cc0ed` | sets `remoteHookRouters[domain]` (pin for outbound burn `destinationCaller`, D-16) | none |
 | `setAdapterRegistry(address)` | `0x5b34b823` | set-once: `require(adapterRegistry == address(0))` + non-zero arg (D-18) | none |
@@ -344,13 +342,12 @@ Plus all auto-generated storage getters listed in §4.
 
 ### 5.6 `verify` semantics (router — normative)
 
-1. If `testingMode` is `true`, return `true` immediately.
-2. `N = nullifiers.length`, `M = commitments.length`. Load `verificationKeys[N][M]`.
-3. `require(key.alpha1.x != 0, "PrivacyPool: Verification key not set")`.
-4. Build the public-input vector per §2.3.
-5. `validity = Snark.verify(key, proof, inputs)` (Groth16 pairing check, §10.5).
-6. If `tx.origin == VERIFICATION_BYPASS`, return `true` — **after** steps 2–5 have already run (so estimation still pays verification cost and reverts for unregistered shapes; **OQ-4**).
-7. Return `validity`.
+1. `N = nullifiers.length`, `M = commitments.length`. Load `verificationKeys[N][M]`.
+2. `require(key.alpha1.x != 0, "PrivacyPool: Verification key not set")`.
+3. Build the public-input vector per §2.3.
+4. Return `Snark.verify(key, proof, inputs)` (Groth16 pairing check, §10.5).
+
+There is no bypass of any kind: the testing-mode flag and the `tx.origin == 0x…dEaD` escape hatch were removed (D-26). `verify` is `public view virtual` only so the test-only `PrivacyPoolProofBypass` (`contracts/test/`) can override it; production deploys never use that contract.
 
 ### 5.7 `_delegatecall` helper (all router forwards)
 
@@ -537,7 +534,6 @@ For each nullifier `n`: `require(!nullifiers[boundParams.treeNumber][n], "Transa
 | `getVerificationKey(uint256 n, uint256 m) returns (VerifyingKey)` | `0x7b12ae83` | none (view) | Returns mapping entry. Unreachable via router (router has its own); harmless. |
 | `verify(Transaction calldata) returns (bool)` | `0xee990783` | `onlyDelegatecall` view | **Reverts** `"VerifierModule: verify handled by PrivacyPool router"`. Post-drift (D-17): verification is centralized on the router (§5.6); the module-level copy was removed to kill silent-drift risk between two implementations. **OQ-2 RESOLVED.** |
 | `hashBoundParams(BoundParams calldata) returns (uint256)` | `0x28f89c3a` | none (pure) | `uint256(keccak256(abi.encode(bp))) % SNARK_SCALAR_FIELD`. |
-| `setTestingMode(bool)` | `0x596d7a68` | `onlyDelegatecall` + owner (`"VerifierModule: Only owner"`) | Sets `testingMode`; `emit TestingModeSet(enabled)`. |
 
 ### 9.2 VK registry semantics
 
@@ -577,7 +573,6 @@ For each nullifier `n`: `require(!nullifiers[boundParams.treeNumber][n], "Transa
 | `Nullified(uint16 treeNumber, bytes32[] nullifier)` | `0x781745c57906dc2f175fec80a9c691744c91c48a34a83672c41c2604774eb11f` | §8.4 — even for empty nullifier arrays |
 | `CrossChainUnshieldInitiated(uint32 indexed destinationDomain, address indexed recipient, uint256 amount, uint64 nonce)` | `0x9a8234aef148991bd0f1e08df206eb275078881051bd92a2d81a1afd0ff37f4a` | §8.2 (`nonce` always 0) |
 | `RemotePoolSet(uint32 indexed domain, bytes32 poolAddress)` | `0x019190ca21b03575fe0ef686ebc94279721ca06510c186ee3a8d26cfa5d70023` | §5.4 |
-| `TestingModeSet(bool enabled)` | `0x21f67800fb06e35b87566708fd49f2a7cc96bf3a74ca56e175b23e6f35b10248` | §5.4 (emitted twice per call — **OQ-8**) |
 | `DefaultFinalityThresholdSet(uint32 threshold)` | `0xe58be3486b5925aab80f886258894ea495baffc3fdd4f7432efd0cb26a3f1314` | §5.4 |
 | `ShieldPauseContractSet(address indexed)` | `0xd944792a6be77df7bcf2b336a0c0af6fb2e715460c8f79e90264f4966fbc74c6` | §5.4 |
 | `FeeModuleSet(address indexed)` | `0xfd559fabeec56b489dcf6cf0c7a8c863ed2dd88016bf8d905c72dbdfdc685d29` | §5.4 |
@@ -614,14 +609,14 @@ For each nullifier `n`: `require(!nullifiers[boundParams.treeNumber][n], "Transa
 | **OQ-1** | ~~`Shield`/`Transact` events report the **pre-insertion** `(treeNumber, startIndex)` from the router's argument-ignoring view. If a batch triggers tree rollover, the events name the old tree/index while leaves land in `treeNumber + 1` at index 0.~~ **RESOLVED on main (#372):** the router's view applies the same rollover rule as the module (§5.5, §6.4), so events name the tree/index the leaves actually land in. Guarded by `test-foundry/RolloverDesyncPoC.t.sol`. | Events report the post-rollover position. |
 | **OQ-2** | ~~Verification logic exists twice: live copy on the router and a dead copy in VerifierModule.~~ **RESOLVED post-drift (D-17):** verification centralized on the router; the module's `verify` reverts. | Router copy is the only path. |
 | **OQ-3** | ~~The CCTP handlers ignore the envelope `sender`; a generic CCTP message (`sendMessage` is permissionless) with a burn-shaped body could reach them without any USDC minted.~~ **RESOLVED:** `CCTPHookRouter.relayWithHook` reverts `"CCTPHookRouter: not a burn message"` unless the envelope recipient is the local TokenMessenger, which authenticates the source TokenMessenger and mints before dispatch. The handlers additionally authenticate the source domain and the burn message's `messageSender`. | Only TokenMessenger-processed burn messages reach the handlers. |
-| **OQ-4** | `tx.origin == VERIFICATION_BYPASS` returns `true` only *after* full verification and the VK-set check — it neither saves gas nor tolerates unset keys, and `tx.origin` semantics are deprecated-adjacent. Keep, move earlier, or drop? | Bypass checked last. |
+| **OQ-4** | ~~`tx.origin == VERIFICATION_BYPASS` returns `true` only *after* full verification and the VK-set check — it neither saves gas nor tolerates unset keys, and `tx.origin` semantics are deprecated-adjacent. Keep, move earlier, or drop?~~ **RESOLVED (D-26, #633):** removed from the pool. | No bypass. |
 | **OQ-5** | `_getFee`'s exclusive (non-inclusive) branch is unreachable (unshield fee is gone). Drop it, or keep for parity? | Dead code present. |
 | **OQ-6** | ERC721/ERC1155 validation branches, `tokenIDMapping`, and `nftFee` are unreachable (both token in/out paths require ERC20). Keep types for ABI/event compatibility but drop the dead checks? | Dead NFT paths present. |
 | **OQ-7** | ~~`initialize` is permissionless first-call; if not invoked atomically at deployment it is front-runnable.~~ **RESOLVED post-drift (D-18):** `initialize` is gated to the deployer (private immutable captured in the constructor). | Deployer-only. |
-| **OQ-8** | `setTestingMode` emits `TestingModeSet` twice (once inside the module delegatecall, once on the router). Intentional or bug? | Double emission. |
+| **OQ-8** | ~~`setTestingMode` emits `TestingModeSet` twice (once inside the module delegatecall, once on the router). Intentional or bug?~~ **RESOLVED (D-26, #633):** removed from the pool. | Event removed. |
 | **OQ-9** | ~~`atomicCrossChainUnshield` does not require `unshieldPreimage.token == USDC` — a proof over a non-USDC note would still burn USDC.~~ **RESOLVED:** the unshield note must be an ERC-20 USDC note (§8.2), else `"TransactModule: Cross-chain unshield is USDC-only"`. The pool stays multi-asset; other tokens unshield locally. | USDC-only cross-chain exit. |
 | **OQ-10** | ~~`setShieldFee` allows up to 10000 bps (100%). Intended cap?~~ **RESOLVED post-drift:** `MAX_SHIELD_FEE_BPS = 1000` (10%) hard cap on the flat fee; the fee module caps every component at 10% (`MAX_BPS`) and the yield fee at 1–50%. | 10% cap. |
-| **OQ-11** | `testingMode` exists as a full proof bypass. Production expectation is removal (see deviation register D-3). Confirm removal plan and any staging-net needs. | Owner-toggleable bypass. |
+| **OQ-11** | ~~`testingMode` exists as a full proof bypass. Production expectation is removal (see deviation register D-3). Confirm removal plan and any staging-net needs.~~ **RESOLVED (D-26, #633):** removed from the pool. | No bypass. |
 | **OQ-12** | `snarkSafetyVector` storage (slot 54) is never read or written. Retain as reserved (slot must stay either way) but drop the getter? | Dead public mapping. |
 
 ---

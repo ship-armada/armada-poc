@@ -300,9 +300,8 @@ Current repo state (verify at implementation time):
   model, shielded USDC ↔ shielded ayUSDC via `ArmadaYieldAdapter` (`lendAndShield`,
   `redeemAndShield`); no public per-user venue deposit.
 - **Aave is 100% mocked** (`MockAaveSpoke`, simulated linear interest) — including on Sepolia.
-- Yield integration tests run with `setTestingMode(true)` (ZK bypass — a tracked POC
-  shortcut). **Any partner-facing demo claiming "real proofs" must run with testing mode OFF**,
-  and no one may enable a verification bypass as a convenience (repo-wide rule).
+- Yield integration tests skip proofs using the test-only `PrivacyPoolProofBypass`. The pool
+  itself has no verification bypass (#633), so any demo on a real deployment uses real proofs.
 - **Timing fingerprint:** the protocol fee settles on the public Aave withdrawal at redeem
   time; a lone redeemer can be correlated. Partially mitigated by the permissionless,
   cadence-gated `harvestProtocolFee`.
@@ -394,8 +393,7 @@ through it (open question 8).
   way. Do not "improve" bound-params hashing.
 - `ArmadaYieldVault` deliberately deviates from ERC-4626 — do not conform it.
 - Frozen Launch-1 interfaces (`IShieldPauseController`, `IFeeCollector`) are external ABI.
-- Never rely on or enable `setTestingMode()` / `VERIFICATION_BYPASS` (tracked POC shortcuts).
-  Partner demos claiming real proofs run with testing mode OFF.
+- Never deploy the test-only `PrivacyPoolProofBypass`; deployed pools always verify proofs (#633).
 - Check "free once shielded" claims against the live fee model (broadcaster fee + shield fee +
   `specs/FEE_STRUCTURE.md`) before any partner deck.
 - Relayer runs on a VPS — changes to `relayer/` or `config/*.env` need a pull+restart there.

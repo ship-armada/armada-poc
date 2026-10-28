@@ -1317,7 +1317,8 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
     await hubUsdc.addMinter(await hubTokenMessenger.getAddress());
 
     // Deploy and initialize PrivacyPool
-    const PrivacyPool = await ethers.getContractFactory("PrivacyPool");
+    // Test-only pool whose proof verification can be switched off (no proofs are generated here).
+    const PrivacyPool = await ethers.getContractFactory("PrivacyPoolProofBypass");
     privacyPool = await PrivacyPool.deploy();
     privacyPoolAddress = await privacyPool.getAddress();
 
@@ -1335,7 +1336,7 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
     );
 
     await loadVerificationKeys(privacyPool, TESTING_ARTIFACT_CONFIGS, false);
-    await privacyPool.setTestingMode(true);
+    await privacyPool.setSkipProofVerification(true);
     await privacyPool.setShieldPauseContract(await shieldPauseController.getAddress());
 
     await mine(1);

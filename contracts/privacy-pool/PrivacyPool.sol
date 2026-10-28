@@ -409,20 +409,6 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     }
 
     /**
-     * @notice Enable or disable testing mode
-     * @dev POC ONLY - bypasses SNARK verification
-     * @param _enabled Whether to enable testing mode
-     */
-    function setTestingMode(bool _enabled) external override {
-        require(msg.sender == owner, "PrivacyPool: Only owner");
-        _delegatecall(
-            verifierModule,
-            abi.encodeCall(IVerifierModule.setTestingMode, (_enabled))
-        );
-        emit TestingModeSet(_enabled);
-    }
-
-    /**
      * @notice Set the governance adapter registry that determines fee-exempt shield privilege.
      * @dev Set-once (issue #370): callable only while unset and only with a non-zero address. After the
      *      first successful call — done at deploy/link time — the owner has no path to grant or change
@@ -510,16 +496,13 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     /**
      * @notice Verify a transaction's SNARK proof
      * @dev Called by TransactModule during delegatecall via staticcall to this router.
-     *      Performs the verification directly using stored verification keys and testingMode.
+     *      Performs the verification directly using the stored verification keys. There is no
+     *      bypass of any kind (#633). `virtual` only so the test-only PrivacyPoolProofBypass
+     *      (contracts/test/) can override it; production deploys never use that contract.
      * @param _transaction The transaction to verify
      * @return True if proof is valid
      */
-    function verify(Transaction calldata _transaction) external view returns (bool) {
-        // POC: Bypass verification in testing mode
-        if (testingMode) {
-            return true;
-        }
-
+    function verify(Transaction calldata _transaction) public view virtual returns (bool) {
         uint256 nullifiersLength = _transaction.nullifiers.length;
         uint256 commitmentsLength = _transaction.commitments.length;
 
@@ -550,16 +533,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         }
 
         // Verify the SNARK proof
-        bool validity = Snark.verify(verifyingKey, _transaction.proof, inputs);
-
-        // Always return true in gas estimation transactions
-        // This allows relayer fee calculation without computing a proof
-        // solhint-disable-next-line avoid-tx-origin
-        if (tx.origin == VERIFICATION_BYPASS) {
-            return true;
-        }
-
-        return validity;
+        return Snark.verify(verifyingKey, _transaction.proof, inputs);
     }
 
     // ══════════════════════════════════════════════════════════════════════════

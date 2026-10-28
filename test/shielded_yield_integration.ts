@@ -2,7 +2,8 @@
  * Shielded Yield Integration Tests
  *
  * Tests the trustless lendAndShield and redeemAndShield flows via ArmadaYieldAdapter.
- * Uses testing mode (proof verification bypass) to test the full flow without SNARK proofs.
+ * Uses the test-only PrivacyPoolProofBypass (proof verification off) to test the full flow
+ * without SNARK proofs.
  *
  * - lendAndShield: shielded USDC -> unshield to adapter -> deposit -> shield ayUSDC
  * - redeemAndShield: shielded ayUSDC -> unshield to adapter -> redeem -> shield USDC
@@ -150,7 +151,8 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
       })
     ).deploy();
 
-    const PrivacyPool = await ethers.getContractFactory("PrivacyPool");
+    // Test-only pool whose proof verification can be switched off (no proofs are generated here).
+    const PrivacyPool = await ethers.getContractFactory("PrivacyPoolProofBypass");
     privacyPool = await PrivacyPool.deploy();
     privacyPoolAddress = await privacyPool.getAddress();
 
@@ -168,7 +170,7 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
     );
 
     await loadVerificationKeys(privacyPool, TESTING_ARTIFACT_CONFIGS, false);
-    await privacyPool.setTestingMode(true);
+    await privacyPool.setSkipProofVerification(true);
     await privacyPool.setShieldFee(50);
 
     // Deploy yield (vault, adapter)

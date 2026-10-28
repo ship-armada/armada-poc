@@ -117,7 +117,8 @@ describe("Privacy Pool Integration Hardening", function () {
     transactModule = await (await ethers.getContractFactory("TransactModule", { libraries: { PoseidonT4: poseidonT4Address } })).deploy();
 
     // Deploy PrivacyPool router
-    const PrivacyPool = await ethers.getContractFactory("PrivacyPool");
+    // Test-only pool whose proof verification can be switched off (no proofs are generated here).
+    const PrivacyPool = await ethers.getContractFactory("PrivacyPoolProofBypass");
     privacyPool = await PrivacyPool.deploy();
     privacyPoolAddress = await privacyPool.getAddress();
 
@@ -135,7 +136,7 @@ describe("Privacy Pool Integration Hardening", function () {
     );
 
     await loadVerificationKeys(privacyPool, TESTING_ARTIFACT_CONFIGS, false);
-    await privacyPool.setTestingMode(true);
+    await privacyPool.setSkipProofVerification(true);
     treasuryAddress = deployerAddress;
     await privacyPool.setShieldFee(50); // 0.50%
 

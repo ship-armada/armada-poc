@@ -130,7 +130,8 @@ describe("Fee Module Integration", function () {
     treasuryAddress = await armadaTreasury.getAddress();
 
     // PrivacyPool
-    const PrivacyPool = await ethers.getContractFactory("PrivacyPool");
+    // Test-only pool whose proof verification can be switched off (no proofs are generated here).
+    const PrivacyPool = await ethers.getContractFactory("PrivacyPoolProofBypass");
     privacyPool = await PrivacyPool.deploy();
     privacyPoolAddress = await privacyPool.getAddress();
 
@@ -148,7 +149,7 @@ describe("Fee Module Integration", function () {
     );
 
     await loadVerificationKeys(privacyPool, TESTING_ARTIFACT_CONFIGS, false);
-    await privacyPool.setTestingMode(true);
+    await privacyPool.setSkipProofVerification(true);
     await privacyPool.setShieldFee(50); // 0.50% flat fee (for fallback tests)
 
     // ── Deploy ArmadaFeeModule behind UUPS proxy ──
@@ -260,7 +261,7 @@ describe("Fee Module Integration", function () {
   });
 
   after(async function () {
-    await privacyPool.setTestingMode(false);
+    await privacyPool.setSkipProofVerification(false);
   });
 
   // ── Helpers ──
@@ -553,7 +554,7 @@ describe("Fee Module Integration", function () {
       const merkleRoot = await privacyPool.merkleRoot();
       const amount = ethers.parseUnits("1000", 6);
 
-      // Build a lendAndShield transaction (testing mode bypasses SNARK)
+      // Build a lendAndShield transaction (proof verification is off on the test-only pool)
       const npk = validNpk("adapter-fee-test");
       const encryptedBundle: [string, string, string] = [
         ethers.keccak256(ethers.toUtf8Bytes("adapt-enc1")),

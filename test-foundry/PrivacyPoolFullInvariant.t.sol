@@ -3,6 +3,7 @@ pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
 import "../contracts/privacy-pool/PrivacyPool.sol";
+import "../contracts/test/PrivacyPoolProofBypass.sol";
 import "../contracts/privacy-pool/modules/ShieldModule.sol";
 import "../contracts/privacy-pool/modules/TransactModule.sol";
 import "../contracts/privacy-pool/modules/MerkleModule.sol";
@@ -219,7 +220,7 @@ contract PrivacyPoolFullInvariantTest is Test, PoseidonLinker {
         verifierModule = new VerifierModule();
 
         // Deploy pool
-        pool = new PrivacyPool();
+        pool = new PrivacyPoolProofBypass(); // test-only: proofs are not generated here
         pool.initialize(
             address(shieldModule),
             address(transactModule),
@@ -233,8 +234,8 @@ contract PrivacyPoolFullInvariantTest is Test, PoseidonLinker {
             payable(treasury)
         );
 
-        // Enable testing mode (bypass SNARK verification)
-        pool.setTestingMode(true);
+        // Skip SNARK verification (test-only harness; no proofs are generated here)
+        PrivacyPoolProofBypass(address(pool)).setSkipProofVerification(true);
 
         // Set shield fee to 50 bps (0.5%) to test fee math under INV-1
         pool.setShieldFee(50);

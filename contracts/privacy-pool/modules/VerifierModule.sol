@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// ABOUTME: SNARK verification-key registry and testing-mode toggle for the privacy pool.
+// ABOUTME: SNARK verification-key registry and bound-params hashing for the privacy pool.
 // ABOUTME: Executes exclusively via delegatecall from the PrivacyPool router, so all state
 // ABOUTME: lives in the router's storage (see PrivacyPoolStorage).
 pragma solidity ^0.8.17;
@@ -18,13 +18,10 @@ import "../types/SnarkTypes.sol";
 ///      NOTE (spec OQ-2, resolved by D-17): proof verification lives only in the router's
 ///      `verify` (spec section 5.6; `TransactModule` staticcalls the router, never this
 ///      module). This module's `verify` always reverts. The module holds the verification-key
-///      registry, `hashBoundParams`, and the testing-mode toggle.
+///      registry and `hashBoundParams`.
 contract VerifierModule is PrivacyPoolStorage, IVerifierModule {
     /// @notice Emitted whenever a verification key is (re)registered for a circuit shape.
     event VerifyingKeySet(uint256 nullifiers, uint256 commitments, VerifyingKey verifyingKey);
-
-    /// @notice Emitted when the testing-mode proof bypass is toggled.
-    event TestingModeSet(bool enabled);
 
     /// @notice Registers (or silently overwrites) the verification key for a circuit shape.
     /// @dev No structural validation is performed on the key and there is no deletion path.
@@ -73,16 +70,5 @@ contract VerifierModule is PrivacyPoolStorage, IVerifierModule {
     /// @return `keccak256` of the standard ABI encoding, reduced mod the scalar field.
     function hashBoundParams(BoundParams calldata _boundParams) public pure override returns (uint256) {
         return uint256(keccak256(abi.encode(_boundParams))) % SNARK_SCALAR_FIELD;
-    }
-
-    /// @notice Toggles the testing-mode proof bypass.
-    /// @dev POC ONLY — MUST NOT ship to production (spec deviation D-3 / OQ-11).
-    /// @param _enabled Whether testing mode is enabled.
-    function setTestingMode(bool _enabled) external override onlyDelegatecall {
-        require(msg.sender == owner, "VerifierModule: Only owner");
-
-        testingMode = _enabled;
-
-        emit TestingModeSet(_enabled);
     }
 }

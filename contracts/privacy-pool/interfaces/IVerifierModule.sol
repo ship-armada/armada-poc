@@ -45,11 +45,4 @@ interface IVerifierModule {
      * @return Hash of the bound parameters (mod SNARK_SCALAR_FIELD)
      */
     function hashBoundParams(BoundParams calldata _boundParams) external pure returns (uint256);
-
-    /**
-     * @notice Enable or disable testing mode (bypasses SNARK verification)
-     * @dev POC ONLY - DO NOT USE IN PRODUCTION
-     * @param _enabled Whether to enable testing mode
-     */
-    function setTestingMode(bool _enabled) external;
 }

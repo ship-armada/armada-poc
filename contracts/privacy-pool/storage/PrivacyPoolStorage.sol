@@ -162,7 +162,9 @@ abstract contract PrivacyPoolStorage {
     /// @notice Verification keys: nullifierCount -> commitmentCount -> VerifyingKey
     mapping(uint256 => mapping(uint256 => VerifyingKey)) internal verificationKeys;
 
-    /// @notice Testing mode flag - bypasses SNARK verification (POC only, DO NOT USE IN PRODUCTION)
+    /// @notice DEPRECATED — the removed testing-mode proof bypass (#633). Nothing writes it, so it is
+    ///         always false. Retained so no later slot shifts (layout is shared with the modules);
+    ///         the getter is kept for compatibility.
     bool public testingMode;
 
     // ══════════════════════════════════════════════════════════════════════════

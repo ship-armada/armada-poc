@@ -175,7 +175,8 @@ describe("Privacy Pool Integration", function () {
     await transactModule.waitForDeployment();
 
     // Deploy PrivacyPool router
-    const PrivacyPool = await ethers.getContractFactory("PrivacyPool");
+    // Test-only pool whose proof verification can be switched off (no proofs are generated here).
+    const PrivacyPool = await ethers.getContractFactory("PrivacyPoolProofBypass");
     privacyPool = await PrivacyPool.deploy();
     await privacyPool.waitForDeployment();
     privacyPoolAddress = await privacyPool.getAddress();
@@ -522,8 +523,8 @@ describe("Privacy Pool Integration", function () {
       poseidon = await buildPoseidon();
       F = poseidon.F;
 
-      // Enable testing mode to bypass SNARK proof verification
-      await privacyPool.setTestingMode(true);
+      // Skip SNARK proof verification (test-only pool)
+      await privacyPool.setSkipProofVerification(true);
 
       // Mint USDC to Alice on hub and shield to fund the pool
       await hubUsdc.mint(aliceAddress, SHIELD_AMOUNT);
@@ -558,8 +559,8 @@ describe("Privacy Pool Integration", function () {
     });
 
     after(async function () {
-      // Disable testing mode after tests
-      await privacyPool.setTestingMode(false);
+      // Switch proof verification back on after these tests
+      await privacyPool.setSkipProofVerification(false);
     });
 
     it("should complete end-to-end cross-chain unshield with maxFee", async function () {
@@ -774,10 +775,10 @@ describe("Privacy Pool Integration", function () {
       expect(key2x2.alpha1.x).to.not.equal(0n);
     });
 
-    it("should not have testing mode enabled", async function () {
-      // Testing mode should be disabled - we use real SNARK verification
-      const testingMode = await privacyPool.testingMode();
-      expect(testingMode).to.equal(false);
+    it("should have proof verification switched back on", async function () {
+      // The cross-chain unshield tests switch proof skipping on and back off; later tests must see
+      // real SNARK verification. (The production pool has no switch at all, #633.)
+      expect(await privacyPool.skipProofVerification()).to.equal(false);
     });
   });
 

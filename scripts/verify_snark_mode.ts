@@ -1,8 +1,9 @@
 /**
  * Verify SNARK Verification Mode
  *
- * Quick script to check if testingMode is disabled (SNARK verification enabled)
- * on the deployed PrivacyPool contract.
+ * Quick script to check that SNARK verification is enabled on the deployed PrivacyPool and that its
+ * verification keys are registered. Current contracts cannot skip verification (#633); the
+ * testingMode() check still flags older deployments that had the switch on.
  *
  * Usage:
  *   npx hardhat run scripts/verify_snark_mode.ts --network hub
@@ -50,8 +51,8 @@ async function main() {
     console.log("\n⚠️  WARNING: Testing mode is ENABLED");
     console.log("   SNARK proofs are NOT being verified!");
     console.log("   This should only be used for debugging.");
-    console.log("\n   To disable testing mode:");
-    console.log("   await privacyPool.setTestingMode(false)");
+    console.log("\n   This deployment predates the removal of testing mode (#633); current");
+    console.log("   contracts have no switch. Redeploy the pool from current contracts.");
   } else {
     console.log("\n✓ SNARK verification is ENABLED");
     console.log("  All transaction proofs will be cryptographically verified.");

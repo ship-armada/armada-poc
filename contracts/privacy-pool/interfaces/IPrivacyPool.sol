@@ -20,9 +20,6 @@ interface IPrivacyPool is IMessageHandlerV2 {
     event AddToBlocklist(address indexed token);
     event RemoveFromBlocklist(address indexed token);
 
-    /// @notice Emitted when testing mode is changed
-    event TestingModeSet(bool enabled);
-
     /// @notice Emitted when default finality threshold is changed
     event DefaultFinalityThresholdSet(uint32 threshold);
 
@@ -169,12 +166,6 @@ interface IPrivacyPool is IMessageHandlerV2 {
      */
     function setShieldFee(uint120 feeBps) external;
 
-    /**
-     * @notice Enable or disable testing mode
-     * @dev POC ONLY - bypasses SNARK verification
-     * @param enabled Whether to enable testing mode
-     */
-    function setTestingMode(bool enabled) external;
 
     /**
      * @notice Set the governance adapter registry that determines fee-exempt shield privilege.

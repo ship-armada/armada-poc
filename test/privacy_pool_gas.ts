@@ -115,7 +115,8 @@ describe("Privacy Pool Gas Profiling", function () {
     transactModule = await (await ethers.getContractFactory("TransactModule", { libraries: { PoseidonT4: poseidonT4Address } })).deploy();
 
     // Deploy PrivacyPool router
-    const PrivacyPool = await ethers.getContractFactory("PrivacyPool");
+    // Test-only pool whose proof verification can be switched off (no proofs are generated here).
+    const PrivacyPool = await ethers.getContractFactory("PrivacyPoolProofBypass");
     privacyPool = await PrivacyPool.deploy();
     privacyPoolAddress = await privacyPool.getAddress();
 
@@ -133,7 +134,7 @@ describe("Privacy Pool Gas Profiling", function () {
     );
 
     await loadVerificationKeys(privacyPool, TESTING_ARTIFACT_CONFIGS, false);
-    await privacyPool.setTestingMode(true);
+    await privacyPool.setSkipProofVerification(true);
     await privacyPool.setShieldFee(50); // 0.50%
 
     // ──── Deploy Client Chain ────
@@ -285,7 +286,7 @@ describe("Privacy Pool Gas Profiling", function () {
   });
 
   // ═══════════════════════════════════════════════════════════════════
-  // BENCHMARK 2: Transact gas (testingMode — bypasses SNARK)
+  // BENCHMARK 2: Transact gas (test-only pool with proof verification off — excludes SNARK cost)
   // ═══════════════════════════════════════════════════════════════════
 
   describe("Transact Gas", function () {

@@ -5,6 +5,7 @@ pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
 import "../contracts/privacy-pool/PrivacyPool.sol";
+import "../contracts/test/PrivacyPoolProofBypass.sol";
 import "../contracts/privacy-pool/PrivacyPoolClient.sol";
 import "../contracts/privacy-pool/modules/ShieldModule.sol";
 import "../contracts/privacy-pool/modules/TransactModule.sol";
@@ -34,7 +35,8 @@ struct CctpChain {
 ///      whose burn-shaped body names the destination pool as mint recipient, so nothing is minted.
 ///      The mock TokenMessenger does not yet check the envelope sender (TODO in MockCCTPV2), so the
 ///      handler never sends a generic message to it: real CCTP would reject that, the mock would not.
-///      The hub runs in testing mode (no proofs) with a 50 bps flat shield fee and no fee module.
+///      The hub is the test-only PrivacyPoolProofBypass with proof verification off (no proofs),
+///      a 50 bps flat shield fee and no fee module.
 contract CrossChainHandler is Test {
     uint32 public constant HUB_DOMAIN = 0;
     uint32 public constant CLIENT_DOMAIN = 1;
@@ -413,7 +415,7 @@ contract CrossChainConservationInvariantTest is Test, PoseidonLinker {
         hub.messenger.setRemoteTokenMessenger(CLIENT_DOMAIN, MessageV2.addressToBytes32(address(client.messenger)));
         client.messenger.setRemoteTokenMessenger(HUB_DOMAIN, MessageV2.addressToBytes32(address(hub.messenger)));
 
-        hubPool = new PrivacyPool();
+        hubPool = new PrivacyPoolProofBypass(); // test-only: proofs are not generated here
         hubPool.initialize(
             address(new ShieldModule()),
             address(new TransactModule()),
@@ -426,7 +428,7 @@ contract CrossChainConservationInvariantTest is Test, PoseidonLinker {
             address(this),
             payable(address(0xFEE))
         );
-        hubPool.setTestingMode(true);
+        PrivacyPoolProofBypass(address(hubPool)).setSkipProofVerification(true);
         hubPool.setShieldFee(50);
         hubPool.setHookRouter(address(hub.router));
 

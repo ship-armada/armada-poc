@@ -5,6 +5,7 @@ pragma solidity ^0.8.17;
 
 import "forge-std/Test.sol";
 import "../contracts/privacy-pool/PrivacyPool.sol";
+import "../contracts/test/PrivacyPoolProofBypass.sol";
 import "../contracts/privacy-pool/modules/ShieldModule.sol";
 import "../contracts/privacy-pool/modules/TransactModule.sol";
 import "../contracts/privacy-pool/modules/MerkleModule.sol";
@@ -24,8 +25,8 @@ import "../contracts/governance/ArmadaTreasuryGov.sol";
 import "./helpers/PoseidonLinker.sol";
 
 /// @title SolvencyHandler — drives the pool and mirrors the notes it treats as unspent
-/// @dev The suite runs in testing mode, so proofs are not checked: the handler plays an honest
-///      prover and only spends notes in its ghost ledger. Whenever the pool ACCEPTS an action, the
+/// @dev The pool is the test-only PrivacyPoolProofBypass with proof verification off, so proofs are
+///      not checked: the handler plays an honest prover and only spends notes in its ghost ledger. Whenever the pool ACCEPTS an action, the
 ///      ledger is updated to match what the pool now treats as spent or unspent — including actions
 ///      that should be rejected (a non-USDC cross-chain unshield, a forged CCTP message). If one of
 ///      those were ever accepted, the per-token balance check in the invariant would fail.
@@ -560,7 +561,7 @@ contract PrivacyPoolSolvencyInvariantTest is Test, PoseidonLinker {
         transmitter.setTokenMessenger(address(messenger));
         usdc.addMinter(address(messenger));
 
-        pool = new PrivacyPool();
+        pool = new PrivacyPoolProofBypass(); // test-only: proofs are not generated here
         pool.initialize(
             address(new ShieldModule()),
             address(new TransactModule()),
@@ -573,7 +574,7 @@ contract PrivacyPoolSolvencyInvariantTest is Test, PoseidonLinker {
             address(this),
             payable(address(0xFEE))
         );
-        pool.setTestingMode(true);
+        PrivacyPoolProofBypass(address(pool)).setSkipProofVerification(true);
         pool.setShieldFee(50);
 
         CCTPHookRouter router = new CCTPHookRouter(address(transmitter), address(messenger));

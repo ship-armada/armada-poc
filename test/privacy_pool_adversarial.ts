@@ -105,7 +105,8 @@ describe("Privacy Pool Adversarial", function () {
     transactModule = await (await ethers.getContractFactory("TransactModule", { libraries: { PoseidonT4: poseidonT4Address } })).deploy();
 
     // Deploy PrivacyPool router
-    const PrivacyPool = await ethers.getContractFactory("PrivacyPool");
+    // Test-only pool whose proof verification can be switched off (no proofs are generated here).
+    const PrivacyPool = await ethers.getContractFactory("PrivacyPoolProofBypass");
     privacyPool = await PrivacyPool.deploy();
     privacyPoolAddress = await privacyPool.getAddress();
 
@@ -122,9 +123,9 @@ describe("Privacy Pool Adversarial", function () {
       deployerAddress
     );
 
-    // Load verification keys and enable testing mode for transact tests
+    // Load verification keys and skip proof verification for transact tests (test-only pool)
     await loadVerificationKeys(privacyPool, TESTING_ARTIFACT_CONFIGS, false);
-    await privacyPool.setTestingMode(true);
+    await privacyPool.setSkipProofVerification(true);
     await privacyPool.setShieldFee(50); // 0.50%
 
     // Point the pool at a real AdapterRegistry (set-once) so shield-fee exemption is derived from
@@ -283,12 +284,6 @@ describe("Privacy Pool Adversarial", function () {
     it("non-owner cannot call setShieldFee", async function () {
       await expect(
         privacyPool.connect(attacker).setShieldFee(100)
-      ).to.be.revertedWith("PrivacyPool: Only owner");
-    });
-
-    it("non-owner cannot call setTestingMode", async function () {
-      await expect(
-        privacyPool.connect(attacker).setTestingMode(true)
       ).to.be.revertedWith("PrivacyPool: Only owner");
     });
 

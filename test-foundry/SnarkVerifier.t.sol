@@ -33,7 +33,7 @@ contract SnarkHarness {
 /// @dev The fixture (test-foundry/fixtures/snark/armada-transfer-1x2.json) is a real 1x2 private
 ///      transfer proved with the pinned Armada circuits release, with the verifying key read back
 ///      from a deployed pool and the public inputs assembled as PrivacyPool.verify does. It was
-///      checked on-chain (testing mode off) when captured by scripts/capture/capture-snark-fixture.ts.
+///      checked on-chain (with proof verification on) when captured by scripts/capture/capture-snark-fixture.ts.
 contract SnarkVerifierTest is Test {
     uint256 internal constant PRIME_Q =
         21888242871839275222246405745257275088696311157297823662689037894645226208583;

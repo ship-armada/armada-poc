@@ -8,11 +8,6 @@ pragma solidity ^0.8.17;
 uint256 constant SNARK_SCALAR_FIELD =
     21888242871839275222246405745257275088548364400416034343698204186575808495617;
 
-// Escape hatch for gas estimation: when `tx.origin` equals this address,
-// proof verification reports success so relayers can estimate fees without
-// producing a real proof.
-address constant VERIFICATION_BYPASS = 0x000000000000000000000000000000000000dEaD;
-
 /// @notice Token standards the commitment format can describe. Only ERC20 is exercised
 ///         by the live shield/unshield paths; the other variants remain for ABI
 ///         compatibility.

@@ -1,5 +1,7 @@
 # Contract Analysis Report — Railgun CCTP POC
 
+> **Historical snapshot (2026-02-17).** LLM-assisted analysis of the contracts as they stood on 2026-02-17 (the date below was recorded as 2025 by mistake). The contracts have changed substantially since, so findings, line references and test counts here are not current. The current pool + yield threat model is [`threat-model-privacy-pool-yield.md`](threat-model-privacy-pool-yield.md). Kept for history. The report index below points at the current files.
+
 **Date:** 2025-02-17  
 **Scope:** Correctness, security, exploits, bugs, architecture
 
@@ -98,15 +100,12 @@ The Railgun CCTP POC contracts were analyzed across six phases: static analysis 
 | Report | Path |
 |--------|------|
 | Static Analysis | `reports/static-analysis-summary.md` |
-| Threat Model — Privacy Pool | `reports/threat-model-privacy-pool.md` |
-| Threat Model — Yield | `reports/threat-model-yield.md` |
+| Threat Model — Privacy Pool & Yield (current; replaces the separate pool and yield models) | `reports/threat-model-privacy-pool-yield.md` |
 | Threat Model — Governance/Crowdfund | `reports/threat-model-governance-crowdfund.md` |
 | Formal Verification | `reports/formal-verification-phase4.md` |
 | Manual Review — Correctness | `reports/manual-review-correctness.md` |
 | Manual Review — Security | `reports/manual-review-security.md` |
 | Manual Review — Architecture | `reports/manual-review-architecture.md` |
-| Integration Flows | `reports/integration-flows.md` |
-| Cross-Contract Invariants | `reports/cross-contract-invariants.md` |
 
 ---
 

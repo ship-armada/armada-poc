@@ -1,5 +1,7 @@
 # Manual Review: Security Checklist
 
+> **Historical snapshot (2026-02-17).** LLM-assisted analysis of the contracts as they stood on 2026-02-17 (the date below was recorded as 2025 by mistake). The contracts have changed substantially since, so findings, line references and test counts here are not current. The current pool + yield threat model is [`threat-model-privacy-pool-yield.md`](threat-model-privacy-pool-yield.md). Kept for history.
+
 **Date:** 2025-02-17  
 **Scope:** Reentrancy, access control, input validation, oracle risk
 

@@ -33,7 +33,7 @@ We ask that you do not publicly disclose the vulnerability until we have had a r
 
 - Third-party dependencies (OpenZeppelin, Railgun, Circle CCTP) — report upstream
 - Frontend applications (`apps/armada-interface/`, `crowdfund-ui/`) — UIs, not core protocol
-- Known findings documented in `reports/slither-report.txt`
+- Findings reported by the Slither static-analysis job in CI (`.github/workflows/ci.yml`)
 - Mock contracts used only in local/test environments
 
 ## Emergency Controls
@@ -102,9 +102,7 @@ Classify severity (Critical / High / Medium / Low) based on:
 
 ## Existing Security Documentation
 
-- [Threat Model — Privacy Pool](reports/threat-model-privacy-pool.md)
-- [Threat Model — Governance & Crowdfund](reports/threat-model-governance-crowdfund.md)
-- [Threat Model — Yield](reports/threat-model-yield.md)
-- [Manual Security Review](reports/manual-review-security.md)
-- [Slither Report](reports/slither-report.txt)
+- [Threat Model — Privacy Pool & Yield](reports/threat-model-privacy-pool-yield.md)
+- [Threat Model — Governance & Crowdfund](reports/threat-model-governance-crowdfund.md) (Launch 1 contracts, being replaced)
+- [Manual Security Review, Feb 2026 snapshot](reports/manual-review-security.md) — historical; superseded by the threat models above
 - [LLM-Generated Analysis Snapshot, Feb 2026](_legacy/llm-analysis-2026-02/) — AI-assisted review, not a professional audit; predates several contract subsystems

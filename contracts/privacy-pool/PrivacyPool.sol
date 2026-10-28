@@ -394,11 +394,16 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     }
 
     /**
-     * @notice Set the shield fee in basis points
+     * @notice Set the flat shield fee in basis points
+     * @dev Only while no fee module is wired (#155): the flat fee applies only then, so setting it
+     *      while a fee module is active would do nothing and leave `shieldFee()` disagreeing with
+     *      the fee charged. Detaching the fee module (`setFeeModule(address(0))`) is the emergency
+     *      mode for a broken fee module: shields then pay this flat fee, and it can be set again.
      * @param _feeBps Fee in basis points (50 = 0.50%)
      */
     function setShieldFee(uint120 _feeBps) external override {
         require(msg.sender == owner, "PrivacyPool: Only owner");
+        require(feeModule == address(0), "PrivacyPool: use fee module");
         require(_feeBps <= MAX_SHIELD_FEE_BPS, "PrivacyPool: Fee too high");
         shieldFee = _feeBps;
     }

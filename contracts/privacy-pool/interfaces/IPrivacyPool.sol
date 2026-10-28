@@ -163,7 +163,8 @@ interface IPrivacyPool is IMessageHandlerV2 {
     function acceptOwnership() external;
 
     /**
-     * @notice Set the shield fee in basis points
+     * @notice Set the flat shield fee in basis points. Reverts while a fee module is wired (#155);
+     *         the flat fee applies only without one (emergency mode for a broken fee module).
      * @param feeBps Fee in basis points (50 = 0.50%)
      */
     function setShieldFee(uint120 feeBps) external;

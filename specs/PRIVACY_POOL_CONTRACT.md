@@ -318,7 +318,7 @@ All revert with `"PrivacyPool: Only owner"` unless `msg.sender == owner`.
 |---|---|---|---|
 | `setRemotePool(uint32 domain, bytes32 poolAddress)` | `0x37bc0324` | `remotePools[domain] = poolAddress` | `RemotePoolSet(domain, poolAddress)` |
 | `setVerificationKey(uint256 n, uint256 m, VerifyingKey calldata key)` | `0x2ec0f359` | `delegatecall` → `VerifierModule.setVerificationKey` (§9.1; owner re-checked inside the module) | `VerifyingKeySet` (from module) |
-| `setShieldFee(uint120 feeBps)` | `0x47338389` | `require(feeBps <= MAX_SHIELD_FEE_BPS (1000 = 10%), "PrivacyPool: Fee too high")`; sets `shieldFee` | none |
+| `setShieldFee(uint120 feeBps)` | `0x47338389` | `require(feeModule == address(0), "PrivacyPool: use fee module")` (D-24: the flat fee is live only without a fee module), then `require(feeBps <= MAX_SHIELD_FEE_BPS (1000 = 10%), "PrivacyPool: Fee too high")`; sets `shieldFee` | none |
 | `setTestingMode(bool enabled)` | `0x596d7a68` | `delegatecall` → `VerifierModule.setTestingMode`, then emits `TestingModeSet` **again** — two identical events per call (**OQ-8**) | `TestingModeSet` ×2 |
 | `setHookRouter(address)` | `0xdf4af94b` | sets `hookRouter` | none |
 | `setRemoteHookRouter(uint32 domain, bytes32 routerAddress)` | `0x7c1cc0ed` | sets `remoteHookRouters[domain]` (pin for outbound burn `destinationCaller`, D-16) | none |
@@ -327,7 +327,7 @@ All revert with `"PrivacyPool: Only owner"` unless `msg.sender == owner`.
 | `removeFromBlocklist(address[])` | `0xab63e69c` | clears `tokenBlocklist[t]` | `RemoveFromBlocklist(token)` per newly unblocked token |
 | `setDefaultFinalityThreshold(uint32 threshold)` | `0x50fe9314` | `require(threshold == 1000 \|\| threshold == 2000, "PrivacyPool: Invalid threshold")` | `DefaultFinalityThresholdSet(threshold)` |
 | `setShieldPauseContract(address)` | `0x6960c7da` | sets `shieldPauseContract` (note: declared on the contract but absent from the router interface) | `ShieldPauseContractSet(addr)` |
-| `setFeeModule(address)` | `0x2088df1b` | sets `feeModule` (`address(0)` = flat-fee fallback) | `FeeModuleSet(addr)` |
+| `setFeeModule(address)` | `0x2088df1b` | sets `feeModule` (`address(0)` = flat-fee fallback, the emergency mode for a broken fee module; `setShieldFee` is then settable again, D-24) | `FeeModuleSet(addr)` |
 | `transferOwnership(address newOwner)` | `0xf2fde38b` | sets `pendingOwner = newOwner` (replaces a pending proposal; `address(0)` cancels); `owner` unchanged (D-23) | `OwnershipTransferStarted(owner, newOwner)` |
 | `acceptOwnership()` | `0x79ba5097` | **not owner-gated:** `require(msg.sender == pendingOwner, "PrivacyPool: not pending owner")`; `owner = msg.sender`, `pendingOwner = address(0)` (D-23) | `OwnershipTransferred(previousOwner, newOwner)` |
 

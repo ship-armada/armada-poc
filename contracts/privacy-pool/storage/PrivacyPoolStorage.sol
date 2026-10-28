@@ -88,7 +88,9 @@ abstract contract PrivacyPoolStorage {
     /// @notice Treasury address for fee collection
     address payable public treasury;
 
-    /// @notice Shield fee in basis points (100 = 1%), default 0 for POC
+    /// @notice Flat shield fee in basis points (100 = 1%), default 0
+    /// @dev Charged only while `feeModule == address(0)`; settable only then (#155). With a fee
+    ///      module wired, this keeps its last value but is not the fee charged.
     uint120 public shieldFee;
 
     /// @notice DEPRECATED — unshield is free per spec.

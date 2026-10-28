@@ -141,6 +141,8 @@ The contract hard-caps every governance-tunable fee input. All setters revert ou
 
 Harvest cadence is separately bounded by `MIN_HARVEST_INTERVAL`/`MAX_HARVEST_INTERVAL` (`setHarvestInterval`).
 
+**Emergency flat-fee mode.** If the fee module breaks or misbehaves, the pool owner can detach it (`PrivacyPool.setFeeModule(address(0))`). Shields then pay the pool's flat `shieldFee` (capped at 10%, all to treasury, no integrator split) instead of the fee module's rates. The flat fee can be set only in this mode: `setShieldFee` reverts while a fee module is wired (#155).
+
 ---
 
 ## On-Chain Queries

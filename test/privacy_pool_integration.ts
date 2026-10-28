@@ -383,8 +383,11 @@ describe("Privacy Pool Integration", function () {
       // Approve PrivacyPoolClient to spend USDC
       await clientUsdc.connect(alice).approve(clientAddress, SHIELD_AMOUNT);
 
-      // Create shield parameters
-      const npk = ethers.keccak256(ethers.toUtf8Bytes("alice-note-key"));
+      // Create shield parameters. The npk must be inside the SNARK field: the client rejects
+      // anything else before burning, since the hub could never deliver it (#607).
+      const SNARK_SCALAR_FIELD = 21888242871839275222246405745257275088548364400416034343698204186575808495617n;
+      const rawNpk = BigInt(ethers.keccak256(ethers.toUtf8Bytes("alice-note-key")));
+      const npk = ethers.zeroPadValue(ethers.toBeHex(rawNpk % SNARK_SCALAR_FIELD), 32);
       const encryptedBundle: [string, string, string] = [
         ethers.keccak256(ethers.toUtf8Bytes("enc1")),
         ethers.keccak256(ethers.toUtf8Bytes("enc2")),

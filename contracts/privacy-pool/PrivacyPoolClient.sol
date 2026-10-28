@@ -7,6 +7,7 @@ import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 
 import "./interfaces/IPrivacyPoolClient.sol";
 import "./types/CCTPTypes.sol";
+import { SNARK_SCALAR_FIELD } from "./types/PoolTypes.sol";
 import "../cctp/ICCTPV2.sol";
 
 /**
@@ -169,6 +170,7 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
             shieldKey: shieldKey,
             integrator: integrator
         });
+        _validateNote(notes[0]);
 
         _pullAndBurn(amount, maxFee, minFinalityThreshold, notes);
 
@@ -206,6 +208,8 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         // strand the (already burned) message on the Hub. Bounding only against `total` is
         // insufficient: it permits maxFee >= userNote.value, an undeliverable configuration.
         require(maxFee < uint256(userNote.value), "PrivacyPoolClient: Fee exceeds user note");
+        _validateNote(userNote);
+        _validateNote(feeNote);
 
         ShieldData[] memory notes = new ShieldData[](2);
         notes[0] = userNote; // recipient note — absorbs the CCTP fee on the Hub
@@ -324,6 +328,18 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
         }
 
         return true;
+    }
+
+    /**
+     * @notice Reject a note the Hub would reject, before anything is burned (#607).
+     * @dev Mirrors the Hub's per-note checks in `ShieldModule.processIncomingShield`. The burned USDC
+     *      can only be delivered through the Hub's hook router (the CCTP destinationCaller), so a note
+     *      the Hub rejects would make the message fail on every delivery attempt and the USDC would
+     *      be lost. USDC is never blocklisted on the Hub, so the blocklist check needs no mirror.
+     */
+    function _validateNote(ShieldData memory note) internal pure {
+        require(note.value > 0, "PrivacyPoolClient: Invalid value");
+        require(uint256(note.npk) < SNARK_SCALAR_FIELD, "PrivacyPoolClient: Invalid npk");
     }
 
     /**

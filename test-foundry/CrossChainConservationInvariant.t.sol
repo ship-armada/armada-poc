@@ -43,8 +43,9 @@ contract CrossChainHandler is Test {
 
     struct Pending {
         bytes message;
-        uint256 amount; // burned on the source chain
-        uint256 fee;    // CCTP fee (the mock executes the full maxFee)
+        uint256 amount;   // burned on the source chain
+        uint256 fee;      // CCTP fee (the mock executes the full maxFee)
+        uint256 feeNote;  // relayer fee note's declared value (client→hub shields; 0 = none)
     }
 
     PrivacyPool public hubPool;
@@ -72,6 +73,9 @@ contract CrossChainHandler is Test {
     /// @notice Hub notes the pool treats as unspent (USDC only).
     uint120[] public notes;
 
+    /// @notice Client shields that burned USDC but could not be delivered to the hub. Must stay zero.
+    uint256 public undeliverable;
+
     /// @notice Replayed or forged messages that were accepted. Must stay zero.
     uint256 public replaysAccepted;
     uint256 public forgeriesAccepted;
@@ -80,6 +84,8 @@ contract CrossChainHandler is Test {
 
     // Coverage counters (successful calls / rejections).
     uint256 public calls_clientShield;
+    uint256 public calls_clientShieldAnyNotes;
+    uint256 public rejected_invalidNotes;
     uint256 public calls_relayToHub;
     uint256 public calls_hubUnshield;
     uint256 public calls_relayToClient;
@@ -126,9 +132,55 @@ contract CrossChainHandler is Test {
         );
         vm.stopPrank();
 
-        _toHub.push(Pending(_lastMessageSent(address(client.transmitter)), amount, maxFee));
+        _toHub.push(Pending(_lastMessageSent(address(client.transmitter)), amount, maxFee, 0));
         inFlight += amount;
         calls_clientShield++;
+    }
+
+    /// @notice A client shield with arbitrary notes: any npk (half the seeds are raw 256-bit values,
+    ///         mostly outside the SNARK field), any values, with or without a relayer fee note.
+    ///         Whatever the client accepts and burns must be deliverable on the hub (#607).
+    function clientShieldAnyNotes(
+        uint256 userValue,
+        uint256 feeValue,
+        uint256 userNpkSeed,
+        uint256 feeNpkSeed,
+        uint256 feeSeed,
+        bool withFeeNote
+    ) external {
+        userValue = bound(userValue, 1, 1_000_000e6);
+        feeValue = withFeeNote ? bound(feeValue, 0, 10_000e6) : 0;
+        uint256 total = userValue + feeValue;
+        uint256 maxFee = bound(feeSeed, 0, userValue / 100);
+        client.usdc.mint(user, total);
+        minted += total;
+
+        vm.startPrank(user);
+        client.usdc.approve(address(clientPool), total);
+        vm.recordLogs();
+        bool burned;
+        if (withFeeNote) {
+            try clientPool.crossChainShieldWithFee(
+                maxFee, 2000, _anyNote(userNpkSeed, userValue), _anyNote(feeNpkSeed, feeValue)
+            ) {
+                burned = true;
+            } catch {}
+        } else {
+            try clientPool.crossChainShield(
+                userValue, maxFee, 2000, _anyNpk(userNpkSeed), [bytes32(0), bytes32(0), bytes32(0)], bytes32(0), address(0)
+            ) {
+                burned = true;
+            } catch {}
+        }
+        vm.stopPrank();
+
+        if (!burned) {
+            rejected_invalidNotes++;
+            return;
+        }
+        _toHub.push(Pending(_lastMessageSent(address(client.transmitter)), total, maxFee, feeValue));
+        inFlight += total;
+        calls_clientShieldAnyNotes++;
     }
 
     /// @notice Deliver a pending client→hub shield, chosen from anywhere in the queue.
@@ -137,10 +189,18 @@ contract CrossChainHandler is Test {
         uint256 i = bound(indexSeed, 0, _toHub.length - 1);
         Pending memory p = _toHub[i];
 
-        hub.router.relayWithHook(p.message, "");
-        // The note is worth what arrived (amount - CCTP fee) less the hub's flat shield fee.
+        try hub.router.relayWithHook(p.message, "") {} catch {
+            // Burned on the client and rejected by the hub on every attempt: permanently stuck.
+            // The USDC stays counted as in flight (it was never minted on the hub).
+            undeliverable++;
+            _removePending(_toHub, i);
+            return;
+        }
+        // The recipient note gets what arrived (amount - CCTP fee) minus the fee note's value; the
+        // fee note gets its declared value. The hub's flat shield fee is taken from each.
         uint256 arrived = p.amount - p.fee;
-        notes.push(uint120(arrived - (arrived * SHIELD_FEE_BPS) / 10000));
+        notes.push(_afterShieldFee(arrived - p.feeNote));
+        if (p.feeNote > 0) notes.push(_afterShieldFee(p.feeNote));
         inFlight -= p.amount;
         _deliveredToHub.push(p.message);
         if (i != _toHub.length - 1) calls_outOfOrderRelay++;
@@ -162,7 +222,7 @@ contract CrossChainHandler is Test {
         hubPool.atomicCrossChainUnshield(txn, CLIENT_DOMAIN, recipient, maxFee, bytes32(0));
 
         _spendWithChange(i, note, value);
-        _toClient.push(Pending(_lastMessageSent(address(hub.transmitter)), value, maxFee));
+        _toClient.push(Pending(_lastMessageSent(address(hub.transmitter)), value, maxFee, 0));
         inFlight += value;
         calls_hubUnshield++;
     }
@@ -235,6 +295,25 @@ contract CrossChainHandler is Test {
     // ═══════════════════════════════════════════════════════════════════
     // HELPERS
     // ═══════════════════════════════════════════════════════════════════
+
+    function _afterShieldFee(uint256 value) internal pure returns (uint120) {
+        return uint120(value - (value * SHIELD_FEE_BPS) / 10000);
+    }
+
+    /// @dev Half the seeds give an npk inside the SNARK field, half a raw 256-bit value.
+    function _anyNpk(uint256 seed) internal pure returns (bytes32) {
+        return bytes32(seed % 2 == 0 ? seed % SNARK_SCALAR_FIELD : seed);
+    }
+
+    function _anyNote(uint256 npkSeed, uint256 value) internal pure returns (ShieldData memory) {
+        return ShieldData({
+            npk: _anyNpk(npkSeed),
+            value: uint120(value),
+            encryptedBundle: [bytes32(0), bytes32(0), bytes32(0)],
+            shieldKey: bytes32(0),
+            integrator: address(0)
+        });
+    }
 
     /// @dev The full CCTP message from the most recent `MessageSent` emitted by `transmitter`.
     function _lastMessageSent(address transmitter) internal returns (bytes memory message) {
@@ -400,6 +479,15 @@ contract CrossChainConservationInvariantTest is Test, PoseidonLinker {
         assertEq(client.usdc.balanceOf(address(clientPool)), 0, "client pool holds USDC");
     }
 
+    /// @notice Every shield the client accepts and burns is delivered on the hub.
+    /// @dev WHY: since #64 a shield can only be delivered through the hub's hook router, so a note the
+    ///      hub rejects (zero value, npk outside the SNARK field) makes the burned USDC unrecoverable.
+    ///      The client must reject such notes before burning (#607). The harness has no shield pause
+    ///      or wind-down, the other (still open) #607 trigger.
+    function invariant_everyAcceptedShieldIsDelivered() public view {
+        assertEq(handler.undeliverable(), 0, "client burned a shield the hub cannot deliver");
+    }
+
     /// @notice Every delivered message matches exactly one burn: no replay or forgery is accepted.
     /// @dev WHY: CCTP's nonce check stops replays, and the hook routers dispatch only messages
     ///      addressed to the TokenMessenger (which mints), so a generic message with a burn-shaped
@@ -419,6 +507,15 @@ contract CrossChainConservationInvariantTest is Test, PoseidonLinker {
         handler.relayToHub(0);
         assertEq(handler.calls_relayToHub(), 2, "both shields delivered");
         assertGt(handler.calls_outOfOrderRelay(), 0, "out-of-order delivery");
+
+        // Arbitrary-note shields: a valid one with a fee note is delivered; an invalid npk is
+        // rejected by the client before burning.
+        handler.clientShieldAnyNotes(300e6, 2e6, 2, 4, 1e6, true);   // even seeds: npk in field
+        handler.clientShieldAnyNotes(300e6, 0, type(uint256).max, 0, 0, false); // npk above field
+        assertEq(handler.calls_clientShieldAnyNotes(), 1, "valid arbitrary-note shield burned");
+        assertEq(handler.rejected_invalidNotes(), 1, "invalid npk rejected before burning");
+        handler.relayToHub(0);
+        assertEq(handler.undeliverable(), 0, "accepted shield delivered");
 
         handler.hubUnshield(0, 500e6, 2e6);
         handler.relayToClient(0);
@@ -443,5 +540,6 @@ contract CrossChainConservationInvariantTest is Test, PoseidonLinker {
         invariant_hubPoolBacksNotes();
         invariant_clientPaysOnlyDeliveredBurns();
         invariant_noReplayOrForgeryAccepted();
+        invariant_everyAcceptedShieldIsDelivered();
     }
 }

@@ -111,11 +111,11 @@ When writing new code, follow production security practices even though these le
 | `lib/` | Foundry deps (forge-std, halmos) + Railgun SDK helpers |
 | `config/` | Environment configs (local.env, sepolia.env, networks.ts) |
 | `deploy/` | Crowdfund indexer deployment infra (Docker, nginx, backup scripts) |
-| `deployments/` | Generated deployment manifests (Sepolia and mainnet ones are committed) |
+| `deployments/` | Generated deployment manifests (only the Sepolia ones are committed; named instances are pulled from the armada-deployments repo via `npm run fetch-deployment`) |
 | `specs/` | Specifications — governance, crowdfund, fee structure, ARM token, operations, monitoring |
 | `docs/` | Operational runbooks (Ledger deploy, Safe launch batches, interrupted-launch recovery, wind-down redemption) |
 | `_legacy/llm-analysis-2026-02/` | LLM-generated security analysis snapshot (Feb 2026, formerly `audit-reports/`) — historical, predates fee module/governance/July review |
-| `reports/` | Threat models, formal verification notes, analysis reports |
+| `reports/` | Threat models (current: `threat-model-privacy-pool-yield.md`, `threat-model-governance-crowdfund.md`), formal verification notes, multicall audits. Files bannered "Historical snapshot (2026-02-17)" are a dated LLM analysis, not current security documentation |
 | `mcp-server/` | MCP server exposing read-only dev tools for AI coding agents |
 | `_legacy/` | Deprecated earlier approach — do not modify |
 

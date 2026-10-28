@@ -6,9 +6,7 @@
     "§5.4"
   ],
   "proofsBypassed": false,
-  "dependsOn": [
-    "v2-admin-set-testing-mode-true"
-  ],
+  "dependsOn": [],
   "setup": [],
   "requiresImpersonation": null,
   "setupTxs": [],
@@ -32,7 +30,7 @@
     "pool.treeNumber": "0x0",
     "pool.nextLeafIndex": "0x2",
     "pool.merkleRoot": "0x281ca60c48f66c59afc21f4489fa7a93d01f4378330ed1ebfc5632d1ca79dd10",
-    "pool.lastEventBlock": "0x6d",
+    "pool.lastEventBlock": "0x7c",
     "usdc.balanceOf[POOL]": "0x260d360",
     "usdc.balanceOf[ALICE]": "0x2540be400",
     "usdc.balanceOf[BOB]": "0x3a699d00",
@@ -43,8 +41,8 @@
   },
   "result": {
     "status": 1,
-    "txHash": "0xc4f523b2e6cf32527b15e732650a331d68ed923b5efccf6abc8a9ddbe6a35bfa",
-    "blockNumber": 110,
+    "txHash": "0x16a750cc95c8b9e8b8df1624aa54ff756fbe5b99bee51070f11f80ae40be77fb",
+    "blockNumber": 125,
     "gasUsed": "0xc805",
     "returnData": null,
     "revert": null,
@@ -70,7 +68,7 @@
     "pool.treeNumber": "0x0",
     "pool.nextLeafIndex": "0x2",
     "pool.merkleRoot": "0x281ca60c48f66c59afc21f4489fa7a93d01f4378330ed1ebfc5632d1ca79dd10",
-    "pool.lastEventBlock": "0x6d",
+    "pool.lastEventBlock": "0x7c",
     "usdc.balanceOf[POOL]": "0x260d360",
     "usdc.balanceOf[ALICE]": "0x2540be400",
     "usdc.balanceOf[BOB]": "0x3a699d00",
@@ -109,5 +107,5 @@
       "MALICIOUS_TOKEN": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d"
     }
   },
-  "capturedAt": "2026-10-28T14:12:53.177Z"
+  "capturedAt": "2026-10-28T16:26:54.331Z"
 }

@@ -117,9 +117,9 @@ export function makeCiphertext(seed: string, i: number) {
 }
 
 /**
- * Build a Transaction struct. In testingMode the router's verify() returns true
- * without touching the proof, so the proof is a zero struct and nullifiers /
- * commitments are deterministic field elements.
+ * Build a Transaction struct with a zero proof and deterministic nullifiers / commitments. It
+ * only passes verification where proofs are skipped: the pool's former testing mode (v1
+ * corpus) or the test-only PrivacyPoolProofBypass. Current production pools reject it (#633).
  *
  * For unshield transactions the LAST commitment is the unshield-output note
  * hash (spec §8.3 check 6) and the ciphertext array has one fewer entry.

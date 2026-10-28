@@ -31,7 +31,7 @@ export interface VectorMeta {
   category: string;
   description: string;
   specRefs?: string[];
-  /** true when the pool's testingMode proof bypass was active for this vector. */
+  /** true when proofs were skipped for this vector (the pool's former testing mode; removed in #633). */
   proofsBypassed?: boolean;
   dependsOn?: string[];
   /** Human-readable ordered setup prerequisites (funding, approvals, config). */

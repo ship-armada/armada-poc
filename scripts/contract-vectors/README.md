@@ -112,6 +112,16 @@ point at `v2-admin-set-testing-mode-true`, and two shield descriptions now name 
 (50 bps base take) rather than a flat fee. No addresses moved. Apart from that vector, only these
 metadata fields and the PrivacyPool creation bytecode in `v2-initialize-nondeployer-revert` changed.
 
+It was re-captured again on 2026-10-28 for #633, which removed testing mode (and the
+`tx.origin == 0xdead` verification bypass) from the pool. Six vectors went: the two testing-mode
+admin vectors, and the four unshield vectors that relied on the bypass for their dummy proofs
+(`v2-unshield-crosschain-bound`, `-unbound-revert`, `-no-hookrouter-revert`,
+`v2-unshield-to-pool-revert`). Their behavior is covered elsewhere: the bound path by the #608 and
+#616 invariant suites and the integration tests, the unbound and to-pool reverts by
+`test/privacy_pool_adversarial.ts`, and the missing-hook-router revert by
+`test-foundry/CrossChainUnshieldHookRouterRequired.t.sol` (added for this). No v2 vector needs a
+proof any more. CI's single-vector replay now uses `v2-admin-set-remote-pool`.
+
 CI (`.github/workflows/ci.yml`, job `golden-vector-replay`) replays the full v2 corpus and, on a
 separate fresh fixturenet, one vector selected by `REPLAY_IDS`, on every PR. The v1 corpus is not
 in CI: it intentionally diverges on the D-15/D-16/D-18 surface (see below).
@@ -132,6 +142,10 @@ still match; gas deltas on unchanged paths are now +0..+2,624 (the nonReentrant 
 SSTORE) instead of the pre-port 0..−353.
 
 ## Proof policy (decision: testingMode bypass)
+
+> **Historical (v1 corpus).** Testing mode was removed from the pool in #633, so current contracts
+> cannot reproduce proofless transact vectors: `capture.ts` (v1) targets the pre-#633 contracts
+> and no longer runs against current ones. The v2 corpus contains no proof-gated vectors.
 
 The capture enables the pool's `testingMode` proof bypass early
 (`admin-set-testing-mode-true`, itself a vector). Per spec §5.6 step 1 the
@@ -198,8 +212,8 @@ Compiled at capture time with the repo's bundled solc from inline sources
 
 ## Notes / observed behavior (all consistent with the spec)
 
-- `setTestingMode` emits `TestingModeSet` **twice** per call (OQ-8) — see
-  `admin-set-testing-mode-true.json`.
+- `setTestingMode` emitted `TestingModeSet` **twice** per call (OQ-8) — see
+  `admin-set-testing-mode-true.json` (v1; the function was removed in #633).
 - The hub deploy scripts do NOT call `setHookRouter` or configure the mock
   transmitter's relayer; the capture records both as vectors
   (`admin-set-hook-router`, `cctp-set-mock-relayer`).

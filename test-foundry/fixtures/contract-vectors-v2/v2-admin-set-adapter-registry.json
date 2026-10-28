@@ -7,9 +7,7 @@
     "§7.3"
   ],
   "proofsBypassed": false,
-  "dependsOn": [
-    "v2-admin-set-testing-mode-true"
-  ],
+  "dependsOn": [],
   "setup": [
     "MockUSDCV2 mints (ALICE 10_000, BOB 1_000, CAROL 1_000 USDC) + max approvals to POOL",
     "MaliciousReentrantToken mint(ALICE, 100) + approve(POOL, max)",
@@ -55,8 +53,8 @@
   },
   "result": {
     "status": 1,
-    "txHash": "0xfaf9dcf2a04f4b0a17a6d6a382d8a583a6b399262bea0bdb085d8c5af30f0bac",
-    "blockNumber": 106,
+    "txHash": "0x8efbeabfcdc05b2f3839afa8130c8bd9f8797e8adf773e5c69e63d8e266a7d61",
+    "blockNumber": 121,
     "gasUsed": "0xb94c",
     "returnData": null,
     "revert": null,
@@ -121,5 +119,5 @@
       "MALICIOUS_TOKEN": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d"
     }
   },
-  "capturedAt": "2026-10-28T14:12:49.216Z"
+  "capturedAt": "2026-10-28T16:26:50.337Z"
 }

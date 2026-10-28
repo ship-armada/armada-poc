@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "generatedAt": "2026-10-28T14:13:09.204Z",
+  "generatedAt": "2026-10-28T16:27:05.334Z",
   "generator": "scripts/contract-vectors/capture-v2.ts",
   "network": {
     "name": "local fixturenet (Anvil hub chain, mock CCTP)",
@@ -9,9 +9,7 @@
     "hubDomain": 100
   },
   "proofPolicy": {
-    "summary": "Unshield vectors captured with testingMode proof bypass active; all others need no proofs. Same policy as the v1 corpus.",
-    "bypassEnabledByVector": "v2-admin-set-testing-mode-true",
-    "bypassDisabledByVector": "v2-admin-set-testing-mode-false"
+    "summary": "No vector needs a proof. The unshield vectors, which ran under the pool's testing-mode proof bypass, were dropped when testing mode was removed (#633); their behavior is covered by the Foundry and Hardhat suites."
   },
   "bootCommands": [
     "anvil --port 8545 --chain-id 31337 --block-time 1 --accounts 200",
@@ -52,21 +50,10 @@
   ],
   "vectors": [
     {
-      "id": "v2-admin-set-testing-mode-true",
-      "file": "v2-admin-set-testing-mode-true.json",
-      "category": "admin",
-      "dependsOn": [],
-      "proofsBypassed": false,
-      "outcome": "success",
-      "description": "Owner enables testingMode proof bypass so the unshield vectors replay without circuit artifacts (same policy as v1 corpus)."
-    },
-    {
       "id": "v2-admin-set-shield-fee-fee-module-active-revert",
       "file": "v2-admin-set-shield-fee-fee-module-active-revert.json",
       "category": "admin",
-      "dependsOn": [
-        "v2-admin-set-testing-mode-true"
-      ],
+      "dependsOn": [],
       "proofsBypassed": false,
       "outcome": "revert",
       "revertReason": "PrivacyPool: use fee module",
@@ -105,9 +92,7 @@
       "id": "v2-admin-set-adapter-registry",
       "file": "v2-admin-set-adapter-registry.json",
       "category": "admin",
-      "dependsOn": [
-        "v2-admin-set-testing-mode-true"
-      ],
+      "dependsOn": [],
       "proofsBypassed": false,
       "outcome": "success",
       "description": "Owner sets the timelock-governed adapter registry (set-once). Setup tx authorizes CAROL in the mock registry — CAROL's next shield pays no fee."
@@ -150,9 +135,7 @@
       "id": "v2-admin-add-to-blocklist",
       "file": "v2-admin-add-to-blocklist.json",
       "category": "admin",
-      "dependsOn": [
-        "v2-admin-set-testing-mode-true"
-      ],
+      "dependsOn": [],
       "proofsBypassed": false,
       "outcome": "success",
       "description": "Owner blocklists the MOCK_PAUSE address (standing in for a token). Emits AddToBlocklist; blocked tokens cannot be SHIELDED but existing notes stay exitable."
@@ -238,60 +221,6 @@
       "description": "Empty ShieldData[] reverts (spec §7.2 step 2)."
     },
     {
-      "id": "v2-unshield-crosschain-bound",
-      "file": "v2-unshield-crosschain-bound.json",
-      "category": "unshield",
-      "dependsOn": [
-        "v2-admin-set-testing-mode-true",
-        "v2-admin-set-remote-pool",
-        "v2-shieldin-multi-note"
-      ],
-      "proofsBypassed": true,
-      "outcome": "success",
-      "description": "Bound atomic cross-chain unshield (D-16): adaptParams = CCTPBindingLib.encode(recipient, domain, maxFee); destinationCaller pinned to remoteHookRouters[101] in the burn call; uniqueNonce echoed in hookData; nonce=0 returned."
-    },
-    {
-      "id": "v2-unshield-crosschain-unbound-revert",
-      "file": "v2-unshield-crosschain-unbound-revert.json",
-      "category": "unshield",
-      "dependsOn": [
-        "v2-admin-set-testing-mode-true",
-        "v2-admin-set-remote-pool",
-        "v2-shieldin-multi-note"
-      ],
-      "proofsBypassed": true,
-      "outcome": "revert",
-      "revertReason": "TransactModule: destination not bound to proof",
-      "description": "Unbound cross-chain unshield (adaptParams = 0) reverts — a relayer cannot resubmit a victim's proof with a redirected recipient (D-16)."
-    },
-    {
-      "id": "v2-unshield-crosschain-no-hookrouter-revert",
-      "file": "v2-unshield-crosschain-no-hookrouter-revert.json",
-      "category": "unshield",
-      "dependsOn": [
-        "v2-admin-set-testing-mode-true",
-        "v2-admin-set-remote-pool",
-        "v2-shieldin-multi-note"
-      ],
-      "proofsBypassed": true,
-      "outcome": "revert",
-      "revertReason": "TransactModule: Hook router not configured",
-      "description": "Cross-chain unshield to domain 102 (remote pool registered, hook router NOT pinned) reverts before proof validation (D-16)."
-    },
-    {
-      "id": "v2-unshield-to-pool-revert",
-      "file": "v2-unshield-to-pool-revert.json",
-      "category": "unshield",
-      "dependsOn": [
-        "v2-admin-set-testing-mode-true",
-        "v2-shieldin-multi-note"
-      ],
-      "proofsBypassed": true,
-      "outcome": "revert",
-      "revertReason": "TransactModule: unshield to pool",
-      "description": "Local unshield whose npk encodes the pool address reverts (D-18): blocks replaying an xchain-unshield proof through plain transact() (pool->pool payout would strand funds)."
-    },
-    {
       "id": "v2-initialize-nondeployer-revert",
       "file": "v2-initialize-nondeployer-revert.json",
       "category": "admin",
@@ -305,24 +234,11 @@
       "id": "v2-shield-reentrancy-revert",
       "file": "v2-shield-reentrancy-revert.json",
       "category": "edge",
-      "dependsOn": [
-        "v2-admin-set-testing-mode-true"
-      ],
+      "dependsOn": [],
       "proofsBypassed": false,
       "outcome": "revert",
       "revertReason": "PrivacyPool: reentrant call",
       "description": "Shield with MaliciousReentrantToken: the token's transferFrom re-enters pool.shield mid-deposit; the router's nonReentrant guard fires (D-18)."
-    },
-    {
-      "id": "v2-admin-set-testing-mode-false",
-      "file": "v2-admin-set-testing-mode-false.json",
-      "category": "admin",
-      "dependsOn": [
-        "v2-unshield-crosschain-bound"
-      ],
-      "proofsBypassed": false,
-      "outcome": "success",
-      "description": "Owner disables testingMode (cleanup): real SNARK verification restored."
     }
   ]
 }

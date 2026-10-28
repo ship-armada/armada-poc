@@ -184,7 +184,7 @@ jobs:
         if: matrix.mode == 'single'
         run: |
           source config/local.env
-          REPLAY_FIXTURES_DIR=test-foundry/fixtures/contract-vectors-v2 REPLAY_GENESIS=1 REPLAY_IDS=v2-admin-set-testing-mode-true \
+          REPLAY_FIXTURES_DIR=test-foundry/fixtures/contract-vectors-v2 REPLAY_GENESIS=1 REPLAY_IDS=v2-admin-set-remote-pool \
             npx hardhat run scripts/contract-vectors/replay-check.ts --network hub | tee replay.log
           grep -q "replay-check: 1/1 matched" replay.log
 

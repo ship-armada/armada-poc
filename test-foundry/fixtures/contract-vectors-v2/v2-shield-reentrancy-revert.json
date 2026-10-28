@@ -7,9 +7,7 @@
     "D-18"
   ],
   "proofsBypassed": false,
-  "dependsOn": [
-    "v2-admin-set-testing-mode-true"
-  ],
+  "dependsOn": [],
   "setup": [
     "MockUSDCV2 mints (ALICE 10_000, BOB 1_000, CAROL 1_000 USDC) + max approvals to POOL",
     "MaliciousReentrantToken mint(ALICE, 100) + approve(POOL, max)",
@@ -43,10 +41,10 @@
   },
   "preState": {
     "pool.treeNumber": "0x0",
-    "pool.nextLeafIndex": "0x5",
-    "pool.merkleRoot": "0x15df4ba4a293eadda3959502fcc393468f5ca56f638d7b392856b1cac3e30f0e",
-    "pool.lastEventBlock": "0x76",
-    "usdc.balanceOf[POOL]": "0x1f511ed0",
+    "pool.nextLeafIndex": "0x4",
+    "pool.merkleRoot": "0x2123b526e0b2f0b1d1a504f277d0cb4c5bcc62066e1c9b1027d8b4f9fa4a5bc9",
+    "pool.lastEventBlock": "0x83",
+    "usdc.balanceOf[POOL]": "0x1fe9b550",
     "usdc.balanceOf[ALICE]": "0x2540be400",
     "usdc.balanceOf[BOB]": "0x3a699d00",
     "usdc.balanceOf[CAROL]": "0x3a699d00",
@@ -56,8 +54,8 @@
   },
   "result": {
     "status": 0,
-    "txHash": "0xe41023e6313940d7a9c26bb6cb2e02e305aa4c6ed707a561830d2d68ee2b5880",
-    "blockNumber": 125,
+    "txHash": "0x81c5c4cdfff529aa10cb285545574093df0cc8eb760a9be2002ce3c18f08c2e1",
+    "blockNumber": 136,
     "gasUsed": "0x189cf",
     "returnData": null,
     "revert": {
@@ -69,10 +67,10 @@
   },
   "postState": {
     "pool.treeNumber": "0x0",
-    "pool.nextLeafIndex": "0x5",
-    "pool.merkleRoot": "0x15df4ba4a293eadda3959502fcc393468f5ca56f638d7b392856b1cac3e30f0e",
-    "pool.lastEventBlock": "0x76",
-    "usdc.balanceOf[POOL]": "0x1f511ed0",
+    "pool.nextLeafIndex": "0x4",
+    "pool.merkleRoot": "0x2123b526e0b2f0b1d1a504f277d0cb4c5bcc62066e1c9b1027d8b4f9fa4a5bc9",
+    "pool.lastEventBlock": "0x83",
+    "usdc.balanceOf[POOL]": "0x1fe9b550",
     "usdc.balanceOf[ALICE]": "0x2540be400",
     "usdc.balanceOf[BOB]": "0x3a699d00",
     "usdc.balanceOf[CAROL]": "0x3a699d00",
@@ -109,5 +107,5 @@
       "MALICIOUS_TOKEN": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d"
     }
   },
-  "capturedAt": "2026-10-28T14:13:08.217Z"
+  "capturedAt": "2026-10-28T16:27:05.333Z"
 }

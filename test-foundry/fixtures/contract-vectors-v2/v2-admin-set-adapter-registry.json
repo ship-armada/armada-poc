@@ -8,7 +8,7 @@
   ],
   "proofsBypassed": false,
   "dependsOn": [
-    "v2-admin-set-shield-fee-50"
+    "v2-admin-set-testing-mode-true"
   ],
   "setup": [
     "MockUSDCV2 mints (ALICE 10_000, BOB 1_000, CAROL 1_000 USDC) + max approvals to POOL",
@@ -55,9 +55,9 @@
   },
   "result": {
     "status": 1,
-    "txHash": "0xcc7ca42c1b2fa61dffd4daef9f27c7c186af3eaa9e8c2ce47d1ab3bc3ab43418",
-    "blockNumber": 131,
-    "gasUsed": "0xb962",
+    "txHash": "0xfaf9dcf2a04f4b0a17a6d6a382d8a583a6b399262bea0bdb085d8c5af30f0bac",
+    "blockNumber": 106,
+    "gasUsed": "0xb94c",
     "returnData": null,
     "revert": null,
     "events": [
@@ -121,5 +121,5 @@
       "MALICIOUS_TOKEN": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d"
     }
   },
-  "capturedAt": "2026-10-26T17:46:42.170Z"
+  "capturedAt": "2026-10-28T14:12:49.216Z"
 }

@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "generatedAt": "2026-10-26T17:47:02.140Z",
+  "generatedAt": "2026-10-28T14:13:09.204Z",
   "generator": "scripts/contract-vectors/capture-v2.ts",
   "network": {
     "name": "local fixturenet (Anvil hub chain, mock CCTP)",
@@ -61,15 +61,16 @@
       "description": "Owner enables testingMode proof bypass so the unshield vectors replay without circuit artifacts (same policy as v1 corpus)."
     },
     {
-      "id": "v2-admin-set-shield-fee-50",
-      "file": "v2-admin-set-shield-fee-50.json",
+      "id": "v2-admin-set-shield-fee-fee-module-active-revert",
+      "file": "v2-admin-set-shield-fee-fee-module-active-revert.json",
       "category": "admin",
       "dependsOn": [
         "v2-admin-set-testing-mode-true"
       ],
       "proofsBypassed": false,
-      "outcome": "success",
-      "description": "Owner sets the flat shield fee to 50 bps (fee module detached on a fresh fixturenet)."
+      "outcome": "revert",
+      "revertReason": "PrivacyPool: use fee module",
+      "description": "Owner's flat shield-fee change is rejected while the fee module is wired (D-24, #155): the flat fee applies only without a fee module."
     },
     {
       "id": "v2-admin-set-remote-pool",
@@ -105,7 +106,7 @@
       "file": "v2-admin-set-adapter-registry.json",
       "category": "admin",
       "dependsOn": [
-        "v2-admin-set-shield-fee-50"
+        "v2-admin-set-testing-mode-true"
       ],
       "proofsBypassed": false,
       "outcome": "success",
@@ -132,7 +133,7 @@
       ],
       "proofsBypassed": false,
       "outcome": "success",
-      "description": "CAROL (authorized in the registry) shields 20 USDC with 50bps flat fee configured: fee = 0, full value committed (D-18 registry-derived exemption)."
+      "description": "CAROL (authorized in the registry) shields 20 USDC with the fee module wired (50 bps base take): fee = 0, full value committed (D-18 registry-derived exemption)."
     },
     {
       "id": "v2-shield-unprivileged-with-registry",
@@ -143,14 +144,14 @@
       ],
       "proofsBypassed": false,
       "outcome": "success",
-      "description": "BOB (NOT in the registry) shields 20 USDC with the registry set: flat 50bps fee charged and sent to treasury — proves the retired privilegedShieldCallers map is inert (D-18)."
+      "description": "BOB (NOT in the registry) shields 20 USDC with the registry set: the fee module's 50 bps fee is charged and sent to treasury — proves the retired privilegedShieldCallers map is inert (D-18)."
     },
     {
       "id": "v2-admin-add-to-blocklist",
       "file": "v2-admin-add-to-blocklist.json",
       "category": "admin",
       "dependsOn": [
-        "v2-admin-set-shield-fee-50"
+        "v2-admin-set-testing-mode-true"
       ],
       "proofsBypassed": false,
       "outcome": "success",
@@ -305,7 +306,7 @@
       "file": "v2-shield-reentrancy-revert.json",
       "category": "edge",
       "dependsOn": [
-        "v2-admin-set-shield-fee-50"
+        "v2-admin-set-testing-mode-true"
       ],
       "proofsBypassed": false,
       "outcome": "revert",

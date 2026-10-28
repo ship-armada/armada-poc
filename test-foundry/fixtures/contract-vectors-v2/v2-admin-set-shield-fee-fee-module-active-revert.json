@@ -1,7 +1,7 @@
 {
-  "id": "v2-admin-set-shield-fee-50",
+  "id": "v2-admin-set-shield-fee-fee-module-active-revert",
   "category": "admin",
-  "description": "Owner sets the flat shield fee to 50 bps (fee module detached on a fresh fixturenet).",
+  "description": "Owner's flat shield-fee change is rejected while the fee module is wired (D-24, #155): the flat fee applies only without a fee module.",
   "specRefs": [
     "§5.4"
   ],
@@ -40,12 +40,16 @@
     "usdc.balanceOf[HOOK_ROUTER]": "0x0"
   },
   "result": {
-    "status": 1,
-    "txHash": "0xd755616768ad2c7eae6ba1b34d73bf29554649245f7a6f24b4b67f6dbaf297a0",
-    "blockNumber": 126,
-    "gasUsed": "0x65c3",
+    "status": 0,
+    "txHash": "0x98a2145542a1dedcbe45a05ed6f83b6981e2c1c68f1826e85206b9e6f4ca2857",
+    "blockNumber": 101,
+    "gasUsed": "0x6575",
     "returnData": null,
-    "revert": null,
+    "revert": {
+      "kind": "Error(string)",
+      "reason": "PrivacyPool: use fee module",
+      "data": "0x08c379a00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000001b50726976616379506f6f6c3a2075736520666565206d6f64756c650000000000"
+    },
     "events": []
   },
   "postState": {
@@ -91,5 +95,5 @@
       "MALICIOUS_TOKEN": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d"
     }
   },
-  "capturedAt": "2026-10-26T17:46:37.182Z"
+  "capturedAt": "2026-10-28T14:12:44.195Z"
 }

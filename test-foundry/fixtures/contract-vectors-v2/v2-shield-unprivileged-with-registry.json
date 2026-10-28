@@ -1,7 +1,7 @@
 {
   "id": "v2-shield-unprivileged-with-registry",
   "category": "shield",
-  "description": "BOB (NOT in the registry) shields 20 USDC with the registry set: flat 50bps fee charged and sent to treasury — proves the retired privilegedShieldCallers map is inert (D-18).",
+  "description": "BOB (NOT in the registry) shields 20 USDC with the registry set: the fee module's 50 bps fee is charged and sent to treasury — proves the retired privilegedShieldCallers map is inert (D-18).",
   "specRefs": [
     "§7.1",
     "§7.3"
@@ -56,7 +56,7 @@
     "pool.treeNumber": "0x0",
     "pool.nextLeafIndex": "0x1",
     "pool.merkleRoot": "0x133f21b0171163ca5e4ad691296915cec2258131db105230cb0ff38ccf1962ac",
-    "pool.lastEventBlock": "0x85",
+    "pool.lastEventBlock": "0x6c",
     "usdc.balanceOf[POOL]": "0x1312d00",
     "usdc.balanceOf[ALICE]": "0x2540be400",
     "usdc.balanceOf[BOB]": "0x3b9aca00",
@@ -67,9 +67,9 @@
   },
   "result": {
     "status": 1,
-    "txHash": "0x21557ed5d32e41074c4f466a4eb517dc92803b3d03aa6099d4489422b822b5a1",
-    "blockNumber": 134,
-    "gasUsed": "0xd15f7",
+    "txHash": "0x94600bce0c15a9954a0996134ceaf77a0eb4d63983dfe0b5742c96642f1a21c5",
+    "blockNumber": 109,
+    "gasUsed": "0xd1693",
     "returnData": null,
     "revert": null,
     "events": [
@@ -133,7 +133,7 @@
     "pool.treeNumber": "0x0",
     "pool.nextLeafIndex": "0x2",
     "pool.merkleRoot": "0x281ca60c48f66c59afc21f4489fa7a93d01f4378330ed1ebfc5632d1ca79dd10",
-    "pool.lastEventBlock": "0x86",
+    "pool.lastEventBlock": "0x6d",
     "usdc.balanceOf[POOL]": "0x260d360",
     "usdc.balanceOf[ALICE]": "0x2540be400",
     "usdc.balanceOf[BOB]": "0x3a699d00",
@@ -171,5 +171,5 @@
       "MALICIOUS_TOKEN": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d"
     }
   },
-  "capturedAt": "2026-10-26T17:46:45.164Z"
+  "capturedAt": "2026-10-28T14:12:52.208Z"
 }

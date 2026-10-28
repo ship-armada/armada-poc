@@ -104,6 +104,14 @@ block numbers, hashes and gas ignored, the vectors are unchanged apart from the 
 creation bytecode's metadata hash in `v2-initialize-nondeployer-revert`. Any deploy-script change
 that adds or removes a deployer transaction before the fee module needs the same re-capture.
 
+It was re-captured on 2026-10-28 for #155 (D-24), which makes `setShieldFee` revert while a fee
+module is wired. The old `v2-admin-set-shield-fee-50` vector said "fee module detached", but the
+capture never detached it, so it recorded a flat-fee change that did nothing. It is replaced by
+`v2-admin-set-shield-fee-fee-module-active-revert`, which records the rejection. Its dependents now
+point at `v2-admin-set-testing-mode-true`, and two shield descriptions now name the fee module
+(50 bps base take) rather than a flat fee. No addresses moved. Apart from that vector, only these
+metadata fields and the PrivacyPool creation bytecode in `v2-initialize-nondeployer-revert` changed.
+
 CI (`.github/workflows/ci.yml`, job `golden-vector-replay`) replays the full v2 corpus and, on a
 separate fresh fixturenet, one vector selected by `REPLAY_IDS`, on every PR. The v1 corpus is not
 in CI: it intentionally diverges on the D-15/D-16/D-18 surface (see below).

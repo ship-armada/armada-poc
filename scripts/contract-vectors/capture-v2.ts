@@ -178,12 +178,14 @@ async function main() {
     { postReads: [{ key: "pool.testingMode", read: () => pool.testingMode() }] }
   );
 
-  // ═══ 2. Flat fee 50bps (fee behavior observability) ═══
+  // ═══ 2. Flat fee is not settable while the fee module is wired (D-24, #155) ═══
+  // The deploy sequence wires the fee module, so shields below are priced by it (50 bps base take).
   await admin(
-    "v2-admin-set-shield-fee-50",
-    "Owner sets the flat shield fee to 50 bps (fee module detached on a fresh fixturenet).",
+    "v2-admin-set-shield-fee-fee-module-active-revert",
+    "Owner's flat shield-fee change is rejected while the fee module is wired (D-24, #155): the flat fee applies only without a fee module.",
     "setShieldFee", [50],
-    { dependsOn: ["v2-admin-set-testing-mode-true"],
+    { expectRevert: true, expectReason: "PrivacyPool: use fee module",
+      dependsOn: ["v2-admin-set-testing-mode-true"],
       postReads: [{ key: "pool.shieldFee", read: () => pool.shieldFee() }] }
   );
 
@@ -217,7 +219,7 @@ async function main() {
       category: "admin",
       description: "Owner sets the timelock-governed adapter registry (set-once). Setup tx authorizes CAROL in the mock registry — CAROL's next shield pays no fee.",
       specRefs: ["§5.4", "§7.3"],
-      dependsOn: ["v2-admin-set-shield-fee-50"],
+      dependsOn: ["v2-admin-set-testing-mode-true"],
       setup: [...FUNDING_SETUP, "MockAdapterRegistry.setAuthorized(CAROL, true)"],
     },
     setupTxs: [{
@@ -248,7 +250,7 @@ async function main() {
       meta: {
         id: "v2-shield-privileged-adapter",
         category: "shield",
-        description: "CAROL (authorized in the registry) shields 20 USDC with 50bps flat fee configured: fee = 0, full value committed (D-18 registry-derived exemption).",
+        description: "CAROL (authorized in the registry) shields 20 USDC with the fee module wired (50 bps base take): fee = 0, full value committed (D-18 registry-derived exemption).",
         specRefs: ["§7.1", "§7.3"],
         dependsOn: ["v2-admin-set-adapter-registry"],
         setup: FUNDING_SETUP,
@@ -265,7 +267,7 @@ async function main() {
       meta: {
         id: "v2-shield-unprivileged-with-registry",
         category: "shield",
-        description: "BOB (NOT in the registry) shields 20 USDC with the registry set: flat 50bps fee charged and sent to treasury — proves the retired privilegedShieldCallers map is inert (D-18).",
+        description: "BOB (NOT in the registry) shields 20 USDC with the registry set: the fee module's 50 bps fee is charged and sent to treasury — proves the retired privilegedShieldCallers map is inert (D-18).",
         specRefs: ["§7.1", "§7.3"],
         dependsOn: ["v2-shield-privileged-adapter"],
         setup: FUNDING_SETUP,
@@ -282,7 +284,7 @@ async function main() {
     "v2-admin-add-to-blocklist",
     "Owner blocklists the MOCK_PAUSE address (standing in for a token). Emits AddToBlocklist; blocked tokens cannot be SHIELDED but existing notes stay exitable.",
     "addToBlocklist", [[mockPause.address]],
-    { dependsOn: ["v2-admin-set-shield-fee-50"],
+    { dependsOn: ["v2-admin-set-testing-mode-true"],
       postReads: [{ key: `pool.tokenBlocklist[${mockPause.address}]`, read: () => pool.tokenBlocklist(mockPause.address) }] }
   );
   {
@@ -570,7 +572,7 @@ async function main() {
         category: "edge",
         description: "Shield with MaliciousReentrantToken: the token's transferFrom re-enters pool.shield mid-deposit; the router's nonReentrant guard fires (D-18).",
         specRefs: ["§5.2", "D-18"],
-        dependsOn: ["v2-admin-set-shield-fee-50"],
+        dependsOn: ["v2-admin-set-testing-mode-true"],
         setup: [...FUNDING_SETUP, "MaliciousReentrantToken.setAttack(POOL, 1=shield)"],
       },
       setupTxs: [{

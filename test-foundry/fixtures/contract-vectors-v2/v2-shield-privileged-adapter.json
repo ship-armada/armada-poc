@@ -1,7 +1,7 @@
 {
   "id": "v2-shield-privileged-adapter",
   "category": "shield",
-  "description": "CAROL (authorized in the registry) shields 20 USDC with 50bps flat fee configured: fee = 0, full value committed (D-18 registry-derived exemption).",
+  "description": "CAROL (authorized in the registry) shields 20 USDC with the fee module wired (50 bps base take): fee = 0, full value committed (D-18 registry-derived exemption).",
   "specRefs": [
     "§7.1",
     "§7.3"
@@ -67,9 +67,9 @@
   },
   "result": {
     "status": 1,
-    "txHash": "0x87b33a678264a7a423f3384eb4b048cac07446e3710c317c14a19d70c1548be5",
-    "blockNumber": 133,
-    "gasUsed": "0xcc6ef",
+    "txHash": "0x13135cd5dc7933ac35fb3bf6312a0a2059aab956775bb858ea96f4ef475ef7ff",
+    "blockNumber": 108,
+    "gasUsed": "0xcc78b",
     "returnData": null,
     "revert": null,
     "events": [
@@ -105,7 +105,7 @@
     "pool.treeNumber": "0x0",
     "pool.nextLeafIndex": "0x1",
     "pool.merkleRoot": "0x133f21b0171163ca5e4ad691296915cec2258131db105230cb0ff38ccf1962ac",
-    "pool.lastEventBlock": "0x85",
+    "pool.lastEventBlock": "0x6c",
     "usdc.balanceOf[POOL]": "0x1312d00",
     "usdc.balanceOf[ALICE]": "0x2540be400",
     "usdc.balanceOf[BOB]": "0x3b9aca00",
@@ -143,5 +143,5 @@
       "MALICIOUS_TOKEN": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d"
     }
   },
-  "capturedAt": "2026-10-26T17:46:44.155Z"
+  "capturedAt": "2026-10-28T14:12:51.230Z"
 }

@@ -7,7 +7,7 @@
   ],
   "proofsBypassed": false,
   "dependsOn": [
-    "v2-admin-set-shield-fee-50"
+    "v2-admin-set-testing-mode-true"
   ],
   "setup": [],
   "requiresImpersonation": null,
@@ -32,7 +32,7 @@
     "pool.treeNumber": "0x0",
     "pool.nextLeafIndex": "0x2",
     "pool.merkleRoot": "0x281ca60c48f66c59afc21f4489fa7a93d01f4378330ed1ebfc5632d1ca79dd10",
-    "pool.lastEventBlock": "0x86",
+    "pool.lastEventBlock": "0x6d",
     "usdc.balanceOf[POOL]": "0x260d360",
     "usdc.balanceOf[ALICE]": "0x2540be400",
     "usdc.balanceOf[BOB]": "0x3a699d00",
@@ -43,8 +43,8 @@
   },
   "result": {
     "status": 1,
-    "txHash": "0x68144cf8c73978ed7eedc04327bf58ac615e5e02cfeb2d00a329622efe635ee5",
-    "blockNumber": 135,
+    "txHash": "0xc4f523b2e6cf32527b15e732650a331d68ed923b5efccf6abc8a9ddbe6a35bfa",
+    "blockNumber": 110,
     "gasUsed": "0xc805",
     "returnData": null,
     "revert": null,
@@ -70,7 +70,7 @@
     "pool.treeNumber": "0x0",
     "pool.nextLeafIndex": "0x2",
     "pool.merkleRoot": "0x281ca60c48f66c59afc21f4489fa7a93d01f4378330ed1ebfc5632d1ca79dd10",
-    "pool.lastEventBlock": "0x86",
+    "pool.lastEventBlock": "0x6d",
     "usdc.balanceOf[POOL]": "0x260d360",
     "usdc.balanceOf[ALICE]": "0x2540be400",
     "usdc.balanceOf[BOB]": "0x3a699d00",
@@ -109,5 +109,5 @@
       "MALICIOUS_TOKEN": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d"
     }
   },
-  "capturedAt": "2026-10-26T17:46:46.178Z"
+  "capturedAt": "2026-10-28T14:12:53.177Z"
 }

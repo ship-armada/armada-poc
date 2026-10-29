@@ -29,6 +29,12 @@ interface IPrivacyPool is IMessageHandlerV2 {
     /// @notice Emitted when fee module is set
     event FeeModuleSet(address indexed feeModule);
 
+    /// @notice Emitted when the CCTP hook router is set (set-once, issue #641)
+    event HookRouterSet(address indexed hookRouter);
+
+    /// @notice Emitted when the flat shield fee (emergency flat-fee mode, D-24) is set
+    event ShieldFeeSet(uint120 feeBps);
+
     /// @notice Emitted when the governance adapter registry is set (set-once, issue #370)
     event AdapterRegistrySet(address indexed adapterRegistry);
 

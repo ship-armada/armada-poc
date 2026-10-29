@@ -317,10 +317,10 @@ All revert with `"PrivacyPool: Only owner"` unless `msg.sender == owner`.
 |---|---|---|---|
 | `setRemotePool(uint32 domain, bytes32 poolAddress)` | `0x37bc0324` | `remotePools[domain] = poolAddress` | `RemotePoolSet(domain, poolAddress)` |
 | `setVerificationKey(uint256 n, uint256 m, VerifyingKey calldata key)` | `0x2ec0f359` | `delegatecall` → `VerifierModule.setVerificationKey` (§9.1; owner re-checked inside the module) | `VerifyingKeySet` (from module) |
-| `setShieldFee(uint120 feeBps)` | `0x47338389` | `require(feeModule == address(0), "PrivacyPool: use fee module")` (D-24: the flat fee is live only without a fee module), then `require(feeBps <= MAX_SHIELD_FEE_BPS (1000 = 10%), "PrivacyPool: Fee too high")`; sets `shieldFee` | none |
-| `setHookRouter(address)` | `0xdf4af94b` | sets `hookRouter` | none |
-| `setRemoteHookRouter(uint32 domain, bytes32 routerAddress)` | `0x7c1cc0ed` | sets `remoteHookRouters[domain]` (pin for outbound burn `destinationCaller`, D-16) | none |
-| `setAdapterRegistry(address)` | `0x5b34b823` | set-once: `require(adapterRegistry == address(0))` + non-zero arg (D-18) | none |
+| `setShieldFee(uint120 feeBps)` | `0x47338389` | `require(feeModule == address(0), "PrivacyPool: use fee module")` (D-24: the flat fee is live only without a fee module), then `require(feeBps <= MAX_SHIELD_FEE_BPS (1000 = 10%), "PrivacyPool: Fee too high")`; sets `shieldFee` | `ShieldFeeSet(feeBps)` (D-28) |
+| `setHookRouter(address)` | `0xdf4af94b` | set-once (D-28): `require(hookRouter == address(0), "PrivacyPool: hook router already set")` + `require(arg != address(0), "PrivacyPool: zero hook router")`; sets `hookRouter` | `HookRouterSet(addr)` |
+| `setRemoteHookRouter(uint32 domain, bytes32 routerAddress)` | `0x7c1cc0ed` | sets `remoteHookRouters[domain]` (pin for outbound burn `destinationCaller`, D-16) | `RemoteHookRouterSet(domain, routerAddress)` |
+| `setAdapterRegistry(address)` | `0x5b34b823` | set-once: `require(adapterRegistry == address(0))` + non-zero arg (D-18) | `AdapterRegistrySet(addr)` |
 | `addToBlocklist(address[])` | `0xf71a55f8` | sets `tokenBlocklist[t] = true`, skips already-blocked; reverts `"PrivacyPool: cannot block USDC"` on the core asset (blocking it would strand in-flight cross-chain shields) | `AddToBlocklist(token)` per newly blocked token |
 | `removeFromBlocklist(address[])` | `0xab63e69c` | clears `tokenBlocklist[t]` | `RemoveFromBlocklist(token)` per newly unblocked token |
 | `setDefaultFinalityThreshold(uint32 threshold)` | `0x50fe9314` | `require(threshold == 1000 \|\| threshold == 2000, "PrivacyPool: Invalid threshold")` | `DefaultFinalityThresholdSet(threshold)` |
@@ -576,6 +576,10 @@ For each nullifier `n`: `require(!nullifiers[boundParams.treeNumber][n], "Transa
 | `DefaultFinalityThresholdSet(uint32 threshold)` | `0xe58be3486b5925aab80f886258894ea495baffc3fdd4f7432efd0cb26a3f1314` | §5.4 |
 | `ShieldPauseContractSet(address indexed)` | `0xd944792a6be77df7bcf2b336a0c0af6fb2e715460c8f79e90264f4966fbc74c6` | §5.4 |
 | `FeeModuleSet(address indexed)` | `0xfd559fabeec56b489dcf6cf0c7a8c863ed2dd88016bf8d905c72dbdfdc685d29` | §5.4 |
+| `RemoteHookRouterSet(uint32 indexed domain, bytes32 routerAddress)` | `0x6dceb092bf089bac7367a6c14cc9c893966c60c8f90557b28b267402aa16d21e` | §5.4 (D-16) |
+| `AdapterRegistrySet(address indexed)` | `0xa171d8fb18a12bf1de13705d955959f7d7581ae025e856e8bfa2c80febbdca32` | §5.4 (D-18) |
+| `HookRouterSet(address indexed)` | `0x1890b06f40ba99d925ca5bce3e12108c320b041cde0eda65f006d39eb148f6ae` | §5.4 (D-28) |
+| `ShieldFeeSet(uint120 feeBps)` | `0x6cee15266afce2d541339ee91ba942dce0986a356d0bbfb2d8eb2195ba9188db` | §5.4 (D-28) |
 | `VerifyingKeySet(uint256 nullifiers, uint256 commitments, VerifyingKey key)` | `0x3d09e10d1c966d01c4a2c14d0ac9af253486aa5e99b6cffe9019c4d43eb1fb23` | §9.1 |
 | `AddToBlocklist(address indexed token)` | `0x46742f555939247f80b50a8ca895a561933c48bc9a06ccb0c812e97ac723d33f` | §5.4 (post-drift, D-18) |
 | `RemoveFromBlocklist(address indexed token)` | `0x2ef13bd1aff17b0f9c85afaf228e84266c8394d9d381735e83fe23f607113e2e` | §5.4 (post-drift, D-18) |

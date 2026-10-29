@@ -40,8 +40,8 @@
   },
   "result": {
     "status": 1,
-    "txHash": "0x42f77e2fd2b9020360c02b7d63ceb7d1f238fdfe7729319ad2877cae28a21b7c",
-    "blockNumber": 117,
+    "txHash": "0x387181579e0dfc74f78787cdbdccd1c3f06e1446a1f959822c6f9c0ffb51159b",
+    "blockNumber": 97,
     "gasUsed": "0xb9bc",
     "returnData": null,
     "revert": null,
@@ -107,5 +107,5 @@
       "MALICIOUS_TOKEN": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d"
     }
   },
-  "capturedAt": "2026-10-28T16:26:46.323Z"
+  "capturedAt": "2026-10-29T01:19:54.123Z"
 }

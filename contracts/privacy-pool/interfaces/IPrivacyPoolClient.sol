@@ -48,6 +48,9 @@ interface IPrivacyPoolClient is IMessageHandlerV2 {
     /// @notice Emitted when default finality threshold is changed
     event DefaultFinalityThresholdSet(uint32 threshold);
 
+    /// @notice Emitted when this chain's CCTP hook router is set (set-once, issue #641)
+    event HookRouterSet(address indexed hookRouter);
+
     /// @notice Emitted when the Hub CCTP hook router is set
     event HubHookRouterSet(bytes32 hubHookRouter);
 

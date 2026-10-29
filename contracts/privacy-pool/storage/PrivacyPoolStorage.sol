@@ -43,8 +43,8 @@ abstract contract PrivacyPoolStorage {
     ///      custody (Shield/Transact) or proof/tree logic (Verifier/Merkle); a swappable module
     ///      would let the owner redirect funds or accept forged proofs, reintroducing the trust
     ///      assumption rejected in issue #55. Mutable configuration lives in the setters on
-    ///      PrivacyPool (fees, treasury, adapter registry (set-once), hook routers, fee module,
-    ///      pause controller). NOTE: the VerifierModule contract is immutable, but its verification KEYS
+    ///      PrivacyPool (fees, adapter registry (set-once), hook router (set-once), remote hook routers,
+    ///      fee module, pause controller). NOTE: the VerifierModule contract is immutable, but its verification KEYS
     ///      remain owner-settable via setVerificationKey (needed for circuit/key upgrades) — that
     ///      key-custody risk depends on who owns the pool: #349 added a two-step ownership transfer,
     ///      and handing ownership to governance is tracked in #381. See .claude/ARCHITECTURE_NOTES.md.

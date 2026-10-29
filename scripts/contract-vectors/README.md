@@ -122,6 +122,11 @@ admin vectors, and the four unshield vectors that relied on the bypass for their
 `test-foundry/CrossChainUnshieldHookRouterRequired.t.sol` (added for this). No v2 vector needs a
 proof any more. CI's single-vector replay now uses `v2-admin-set-remote-pool`.
 
+It was re-captured on 2026-10-28 for #641 (D-28), which makes `setHookRouter` set-once and adds
+the `HookRouterSet` / `ShieldFeeSet` events. `v2-admin-set-hook-router` now records `HookRouterSet`,
+and the PrivacyPool creation bytecode in `v2-initialize-nondeployer-revert` changed. No addresses
+moved; apart from block-derived fields (`lastEventBlock`, hashes, gas), nothing else changed.
+
 CI (`.github/workflows/ci.yml`, job `golden-vector-replay`) replays the full v2 corpus and, on a
 separate fresh fixturenet, one vector selected by `REPLAY_IDS`, on every PR. The v1 corpus is not
 in CI: it intentionally diverges on the D-15/D-16/D-18 surface (see below).
@@ -214,7 +219,8 @@ Compiled at capture time with the repo's bundled solc from inline sources
 
 - `setTestingMode` emitted `TestingModeSet` **twice** per call (OQ-8) — see
   `admin-set-testing-mode-true.json` (v1; the function was removed in #633).
-- The hub deploy scripts do NOT call `setHookRouter` or configure the mock
+- The hub deploy scripts do NOT call `setHookRouter` (set-once since #641, so the capture's
+  one call is the only one allowed) or configure the mock
   transmitter's relayer; the capture records both as vectors
   (`admin-set-hook-router`, `cctp-set-mock-relayer`).
 - Cross-chain shield-in pays shield fees out of the pool's own USDC balance

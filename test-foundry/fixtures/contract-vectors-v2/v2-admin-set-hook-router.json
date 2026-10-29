@@ -28,7 +28,7 @@
     "pool.treeNumber": "0x0",
     "pool.nextLeafIndex": "0x2",
     "pool.merkleRoot": "0x281ca60c48f66c59afc21f4489fa7a93d01f4378330ed1ebfc5632d1ca79dd10",
-    "pool.lastEventBlock": "0x7c",
+    "pool.lastEventBlock": "0x68",
     "usdc.balanceOf[POOL]": "0x260d360",
     "usdc.balanceOf[ALICE]": "0x2540be400",
     "usdc.balanceOf[BOB]": "0x3a699d00",
@@ -39,18 +39,34 @@
   },
   "result": {
     "status": 1,
-    "txHash": "0x017e358fb928df08cdc3b8202ce78b086f52d4f915aa409fc06cd5f4aec403fc",
-    "blockNumber": 129,
-    "gasUsed": "0xb458",
+    "txHash": "0x4afa19d899a1c14bd67effe94f36b57dbc9a1ef5b7d09253f95229910cf2b531",
+    "blockNumber": 109,
+    "gasUsed": "0xb977",
     "returnData": null,
     "revert": null,
-    "events": []
+    "events": [
+      {
+        "logIndex": 0,
+        "address": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
+        "topics": [
+          "0x1890b06f40ba99d925ca5bce3e12108c320b041cde0eda65f006d39eb148f6ae",
+          "0x00000000000000000000000084ea74d481ee0a5332c457a4d796187f6ba67feb"
+        ],
+        "data": "0x",
+        "decoded": {
+          "name": "HookRouterSet",
+          "args": {
+            "hookRouter": "0x84eA74d481Ee0A5332c457a4d796187F6Ba67fEB"
+          }
+        }
+      }
+    ]
   },
   "postState": {
     "pool.treeNumber": "0x0",
     "pool.nextLeafIndex": "0x2",
     "pool.merkleRoot": "0x281ca60c48f66c59afc21f4489fa7a93d01f4378330ed1ebfc5632d1ca79dd10",
-    "pool.lastEventBlock": "0x7c",
+    "pool.lastEventBlock": "0x68",
     "usdc.balanceOf[POOL]": "0x260d360",
     "usdc.balanceOf[ALICE]": "0x2540be400",
     "usdc.balanceOf[BOB]": "0x3a699d00",
@@ -89,5 +105,5 @@
       "MALICIOUS_TOKEN": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d"
     }
   },
-  "capturedAt": "2026-10-28T16:26:58.301Z"
+  "capturedAt": "2026-10-29T01:20:06.148Z"
 }

@@ -406,6 +406,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         require(feeModule == address(0), "PrivacyPool: use fee module");
         require(_feeBps <= MAX_SHIELD_FEE_BPS, "PrivacyPool: Fee too high");
         shieldFee = _feeBps;
+        emit ShieldFeeSet(_feeBps);
     }
 
     /**
@@ -429,11 +430,18 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
      * @notice Set the CCTP Hook Router address
      * @dev The hook router is authorized to call handleReceiveFinalizedMessage
      *      after atomically calling receiveMessage on the MessageTransmitter
+     *      Set-once (issue #641): callable only while unset and only with a non-zero address. The
+     *      CCTP handlers credit shield notes for whatever the hook router delivers without checking
+     *      that USDC arrived, so a re-pointable router would let the owner key mint unbacked notes.
+     *      After the one-time wiring at link time, replacing the router means deploying a new pool.
      * @param _hookRouter Address of the CCTPHookRouter contract
      */
     function setHookRouter(address _hookRouter) external override {
         require(msg.sender == owner, "PrivacyPool: Only owner");
+        require(hookRouter == address(0), "PrivacyPool: hook router already set");
+        require(_hookRouter != address(0), "PrivacyPool: zero hook router");
         hookRouter = _hookRouter;
+        emit HookRouterSet(_hookRouter);
     }
 
     /**

@@ -435,11 +435,18 @@ contract PrivacyPoolClient is IPrivacyPoolClient {
      * @notice Set the CCTP Hook Router address
      * @dev The hook router is authorized to call handleReceiveFinalizedMessage
      *      after atomically calling receiveMessage on the MessageTransmitter
+     *      Set-once (issue #641): callable only while unset and only with a non-zero address. The hub
+     *      pins each outbound unshield's destinationCaller to this router, so re-pointing it with a
+     *      message in flight would strand that message, and the handlers pay out whatever the router
+     *      delivers. Replacing the router means deploying a new client.
      * @param _hookRouter Address of the CCTPHookRouter contract
      */
     function setHookRouter(address _hookRouter) external override {
         require(msg.sender == owner, "PrivacyPoolClient: Only owner");
+        require(hookRouter == address(0), "PrivacyPoolClient: hook router already set");
+        require(_hookRouter != address(0), "PrivacyPoolClient: zero hook router");
         hookRouter = _hookRouter;
+        emit HookRouterSet(_hookRouter);
     }
 
     /**

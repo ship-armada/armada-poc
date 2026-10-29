@@ -13,6 +13,8 @@ import "../contracts/cctp/MockUSDCV2.sol";
 import "./helpers/PoseidonLinker.sol";
 
 contract PrivacyPoolShieldFeeGuardTest is Test, PoseidonLinker {
+    event ShieldFeeSet(uint120 feeBps);
+
     PrivacyPool internal pool;
     MockUSDCV2 internal usdc;
 
@@ -62,6 +64,14 @@ contract PrivacyPoolShieldFeeGuardTest is Test, PoseidonLinker {
     function test_setShieldFeeWorksWithoutFeeModule() public {
         pool.setShieldFee(50);
         assertEq(pool.shieldFee(), 50);
+    }
+
+    /// @notice WHY: the flat fee is what shields pay in emergency flat-fee mode, so a change must be
+    ///         announced on-chain for monitors and indexers.
+    function test_setShieldFeeEmitsEvent() public {
+        vm.expectEmit(false, false, false, true, address(pool));
+        emit ShieldFeeSet(75);
+        pool.setShieldFee(75);
     }
 
     /// @notice WHY: while a fee module is wired it alone sets the fee. Accepting a flat-fee change

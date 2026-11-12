@@ -66,12 +66,10 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
             require(valid, string(abi.encodePacked("TransactModule: ", reason)));
 
             // Nullify inputs and accumulate commitments
-            commitmentsStartOffset = _accumulateAndNullify(
-                _transactions[i],
-                commitmentHashes,
-                commitmentsStartOffset,
-                ciphertext
-            );
+            commitmentsStartOffset =
+                _accumulateAndNullify(_transactions[i], commitmentHashes, commitmentsStartOffset, ciphertext);
+            // Record the plaintext preimage of any disclosed output.
+            _recordPreimages(_transactions[i]);
         }
 
         // Second pass: process unshields (after all nullifiers are marked)
@@ -290,30 +288,15 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
     /// @param _transaction The transaction to validate.
     /// @return valid Whether the transaction passed all checks.
     /// @return reason The failure reason when invalid (callers prefix the module name).
-    function _validateTransaction(
-        Transaction calldata _transaction
-    ) internal view returns (bool valid, string memory reason) {
-        // Gas floor for legacy-fee transactions
-        if (tx.gasprice < _transaction.boundParams.minGasPrice) {
-            return (false, "Gas price too low");
-        }
-
-        // An adapt contract may only be bound by the adapt contract itself
-        if (
-            _transaction.boundParams.adaptContract != address(0) &&
-            _transaction.boundParams.adaptContract != msg.sender
-        ) {
-            return (false, "Invalid Adapt Contract");
-        }
-
-        // Check chain ID
-        if (_transaction.boundParams.chainID != block.chainid) {
-            return (false, "ChainID mismatch");
-        }
-
-        // The merkle root must be a known root of the referenced tree
-        if (!rootHistory[_transaction.boundParams.treeNumber][_transaction.merkleRoot]) {
-            return (false, "Invalid Merkle Root");
+    function _validateTransaction(Transaction calldata _transaction)
+        internal
+        view
+        returns (bool valid, string memory reason)
+    {
+        // Shared context checks: gas floor, adapt contract, chain id, merkle root.
+        (bool ctxValid, string memory ctxReason) = _validateCommonContext(_transaction);
+        if (!ctxValid) {
+            return (false, ctxReason);
         }
 
         // Validate unshield if present
@@ -363,6 +346,23 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
             if (_transaction.boundParams.commitmentCiphertext.length != _transaction.commitments.length) {
                 return (false, "Invalid Ciphertext Length");
             }
+        }
+
+        // P2a: the plain transact path has no owned proof, so ownerField is not a public
+        // input of the plain circuit (armada-circuits src/main/main_1x2.circom:6) and this
+        // path never reads it. Reject a non-zero ownerField so a caller cannot imply an
+        // owner the proof never bound; contract-owned spends use transactOwned.
+        if (_transaction.boundParams.ownerField != bytes32(0)) {
+            return (false, "Owner field set on plain transact");
+        }
+
+        // Disclosed-preimage records (armada-lean Pool.lean `recordsMatch`):
+        // publicOutputs, when present, runs parallel to commitments; each non-zero
+        // entry must hash to its commitment, so the registry can never record a
+        // preimage the pool did not itself verify. Optional here (any sublist).
+        (bool poValid, string memory poReason) = _validatePublicOutputs(_transaction, false);
+        if (!poValid) {
+            return (false, poReason);
         }
 
         // Verify the SNARK proof through the router's own verification entry point
@@ -494,5 +494,185 @@ contract TransactModule is PrivacyPoolStorage, ITransactModule {
                 "TransactModule: withdraw only"
             );
         }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // CONTRACT-OWNED TRANSACTIONS
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// @notice Execute contract-owned transactions. A contract spends and re-mints its
+    ///         own notes with no EdDSA signature; authorization is msg.sender equal to
+    ///         the proof's public owner field.
+    /// @dev Mirrors `transact`, but every transaction forbids an unshield, the proof is
+    ///      checked against the owned verifying-key set (`verifyOwned`), which binds
+    ///      `ownerField` and the owned circuit's `npk`/`transcriptHash` outputs
+    ///      (armada-circuits src/operations/TransactOwned.circom), and every output is
+    ///      disclosed, so its plaintext preimage is recorded (armada-lean Pool.lean
+    ///      `recordsComplete`).
+    /// @param _transactions Contract-owned transactions to process, in order.
+    function transactOwned(Transaction[] calldata _transactions) external override onlyDelegatecall {
+        require(_transactions.length > 0, "TransactModule: No transactions");
+
+        _requireNotEmergencyPaused();
+        _requireNotWithdrawOnly(_transactions);
+
+        uint256 commitmentsCount = _sumCommitments(_transactions);
+
+        bytes32[] memory commitmentHashes = new bytes32[](commitmentsCount);
+        CommitmentCiphertext[] memory ciphertext = new CommitmentCiphertext[](commitmentsCount);
+        uint256 commitmentsStartOffset = 0;
+
+        for (uint256 i = 0; i < _transactions.length; i++) {
+            (bool valid, string memory reason) = _validateOwnedTransaction(_transactions[i]);
+            require(valid, string(abi.encodePacked("TransactModule: ", reason)));
+
+            commitmentsStartOffset =
+                _accumulateAndNullify(_transactions[i], commitmentHashes, commitmentsStartOffset, ciphertext);
+            _recordPreimages(_transactions[i]);
+        }
+
+        if (commitmentsCount > 0) {
+            (uint256 insertionTreeNumber, uint256 insertionStartIndex) =
+                IMerkleModule(address(this)).getInsertionTreeNumberAndStartingIndex(commitmentsCount);
+
+            emit TransactOwned(insertionTreeNumber, insertionStartIndex, commitmentHashes);
+
+            IMerkleModule(address(this)).insertLeaves(commitmentHashes);
+        }
+
+        lastEventBlock = block.number;
+    }
+
+    /// @notice The context checks shared by transact and transactOwned.
+    function _validateCommonContext(Transaction calldata _transaction)
+        internal
+        view
+        returns (bool valid, string memory reason)
+    {
+        if (tx.gasprice < _transaction.boundParams.minGasPrice) {
+            return (false, "Gas price too low");
+        }
+        if (
+            _transaction.boundParams.adaptContract != address(0) && _transaction.boundParams.adaptContract != msg.sender
+        ) {
+            return (false, "Invalid Adapt Contract");
+        }
+        if (_transaction.boundParams.chainID != block.chainid) {
+            return (false, "ChainID mismatch");
+        }
+        if (!rootHistory[_transaction.boundParams.treeNumber][_transaction.merkleRoot]) {
+            return (false, "Invalid Merkle Root");
+        }
+        return (true, "");
+    }
+
+    /// @notice Validate a transaction's disclosed-preimage records (armada-lean
+    ///         Pool.lean `recordsMatch`/`recordsComplete`).
+    /// @dev `publicOutputs` runs parallel to `commitments`. Each non-zero entry must
+    ///      hash to its commitment, so `preimageOf` can never record a preimage the
+    ///      pool did not itself verify against the proof-bound commitment.
+    /// @param _requireAll When true (transactOwned, `recordsComplete`), every
+    ///        commitment must carry a non-zero preimage; when false (transact,
+    ///        `recordsMatch`), `publicOutputs` is optional and any sublist may be
+    ///        disclosed.
+    function _validatePublicOutputs(Transaction calldata _transaction, bool _requireAll)
+        internal
+        pure
+        returns (bool valid, string memory reason)
+    {
+        uint256 outputs = _transaction.boundParams.publicOutputs.length;
+        if (outputs == 0) {
+            if (_requireAll) {
+                return (false, "Missing public outputs");
+            }
+            return (true, "");
+        }
+        if (outputs != _transaction.commitments.length) {
+            return (false, "Invalid Public Outputs Length");
+        }
+        for (uint256 i = 0; i < outputs; i++) {
+            CommitmentPreimage calldata preimage = _transaction.boundParams.publicOutputs[i];
+            if (_isZeroPreimage(preimage)) {
+                if (_requireAll) {
+                    return (false, "Missing public output");
+                }
+                continue;
+            }
+            if (_hashCommitment(preimage) != _transaction.commitments[i]) {
+                return (false, "Invalid Public Output");
+            }
+        }
+        return (true, "");
+    }
+
+    /// @notice True when a commitment preimage is entirely zero: an output that stays
+    ///         encrypted rather than disclosed.
+    function _isZeroPreimage(CommitmentPreimage calldata _preimage) internal pure returns (bool) {
+        return _preimage.npk == bytes32(0) && _preimage.value == 0 && _preimage.token.tokenAddress == address(0)
+            && _preimage.token.tokenSubID == 0;
+    }
+
+    /// @notice Records the plaintext preimage of every disclosed output into the
+    ///         public registry (armada-lean PoolOwned.lean `recordPreimages`/
+    ///         `recordStep`). Called only after validation confirmed each non-zero
+    ///         preimage hashes to its commitment, so the registry never lies.
+    function _recordPreimages(Transaction calldata _transaction) internal {
+        uint256 outputs = _transaction.boundParams.publicOutputs.length;
+        for (uint256 i = 0; i < outputs; i++) {
+            CommitmentPreimage calldata preimage = _transaction.boundParams.publicOutputs[i];
+            if (_isZeroPreimage(preimage)) {
+                continue;
+            }
+            bytes32 commitment = _transaction.commitments[i];
+            preimageOf[commitment] = preimage;
+            emit PreimageRecorded(commitment);
+        }
+    }
+
+    /// @notice Validate a contract-owned transaction (mirrors _validateTransaction, but
+    ///         forbids an unshield, requires a complete disclosure set, checks the
+    ///         caller against ownerField, and verifies against the owned key set).
+    function _validateOwnedTransaction(Transaction calldata _transaction)
+        internal
+        view
+        returns (bool valid, string memory reason)
+    {
+        (bool ctxValid, string memory ctxReason) = _validateCommonContext(_transaction);
+        if (!ctxValid) {
+            return (false, ctxReason);
+        }
+
+        // No unshield on the owned path: the owned circuit carries no signature witness,
+        // so nothing authorizes paying out to an arbitrary address.
+        if (_transaction.boundParams.unshield != UnshieldType.NONE) {
+            return (false, "Unshield not allowed");
+        }
+
+        // Every commitment carries a ciphertext entry (no unshield output is excluded).
+        if (_transaction.boundParams.commitmentCiphertext.length != _transaction.commitments.length) {
+            return (false, "Invalid Ciphertext Length");
+        }
+
+        // Every output is disclosed: publicOutputs is mandatory and complete
+        // (armada-lean Pool.lean `recordsComplete`).
+        (bool poValid, string memory poReason) = _validatePublicOutputs(_transaction, true);
+        if (!poValid) {
+            return (false, poReason);
+        }
+
+        // Authorization: the caller must be the owner the proof's ownerField names.
+        // Exact equality, not a truncating address cast (armada-lean TransactOwned.lean
+        // types the owner as a 160-bit Address; a value at or above 2^160 is not a
+        // canonical address and must not alias a real caller's low 160 bits).
+        if (_transaction.boundParams.ownerField != bytes32(uint256(uint160(msg.sender)))) {
+            return (false, "Caller not owner");
+        }
+
+        // Verify the SNARK proof against the owned verifying-key set.
+        if (!IVerifierModule(address(this)).verifyOwned(_transaction)) {
+            return (false, "Invalid Proof");
+        }
+
+        return (true, "");
     }
 }

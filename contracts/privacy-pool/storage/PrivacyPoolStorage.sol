@@ -34,6 +34,29 @@ abstract contract PrivacyPoolStorage {
         _;
     }
 
+    /// @notice Hashes the bound parameters into a SNARK scalar field element.
+    /// @dev Hashes only the seven original `BoundParamsCore` fields. The owned path added
+    ///      `ownerField` and `publicOutputs` to `BoundParams`, but the circuit's
+    ///      `boundParamsHash` public input is computed over the original seven fields, so
+    ///      this hash must stay equal to the value the prover used. `ownerField` is bound
+    ///      separately as a public input of the owned circuit (`verifyOwned`); each
+    ///      `publicOutputs` entry is bound by the required
+    ///      `_hashCommitment(publicOutputs[i]) == commitments[i]` check, and `commitments`
+    ///      are themselves circuit public inputs.
+    /// @return `keccak256` of the original seven fields, reduced mod the scalar field.
+    function _boundParamsHash(BoundParams calldata _boundParams) internal pure returns (uint256) {
+        BoundParamsCore memory core = BoundParamsCore({
+            treeNumber: _boundParams.treeNumber,
+            minGasPrice: _boundParams.minGasPrice,
+            unshield: _boundParams.unshield,
+            chainID: _boundParams.chainID,
+            adaptContract: _boundParams.adaptContract,
+            adaptParams: _boundParams.adaptParams,
+            commitmentCiphertext: _boundParams.commitmentCiphertext
+        });
+        return uint256(keccak256(abi.encode(core))) % SNARK_SCALAR_FIELD;
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     // MODULE ADDRESSES
     // ══════════════════════════════════════════════════════════════════════════
@@ -227,10 +250,27 @@ abstract contract PrivacyPoolStorage {
     address public pendingOwner;
 
     // ══════════════════════════════════════════════════════════════════════════
+    // CONTRACT-OWNED NOTES (owned path)
+    // ══════════════════════════════════════════════════════════════════════════
+
+    /// @notice Public preimage registry for disclosed outputs (armada-lean
+    ///         ArmadaLean/PoolOwned.lean `PreimageRegistry`/`recordStep`). The pool
+    ///         writes an entry only for a commitment it has itself hashed and
+    ///         matched to the proof, so any reader can learn a disclosed note's
+    ///         token and value from its commitment with no off-chain index.
+    mapping(bytes32 => CommitmentPreimage) public preimageOf;
+
+    /// @notice Verification keys for the owned circuit shapes, kept disjoint from
+    ///         `verificationKeys` so a plain-shape proof can never verify against an
+    ///         owned-shape key or the reverse: nullifierCount -> commitmentCount ->
+    ///         VerifyingKey.
+    mapping(uint256 => mapping(uint256 => VerifyingKey)) internal ownedVerificationKeys;
+
+    // ══════════════════════════════════════════════════════════════════════════
     // RESERVED FOR FUTURE USE
     // ══════════════════════════════════════════════════════════════════════════
 
     /// @dev Reserved storage slots for future upgrades
     ///      When adding new state variables above, decrement this gap
-    uint256[42] private __gap;
+    uint256[40] private __gap;
 }

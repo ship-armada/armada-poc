@@ -110,11 +110,51 @@ struct BoundParams {
     address adaptContract;
     bytes32 adaptParams;
     CommitmentCiphertext[] commitmentCiphertext;
+    // Owned path: the circuit's public owner input, zero for a non-owned
+    // transaction. The router binds it as a public input of the owned proof
+    // (armada-circuits src/operations/TransactOwned.circom), and
+    // transactOwned checks it against msg.sender.
+    bytes32 ownerField;
+    // Disclosed-preimage records (armada-lean ArmadaLean/Pool.lean
+    // `Pool.Call.transact`/`transactOwned`'s `records : List (Term ×
+    // CommitmentPreimage)`), index-aligned with `commitments`. Zero-length
+    // when nothing is disclosed; otherwise one entry per commitment, every
+    // field zero for an undisclosed output and populated for a disclosed
+    // one. The pool hashes each non-zero entry and requires it to equal the
+    // matching commitment (`recordsMatch`/`recordsComplete`) before it
+    // writes the entry to `preimageOf` (`recordStep`/`recordPreimages`).
+    CommitmentPreimage[] publicOutputs;
+}
+
+/// @notice The seven original bound-parameter fields, in their pre-owned-path order.
+///         The owned path added `ownerField` to `BoundParams`, but the circuit's
+///         `boundParamsHash` public input is still computed over only these seven
+///         fields. `ownerField` is bound as its own public input of the owned
+///         circuit (armada-circuits `src/main/main_1x2_owned.circom:6`).
+///         `_boundParamsHash` builds this struct and hashes it, so a real proof's
+///         `boundParamsHash` still matches on chain.
+struct BoundParamsCore {
+    uint16 treeNumber;
+    uint72 minGasPrice;
+    UnshieldType unshield;
+    uint64 chainID;
+    address adaptContract;
+    bytes32 adaptParams;
+    CommitmentCiphertext[] commitmentCiphertext;
 }
 
 /// @notice A privacy pool transaction: a proof, its public anchors, the spent
 ///         nullifiers, the new commitments, the bound parameters, and the optional
 ///         unshield output note.
+/// @dev `ownedNpk` and `ownedTranscriptHash` carry the owned circuit's public
+///      OUTPUTS (armada-circuits src/operations/TransactOwned.circom) from the
+///      prover through calldata: `ownedNpk[i] = Poseidon(ownerField, randomIn[i])`
+///      for each input note, and `ownedTranscriptHash` binds merkleRoot,
+///      boundParamsHash, nullifiers and commitments in place of an EdDSA
+///      signature. The contract does not compute either value; it only places
+///      them in verifyOwned's public-inputs array, so a wrong value fails Groth16
+///      verification rather than a Solidity check. Both are zero-length/zero and
+///      unused on the plain path.
 struct Transaction {
     SnarkProof proof;
     bytes32 merkleRoot;
@@ -122,4 +162,6 @@ struct Transaction {
     bytes32[] commitments;
     BoundParams boundParams;
     CommitmentPreimage unshieldPreimage;
+    bytes32[] ownedNpk;
+    bytes32 ownedTranscriptHash;
 }

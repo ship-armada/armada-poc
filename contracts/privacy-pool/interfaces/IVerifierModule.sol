@@ -40,6 +40,24 @@ interface IVerifierModule {
     function verify(Transaction calldata _transaction) external view returns (bool);
 
     /**
+     * @notice Verify a contract-owned transaction's SNARK proof against the owned
+     *         verifying-key set, with ownerField bound as the final public input.
+     * @param _transaction The transaction to verify
+     * @return True if the proof is valid
+     */
+    function verifyOwned(Transaction calldata _transaction) external view returns (bool);
+
+    /**
+     * @notice Set a verification key for an owned circuit shape, disjoint from the
+     *         plain key set so owned and plain keys never collide.
+     * @param _nullifiers Number of nullifiers in the circuit
+     * @param _commitments Number of commitments in the circuit
+     * @param _verifyingKey The verification key to set
+     */
+    function setVerificationKeyOwned(uint256 _nullifiers, uint256 _commitments, VerifyingKey calldata _verifyingKey)
+        external;
+
+    /**
      * @notice Hash bound parameters for SNARK verification
      * @param _boundParams The bound parameters to hash
      * @return Hash of the bound parameters (mod SNARK_SCALAR_FIELD)

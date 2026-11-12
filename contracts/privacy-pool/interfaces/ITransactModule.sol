@@ -55,6 +55,20 @@ interface ITransactModule {
     );
 
     /**
+     * @notice Emitted when a contract-owned private transaction is processed
+     * @param treeNumber The merkle tree number
+     * @param startPosition Starting leaf index for new commitments
+     * @param hash Array of commitment hashes
+     */
+    event TransactOwned(uint256 treeNumber, uint256 startPosition, bytes32[] hash);
+
+    /**
+     * @notice Emitted when a disclosed commitment's preimage is recorded
+     * @param commitment The commitment whose plaintext preimage was written
+     */
+    event PreimageRecorded(bytes32 commitment);
+
+    /**
      * @notice Execute private transactions (transfers and/or local unshields)
      * @dev Validates proofs, nullifies inputs, creates new commitments
      *      For local unshields, transfers tokens to recipient
@@ -62,6 +76,22 @@ interface ITransactModule {
      * @param _transactions Array of transactions to process
      */
     function transact(Transaction[] calldata _transactions) external;
+
+    /**
+     * @notice Execute contract-owned transactions (a contract spends and re-mints its
+     *         own notes with no EdDSA signature).
+     * @dev Authorized by msg.sender equal to each transaction's ownerField. No
+     *      unshield is allowed on this path. The owned circuit
+     *      (armada-circuits src/operations/TransactOwned.circom) derives each note's
+     *      public key as Poseidon(ownerField, random) and its nullifier as
+     *      Poseidon(ownerField, leafIndex), so the caller's own address is the
+     *      authorization; `ownedNpk` and `ownedTranscriptHash` on the transaction
+     *      carry the proof's public outputs through to `verifyOwned`. Every output
+     *      is disclosed: `publicOutputs` is mandatory and complete
+     *      (`recordsComplete`), and every entry is recorded in `preimageOf`.
+     * @param _transactions Array of contract-owned transactions to process
+     */
+    function transactOwned(Transaction[] calldata _transactions) external;
 
     /**
      * @notice Atomic cross-chain unshield

@@ -133,7 +133,9 @@ contract TransactModuleWindDownTest is Test, PoseidonLinker {
                 chainID: uint64(block.chainid),
                 adaptContract: address(0),
                 adaptParams: bytes32(0),
-                commitmentCiphertext: ciphertext
+                commitmentCiphertext: ciphertext,
+                ownerField: bytes32(0),
+                publicOutputs: new CommitmentPreimage[](0)
             }),
             unshieldPreimage: CommitmentPreimage({
                 npk: bytes32(uint256(uint160(address(0xBEEF)))),
@@ -143,7 +145,9 @@ contract TransactModuleWindDownTest is Test, PoseidonLinker {
                     tokenSubID: 0
                 }),
                 value: 1000
-            })
+            }),
+            ownedNpk: new bytes32[](0),
+            ownedTranscriptHash: bytes32(0)
         });
     }
 

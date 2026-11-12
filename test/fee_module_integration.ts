@@ -591,14 +591,17 @@ describe("Fee Module Integration", function () {
           adaptContract: adapterAddress,
           adaptParams,
           commitmentCiphertext: [],
+          ownerField: ethers.ZeroHash,
+          publicOutputs: [],
         },
         unshieldPreimage: {
           npk: unshieldNpk,
           token: { tokenType: 0, tokenAddress: usdcAddress, tokenSubID: 0 },
           value: amount,
         },
+        ownedNpk: [],
+        ownedTranscriptHash: ethers.ZeroHash,
       };
-
       const treasuryBefore = await hubUsdc.balanceOf(treasuryAddress);
       const cumulativeBefore = await feeModule.cumulativeArmadaFees();
 

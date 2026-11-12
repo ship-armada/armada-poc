@@ -602,6 +602,8 @@ describe("Privacy Pool Integration", function () {
           // Bind the CCTP destination (recipient + domain + fee) into the proof (#364/#378).
           adaptParams: encodeCctpBinding(bobAddress, DOMAINS.client, MAX_FEE),
           commitmentCiphertext: [], // length = commitments.length - 1 = 0
+          ownerField: ethers.ZeroHash,
+          publicOutputs: [],
         },
         unshieldPreimage: {
           npk: ethers.zeroPadValue(privacyPoolAddress, 32),
@@ -612,6 +614,8 @@ describe("Privacy Pool Integration", function () {
           },
           value: UNSHIELD_AMOUNT,
         },
+        ownedNpk: [],
+        ownedTranscriptHash: ethers.ZeroHash,
       };
 
       // Record balances before

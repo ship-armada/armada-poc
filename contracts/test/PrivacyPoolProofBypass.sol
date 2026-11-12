@@ -7,7 +7,8 @@ import "../privacy-pool/PrivacyPool.sol";
 
 /**
  * @title PrivacyPoolProofBypass
- * @notice Test harness: the real PrivacyPool plus an owner toggle that makes `verify` accept any proof.
+ * @notice Test harness: the real PrivacyPool plus an owner toggle that makes `verify` and
+ *         `verifyOwned` accept any proof (P2a).
  * @dev Replaces the removed testing mode (#633), which lived in production bytecode. The toggle is a
  *      state variable of this derived contract, so it is laid out after PrivacyPoolStorage's reserved
  *      gap, a slot the delegatecall modules never touch. Only test setups deploy this contract; the
@@ -27,5 +28,11 @@ contract PrivacyPoolProofBypass is PrivacyPool {
     function verify(Transaction calldata _transaction) public view override returns (bool) {
         if (skipProofVerification) return true;
         return super.verify(_transaction);
+    }
+
+    /// @inheritdoc PrivacyPool
+    function verifyOwned(Transaction calldata _transaction) public view override returns (bool) {
+        if (skipProofVerification) return true;
+        return super.verifyOwned(_transaction);
     }
 }

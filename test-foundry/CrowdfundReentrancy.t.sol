@@ -149,8 +149,8 @@ contract CrowdfundReentrancyTest is Test {
     address public admin;
     address public treasury;
 
-    uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
-    uint256 constant HOP0_CAP = 15_000 * 1e6;
+    uint256 constant ARM_FUNDING = 1_500_000 * 1e18;
+    uint256 constant HOP0_CAP = 150_000 * 1e6;
 
     function setUp() public {
         admin = address(this);
@@ -178,18 +178,12 @@ contract CrowdfundReentrancyTest is Test {
         return abi.decode(payload, (string));
     }
 
-    /// @notice Build address arrays for a crowdfund with multi-hop demand.
-    ///         Does NOT add seeds — caller must loadArm() first, then addSeeds().
-    function _buildAddresses()
-        internal pure returns (address[] memory seeds, address[] memory hop1)
-    {
-        seeds = new address[](53);
-        for (uint256 i = 0; i < 53; i++) {
+    /// @notice Build the seed array for a successful sale: 2 seeds at the $150K cap
+    ///         ($300K ≥ MIN_SALE). Does NOT add seeds — caller must loadArm() first, then addSeeds().
+    function _buildAddresses() internal pure returns (address[] memory seeds) {
+        seeds = new address[](2);
+        for (uint256 i = 0; i < 2; i++) {
             seeds[i] = address(uint160(0xA000 + i));
-        }
-        hop1 = new address[](109);
-        for (uint256 i = 0; i < 109; i++) {
-            hop1[i] = address(uint160(0xB000 + i));
         }
     }
 
@@ -207,7 +201,7 @@ contract CrowdfundReentrancyTest is Test {
         maliciousArm.mint(address(cf), ARM_FUNDING);
         cf.loadArm();
 
-        (address[] memory seeds, address[] memory hop1) = _buildAddresses();
+        address[] memory seeds = _buildAddresses();
         cf.addSeeds(seeds);
 
         // All seeds commit at hop-0
@@ -219,17 +213,6 @@ contract CrowdfundReentrancyTest is Test {
             vm.stopPrank();
         }
 
-        // Invite and commit hop-1
-        for (uint256 i = 0; i < hop1.length; i++) {
-            vm.prank(seeds[i % seeds.length]);
-            cf.invite(hop1[i], 0);
-            uint256 hop1Amt = 4_000 * 1e6;
-            usdc.mint(hop1[i], hop1Amt);
-            vm.startPrank(hop1[i]);
-            usdc.approve(address(cf), hop1Amt);
-            cf.commit(1, hop1Amt);
-            vm.stopPrank();
-        }
 
         vm.warp(cf.windowEnd() + 1);
         cf.finalize();
@@ -279,7 +262,7 @@ contract CrowdfundReentrancyTest is Test {
         maliciousArm.mint(address(cf), ARM_FUNDING);
         cf.loadArm();
 
-        (address[] memory seeds, address[] memory hop1) = _buildAddresses();
+        address[] memory seeds = _buildAddresses();
         cf.addSeeds(seeds);
 
         for (uint256 i = 0; i < seeds.length; i++) {
@@ -290,16 +273,6 @@ contract CrowdfundReentrancyTest is Test {
             vm.stopPrank();
         }
 
-        for (uint256 i = 0; i < hop1.length; i++) {
-            vm.prank(seeds[i % seeds.length]);
-            cf.invite(hop1[i], 0);
-            uint256 hop1Amt = 4_000 * 1e6;
-            usdc.mint(hop1[i], hop1Amt);
-            vm.startPrank(hop1[i]);
-            usdc.approve(address(cf), hop1Amt);
-            cf.commit(1, hop1Amt);
-            vm.stopPrank();
-        }
 
         vm.warp(cf.windowEnd() + 1);
         cf.finalize();
@@ -344,9 +317,9 @@ contract CrowdfundReentrancyTest is Test {
         armToken.transfer(address(cf), ARM_FUNDING);
         cf.loadArm();
 
-        // 80 seeds, all hop-0 → refundMode
-        address[] memory seeds = new address[](80);
-        for (uint256 i = 0; i < 80; i++) {
+        // 1 seed at $150K < MIN_SALE ($250K) → refundMode
+        address[] memory seeds = new address[](1);
+        for (uint256 i = 0; i < 1; i++) {
             seeds[i] = address(uint160(0xC000 + i));
         }
         cf.addSeeds(seeds);

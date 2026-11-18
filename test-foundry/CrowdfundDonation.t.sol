@@ -17,7 +17,7 @@ contract CrowdfundDonationTest is Test {
     address public admin;
     address public treasury;
 
-    uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
+    uint256 constant ARM_FUNDING = 1_500_000 * 1e18;
 
     address[] public seeds;
 
@@ -44,16 +44,16 @@ contract CrowdfundDonationTest is Test {
         armToken.transfer(address(crowdfund), ARM_FUNDING);
         crowdfund.loadArm();
 
-        // 80 seeds — enough to reach MIN_SALE threshold for finalization tests
+        // 80 seeds: the success scenario commits from 17 of them, the refund scenario from 16
         for (uint256 i = 0; i < 80; i++) {
             seeds.push(address(uint160(0xA000 + i)));
         }
         crowdfund.addSeeds(seeds);
     }
 
-    /// @notice Helper: each seed commits full $15K at hop-0
-    function _allSeedsCommitFull() internal {
-        for (uint256 i = 0; i < seeds.length; i++) {
+    /// @notice Helper: the first `count` seeds each commit $15K at hop-0
+    function _seedsCommit(uint256 count) internal {
+        for (uint256 i = 0; i < count; i++) {
             uint256 amount = 15_000 * 1e6;
             usdc.mint(seeds[i], amount);
             vm.startPrank(seeds[i]);
@@ -94,34 +94,9 @@ contract CrowdfundDonationTest is Test {
 
     /// @notice Direct ARM transfer after finalization does not change allocation math
     function test_directArmTransfer_doesNotAffectAllocationMath() public {
-        // Need a successful (non-refundMode) finalization for allocations to exist.
-        // Use 53 seeds at hop-0 + 109 hop-1 participants to exceed MIN_SALE
-        // after the hop-0 and hop-1 waterfall ceilings.
-        for (uint256 i = 0; i < 53; i++) {
-            uint256 amount = 15_000 * 1e6;
-            usdc.mint(seeds[i], amount);
-            vm.startPrank(seeds[i]);
-            usdc.approve(address(crowdfund), amount);
-            crowdfund.commit(0, amount);
-            vm.stopPrank();
-        }
-
-        // Create hop-1 participants via seed invites
-        address[] memory hop1Addrs = new address[](109);
-        for (uint256 i = 0; i < hop1Addrs.length; i++) {
-            hop1Addrs[i] = address(uint160(0xB000 + i));
-            vm.prank(seeds[i % seeds.length]);
-            crowdfund.invite(hop1Addrs[i], 0);
-        }
-
-        for (uint256 i = 0; i < hop1Addrs.length; i++) {
-            uint256 amount = 4_000 * 1e6;
-            usdc.mint(hop1Addrs[i], amount);
-            vm.startPrank(hop1Addrs[i]);
-            usdc.approve(address(crowdfund), amount);
-            crowdfund.commit(1, amount);
-            vm.stopPrank();
-        }
+        // Need a successful (non-refundMode) finalization for allocations to exist:
+        // 17 seeds × $15K = $255K ≥ MIN_SALE.
+        _seedsCommit(17);
 
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();
@@ -144,8 +119,8 @@ contract CrowdfundDonationTest is Test {
 
     /// @notice withdrawUnallocatedArm captures donated ARM alongside unallocated ARM
     function test_withdrawUnallocatedArm_capturesDonatedArm() public {
-        // Use refundMode scenario: all 80 seeds commit hop-0, refundMode triggers
-        _allSeedsCommitFull();
+        // Use refundMode scenario: 16 seeds × $15K = $240K < MIN_SALE
+        _seedsCommit(16);
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();
         assertTrue(crowdfund.refundMode(), "Must be in refund mode");

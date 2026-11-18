@@ -8,7 +8,7 @@ import "../contracts/governance/ArmadaToken.sol";
 import "../contracts/cctp/MockUSDCV2.sol";
 
 // ══════════════════════════════════════════════════════════════════════════
-// INV-C2: Ceiling BPS match expected overlapping values
+// INV-C2: Ceiling BPS match the configured priority-fill values (10000/10000/0)
 // (Extends the existing CrowdfundInvariant.t.sol with this ceiling invariant)
 // ══════════════════════════════════════════════════════════════════════════
 
@@ -16,6 +16,10 @@ import "../contracts/cctp/MockUSDCV2.sol";
 /// @dev The existing CrowdfundHandler covers commitment/claim flows.
 ///      This handler adds a no-op action so the invariant fuzzer has something to call.
 contract CrowdfundFullHandler is Test {
+    // Per-hop caps (relaunch): known contributors, team inviter wallets, invited contributors.
+    uint256 constant HOP0_CAP = 150_000 * 1e6;
+    uint256 constant HOP2_CAP = 10_000 * 1e6;
+
     ArmadaCrowdfund public crowdfund;
     MockUSDCV2 public usdc;
     ArmadaToken public armToken;
@@ -60,14 +64,14 @@ contract CrowdfundFullHandler is Test {
         if (ghost_timeWarped) return;
         if (seeds.length == 0) return;
         seedIdx = bound(seedIdx, 0, seeds.length - 1);
-        amount = bound(amount, 1, 15_000 * 1e6);
+        amount = bound(amount, 1, HOP0_CAP);
 
         address seed = seeds[seedIdx];
 
         uint256 currentCommitted = crowdfund.getCommitment(seed, 0);
         if (seedIdx % 4 != 0) {
-            if (currentCommitted + amount > 15_000 * 1e6) {
-                amount = 15_000 * 1e6 - currentCommitted;
+            if (currentCommitted + amount > HOP0_CAP) {
+                amount = HOP0_CAP - currentCommitted;
             }
             if (amount == 0) return;
         }
@@ -88,21 +92,15 @@ contract CrowdfundFullHandler is Test {
         vm.stopPrank();
     }
 
-    /// @dev Fuzzed commit for hop-1 addresses
+    /// @dev Fuzzed commit for hop-1 addresses (team inviter wallets). Their cap is $0, so every
+    ///      commit is over-cap: it must be excluded from capped demand and refunded in full.
     function commitHop1(uint256 idx, uint256 amount) external {
         if (ghost_timeWarped) return;
         if (hop1Addrs.length == 0) return;
         idx = bound(idx, 0, hop1Addrs.length - 1);
-        amount = bound(amount, 1, 4_000 * 1e6);
+        amount = bound(amount, 1, HOP2_CAP);
 
         address addr = hop1Addrs[idx];
-        uint256 currentCommitted = crowdfund.getCommitment(addr, 1);
-        if (idx % 4 != 0) {
-            if (currentCommitted + amount > 4_000 * 1e6) {
-                amount = 4_000 * 1e6 - currentCommitted;
-            }
-            if (amount == 0) return;
-        }
 
         usdc.mint(addr, amount);
         vm.startPrank(addr);
@@ -125,13 +123,13 @@ contract CrowdfundFullHandler is Test {
         if (ghost_timeWarped) return;
         if (hop2Addrs.length == 0) return;
         idx = bound(idx, 0, hop2Addrs.length - 1);
-        amount = bound(amount, 1, 1_000 * 1e6);
+        amount = bound(amount, 1, HOP2_CAP);
 
         address addr = hop2Addrs[idx];
         uint256 currentCommitted = crowdfund.getCommitment(addr, 2);
         if (idx % 4 != 0) {
-            if (currentCommitted + amount > 1_000 * 1e6) {
-                amount = 1_000 * 1e6 - currentCommitted;
+            if (currentCommitted + amount > HOP2_CAP) {
+                amount = HOP2_CAP - currentCommitted;
             }
             if (amount == 0) return;
         }
@@ -198,7 +196,7 @@ contract CrowdfundFullInvariantTest is Test {
     address[] public hop1Addrs;
     address[] public hop2Addrs;
 
-    uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
+    uint256 constant ARM_FUNDING = 1_500_000 * 1e18;
 
     function setUp() public {
         admin = address(this);
@@ -224,11 +222,12 @@ contract CrowdfundFullInvariantTest is Test {
         armToken.transfer(address(crowdfund), ARM_FUNDING);
         crowdfund.loadArm();
 
-        // Create actor addresses (80 seeds to reach MIN_SALE)
+        // Create actor addresses: 80 seeds (enough to reach MIN_SALE and oversubscribe the sale),
+        // 5 hop-1 team inviter wallets (LAUNCH_TEAM_HOP1_BUDGET), 20 hop-2 invitees.
         for (uint256 i = 0; i < 80; i++) {
             seeds.push(address(uint160(0x1000 + i)));
         }
-        for (uint256 i = 0; i < 20; i++) {
+        for (uint256 i = 0; i < 5; i++) {
             hop1Addrs.push(address(uint160(0x2000 + i)));
         }
         for (uint256 i = 0; i < 20; i++) {
@@ -238,27 +237,14 @@ contract CrowdfundFullInvariantTest is Test {
         // Setup phase: add seeds
         crowdfund.addSeeds(seeds);
 
-        // Do invitations
-        uint256 hop1Idx = 0;
-        for (uint256 i = 0; i < seeds.length && hop1Idx < hop1Addrs.length; i++) {
-            if (i < 7) {
-                for (uint256 j = 0; j < 3 && hop1Idx < hop1Addrs.length; j++) {
-                    vm.prank(seeds[i]);
-                    crowdfund.invite(hop1Addrs[hop1Idx], 0);
-                    hop1Idx++;
-                }
-            }
+        // The launch team places the hop-1 team wallets (seeds cannot invite);
+        // team wallets invite the hop-2 addresses (4 each).
+        for (uint256 i = 0; i < hop1Addrs.length; i++) {
+            crowdfund.launchTeamInvite(hop1Addrs[i], 0);
         }
-
-        uint256 hop2Idx = 0;
-        for (uint256 i = 0; i < hop1Addrs.length && hop2Idx < hop2Addrs.length; i++) {
-            if (i < 10) {
-                for (uint256 j = 0; j < 2 && hop2Idx < hop2Addrs.length; j++) {
-                    vm.prank(hop1Addrs[i]);
-                    crowdfund.invite(hop2Addrs[hop2Idx], 1);
-                    hop2Idx++;
-                }
-            }
+        for (uint256 i = 0; i < hop2Addrs.length; i++) {
+            vm.prank(hop1Addrs[i / 4]);
+            crowdfund.invite(hop2Addrs[i], 1);
         }
 
         // Fast-forward into the active window (invites + commits concurrent)
@@ -280,16 +266,16 @@ contract CrowdfundFullInvariantTest is Test {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // INV-C2: Ceiling BPS match expected overlapping values (sum = 10500)
+    // INV-C2: Ceiling BPS match the configured priority-fill values
     // ══════════════════════════════════════════════════════════════════════
 
-    /// @notice Hop ceiling basis points match spec: 6000/4500/0 (hop-2 uses floor+rollover, not BPS)
+    /// @notice Hop ceiling basis points match spec: 10000/10000/0 (hop-2 uses floor+rollover, not BPS)
     function invariant_ceilingBpsAreValid() public view {
         (uint16 bps0, , , ) = crowdfund.hopConfigs(0);
         (uint16 bps1, , , ) = crowdfund.hopConfigs(1);
         (uint16 bps2, , , ) = crowdfund.hopConfigs(2);
-        assertEq(bps0, 6000, "INV-C2: Hop 0 ceiling should be 6000");
-        assertEq(bps1, 4500, "INV-C2: Hop 1 ceiling should be 4500");
+        assertEq(bps0, 10000, "INV-C2: Hop 0 ceiling should be 10000");
+        assertEq(bps1, 10000, "INV-C2: Hop 1 ceiling should be 10000");
         assertEq(bps2, 0, "INV-C2: Hop 2 ceiling should be 0 (uses floor+rollover)");
     }
 

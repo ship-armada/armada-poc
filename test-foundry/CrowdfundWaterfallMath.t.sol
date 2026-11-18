@@ -1,5 +1,5 @@
-// ABOUTME: Property tests for the July-2026 waterfall math in ArmadaCrowdfund._computeHopAllocations.
-// ABOUTME: Fuzzes per-hop demand to verify conservation (total <= saleSize) and no ceiling underflow.
+// ABOUTME: Property tests for the waterfall math in ArmadaCrowdfund._computeHopAllocations.
+// ABOUTME: Fuzzes per-hop demand to verify conservation (total <= saleSize) and the priority-fill ceilings.
 
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
@@ -9,7 +9,7 @@ import "../contracts/crowdfund/ArmadaCrowdfund.sol";
 
 /// @dev Exposes the internal waterfall so its pure math can be fuzzed directly with arbitrary
 ///      per-hop capped demand — without the cost of building a full participant tree per run.
-///      The constructor sets hopConfigs to the production ceilings (6000/4500/0), which is all
+///      The constructor sets hopConfigs to the production ceilings (10000/10000/0), which is all
 ///      _computeHopAllocations reads (besides its args); it touches no USDC/ARM/participant state.
 contract WaterfallHarness is ArmadaCrowdfund {
     constructor(uint256 open)
@@ -24,8 +24,7 @@ contract WaterfallHarness is ArmadaCrowdfund {
 contract CrowdfundWaterfallMathTest is Test {
     WaterfallHarness internal h;
 
-    uint256 constant BASE = 1_200_000 * 1e6; // BASE_SALE
-    uint256 constant MAX_ = 1_800_000 * 1e6; // MAX_SALE
+    uint256 constant BASE = 1_500_000 * 1e6; // BASE_SALE (== MAX_SALE)
 
     function setUp() public {
         h = new WaterfallHarness(block.timestamp);
@@ -42,36 +41,43 @@ contract CrowdfundWaterfallMathTest is Test {
         assertLe(total, BASE, "total allocated exceeds saleSize (BASE)");
     }
 
-    function testFuzz_conservation_max(uint256 d0, uint256 d1, uint256 d2) public {
-        uint256[3] memory demand = [bound(d0, 0, MAX_ * 5), bound(d1, 0, MAX_ * 5), bound(d2, 0, MAX_ * 5)];
-        uint256 total = h.exposed(MAX_, demand);
-        assertLe(total, MAX_, "total allocated exceeds saleSize (MAX)");
+    // WHY: BASE_SALE == MAX_SALE, so a separate MAX run would repeat the test above. Instead the
+    //      sale size is fuzzed too, so conservation and the priority-fill identity are checked for
+    //      any sale size the math might be given, not just the configured one.
+    function testFuzz_conservation_anySaleSize(uint256 s, uint256 d0, uint256 d1, uint256 d2) public {
+        s = bound(s, 1, 100_000_000 * 1e6);
+        uint256[3] memory demand = [bound(d0, 0, s * 5), bound(d1, 0, s * 5), bound(d2, 0, s * 5)];
+        uint256 total = h.exposed(s, demand);
+        assertLe(total, s, "total allocated exceeds saleSize");
+        uint256 sum = demand[0] + demand[1] + demand[2];
+        assertEq(total, sum < s ? sum : s, "priority fill must allocate min(total demand, saleSize)");
     }
 
-    // ---- No underflow: hop0Ceiling = basePool*6000/10000 - saleSize*1000/10000 must not revert. ----
-    // WHY: the new formula subtracts the extra hop-2 floor from hop-0's ceiling. In Solidity 0.8 an
-    //      underflow reverts. At the production constants it resolves to exactly 47% of saleSize;
-    //      these pin that (and that the two floor divisions leave no seam) at both sale sizes.
+    // ---- Hop-0 ceiling: with no hop-2 floor and a 100% raw ceiling it is the whole sale. ----
+    // WHY: hop0Ceiling = basePool*ceilingBps/10000 - saleSize*HOP2_EXTRA_FLOOR_BPS/10000 must not
+    //      underflow (Solidity 0.8 reverts) and, at the production constants, resolves to exactly
+    //      saleSize. These pin both, with and without hop-0 oversubscription.
 
-    function test_hop0Ceiling_is_47pct_base() public {
+    function test_hop0Ceiling_is_full_sale() public {
         h.exposed(BASE, [uint256(0), 0, 0]);
-        assertEq(h.finalCeilings(0), (BASE * 47) / 100, "hop-0 ceiling != 47% of BASE_SALE");
+        assertEq(h.finalCeilings(0), BASE, "hop-0 ceiling != 100% of saleSize");
     }
 
-    function test_hop0Ceiling_is_47pct_max() public {
-        h.exposed(MAX_, [uint256(0), 0, 0]);
-        assertEq(h.finalCeilings(0), (MAX_ * 47) / 100, "hop-0 ceiling != 47% of MAX_SALE");
+    function test_hop0Ceiling_is_full_sale_when_oversubscribed() public {
+        uint256 total = h.exposed(BASE, [BASE * 2, 0, 0]);
+        assertEq(h.finalCeilings(0), BASE, "hop-0 ceiling != 100% of saleSize");
+        assertEq(total, BASE, "oversubscribed hop-0 takes the whole sale");
     }
 
-    // ---- Fixed anchors from the spec: hop-1 raw ceiling 42.75%, hop-2 floor 15%. ----
-    function test_ceilings_matchSpecAnchors_base() public {
-        // Zero hop-0 demand so hop-1's effective ceiling = raw ceiling + full hop-0 leftover,
-        // capped at remainingAvailable (== available == 85%). Assert the raw pieces via a
-        // demand shape that isolates them.
+    // ---- Hop-2: no reserved floor; its effective ceiling is purely the rollover. ----
+    // WHY: with HOP2_*_FLOOR_BPS = 0 hop-2 gets only what hop-0 and hop-1 leave: everything when
+    //      they are empty, nothing when hop-0 fills the sale.
+    function test_hop2Ceiling_is_rollover_only() public {
         h.exposed(BASE, [uint256(0), 0, 0]);
-        // hop-2 floor is 15% of saleSize (+ rollover, which is 0 here beyond the floor since
-        // hop-1 demand is 0 → hop-1 leftover rolls in; assert at least the floor).
-        assertGe(h.finalCeilings(2), (BASE * 15) / 100, "hop-2 effective ceiling below 15% floor");
+        assertEq(h.finalCeilings(2), BASE, "empty hop-0/hop-1 roll the whole sale to hop-2");
+
+        h.exposed(BASE, [BASE, 0, 1_000 * 1e6]);
+        assertEq(h.finalCeilings(2), 0, "a full hop-0 leaves hop-2 nothing (no floor)");
     }
 
     // ---- Cross-language differential ----------------------------------------------------------
@@ -87,14 +93,14 @@ contract CrowdfundWaterfallMathTest is Test {
 
     function test_differentialVectors() public {
         uint256 K = 1_000 * 1e6; // $1,000 in 6-dec USDC
-        _assertTotal(BASE, 2_000 * K,        0,         0, 564 * K);   // hop-0 oversub → 47% ceiling
-        _assertTotal(MAX_, 2_000 * K,        0,         0, 846 * K);   // expanded hop-0 ceiling
-        _assertTotal(BASE, 2_000 * K, 2_000 * K, 2_000 * K, 1_200 * K); // saturated → full BASE
-        _assertTotal(MAX_, 2_000 * K, 2_000 * K, 2_000 * K, 1_800 * K); // saturated → full MAX
-        _assertTotal(BASE,   564 * K,        0, 2_000 * K, 1_200 * K); // hop-0 leftover → hop-2 rollover
-        _assertTotal(BASE,        0,  2_000 * K,        0, 1_020 * K); // hop-0 empty → hop-1 gets `available`
-        _assertTotal(BASE, 1_050 * K,   436 * K,        0, 1_000 * K); // realistic success == MIN_SALE
-        _assertTotal(BASE, 1_050 * K,   435 * K,        0,   999 * K); // one hop-1 slot less → below MIN_SALE
-        _assertTotal(MAX_, 1_500 * K,        0,         0, 846 * K);   // concentrated hop-0 at expansion < MIN_SALE
+        _assertTotal(BASE, 2_000 * K,        0,         0, 1_500 * K); // hop-0 oversub → takes the whole sale
+        _assertTotal(BASE, 2_000 * K, 2_000 * K, 2_000 * K, 1_500 * K); // saturated → full sale
+        _assertTotal(BASE,   564 * K,        0, 2_000 * K, 1_500 * K); // hop-0 leftover → hop-2 rollover
+        _assertTotal(BASE,        0,  2_000 * K,        0, 1_500 * K); // hop-0 empty → hop-1 gets the whole sale
+        _assertTotal(BASE, 1_400 * K,        0,   300 * K, 1_500 * K); // hop-2 gets the $100K remainder
+        _assertTotal(BASE, 1_050 * K,   436 * K,        0, 1_486 * K); // under the sale → everyone filled
+        _assertTotal(BASE,   200 * K,        0,    50 * K,   250 * K); // exactly MIN_SALE
+        _assertTotal(BASE,   200 * K,        0,    49 * K,   249 * K); // $1K less → below MIN_SALE
+        _assertTotal(BASE,        0,         0,         0,         0); // no demand
     }
 }

@@ -1,5 +1,5 @@
-// ABOUTME: Boundary tests for the MAX_FINALIZE_NODES participant cap in ArmadaCrowdfund.
-// ABOUTME: Verifies node creation is allowed up to the cap and reverts beyond it, across paths.
+// ABOUTME: Boundary tests for participant-node limits: the launch-team and invite budgets cap the tree at
+// ABOUTME: 1,505 nodes, below MAX_FINALIZE_NODES, and every node-creation path is exhausted before that cap.
 
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
@@ -10,10 +10,12 @@ import "../contracts/crowdfund/IArmadaCrowdfund.sol";
 import "../contracts/governance/ArmadaToken.sol";
 import "../contracts/cctp/MockUSDCV2.sol";
 
-/// @notice The cap keeps one-shot finalize() under the 16,777,216 (2^24, EIP-7825) per-tx gas cap.
-///         All node creation funnels through _initParticipant, so one require guards every path
-///         (seeds, peer invite, launch-team invite, commitWithInvite). These tests exercise the
-///         boundary on the reachable paths.
+/// @notice MAX_FINALIZE_NODES (1,800) keeps one-shot finalize() under the 16,777,216 (2^24,
+///         EIP-7825) per-tx gas cap; all node creation funnels through _initParticipant. With the
+///         relaunch budgets the tree tops out at 1,505 nodes (500 seeds + 5 team wallets + 500
+///         launch-team hop-2 placements + 500 team-wallet invites), so the budgets — not the node
+///         cap — are what bound finalize() gas. These tests pin that every creation path runs out
+///         first. (The node-cap require is unreachable in this configuration.)
 contract CrowdfundNodeCapTest is Test {
     MockUSDCV2 public usdc;
     ArmadaToken public armToken;
@@ -21,8 +23,9 @@ contract CrowdfundNodeCapTest is Test {
     address public admin;
     address public treasury;
 
-    uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
+    uint256 constant ARM_FUNDING = 1_500_000 * 1e18;
     uint256 constant CAP = 1800; // MAX_FINALIZE_NODES
+    uint256 constant STRUCTURAL_MAX = 1505;
 
     function setUp() public {
         admin = address(this);
@@ -39,63 +42,63 @@ contract CrowdfundNodeCapTest is Test {
     }
 
     function _seedAddr(uint256 i) internal pure returns (address) { return address(uint160(0x10000000 + i)); }
-    function _hop1Addr(uint256 i) internal pure returns (address) { return address(uint160(0x20000000 + i)); }
+    function _teamAddr(uint256 i) internal pure returns (address) { return address(uint160(0x20000000 + i)); }
     function _hop2Addr(uint256 i) internal pure returns (address) { return address(uint160(0x30000000 + i)); }
 
-    /// @dev Fill the tree to exactly `target` nodes via seeds + peer invites (launch-team budget
-    ///      untouched, so LT paths stay available to probe the boundary). 180 seeds + 540 hop-1 +
-    ///      1080 hop-2 = 1800 exactly. target ≤ 1800.
-    function _fillTo(uint256 target) internal {
-        require(target <= 1800, "target too high");
-        uint256 seedCount = target < 180 ? target : 180;
-        address[] memory seeds = new address[](seedCount);
-        for (uint256 i = 0; i < seedCount; i++) seeds[i] = _seedAddr(i);
+    /// @dev Exhaust every node-creation budget: 500 seeds, 5 hop-1 team wallets (launch team),
+    ///      each inviting 100 hop-2 nodes (peer invite), and 500 launch-team hop-2 placements.
+    function _fillToStructuralMax() internal {
+        address[] memory seeds = new address[](500);
+        for (uint256 i = 0; i < 500; i++) seeds[i] = _seedAddr(i);
         cf.addSeeds(seeds);
-        if (cf.getParticipantCount() >= target) return;
 
-        uint256 h1 = 0;
-        for (uint256 i = 0; i < seedCount && cf.getParticipantCount() < target; i++) {
-            for (uint256 j = 0; j < 3 && cf.getParticipantCount() < target; j++) {
-                vm.prank(_seedAddr(i));
-                cf.invite(_hop1Addr(h1), 0);
-                h1++;
+        for (uint256 w = 0; w < 5; w++) {
+            cf.launchTeamInvite(_teamAddr(w), 0);
+            for (uint256 j = 0; j < 100; j++) {
+                vm.prank(_teamAddr(w));
+                cf.invite(_hop2Addr(w * 100 + j), 1);
             }
         }
-        if (cf.getParticipantCount() >= target) return;
 
-        for (uint256 i = 0; i < h1 && cf.getParticipantCount() < target; i++) {
-            for (uint256 j = 0; j < 2 && cf.getParticipantCount() < target; j++) {
-                vm.prank(_hop1Addr(i));
-                cf.invite(_hop2Addr(i * 2 + j), 1);
-            }
-        }
+        for (uint256 i = 0; i < 500; i++) cf.launchTeamInvite(_hop2Addr(500 + i), 1);
     }
 
-    // WHY: the cap must admit EXACTLY MAX_FINALIZE_NODES nodes — one short would needlessly shrink
-    //      the sale, one over would make finalize() unsubmittable. Confirms the boundary is inclusive.
-    function test_allows_exactly_cap() public {
-        _fillTo(CAP);
-        assertEq(cf.getParticipantCount(), CAP, "should reach exactly the cap");
+    // WHY: the budgets must cap the tree at exactly 1,505 nodes, below the 1,800 node cap, so
+    //      finalize() can never be pushed past the gas cap however the budgets are used.
+    function test_structural_max_is_below_cap() public {
+        _fillToStructuralMax();
+        assertEq(cf.getParticipantCount(), STRUCTURAL_MAX, "structural maximum");
+        assertLt(cf.getParticipantCount(), CAP, "below MAX_FINALIZE_NODES");
     }
 
-    // WHY: creating the (cap+1)-th node must revert. Probed via launchTeamInvite because _fillTo
-    //      leaves the launch-team budget untouched.
-    function test_reverts_over_cap_launchTeamInvite() public {
-        _fillTo(CAP);
-        vm.expectRevert("ArmadaCrowdfund: node cap reached");
-        cf.launchTeamInvite(_hop1Addr(9000), 0);
+    // WHY: at the structural maximum, the launch-team paths (seeds, hop-1 and hop-2 placements)
+    //      must all be exhausted by their own budgets — none may reach the node cap.
+    function test_launch_team_paths_exhausted_before_cap() public {
+        _fillToStructuralMax();
+
+        vm.expectRevert("ArmadaCrowdfund: seed cap reached");
+        cf.addSeed(_seedAddr(9000));
+        vm.expectRevert("ArmadaCrowdfund: hop-1 budget exhausted");
+        cf.launchTeamInvite(_teamAddr(9000), 0);
+        vm.expectRevert("ArmadaCrowdfund: hop-2 budget exhausted");
+        cf.launchTeamInvite(_hop2Addr(9000), 1);
     }
 
-    // WHY: the guard sits at the single choke point (_initParticipant), so the peer invite() path
-    //      must revert at the cap too. Fill to cap-1, add one node via LT to hit the cap exactly,
-    //      then a peer node with spare budget attempts an invite → must revert.
-    function test_reverts_over_cap_peer_invite() public {
-        _fillTo(CAP - 1);
-        cf.launchTeamInvite(_hop1Addr(9001), 0); // → exactly CAP nodes
-        assertEq(cf.getParticipantCount(), CAP);
-        // hop-1 node #539 has one unused hop-2 slot at 1799 nodes (the 1080th hop-2 was never added).
-        vm.prank(_hop1Addr(539));
-        vm.expectRevert("ArmadaCrowdfund: node cap reached");
-        cf.invite(_hop2Addr(9002), 1);
+    // WHY: the peer path (team-wallet invites, direct or by link) must also be exhausted by the
+    //      per-wallet invite budget (1 × 100) before the node cap. Hop-0 and hop-2 cannot invite.
+    function test_peer_invite_paths_exhausted_before_cap() public {
+        _fillToStructuralMax();
+
+        vm.prank(_teamAddr(0));
+        vm.expectRevert("ArmadaCrowdfund: invite limit reached");
+        cf.invite(_hop2Addr(9001), 1);
+
+        vm.prank(_seedAddr(0));
+        vm.expectRevert("ArmadaCrowdfund: invite limit reached");
+        cf.invite(_hop2Addr(9002), 0);
+
+        vm.prank(_hop2Addr(0));
+        vm.expectRevert("ArmadaCrowdfund: max hop reached");
+        cf.invite(_hop2Addr(9003), 2);
     }
 }

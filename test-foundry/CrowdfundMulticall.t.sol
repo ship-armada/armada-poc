@@ -26,16 +26,16 @@ contract CrowdfundMulticallTest is Test {
 
     // Single-seed setup for self-fill tests
     address public seed0 = address(0xA001);
+    // Hop-1 team inviter wallet (the only tier that can invite), placed in setUp
+    address public teamWallet = address(0xA0A0);
 
     // Multi-seed setup (lazy-initialized via _setupForFinalization)
     address[] public manySeeds;
 
-    uint256 constant ARM_FUNDING   = 1_800_000 * 1e18;
-    uint256 constant HOP0_CAP      = 15_000 * 1e6;
-    uint256 constant HOP1_CAP      = 4_000 * 1e6;
-    uint256 constant HOP2_CAP      = 1_000 * 1e6;
-    uint256 constant MIN_COMMIT    = 10 * 1e6;
-    uint256 constant SELF_FILL_TOTAL = 33_000 * 1e6; // $15K + 3×$4K + 6×$1K
+    uint256 constant ARM_FUNDING   = 1_500_000 * 1e18;
+    uint256 constant HOP0_CAP      = 150_000 * 1e6;
+    uint256 constant HOP2_CAP      = 10_000 * 1e6;
+    uint256 constant MIN_COMMIT    = 50 * 1e6;
 
     function setUp() public {
         usdc = new MockUSDCV2("Mock USDC", "USDC");
@@ -68,10 +68,13 @@ contract CrowdfundMulticallTest is Test {
         crowdfund.loadArm();
 
         // Single seed for self-fill tests. Finalization-path tests call
-        // _setupForFinalization() to populate a mixed hop-0/hop-1 success case.
+        // _setupForFinalization() to populate a success case.
         address[] memory s = new address[](1);
         s[0] = seed0;
         crowdfund.addSeeds(s);
+
+        // One hop-1 team inviter wallet (admin is launchTeam).
+        crowdfund.launchTeamInvite(teamWallet, 0);
     }
 
     // ============ Calldata encoding helpers ============
@@ -99,32 +102,21 @@ contract CrowdfundMulticallTest is Test {
     }
 
     // ============ Self-fill plan builders ============
-    // WHY: replicates the §1 example plan: a hop-0 seed self-fills hop-1
-    // (×3) and hop-2 (×6), then commits at all three hops. Used by happy-path
-    // tests; the exact same builder will be useful for the frontend
-    // useSelfFillPlan hook in the follow-up UI PR.
+    // WHY: the seed self-fill plan: a hop-0 seed self-invites into hop-1 and hop-2, then
+    // commits at its hops. Hop-0 cannot invite (HOP0_MAX_INVITES = 0), so the seed bundle
+    // pins that self-fill is impossible for known contributors.
 
     function _seedSelfFillBundle(address self) internal pure returns (bytes[] memory calls) {
-        // 3 hop-1 self-invites (seed has invitesReceived=1, maxInvites=3)
-        // 6 hop-2 self-invites (each hop-1 stack = 3 received × maxInvites=2)
-        // commit hop-0 ($15K), hop-1 ($12K), hop-2 ($6K)
-        calls = new bytes[](12);
-        uint256 i = 0;
-        for (uint256 k = 0; k < 3; k++) { calls[i++] = _encInvite(self, 0); }
-        for (uint256 k = 0; k < 6; k++) { calls[i++] = _encInvite(self, 1); }
-        calls[i++] = _encCommit(0, HOP0_CAP);              // $15K
-        calls[i++] = _encCommit(1, HOP1_CAP * 3);          // $12K (3× cap, all at once)
-        calls[i++] = _encCommit(2, HOP2_CAP * 6);          // $6K  (6× cap)
+        calls = new bytes[](2);
+        calls[0] = _encInvite(self, 0);            // hop-0 → hop-1 self-invite (not allowed)
+        calls[1] = _encCommit(0, HOP0_CAP);
     }
 
-    function _hop1SelfFillBundle(address self) internal pure returns (bytes[] memory calls) {
-        // hop-1 wallet w/ invitesReceived=1, maxInvites=2 → 2 hop-2 self-invites
-        // Then commit hop-1 ($4K) and hop-2 ($2K).
-        calls = new bytes[](4);
+    function _teamWalletSelfFillBundle(address self) internal pure returns (bytes[] memory calls) {
+        // Team wallet (hop-1, maxInvites=100) self-invites to hop-2 once, then commits there.
+        calls = new bytes[](2);
         calls[0] = _encInvite(self, 1);
-        calls[1] = _encInvite(self, 1);
-        calls[2] = _encCommit(1, HOP1_CAP);          // $4K
-        calls[3] = _encCommit(2, HOP2_CAP * 2);      // $2K
+        calls[1] = _encCommit(2, HOP2_CAP);        // $10K, the hop-2 cap
     }
 
     function _mintAndApprove(address who, uint256 amount) internal {
@@ -133,15 +125,10 @@ contract CrowdfundMulticallTest is Test {
         usdc.approve(address(crowdfund), amount);
     }
 
-    /// @notice Populate 53 hop-0 seeds + 109 hop-1 invitees so the net
-    ///         post-ceiling allocation clears MIN_SALE and finalize() takes
-    ///         the success path. (Hop-0-only with 80 seeds caps the net
-    ///         allocation at the hop-0 ceiling ≈ $564K < $1M MIN_SALE,
-    ///         which forces refundMode — see audit-75 / hop ceilings.)
-    ///         Mirrors the pattern in CrowdfundDonationTest.
+    /// @notice Populate 2 hop-0 seeds at the $150K cap ($300K ≥ MIN_SALE) so
+    ///         finalize() takes the success path.
     function _setupForFinalization() internal {
-        // 53 hop-0 seeds, each commits $15K → hop-0 capped demand $795K.
-        for (uint160 i = 0; i < 53; i++) {
+        for (uint160 i = 0; i < 2; i++) {
             address s = address(uint160(0xC000) + i);
             manySeeds.push(s);
         }
@@ -150,18 +137,6 @@ contract CrowdfundMulticallTest is Test {
             _mintAndApprove(manySeeds[i], HOP0_CAP);
             vm.prank(manySeeds[i]);
             crowdfund.commit(0, HOP0_CAP);
-        }
-
-        // 109 hop-1 invitees, each commits $4K → hop-1 demand $436K.
-        // The projected allocation is $564K + $436K = $1M, so finalization
-        // follows the success path.
-        for (uint160 i = 0; i < 109; i++) {
-            address h1 = address(uint160(0xD000) + i);
-            vm.prank(manySeeds[i % manySeeds.length]);
-            crowdfund.invite(h1, 0);
-            _mintAndApprove(h1, HOP1_CAP);
-            vm.prank(h1);
-            crowdfund.commit(1, HOP1_CAP);
         }
 
         vm.warp(crowdfund.windowEnd() + 1);
@@ -174,71 +149,59 @@ contract CrowdfundMulticallTest is Test {
     //                        HAPPY PATHS  (§5.3 tier A)
     // ===================================================================
 
-    /// @notice WHY: end-to-end exercise of the self-fill use case. A seed
-    /// wallet bundles 9 invites + 3 commits in one multicall. Verifies that
-    /// the EVM's sequential delegatecall ordering lets later commits see
-    /// the projected (post-self-invite) whitelist + effectiveCap state.
-    function test_SelfFill_Seed_FullTree() public {
-        _mintAndApprove(seed0, SELF_FILL_TOTAL);
+    /// @notice WHY: the self-fill use case for a seed: a self-invite into the next tier bundled
+    /// with a commit. Known contributors cannot invite (HOP0_MAX_INVITES = 0), so the bundle must
+    /// revert as a whole and leave nothing behind.
+    function test_SelfFill_Seed_Reverts_KnownTierCannotInvite() public {
+        _mintAndApprove(seed0, HOP0_CAP);
 
         bytes[] memory calls = _seedSelfFillBundle(seed0);
 
         vm.prank(seed0);
+        vm.expectRevert("ArmadaCrowdfund: invite limit reached");
         crowdfund.multicall(calls);
 
-        assertEq(crowdfund.getInvitesReceived(seed0, 1), 3, "hop-1 stacked to 3");
-        assertEq(crowdfund.getInvitesReceived(seed0, 2), 6, "hop-2 stacked to 6");
-        assertEq(crowdfund.getCommitment(seed0, 0), HOP0_CAP, "hop-0 commit");
-        assertEq(crowdfund.getCommitment(seed0, 1), HOP1_CAP * 3, "hop-1 commit");
-        assertEq(crowdfund.getCommitment(seed0, 2), HOP2_CAP * 6, "hop-2 commit");
-        assertEq(crowdfund.totalCommitted(), SELF_FILL_TOTAL, "totalCommitted");
-        assertEq(usdc.balanceOf(seed0), 0, "USDC fully escrowed");
+        assertFalse(crowdfund.isWhitelisted(seed0, 1), "no hop-1 self-invite");
+        assertEq(crowdfund.getCommitment(seed0, 0), 0, "commit rolled back");
+        assertEq(usdc.balanceOf(seed0), HOP0_CAP, "USDC untouched");
     }
 
-    /// @notice WHY: same flow, but for a hop-1 wallet (not a seed). The
-    /// hop-1 invite-only subtree is the most common real-world case once
-    /// the seed pool is saturated.
+    /// @notice WHY: the hop-1 self-fill flow, for a team inviter wallet: it can invite itself
+    /// into hop-2 once and commit there in the same bundle. A second self-invite reverts, since
+    /// HOP2_MAX_INVITES_RECEIVED = 1 (no stacking).
     function test_SelfFill_Hop1_Subtree() public {
-        address hop1Wallet = address(0xB001);
+        _mintAndApprove(teamWallet, HOP2_CAP);
 
-        // First, seed0 invites hop1Wallet to hop-1 via a single tx (outside
-        // multicall, to set up state). Then hop1Wallet self-fills its subtree.
-        vm.prank(seed0);
-        crowdfund.invite(hop1Wallet, 0);
-        assertTrue(crowdfund.isWhitelisted(hop1Wallet, 1), "hop1Wallet whitelisted at hop-1");
-
-        _mintAndApprove(hop1Wallet, HOP1_CAP + HOP2_CAP * 2);
-
-        bytes[] memory calls = _hop1SelfFillBundle(hop1Wallet);
-        vm.prank(hop1Wallet);
+        bytes[] memory calls = _teamWalletSelfFillBundle(teamWallet);
+        vm.prank(teamWallet);
         crowdfund.multicall(calls);
 
-        assertEq(crowdfund.getInvitesReceived(hop1Wallet, 2), 2, "hop-2 stacked");
-        assertEq(crowdfund.getCommitment(hop1Wallet, 1), HOP1_CAP, "hop-1 commit");
-        assertEq(crowdfund.getCommitment(hop1Wallet, 2), HOP2_CAP * 2, "hop-2 commit");
+        assertEq(crowdfund.getInvitesReceived(teamWallet, 2), 1, "hop-2 slot");
+        assertEq(crowdfund.getCommitment(teamWallet, 2), HOP2_CAP, "hop-2 commit");
+
+        bytes[] memory again = new bytes[](1);
+        again[0] = _encInvite(teamWallet, 1);
+        vm.prank(teamWallet);
+        vm.expectRevert("ArmadaCrowdfund: max invites received");
+        crowdfund.multicall(again);
     }
 
     /// @notice WHY: minimal invite+commit composition. Tests that an
     /// invite issued in call[i] is visible to a commit in call[i+1] —
-    /// i.e. the in-multicall state mutation chain works as expected.
+    /// i.e. the in-multicall state mutation chain works as expected:
+    /// the commit at hop-2 only succeeds if the self-invite in call[0] landed.
     function test_Multicall_InviteThenCommitSameTx() public {
-        address hop1Wallet = address(0xB002);
-        _mintAndApprove(hop1Wallet, HOP1_CAP);
+        _mintAndApprove(teamWallet, MIN_COMMIT);
 
         bytes[] memory calls = new bytes[](2);
-        // seed0 invites hop1Wallet, then hop1Wallet commits.
-        // BUT: msg.sender is fixed for the whole multicall, so seed0 must do
-        // BOTH calls. We instead test: seed0 commits at hop-0 after an
-        // (irrelevant) invite to itself. Pure ordering exercise.
-        calls[0] = _encInvite(hop1Wallet, 0);  // seed0 invites hop1Wallet to hop-1
-        calls[1] = _encCommit(0, HOP0_CAP);    // seed0 commits at hop-0
+        calls[0] = _encInvite(teamWallet, 1);   // team wallet joins hop-2
+        calls[1] = _encCommit(2, MIN_COMMIT);   // ...and commits there
 
-        _mintAndApprove(seed0, HOP0_CAP);
-        vm.prank(seed0);
+        vm.prank(teamWallet);
         crowdfund.multicall(calls);
 
-        assertTrue(crowdfund.isWhitelisted(hop1Wallet, 1), "invite landed");
-        assertEq(crowdfund.getCommitment(seed0, 0), HOP0_CAP, "commit landed");
+        assertTrue(crowdfund.isWhitelisted(teamWallet, 2), "invite landed");
+        assertEq(crowdfund.getCommitment(teamWallet, 2), MIN_COMMIT, "commit landed");
     }
 
     // ===================================================================
@@ -253,10 +216,10 @@ contract CrowdfundMulticallTest is Test {
     function test_Multicall_CommitExceedingAllowance_Reverts() public {
         usdc.mint(seed0, HOP0_CAP);
         vm.prank(seed0);
-        usdc.approve(address(crowdfund), MIN_COMMIT); // only $10 approved
+        usdc.approve(address(crowdfund), MIN_COMMIT); // only $50 approved
 
         bytes[] memory calls = new bytes[](1);
-        calls[0] = _encCommit(0, HOP0_CAP); // try to commit $15K
+        calls[0] = _encCommit(0, HOP0_CAP); // try to commit $150K
 
         vm.prank(seed0);
         vm.expectRevert(); // ERC20 transfer revert reason
@@ -270,10 +233,10 @@ contract CrowdfundMulticallTest is Test {
     /// bind under the delegatecall, and the bundle must roll back atomically.
     function test_Multicall_NotWhitelisted_Reverts() public {
         address nobody = address(0xDEAD);
-        _mintAndApprove(nobody, HOP1_CAP);
+        _mintAndApprove(nobody, HOP2_CAP);
 
         bytes[] memory calls = new bytes[](1);
-        calls[0] = _encCommit(1, HOP1_CAP);
+        calls[0] = _encCommit(2, HOP2_CAP);
 
         vm.prank(nobody);
         vm.expectRevert("ArmadaCrowdfund: not whitelisted");
@@ -336,25 +299,25 @@ contract CrowdfundMulticallTest is Test {
     /// bubble-up does not swallow the revert. Verify no calls' state changes
     /// persist after the bundle.
     function test_Multicall_PartialFailure_RollsBackAll() public {
-        // seed0 budget = 1 invitesReceived × maxInvites(3) = 3 hop-1 invites.
-        // Bundle 4 invites — first 3 succeed, 4th reverts "invite limit reached".
+        // The team wallet has 100 invites. Bundle 3 valid invites to hop-2, then a 4th to an
+        // address it already invited in call[0]: no stacking at hop-2, so call[3] reverts
+        // "max invites received" after calls[0..2] have mutated state.
         bytes[] memory calls = new bytes[](4);
-        calls[0] = _encInvite(address(0xB101), 0);
-        calls[1] = _encInvite(address(0xB102), 0);
-        calls[2] = _encInvite(address(0xB103), 0);
-        calls[3] = _encInvite(address(0xB104), 0);
+        calls[0] = _encInvite(address(0xB101), 1);
+        calls[1] = _encInvite(address(0xB102), 1);
+        calls[2] = _encInvite(address(0xB103), 1);
+        calls[3] = _encInvite(address(0xB101), 1);
 
-        vm.prank(seed0);
-        vm.expectRevert("ArmadaCrowdfund: invite limit reached");
+        vm.prank(teamWallet);
+        vm.expectRevert("ArmadaCrowdfund: max invites received");
         crowdfund.multicall(calls);
 
-        // None of the four invites must have landed.
-        assertFalse(crowdfund.isWhitelisted(address(0xB101), 1), "calls[0] rolled back");
-        assertFalse(crowdfund.isWhitelisted(address(0xB102), 1), "calls[1] rolled back");
-        assertFalse(crowdfund.isWhitelisted(address(0xB103), 1), "calls[2] rolled back");
-        assertFalse(crowdfund.isWhitelisted(address(0xB104), 1), "calls[3] rolled back");
+        // None of the invites must have landed.
+        assertFalse(crowdfund.isWhitelisted(address(0xB101), 2), "calls[0] rolled back");
+        assertFalse(crowdfund.isWhitelisted(address(0xB102), 2), "calls[1] rolled back");
+        assertFalse(crowdfund.isWhitelisted(address(0xB103), 2), "calls[2] rolled back");
         // And the inviter's invitesSent counter is untouched.
-        (, , uint16 invitesSent,,) = crowdfund.participants(seed0, 0);
+        (, , uint16 invitesSent,,) = crowdfund.participants(teamWallet, 1);
         assertEq(invitesSent, 0, "invitesSent rolled back");
     }
 
@@ -416,22 +379,21 @@ contract CrowdfundMulticallTest is Test {
     /// pins the correct behavior so a future accidental wrap of
     /// multicall in nonReentrant would be caught.
     function test_Multicall_BundledNonReentrantSiblings_Succeed() public {
-        // Seed has hop-0 whitelist by setup; add a hop-1 stack so it's
-        // also whitelisted at hop-1.
-        vm.prank(seed0);
-        crowdfund.invite(seed0, 0); // self-invite to hop-1
+        // Seed has hop-0 whitelist by setup; the launch team also places it at hop-2
+        // so it holds slots at two hops.
+        crowdfund.launchTeamInvite(seed0, 1);
 
-        _mintAndApprove(seed0, HOP0_CAP + HOP1_CAP);
+        _mintAndApprove(seed0, HOP0_CAP + HOP2_CAP);
 
         bytes[] memory calls = new bytes[](2);
         calls[0] = _encCommit(0, HOP0_CAP);   // nonReentrant
-        calls[1] = _encCommit(1, HOP1_CAP);   // nonReentrant
+        calls[1] = _encCommit(2, HOP2_CAP);   // nonReentrant
 
         vm.prank(seed0);
         crowdfund.multicall(calls);
 
         assertEq(crowdfund.getCommitment(seed0, 0), HOP0_CAP, "first nonReentrant call landed");
-        assertEq(crowdfund.getCommitment(seed0, 1), HOP1_CAP, "second nonReentrant call landed");
+        assertEq(crowdfund.getCommitment(seed0, 2), HOP2_CAP, "second nonReentrant call landed");
     }
 
     /// @notice WHY: §5.2 / runtime companion to the static audit. Confirms
@@ -564,17 +526,17 @@ contract CrowdfundMulticallTest is Test {
     /// (e.g. by perturbing the EIP-712 domain or hash construction).
     function test_Multicall_CommitWithInvite_BadSignature_Reverts() public {
         address invitee = address(0xB501);
-        _mintAndApprove(invitee, HOP1_CAP);
+        _mintAndApprove(invitee, HOP2_CAP);
 
         bytes[] memory calls = new bytes[](1);
         calls[0] = abi.encodeWithSelector(
             ArmadaCrowdfund.commitWithInvite.selector,
-            seed0,                       // inviter (claimed)
-            uint8(0),                    // fromHop
+            teamWallet,                  // inviter (claimed)
+            uint8(1),                    // fromHop
             uint256(1),                  // nonce
             block.timestamp + 1 hours,   // deadline
             new bytes(65),               // bogus signature (zeros)
-            HOP1_CAP                     // amount
+            HOP2_CAP                     // amount
         );
 
         vm.prank(invitee);
@@ -609,16 +571,15 @@ contract CrowdfundMulticallTest is Test {
 
     /// @notice WHY: this is the "more than allotted allocation" property
     /// from the invitee side. `_registerOrStackInvite` checks
-    /// `invitesReceived < maxInvitesReceived` (10 for hop-1). The
-    /// launchTeam has a 100-invite hop-1 budget, so it CAN bundle 11 invites
-    /// targeting the same victim. The 11th must revert when invitesReceived
-    /// would overflow the per-hop cap. Bundle must roll back so the victim
-    /// ends up with zero stacked invites.
+    /// `invitesReceived < maxInvitesReceived` (1 at every hop: no stacking).
+    /// The launch team has budget left, so it CAN bundle 2 invites targeting
+    /// the same victim. The 2nd must revert when invitesReceived would exceed
+    /// the per-hop cap. Bundle must roll back so the victim ends up with no slot.
     function test_Multicall_InviteeStackingCap_Reverts() public {
         address victim = address(0xB401);
 
-        bytes[] memory calls = new bytes[](11);
-        for (uint256 i = 0; i < 11; i++) {
+        bytes[] memory calls = new bytes[](2);
+        for (uint256 i = 0; i < 2; i++) {
             calls[i] = _encLaunchTeamInvite(victim, 0); // hop-1 invitee
         }
 

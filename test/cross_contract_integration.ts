@@ -26,7 +26,6 @@ const THREE_DAYS = 3 * ONE_DAY;
 const FIVE_DAYS = 5 * ONE_DAY;
 const SEVEN_DAYS = 7 * ONE_DAY;
 const QUIET_PERIOD = 10 * ONE_DAY;
-const THREE_WEEKS = 21 * ONE_DAY;
 
 const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
 const USDC = (n: number) => ethers.parseUnits(n.toString(), 6);
@@ -34,9 +33,8 @@ const USDC = (n: number) => ethers.parseUnits(n.toString(), 6);
 // Amount of ARM the deployer keeps for governance testing after treasury + crowdfund allocations.
 // Eligible supply ≈ DEPLOYER_KEEP + seed-claimed ARM. Quorum = 20% of eligible.
 // Deployer delegates half of DEPLOYER_KEEP. That plus seed claims must exceed quorum.
-// With 100 seeds × $15K = $1.5M (hits ELASTIC_TRIGGER), MAX_SALE = $1.8M applies.
-// Hop-0 ceiling at the expanded sale is $846K. The helpers below add H1 demand
-// so finalization succeeds before governance claims are exercised.
+// 100 seeds × $12K = $1.2M fills under the $1.5M sale, so every seed is allocated in full
+// (12,000 ARM each) and $300K of ARM stays unallocated for the sweep tests.
 const DEPLOYER_KEEP = ARM(1_200_000);
 
 describe("Cross-Contract Integration (Phase 6)", function () {
@@ -54,23 +52,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
   let seeds: SignerWithAddress[];
   let hop1Addrs: SignerWithAddress[];
 
-  async function addHop1DemandForSuccess(cf: any, token: any, seedPool: SignerWithAddress[]) {
-    const signers = await ethers.getSigners();
-    const hop1Pool = signers.slice(140, 195);
-    const committedSlots = new Map<string, { signer: SignerWithAddress; slots: number }>();
-    for (let i = 0; i < 109; i++) {
-      const signer = hop1Pool[i % hop1Pool.length];
-      await cf.connect(seedPool[i % seedPool.length]).invite(signer.address, 0);
-      const entry = committedSlots.get(signer.address) ?? { signer, slots: 0 };
-      entry.slots++;
-      committedSlots.set(signer.address, entry);
-    }
-    for (const { signer, slots } of committedSlots.values()) {
-      const amount = USDC(4_000 * slots);
-      await token.mint(signer.address, amount);
-      await token.connect(signer).approve(await cf.getAddress(), amount);
-      await cf.connect(signer).commit(1, amount);
-    }
+  async function warpPastWindow(cf: any) {
+    await time.increaseTo((await cf.windowEnd()) + 1n);
   }
 
   // Role hashes
@@ -96,7 +79,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     await usdc.waitForDeployment();
 
     // Deploy crowdfund
-    const CROWDFUND_ARM_FUNDING = ARM(1_800_000);
+    const CROWDFUND_ARM_FUNDING = ARM(1_500_000);
     const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
     const openTimestamp = (await time.latest()) + 300;
     crowdfund = await ArmadaCrowdfund.deploy(
@@ -109,7 +92,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     );
     await crowdfund.waitForDeployment();
 
-    // Fund ARM to crowdfund (1.8M for MAX_SALE)
+    // Fund ARM to crowdfund (1.5M for MAX_SALE)
     await armToken.transfer(await crowdfund.getAddress(), CROWDFUND_ARM_FUNDING);
     await crowdfund.loadArm();
 
@@ -184,22 +167,21 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
       await crowdfund.addSeeds(seeds.map(s => s.address));
 
-      // 2. Seeds invite hop-1 addresses
+      // 2. Launch team places hop-1 team inviter wallets (seeds cannot invite)
       for (let i = 0; i < 3 && i < hop1Addrs.length; i++) {
-        await crowdfund.connect(seeds[i]).invite(hop1Addrs[i].address, 0);
+        await crowdfund.launchTeamInvite(hop1Addrs[i].address, 0);
       }
 
-      // 3. All seeds commit $15K each = $1.2M (meets MIN_SALE)
+      // 3. All seeds commit $12K each = $1.2M (meets MIN_SALE)
       for (const seed of seeds) {
-        const amount = USDC(15_000);
+        const amount = USDC(12_000);
         await usdc.mint(seed.address, amount);
         await usdc.connect(seed).approve(await crowdfund.getAddress(), amount);
         await crowdfund.connect(seed).commit(0, amount);
       }
-      await addHop1DemandForSuccess(crowdfund, usdc, seeds);
 
       // 4. Fast-forward past active window
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow(crowdfund);
 
       // 5. Finalize
       await crowdfund.finalize();
@@ -292,14 +274,13 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await crowdfund.addSeeds(seeds.map(s => s.address));
 
       for (const seed of seeds) {
-        const amount = USDC(15_000);
+        const amount = USDC(12_000);
         await usdc.mint(seed.address, amount);
         await usdc.connect(seed).approve(await crowdfund.getAddress(), amount);
         await crowdfund.connect(seed).commit(0, amount);
       }
-      await addHop1DemandForSuccess(crowdfund, usdc, seeds);
 
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow(crowdfund);
       await crowdfund.finalize();
 
       // Claim all
@@ -348,9 +329,8 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     it("proposal threshold (5,000 ARM) is reachable by a single crowdfund participant", async function () {
       // WHY: GOVERNANCE.md specifies a flat 5,000 ARM proposal threshold so
       // typical crowdfund seeds can submit proposals without forming pools.
-      // The $564K H0 base-sale ceiling is pro-rated among seed demand; the H1
-      // success fixture keeps finalization out of refund mode. Each seed still
-      // receives more than the 5,000 ARM proposal threshold.
+      // Each seed's $12K commit is allocated in full (12,000 ARM), more than the
+      // 5,000 ARM proposal threshold.
       await runCrowdfundAndClaim();
 
       const threshold = await governor.proposalThreshold();
@@ -387,13 +367,12 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await crowdfund.addSeeds(seeds.map(s => s.address));
 
       for (const seed of seeds) {
-        const amount = USDC(15_000);
+        const amount = USDC(12_000);
         await usdc.mint(seed.address, amount);
         await usdc.connect(seed).approve(await crowdfund.getAddress(), amount);
         await crowdfund.connect(seed).commit(0, amount);
       }
-      await addHop1DemandForSuccess(crowdfund, usdc, seeds);
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow(crowdfund);
       await crowdfund.finalize();
 
       // Claim first 10 seeds
@@ -572,12 +551,12 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await crowdfund.addSeeds(seeds.map(s => s.address));
 
       for (const seed of seeds) {
-        const amount = USDC(15_000);
+        const amount = USDC(12_000);
         await usdc.mint(seed.address, amount);
         await usdc.connect(seed).approve(await crowdfund.getAddress(), amount);
         await crowdfund.connect(seed).commit(0, amount);
       }
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow(crowdfund);
       await crowdfund.finalize();
 
       // Skip past 10-day governance quiet period
@@ -623,7 +602,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     // Named constants for this test suite's ARM distribution — derived from supply
     const TOTAL_SUPPLY = ARM(12_000_000);                    // must match ArmadaToken.INITIAL_SUPPLY
     const TREASURY_ALLOCATION = TOTAL_SUPPLY * 65n / 100n;   // 65% to treasury
-    const CROWDFUND_ALLOCATION = ARM(1_800_000);              // MAX_SALE (fixed by crowdfund economics)
+    const CROWDFUND_ALLOCATION = ARM(1_500_000);              // MAX_SALE (fixed by crowdfund economics)
 
     let localArmToken: any;
     let localUsdc: any;
@@ -776,14 +755,13 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
 
       for (const seed of localSeeds) {
-        const amount = USDC(15_000);
+        const amount = USDC(12_000);
         await localUsdc.mint(seed.address, amount);
         await localUsdc.connect(seed).approve(await localCrowdfund.getAddress(), amount);
         await localCrowdfund.connect(seed).commit(0, amount);
       }
-      await addHop1DemandForSuccess(localCrowdfund, localUsdc, localSeeds);
 
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow(localCrowdfund);
       await localCrowdfund.finalize();
 
       // Skip quiet period so governance proposals can proceed
@@ -837,14 +815,13 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
 
       for (const seed of localSeeds) {
-        const amount = USDC(15_000);
+        const amount = USDC(12_000);
         await localUsdc.mint(seed.address, amount);
         await localUsdc.connect(seed).approve(await localCrowdfund.getAddress(), amount);
         await localCrowdfund.connect(seed).commit(0, amount);
       }
-      await addHop1DemandForSuccess(localCrowdfund, localUsdc, localSeeds);
 
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow(localCrowdfund);
       await localCrowdfund.finalize();
 
       // All seeds claim
@@ -868,14 +845,13 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
 
       for (const seed of localSeeds) {
-        const amount = USDC(15_000);
+        const amount = USDC(12_000);
         await localUsdc.mint(seed.address, amount);
         await localUsdc.connect(seed).approve(await localCrowdfund.getAddress(), amount);
         await localCrowdfund.connect(seed).commit(0, amount);
       }
-      await addHop1DemandForSuccess(localCrowdfund, localUsdc, localSeeds);
 
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow(localCrowdfund);
       await localCrowdfund.finalize();
 
       const treasuryAddress = await localTreasury.getAddress();
@@ -894,14 +870,13 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
 
       for (const seed of localSeeds) {
-        const amount = USDC(15_000);
+        const amount = USDC(12_000);
         await localUsdc.mint(seed.address, amount);
         await localUsdc.connect(seed).approve(await localCrowdfund.getAddress(), amount);
         await localCrowdfund.connect(seed).commit(0, amount);
       }
-      await addHop1DemandForSuccess(localCrowdfund, localUsdc, localSeeds);
 
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow(localCrowdfund);
       await localCrowdfund.finalize();
 
       // 5 seeds claim

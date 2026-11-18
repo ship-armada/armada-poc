@@ -364,7 +364,7 @@ describe("Safe batches for launch-team and security-council actions", function (
       const cfAddress = await crowdfund.getAddress();
       await arm.addToWhitelist(cfAddress);
       await arm.initAuthorizedDelegators([cfAddress]);
-      await arm.transfer(cfAddress, ARM(1_800_000));
+      await arm.transfer(cfAddress, ARM(1_500_000));
       await crowdfund.loadArm();
       return { crowdfund, cfAddress, launchSafe, councilSafe, multiSend, launchOwners: [o1], councilOwners: [o1, o2],
         seeds: [s1, s2, s3], x, y, z };
@@ -402,21 +402,31 @@ describe("Safe batches for launch-team and security-council actions", function (
 
     // WHY: end to end — the task's files, executed through the 1-of-3 launch-team Safe with one
     // owner's signature exactly as the Safe app bundles them, must add every seed and launch-team
-    // invite (including a deliberate stack) and use the budgets as the summary says. Files are
-    // prepared before the sale opens and executed after, which is the intended launch-day flow.
+    // invite and use the budgets as the summary says. Files are prepared before the sale opens and
+    // executed after, which is the intended launch-day flow. Stacking is impossible in this
+    // configuration (every hop accepts 1 invite per address), so a deliberate stack is refused
+    // even with --allow-stack, and nothing is written for it.
     it("prepares batches before open that a 1-of-3 Safe executes after open", async function () {
       const { crowdfund, cfAddress, launchSafe, multiSend, launchOwners, seeds, x, y, z } = await fixture();
-      const csv = path.join(tmp, "launch.csv");
-      fs.writeFileSync(csv, ["address,hop,label", ...seeds.map((s, i) => `${s.address},0,seed ${i}`),
-        `${x.address},1,X`, `${y.address},1,Y`, `${z.address},2,Z`, `${x.address},1,X again`].join("\n"));
+      const rows = ["address,hop,label", ...seeds.map((s, i) => `${s.address},0,seed ${i}`),
+        `${x.address},1,X`, `${y.address},1,Y`, `${z.address},2,Z`];
 
+      const stacked = path.join(tmp, "stacked.csv");
+      fs.writeFileSync(stacked, [...rows, `${x.address},1,X again`].join("\n"));
+      await expect(hre.run("cf-safe-batch", {
+        file: stacked, crowdfund: cfAddress, out: tmp, maxSeeds: 2, maxInvites: 2, allowStack: true, check: false,
+      })).to.be.rejectedWith(/would receive 2 hop-1 invites; an address can receive at most 1/);
+
+      const csv = path.join(tmp, "launch.csv");
+      fs.writeFileSync(csv, rows.join("\n"));
       const dir: string = await hre.run("cf-safe-batch", {
-        file: csv, crowdfund: cfAddress, out: tmp, maxSeeds: 2, maxInvites: 2, allowStack: true, check: false,
+        file: csv, crowdfund: cfAddress, out: tmp, maxSeeds: 2, maxInvites: 2, allowStack: false, check: false,
       });
       const files = readFiles(dir);
-      expect(files.map((f) => f.transactions.length)).to.deep.equal([1, 1, 2, 2]);
+      expect(files.map((f) => f.transactions.length)).to.deep.equal([1, 1, 2, 1]);
       const summary = fs.readFileSync(path.join(dir, "summary.md"), "utf8");
-      expect(summary).to.include("The sale opens at").and.include("stacked").and.include("| Seeds | 0 | 3 | 3 | 180 |");
+      // MAX_SEEDS (500) is read as uint16: a uint8 read ABI would silently truncate it to 244.
+      expect(summary).to.include("The sale opens at").and.include("| Seeds | 0 | 3 | 3 | 500 |");
       expect(logged.join("\n")).to.include("summary.md");
 
       await time.increaseTo(await crowdfund.windowStart());
@@ -424,16 +434,17 @@ describe("Safe batches for launch-team and security-council actions", function (
 
       expect((await crowdfund.hopStats(0)).whitelistCount).to.equal(3n);
       for (const s of seeds) expect((await crowdfund.participants(s.address, 0)).isWhitelisted).to.equal(true);
-      expect((await crowdfund.participants(x.address, 1)).invitesReceived).to.equal(2n);
+      expect((await crowdfund.participants(x.address, 1)).invitesReceived).to.equal(1n);
       expect((await crowdfund.participants(y.address, 1)).isWhitelisted).to.equal(true);
       expect((await crowdfund.participants(z.address, 2)).isWhitelisted).to.equal(true);
-      expect(await crowdfund.launchTeamHop1Used()).to.equal(3n);
+      expect(await crowdfund.launchTeamHop1Used()).to.equal(2n);
       expect(await crowdfund.launchTeamHop2Used()).to.equal(1n);
     });
 
-    // WHY: re-running a CSV after its batches executed (or with an unintended stack) must refuse
-    // without writing anything, so a duplicate batch can never reach the Safe queue.
-    it("refuses and writes nothing when rows are already done or stack without --allow-stack", async function () {
+    // WHY: re-running a CSV after its batches executed must refuse without writing anything, so a
+    // duplicate batch can never reach the Safe queue. The repeated invite hits the invites-received
+    // cap (1) before the --allow-stack check.
+    it("refuses and writes nothing when rows are already done (seed added, invitee at its cap)", async function () {
       const { crowdfund, cfAddress, launchSafe, multiSend, launchOwners, seeds, x } = await fixture();
       await time.increaseTo(await crowdfund.windowStart());
       const csv = path.join(tmp, "launch.csv");
@@ -443,7 +454,7 @@ describe("Safe batches for launch-team and security-council actions", function (
 
       const before = fs.readdirSync(tmp);
       await expect(hre.run("cf-safe-batch", { file: csv, crowdfund: cfAddress, out: tmp, maxSeeds: 100, maxInvites: 60, allowStack: false, check: false }))
-        .to.be.rejectedWith(/already a seed[\s\S]*--allow-stack/);
+        .to.be.rejectedWith(/already a seed[\s\S]*an address can receive at most 1/);
       expect(fs.readdirSync(tmp)).to.deep.equal(before);
     });
 

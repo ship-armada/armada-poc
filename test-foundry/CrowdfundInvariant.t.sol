@@ -11,6 +11,10 @@ import "../contracts/cctp/MockUSDCV2.sol";
 /// @dev Drives the crowdfund through its lifecycle with bounded fuzz inputs.
 ///      Tracks ghost variables for invariant assertions.
 contract CrowdfundHandler is Test {
+    // Per-hop caps (relaunch): known contributors, team inviter wallets, invited contributors.
+    uint256 constant HOP0_CAP = 150_000 * 1e6;
+    uint256 constant HOP2_CAP = 10_000 * 1e6;
+
     ArmadaCrowdfund public crowdfund;
     MockUSDCV2 public usdc;
     ArmadaToken public armToken;
@@ -67,7 +71,7 @@ contract CrowdfundHandler is Test {
         if (ghost_timeWarped) return; // commits revert after windowEnd
         if (seeds.length == 0) return;
         seedIdx = bound(seedIdx, 0, seeds.length - 1);
-        amount = bound(amount, 1, 15_000 * 1e6); // up to hop-0 cap
+        amount = bound(amount, 1, HOP0_CAP); // up to hop-0 cap
 
         address seed = seeds[seedIdx];
 
@@ -75,8 +79,8 @@ contract CrowdfundHandler is Test {
         // the contract's cap enforcement and refund-at-settlement logic
         uint256 currentCommitted = crowdfund.getCommitment(seed, 0);
         if (seedIdx % 4 != 0) {
-            if (currentCommitted + amount > 15_000 * 1e6) {
-                amount = 15_000 * 1e6 - currentCommitted;
+            if (currentCommitted + amount > HOP0_CAP) {
+                amount = HOP0_CAP - currentCommitted;
             }
             if (amount == 0) return;
         }
@@ -98,21 +102,15 @@ contract CrowdfundHandler is Test {
         vm.stopPrank();
     }
 
-    /// @dev Fuzzed commit for hop-1 addresses
+    /// @dev Fuzzed commit for hop-1 addresses (team inviter wallets). Their cap is $0, so every
+    ///      commit is over-cap: it must be excluded from capped demand and refunded in full.
     function commitHop1(uint256 idx, uint256 amount) external {
         if (ghost_timeWarped) return; // commits revert after windowEnd
         if (hop1Addrs.length == 0) return;
         idx = bound(idx, 0, hop1Addrs.length - 1);
-        amount = bound(amount, 1, 4_000 * 1e6); // hop-1 cap
+        amount = bound(amount, 1, HOP2_CAP);
 
         address addr = hop1Addrs[idx];
-        uint256 currentCommitted = crowdfund.getCommitment(addr, 1);
-        if (idx % 4 != 0) {
-            if (currentCommitted + amount > 4_000 * 1e6) {
-                amount = 4_000 * 1e6 - currentCommitted;
-            }
-            if (amount == 0) return;
-        }
 
         usdc.mint(addr, amount);
         vm.startPrank(addr);
@@ -135,13 +133,13 @@ contract CrowdfundHandler is Test {
         if (ghost_timeWarped) return; // commits revert after windowEnd
         if (hop2Addrs.length == 0) return;
         idx = bound(idx, 0, hop2Addrs.length - 1);
-        amount = bound(amount, 1, 1_000 * 1e6); // hop-2 cap
+        amount = bound(amount, 1, HOP2_CAP); // hop-2 cap
 
         address addr = hop2Addrs[idx];
         uint256 currentCommitted = crowdfund.getCommitment(addr, 2);
         if (idx % 4 != 0) {
-            if (currentCommitted + amount > 1_000 * 1e6) {
-                amount = 1_000 * 1e6 - currentCommitted;
+            if (currentCommitted + amount > HOP2_CAP) {
+                amount = HOP2_CAP - currentCommitted;
             }
             if (amount == 0) return;
         }
@@ -190,7 +188,9 @@ contract CrowdfundHandler is Test {
         } catch {}
     }
 
-    /// @dev Claim ARM for a random committer (ARM only, no USDC)
+    /// @dev claim() for a random committer with no delegate. Claims that owe ARM revert (a
+    ///      delegate is required); refund-only claims (team wallets at their $0 cap, a crowded-out
+    ///      hop-2) succeed and pay USDC, which is tracked as a settlement refund.
     function claim(uint256 idx) external {
         if (!ghost_finalized) return;
         if (allCommitters.length == 0) return;
@@ -199,11 +199,13 @@ contract CrowdfundHandler is Test {
         address claimer = allCommitters[idx];
 
         uint256 armBefore = armToken.balanceOf(claimer);
+        uint256 usdcBefore = usdc.balanceOf(claimer);
 
         vm.prank(claimer);
         try crowdfund.claim(address(0)) {
             uint256 armGained = armToken.balanceOf(claimer) - armBefore;
             ghost_totalArmTransferred += armGained;
+            ghost_totalUsdcRefunded += usdc.balanceOf(claimer) - usdcBefore;
             ghost_claimCount++;
         } catch {}
     }
@@ -268,7 +270,7 @@ contract CrowdfundInvariantTest is Test {
     address[] public hop1Addrs;
     address[] public hop2Addrs;
 
-    uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
+    uint256 constant ARM_FUNDING = 1_500_000 * 1e18;
 
     function setUp() public {
         admin = address(this);
@@ -295,11 +297,12 @@ contract CrowdfundInvariantTest is Test {
         crowdfund.loadArm();
 
         // Create actor addresses
-        // 80 seeds to ensure we can reach MIN_SALE ($1M) with seeds alone ($15K * 80 = $1.2M)
+        // 80 seeds: enough to reach MIN_SALE ($250K) and to oversubscribe the $1.5M sale.
+        // 5 hop-1 team inviter wallets (LAUNCH_TEAM_HOP1_BUDGET) and 20 hop-2 invitees.
         for (uint256 i = 0; i < 80; i++) {
             seeds.push(address(uint160(0x1000 + i)));
         }
-        for (uint256 i = 0; i < 20; i++) {
+        for (uint256 i = 0; i < 5; i++) {
             hop1Addrs.push(address(uint160(0x2000 + i)));
         }
         for (uint256 i = 0; i < 20; i++) {
@@ -309,29 +312,15 @@ contract CrowdfundInvariantTest is Test {
         // Setup phase: add seeds
         crowdfund.addSeeds(seeds);
 
-        // Do invitations: each seed invites up to 3 hop-1 addresses
-        uint256 hop1Idx = 0;
-        for (uint256 i = 0; i < seeds.length && hop1Idx < hop1Addrs.length; i++) {
-            // Only some seeds invite (to make it more realistic)
-            if (i < 7) { // first 7 seeds invite
-                for (uint256 j = 0; j < 3 && hop1Idx < hop1Addrs.length; j++) {
-                    vm.prank(seeds[i]);
-                    crowdfund.invite(hop1Addrs[hop1Idx], 0);
-                    hop1Idx++;
-                }
-            }
+        // The launch team places the hop-1 team wallets (seeds cannot invite).
+        for (uint256 i = 0; i < hop1Addrs.length; i++) {
+            crowdfund.launchTeamInvite(hop1Addrs[i], 0);
         }
 
-        // Some hop-1 addresses invite hop-2
-        uint256 hop2Idx = 0;
-        for (uint256 i = 0; i < hop1Addrs.length && hop2Idx < hop2Addrs.length; i++) {
-            if (i < 10) { // first 10 hop-1 invite
-                for (uint256 j = 0; j < 2 && hop2Idx < hop2Addrs.length; j++) {
-                    vm.prank(hop1Addrs[i]);
-                    crowdfund.invite(hop2Addrs[hop2Idx], 1);
-                    hop2Idx++;
-                }
-            }
+        // Team wallets invite the hop-2 addresses (4 each)
+        for (uint256 i = 0; i < hop2Addrs.length; i++) {
+            vm.prank(hop1Addrs[i / 4]);
+            crowdfund.invite(hop2Addrs[i], 1);
         }
 
         // Fast-forward into the active window (invites + commits concurrent)

@@ -17,7 +17,6 @@ import { deployGovernorProxy } from "./helpers/deploy-governor";
 const ProposalType = { Standard: 0, Extended: 1, VetoRatification: 2 };
 const ONE_DAY = 86400;
 const QUIET_PERIOD = 10 * ONE_DAY;
-const THREE_WEEKS = 21 * ONE_DAY;
 
 const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
 const USDC = (n: number) => ethers.parseUnits(n.toString(), 6);
@@ -83,8 +82,8 @@ describe("Governance Quiet Period (T6.1)", function () {
     // Initialize token whitelist (after crowdfund is deployed, before transfers)
     await armToken.initWhitelist([deployer.address, await crowdfund.getAddress(), treasuryAddr.address]);
 
-    // Fund ARM to crowdfund (1.8M for MAX_SALE)
-    await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
+    // Fund ARM to crowdfund (1.5M for MAX_SALE)
+    await armToken.transfer(await crowdfund.getAddress(), ARM(1_500_000));
     await crowdfund.loadArm();
 
     governor = await deployGovernorProxy(
@@ -134,7 +133,7 @@ describe("Governance Quiet Period (T6.1)", function () {
       await crowdfund.connect(seed).commit(0, amount);
     }
 
-    await time.increase(THREE_WEEKS + 1);
+    await time.increaseTo((await crowdfund.windowEnd()) + 1n);
     await crowdfund.finalize();
   }
 
@@ -249,12 +248,9 @@ describe("Governance Quiet Period (T6.1)", function () {
     it("quiet period applies even when finalized in refundMode", async function () {
       await governor.setCrowdfundAddress(await crowdfund.getAddress());
 
-      // To trigger refundMode: totalCommitted >= MIN_SALE ($1M) but totalAllocUsdc < MIN_SALE.
-      // Must stay below ELASTIC_TRIGGER ($1.5M) to keep saleSize at BASE_SALE ($1.2M).
-      // 70 seeds × $15K = $1.05M committed (≥ $1M, < $1.5M → BASE_SALE).
-      // Hop-0 ceiling = 47% × $1.2M = $564K. Demand $1.05M > $564K → pro-rata $564K.
-      // No hop-1/2 participants → totalAllocUsdc = $564K < $1M → refundMode. ✓
-      const refundSeeds = seeds.slice(0, 70);
+      // To trigger refundMode: capped demand < MIN_SALE ($250K).
+      // 16 seeds × $15K = $240K committed < $250K → refundMode. ✓
+      const refundSeeds = seeds.slice(0, 16);
       { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
       await crowdfund.addSeeds(refundSeeds.map(s => s.address));
 
@@ -265,7 +261,7 @@ describe("Governance Quiet Period (T6.1)", function () {
         await crowdfund.connect(seed).commit(0, amount);
       }
 
-      await time.increase(THREE_WEEKS + 1);
+      await time.increaseTo((await crowdfund.windowEnd()) + 1n);
       await crowdfund.finalize();
 
       // Verify refundMode was triggered

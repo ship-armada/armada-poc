@@ -9,14 +9,13 @@ import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
 const USDC = (n: number) => ethers.parseUnits(n.toString(), 6);
 const ARM  = (n: number) => ethers.parseUnits(n.toString(), 18);
 
-// Per-hop slot caps + invite budgets (mirrors ArmadaCrowdfund constants).
-const HOP0_CAP = USDC(15_000);
-const HOP1_CAP = USDC(4_000);
-const HOP2_CAP = USDC(1_000);
+// Hop-2 slot cap (mirrors ArmadaCrowdfund.HOP2_CAP_USDC).
+const HOP2_CAP = USDC(10_000);
 
-// A seed wallet's self-fill plan: 3× hop-1 invites + 6× hop-2 invites,
-// then commit $15K / $12K / $6K = $33K total.
-const SELF_FILL_TOTAL = USDC(33_000);
+// A hop-1 team inviter wallet's bundle: invite 2 contributors to hop-2, invite
+// itself to hop-2, then commit its $10K hop-2 slot. Known contributors (hop-0)
+// cannot invite, so this is the invite-bundling flow that remains.
+const SELF_FILL_TOTAL = HOP2_CAP;
 
 describe("Crowdfund Multicall", function () {
   let crowdfund: any;
@@ -24,13 +23,13 @@ describe("Crowdfund Multicall", function () {
   let usdc: any;
 
   let deployer: SignerWithAddress;
-  let seed: SignerWithAddress;
+  let teamWallet: SignerWithAddress;
   let treasury: SignerWithAddress;
-  let outsider: SignerWithAddress;
-  let delegateAddr: SignerWithAddress;
+  let inviteeA: SignerWithAddress;
+  let inviteeB: SignerWithAddress;
 
   beforeEach(async function () {
-    [deployer, seed, treasury, outsider, delegateAddr] = await ethers.getSigners();
+    [deployer, teamWallet, treasury, inviteeA, inviteeB] = await ethers.getSigners();
 
     const MockUSDCV2 = await ethers.getContractFactory("MockUSDCV2");
     usdc = await MockUSDCV2.deploy("Mock USDC", "USDC");
@@ -57,56 +56,52 @@ describe("Crowdfund Multicall", function () {
     await armToken.addToWhitelist(cfAddr);
     await armToken.initAuthorizedDelegators([cfAddr]);
 
-    await armToken.transfer(cfAddr, ARM(1_800_000));
+    await armToken.transfer(cfAddr, ARM(1_500_000));
     await crowdfund.loadArm();
 
-    // addSeeds requires block.timestamp >= windowStart, so warp first.
+    // launchTeamInvite requires block.timestamp >= windowStart, so warp first.
     await time.increaseTo(await crowdfund.windowStart());
-    await crowdfund.addSeeds([seed.address]);
+    await crowdfund.launchTeamInvite(teamWallet.address, 0); // hop-1 team inviter wallet
   });
 
   // ============ Bundle builders ============
-  // WHY: every test in this suite calls multicall with the same self-fill
-  // plan shape. Encoding lives here so test bodies focus on assertions.
+  // WHY: every test in this suite calls multicall with the same bundle shape.
+  // Encoding lives here so test bodies focus on assertions.
 
-  function seedSelfFillBundle(selfAddress: string): string[] {
+  function teamWalletBundle(selfAddress: string): string[] {
     const iface = crowdfund.interface;
-    const calls: string[] = [];
-    for (let k = 0; k < 3; k++) calls.push(iface.encodeFunctionData("invite", [selfAddress, 0]));
-    for (let k = 0; k < 6; k++) calls.push(iface.encodeFunctionData("invite", [selfAddress, 1]));
-    calls.push(iface.encodeFunctionData("commit", [0, HOP0_CAP]));
-    calls.push(iface.encodeFunctionData("commit", [1, HOP1_CAP * 3n]));
-    calls.push(iface.encodeFunctionData("commit", [2, HOP2_CAP * 6n]));
-    return calls;
+    return [
+      iface.encodeFunctionData("invite", [inviteeA.address, 1]),
+      iface.encodeFunctionData("invite", [inviteeB.address, 1]),
+      iface.encodeFunctionData("invite", [selfAddress, 1]),        // team wallet joins hop-2
+      iface.encodeFunctionData("commit", [2, HOP2_CAP]),           // ...and commits its slot
+    ];
   }
 
   // =====================================================================
 
-  // WHY: end-to-end demonstration that the multicall mixin lets a seed
-  // execute their entire self-fill plan in one wallet signature. The 12-call
-  // bundle relies on intra-bundle state visibility — hop-2 invites only
-  // become valid AFTER the hop-1 self-invites land, and hop-1/2 commits
-  // only become valid (whitelist + effectiveCap) after their hop's
-  // self-invites land. If any of these intra-bundle ordering assumptions
-  // were broken, the call would revert; if a single ordering bug ever
-  // slipped into a Solidity upgrade or OZ Multicall change, this test
-  // catches it.
-  it("seed wallet fills entire tree in one multicall", async () => {
-    await usdc.mint(seed.address, SELF_FILL_TOTAL);
-    await usdc.connect(seed).approve(await crowdfund.getAddress(), SELF_FILL_TOTAL);
+  // WHY: end-to-end demonstration that the multicall mixin lets a team wallet
+  // issue its invites and take its own hop-2 slot in one wallet signature. The
+  // bundle relies on intra-bundle state visibility — the hop-2 commit only
+  // becomes valid (whitelist + effectiveCap) AFTER the self-invite lands. If that
+  // ordering assumption were broken, the call would revert; if an ordering bug
+  // ever slipped into a Solidity upgrade or OZ Multicall change, this catches it.
+  it("team wallet issues invites and fills its own slot in one multicall", async () => {
+    await usdc.mint(teamWallet.address, SELF_FILL_TOTAL);
+    await usdc.connect(teamWallet).approve(await crowdfund.getAddress(), SELF_FILL_TOTAL);
 
-    const calls = seedSelfFillBundle(seed.address);
-    expect(calls.length).to.equal(12);
+    const calls = teamWalletBundle(teamWallet.address);
+    expect(calls.length).to.equal(4);
 
-    await crowdfund.connect(seed).multicall(calls);
+    await crowdfund.connect(teamWallet).multicall(calls);
 
-    expect(await crowdfund.getInvitesReceived(seed.address, 1)).to.equal(3);
-    expect(await crowdfund.getInvitesReceived(seed.address, 2)).to.equal(6);
-    expect(await crowdfund.getCommitment(seed.address, 0)).to.equal(HOP0_CAP);
-    expect(await crowdfund.getCommitment(seed.address, 1)).to.equal(HOP1_CAP * 3n);
-    expect(await crowdfund.getCommitment(seed.address, 2)).to.equal(HOP2_CAP * 6n);
+    expect(await crowdfund.isWhitelisted(inviteeA.address, 2)).to.equal(true);
+    expect(await crowdfund.isWhitelisted(inviteeB.address, 2)).to.equal(true);
+    expect(await crowdfund.getInvitesReceived(teamWallet.address, 2)).to.equal(1);
+    expect(await crowdfund.getCommitment(teamWallet.address, 2)).to.equal(HOP2_CAP);
+    expect(await crowdfund.getInvitesRemaining(teamWallet.address, 1)).to.equal(97);
     expect(await crowdfund.totalCommitted()).to.equal(SELF_FILL_TOTAL);
-    expect(await usdc.balanceOf(seed.address)).to.equal(0n);
+    expect(await usdc.balanceOf(teamWallet.address)).to.equal(0n);
   });
 
   // WHY: confirms the two-tx pipeline the frontend will actually use.
@@ -117,61 +112,57 @@ describe("Crowdfund Multicall", function () {
   // collapse this to one tx; until then, this is the canonical path.
   it("approve + multicall pipeline lands the expected on-chain state", async () => {
     const cfAddr = await crowdfund.getAddress();
-    await usdc.mint(seed.address, SELF_FILL_TOTAL);
+    await usdc.mint(teamWallet.address, SELF_FILL_TOTAL);
 
     // Tx 1: approve. Allowance starts at 0; bumping to exactly the bundle total.
-    const txApprove = await usdc.connect(seed).approve(cfAddr, SELF_FILL_TOTAL);
+    const txApprove = await usdc.connect(teamWallet).approve(cfAddr, SELF_FILL_TOTAL);
     await txApprove.wait();
-    expect(await usdc.allowance(seed.address, cfAddr)).to.equal(SELF_FILL_TOTAL);
+    expect(await usdc.allowance(teamWallet.address, cfAddr)).to.equal(SELF_FILL_TOTAL);
 
     // Tx 2: multicall. Single wallet signature.
-    const calls = seedSelfFillBundle(seed.address);
-    const txMulti = await crowdfund.connect(seed).multicall(calls);
+    const calls = teamWalletBundle(teamWallet.address);
+    const txMulti = await crowdfund.connect(teamWallet).multicall(calls);
     const receipt = await txMulti.wait();
 
     expect(receipt.status).to.equal(1);
-    // Allowance fully consumed (each commit safeTransferFrom decrements it).
-    expect(await usdc.allowance(seed.address, cfAddr)).to.equal(0n);
+    // Allowance fully consumed (the commit's safeTransferFrom decrements it).
+    expect(await usdc.allowance(teamWallet.address, cfAddr)).to.equal(0n);
     // Crowdfund holds all the USDC.
     expect(await usdc.balanceOf(cfAddr)).to.equal(SELF_FILL_TOTAL);
     expect(await crowdfund.totalCommitted()).to.equal(SELF_FILL_TOTAL);
   });
 
-  // WHY: critical atomicity property. The user approves only $20K but the
-  // self-fill plan needs $33K. When the hop-2 commit (final commit in the
-  // bundle) hits an allowance shortfall, the underlying ERC20 transferFrom
-  // reverts. OZ Multicall propagates that revert; Solidity rolls back the
-  // entire tx. We must verify NOTHING from the bundle persisted — no
-  // invites, no commits, no allowance burn. Without atomicity, a partial
-  // self-fill could leave a user in a broken state (whitelisted at hop-2
-  // but with no allowance to commit).
+  // WHY: critical atomicity property. The wallet approves only $5K but the
+  // bundle commits $10K. When the final commit hits the allowance shortfall,
+  // the underlying ERC20 transferFrom reverts. OZ Multicall propagates that
+  // revert; Solidity rolls back the entire tx. We must verify NOTHING from the
+  // bundle persisted — no invites, no commits, no allowance burn. Without
+  // atomicity, a partial bundle could leave invites issued with no commit.
   it("rejects multicall when total USDC exceeds approval", async () => {
     const cfAddr = await crowdfund.getAddress();
-    await usdc.mint(seed.address, SELF_FILL_TOTAL);
-    // Only approve enough for hop-0 + hop-1 ($27K), not enough for the
-    // final $6K hop-2 commit.
-    const shortApproval = HOP0_CAP + HOP1_CAP * 3n;
-    await usdc.connect(seed).approve(cfAddr, shortApproval);
+    await usdc.mint(teamWallet.address, SELF_FILL_TOTAL);
+    const shortApproval = HOP2_CAP / 2n;
+    await usdc.connect(teamWallet).approve(cfAddr, shortApproval);
 
-    const calls = seedSelfFillBundle(seed.address);
-    await expect(crowdfund.connect(seed).multicall(calls)).to.be.reverted;
+    const calls = teamWalletBundle(teamWallet.address);
+    // The revert comes from the commit's transferFrom (allowance), after the 3 invites ran.
+    await expect(crowdfund.connect(teamWallet).multicall(calls)).to.be.revertedWith("ERC20: insufficient allowance");
 
-    // All bundle state rolled back: zero invites stacked at hop-1/2.
-    // Seed's hop-0 invitesReceived is set by addSeeds (initial state = 1);
-    // hop-1 and hop-2 entries don't exist until the seed self-invites.
-    expect(await crowdfund.getInvitesReceived(seed.address, 0)).to.equal(1);  // initial seed state
-    expect(await crowdfund.getInvitesReceived(seed.address, 1)).to.equal(0);
-    expect(await crowdfund.getInvitesReceived(seed.address, 2)).to.equal(0);
-    expect(await crowdfund.getCommitment(seed.address, 0)).to.equal(0n);
-    expect(await crowdfund.getCommitment(seed.address, 1)).to.equal(0n);
-    expect(await crowdfund.getCommitment(seed.address, 2)).to.equal(0n);
+    // All bundle state rolled back: no invites landed and no slot was taken.
+    // The team wallet's hop-1 invitesReceived is set by the launch-team placement (1).
+    expect(await crowdfund.getInvitesReceived(teamWallet.address, 1)).to.equal(1);
+    expect(await crowdfund.getInvitesReceived(teamWallet.address, 2)).to.equal(0);
+    expect(await crowdfund.isWhitelisted(inviteeA.address, 2)).to.equal(false);
+    expect(await crowdfund.isWhitelisted(inviteeB.address, 2)).to.equal(false);
+    expect(await crowdfund.getInvitesRemaining(teamWallet.address, 1)).to.equal(100);
+    expect(await crowdfund.getCommitment(teamWallet.address, 2)).to.equal(0n);
     expect(await crowdfund.totalCommitted()).to.equal(0n);
     // Allowance untouched too (transferFrom never debited).
-    expect(await usdc.allowance(seed.address, cfAddr)).to.equal(shortApproval);
+    expect(await usdc.allowance(teamWallet.address, cfAddr)).to.equal(shortApproval);
   });
 
-  // WHY: the self-fill UX promises the user "you'll issue 9 invites and
-  // commit $33K". The frontend builds that promise from the planned call
+  // WHY: a bundle promises "you'll issue N invites and commit $X". The
+  // frontend builds that promise from the planned call
   // sequence; the contract MUST emit events in matching order so that
   // off-chain indexers / the MyPosition card / NodeSphere render the
   // resulting graph correctly. If the event order ever desynchronised
@@ -180,11 +171,11 @@ describe("Crowdfund Multicall", function () {
   // guarantee.
   it("emits Invited + Committed events in expected order", async () => {
     const cfAddr = await crowdfund.getAddress();
-    await usdc.mint(seed.address, SELF_FILL_TOTAL);
-    await usdc.connect(seed).approve(cfAddr, SELF_FILL_TOTAL);
+    await usdc.mint(teamWallet.address, SELF_FILL_TOTAL);
+    await usdc.connect(teamWallet).approve(cfAddr, SELF_FILL_TOTAL);
 
-    const calls = seedSelfFillBundle(seed.address);
-    const tx = await crowdfund.connect(seed).multicall(calls);
+    const calls = teamWalletBundle(teamWallet.address);
+    const tx = await crowdfund.connect(teamWallet).multicall(calls);
     const receipt = await tx.wait();
 
     // Filter to crowdfund logs only and decode. ArmadaToken emits no events
@@ -200,21 +191,16 @@ describe("Crowdfund Multicall", function () {
       }
     }
 
-    // Expected order: 9× Invited, then 3× Committed (hop-0, hop-1, hop-2).
+    // Expected order: 3× Invited (A, B, self), then 1× Committed (hop-2).
     const eventNames = parsed.map((p) => p.name);
-    expect(eventNames).to.deep.equal([
-      "Invited", "Invited", "Invited",          // hop-1 self-invites
-      "Invited", "Invited", "Invited",
-      "Invited", "Invited", "Invited",          // hop-2 self-invites (issued from hop-1)
-      "Committed",                              // hop-0 commit
-      "Committed",                              // hop-1 commit
-      "Committed",                              // hop-2 commit
-    ]);
+    expect(eventNames).to.deep.equal(["Invited", "Invited", "Invited", "Committed"]);
 
-    // Spot-check the Committed event hops are in the right order.
+    // Spot-check the invitees and the committed hop are in call order.
+    const invited = parsed.filter((p) => p.name === "Invited");
+    expect(invited[0].args[1]).to.equal(inviteeA.address);
+    expect(invited[1].args[1]).to.equal(inviteeB.address);
+    expect(invited[2].args[1]).to.equal(teamWallet.address);
     const committed = parsed.filter((p) => p.name === "Committed");
-    expect(committed[0].args[1]).to.equal(0);
-    expect(committed[1].args[1]).to.equal(1);
-    expect(committed[2].args[1]).to.equal(2);
+    expect(committed[0].args[1]).to.equal(2);
   });
 });

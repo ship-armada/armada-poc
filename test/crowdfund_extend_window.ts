@@ -64,7 +64,7 @@ describe("Crowdfund Window Extension (integration)", function () {
     await armToken.addToWhitelist(cfAddr);
     await armToken.initAuthorizedDelegators([cfAddr]);
 
-    await armToken.transfer(cfAddr, ARM(1_800_000));
+    await armToken.transfer(cfAddr, ARM(1_500_000));
     await crowdfund.loadArm();
     await time.increaseTo(await crowdfund.windowStart());
   });
@@ -73,17 +73,15 @@ describe("Crowdfund Window Extension (integration)", function () {
   //      a sale that only reaches the minimum because of commits made AFTER the original end,
   //      then checks those commits settle exactly like any other: finalize succeeds (not
   //      refundMode), and an extension-period committer claims ARM with delegation recorded.
-  //      Numbers: 38 seeds x $15K = $570K at hop-0 (ceiling $564K) before the original end;
-  //      110 hop-1 invitees x $4K = $440K during the extension. Total allocation $1.004M >= MIN_SALE.
-  it("commits and invites made during an extension settle through claim", async function () {
-    const seeds = allSigners.slice(1, 39); // 38 seeds
-    const hop1 = allSigners.slice(40, 150); // 110 hop-1 invitees
+  //      Numbers: 1 known contributor x $150K before the original end ($150K < MIN_SALE);
+  //      10 launch-team hop-2 placements x $10K during the extension. Total $250K = MIN_SALE.
+  it("commits and placements made during an extension settle through claim", async function () {
+    const seed = allSigners[1];
+    const lateBuyers = allSigners.slice(40, 50); // 10 hop-2 contributors placed late
 
-    await crowdfund.connect(launchTeam).addSeeds(seeds.map((s) => s.address));
-    for (const s of seeds) {
-      await fundAndApprove(s, USDC(15_000));
-      await crowdfund.connect(s).commit(0, USDC(15_000));
-    }
+    await crowdfund.connect(launchTeam).addSeed(seed.address);
+    await fundAndApprove(seed, USDC(150_000));
+    await crowdfund.connect(seed).commit(0, USDC(150_000));
 
     const originalEnd: bigint = await crowdfund.windowEnd();
     const extendedEnd = originalEnd + BigInt(3 * ONE_DAY);
@@ -92,11 +90,10 @@ describe("Crowdfund Window Extension (integration)", function () {
     // Move past the ORIGINAL end: without the extension, everything below would revert.
     await time.increaseTo(originalEnd + BigInt(ONE_DAY));
 
-    for (let i = 0; i < hop1.length; i++) {
-      const inviter = seeds[Math.floor(i / 3)];
-      await crowdfund.connect(inviter).invite(hop1[i].address, 0);
-      await fundAndApprove(hop1[i], USDC(4_000));
-      await crowdfund.connect(hop1[i]).commit(1, USDC(4_000));
+    for (const buyer of lateBuyers) {
+      await crowdfund.connect(launchTeam).launchTeamInvite(buyer.address, 1);
+      await fundAndApprove(buyer, USDC(10_000));
+      await crowdfund.connect(buyer).commit(2, USDC(10_000));
     }
 
     await expect(crowdfund.finalize()).to.be.revertedWith("ArmadaCrowdfund: window not ended");
@@ -106,13 +103,13 @@ describe("Crowdfund Window Extension (integration)", function () {
     expect(await crowdfund.phase()).to.equal(Phase.Finalized);
     expect(await crowdfund.refundMode()).to.equal(false);
 
-    // An extension-period committer (hop-1 is undersubscribed) receives the full $4K as ARM.
-    const lateBuyer = hop1[0];
+    // An extension-period committer receives the full $10K as ARM.
+    const lateBuyer = lateBuyers[0];
     const delegate = allSigners[190];
     await crowdfund.connect(lateBuyer).claim(delegate.address);
-    expect(await armToken.balanceOf(lateBuyer.address)).to.equal(ARM(4_000));
+    expect(await armToken.balanceOf(lateBuyer.address)).to.equal(ARM(10_000));
     expect(await armToken.delegates(lateBuyer.address)).to.equal(delegate.address);
-    expect(await armToken.getVotes(delegate.address)).to.equal(ARM(4_000));
+    expect(await armToken.getVotes(delegate.address)).to.equal(ARM(10_000));
   });
 
   // WHY: the security council's emergency cancel must keep working during an extension, and

@@ -17,9 +17,10 @@ contract ArmadaCrowdfundRefundModeTest is Test {
     address public admin;
     address public treasury;
 
-    uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
-    uint256 constant MIN_SALE = 1_000_000 * 1e6;
-    uint256 constant THREE_WEEKS = 21 days;
+    uint256 constant ARM_FUNDING = 1_500_000 * 1e18;
+    uint256 constant MIN_SALE = 250_000 * 1e6;
+    // Seeds that commit in the refund-mode scenario: 16 × $15K = $240K < MIN_SALE.
+    uint256 constant BELOW_MIN_SEEDS = 16;
 
     address[] public seeds;
 
@@ -47,18 +48,17 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         armToken.transfer(address(crowdfund), ARM_FUNDING);
         crowdfund.loadArm();
 
-        // Add 80 seeds for refundMode tests.
-        // 80 × $15K = $1.2M — above MIN_SALE ($1M) but below ELASTIC_TRIGGER ($1.5M).
-        // At BASE_SALE: hop-0 ceiling = $564K < MIN_SALE → refundMode.
+        // Add 80 seeds. The refund-mode scenario commits from the first BELOW_MIN_SEEDS of
+        // them ($240K < MIN_SALE); the success scenarios use more.
         for (uint256 i = 0; i < 80; i++) {
             seeds.push(address(uint160(0xA000 + i)));
         }
         crowdfund.addSeeds(seeds);
     }
 
-    /// @notice Helper: each seed commits full $15K at hop-0
-    function _allSeedsCommitFull() internal {
-        for (uint256 i = 0; i < seeds.length; i++) {
+    /// @notice Helper: the first `count` seeds each commit $15K at hop-0
+    function _seedsCommit(uint256 count) internal {
+        for (uint256 i = 0; i < count; i++) {
             uint256 amount = 15_000 * 1e6;
             usdc.mint(seeds[i], amount);
             vm.startPrank(seeds[i]);
@@ -68,13 +68,33 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         }
     }
 
+    /// @notice Helper: capped demand of $240K, below MIN_SALE → refundMode at finalize
+    function _commitBelowMinimum() internal {
+        _seedsCommit(BELOW_MIN_SEEDS);
+    }
+
     // ============ RefundMode trigger ============
 
-    /// @notice 80 seeds × $15K = $1.2M totalCommitted, all at hop-0.
-    ///         BASE_SALE ($1.2M): hop-0 ceiling = $564K.
-    ///         totalAllocUsdc = $564K < $1M = MIN_SALE → refundMode.
-    function test_refundMode_triggers_whenAllocBelowMinSale() public {
-        _allSeedsCommitFull();
+    /// @notice WHY: refund mode after allocation (allocated USDC below MIN_SALE although capped
+    ///         demand cleared it) is reachable only when a hop ceiling holds allocation below
+    ///         demand. With no hop-2 floor and 100% ceilings, allocation equals
+    ///         min(capped demand, saleSize), so 80 seeds × $15K = $1.2M all at hop-0 succeeds in
+    ///         full. Pins that the post-allocation refund path cannot be reached by hop-0-only demand.
+    function test_hop0OnlyDemand_aboveMinimum_succeedsWithoutPostAllocationRefund() public {
+        _seedsCommit(80);
+        vm.warp(crowdfund.windowEnd() + 1);
+
+        crowdfund.finalize();
+
+        assertEq(uint256(crowdfund.phase()), uint256(Phase.Finalized));
+        assertFalse(crowdfund.refundMode());
+        assertEq(crowdfund.totalAllocatedUsdc(), 1_200_000 * 1e6, "allocation equals capped demand");
+        assertEq(crowdfund.totalAllocatedArm(), 1_200_000 * 1e18);
+    }
+
+    /// @notice Capped demand below MIN_SALE enters refundMode and records no allocation
+    function test_refundMode_triggers_belowMinSale() public {
+        _commitBelowMinimum();
         vm.warp(crowdfund.windowEnd() + 1);
 
         crowdfund.finalize();
@@ -88,7 +108,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
 
     /// @notice claim() reverts in refundMode
     function test_claim_revertsInRefundMode() public {
-        _allSeedsCommitFull();
+        _commitBelowMinimum();
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();
 
@@ -99,7 +119,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
 
     /// @notice claimRefund() returns full deposited USDC in refundMode
     function test_claimRefund_returnsFullUsdc_inRefundMode() public {
-        _allSeedsCommitFull();
+        _commitBelowMinimum();
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();
 
@@ -113,7 +133,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
 
     /// @notice Double claimRefund reverts
     function test_claimRefund_doubleCallReverts_inRefundMode() public {
-        _allSeedsCommitFull();
+        _commitBelowMinimum();
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();
 
@@ -127,7 +147,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
 
     /// @notice All ARM is recoverable via withdrawUnallocatedArm in refundMode
     function test_withdrawUnallocatedArm_refundMode_returnsAllArm() public {
-        _allSeedsCommitFull();
+        _commitBelowMinimum();
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();
 
@@ -140,7 +160,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
 
     /// @notice In refundMode, withdrawUnallocatedArm sweeps all ARM (nothing owed)
     function test_withdrawUnallocatedArm_sweepsAllInRefundMode() public {
-        _allSeedsCommitFull();
+        _commitBelowMinimum();
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();
 
@@ -160,7 +180,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
 
     /// @notice computeAllocation returns (0 ARM, sum of committed USDC) in refundMode
     function test_computeAllocation_returnsFullRefundUsdc_inRefundMode() public {
-        _allSeedsCommitFull();
+        _commitBelowMinimum();
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();
 
@@ -173,7 +193,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
     /// @notice computeAllocation matches participants[].committed sum across hops in refundMode
     ///         — equivalence with the spec's events-only fallback path.
     function test_computeAllocation_matchesCommittedSum_inRefundMode() public {
-        _allSeedsCommitFull();
+        _commitBelowMinimum();
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();
 
@@ -190,7 +210,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
 
     /// @notice computeAllocationAtHop returns (0, p.committed) in refundMode
     function test_computeAllocationAtHop_returnsHopCommitted_inRefundMode() public {
-        _allSeedsCommitFull();
+        _commitBelowMinimum();
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();
 
@@ -207,7 +227,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
 
     /// @notice The canonical view is stable across claimRefund — "regardless of claim status".
     function test_computeAllocation_unchangedAfterClaimRefund_inRefundMode() public {
-        _allSeedsCommitFull();
+        _commitBelowMinimum();
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();
 
@@ -221,10 +241,12 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         assertEq(refundAfter, refundBefore, "refund entitlement is invariant across claim");
     }
 
-    // ============ RefundMode after expansion ============
+    // ============ No expansion ============
 
-    /// @notice Concentrated hop-0 demand can trigger expansion yet remain below MIN_SALE.
-    function test_refundMode_canHappenAfterExpansion() public {
+    /// @notice WHY: refund mode after elastic expansion needs an expanded sale whose hop-0
+    ///         ceiling stays below MIN_SALE. BASE_SALE == MAX_SALE, so there is no expansion and
+    ///         $1.5M of hop-0 demand fills the $1.5M sale in full. Pins both properties.
+    function test_highHop0Demand_noExpansion_succeedsAtSaleSize() public {
         // Deploy a fresh crowdfund with 100 seeds to reach ELASTIC_TRIGGER
         ArmadaCrowdfund cf2 = new ArmadaCrowdfund(
             address(usdc), address(armToken), treasury, admin, admin, block.timestamp
@@ -238,7 +260,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         }
         cf2.addSeeds(moreSeeds);
 
-        // 100 seeds × $15K = $1.5M = ELASTIC_TRIGGER, triggers expansion
+        // 100 seeds × $15K = $1.5M = ELASTIC_TRIGGER (= BASE_SALE = MAX_SALE)
         for (uint256 i = 0; i < 100; i++) {
             uint256 amount = 15_000 * 1e6;
             usdc.mint(moreSeeds[i], amount);
@@ -252,23 +274,22 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         vm.warp(cf2.windowEnd() + 1);
         cf2.finalize();
 
-        assertEq(cf2.saleSize(), 1_800_000 * 1e6);
-        assertTrue(cf2.refundMode());
-        assertEq(cf2.totalAllocatedUsdc(), 0);
+        assertEq(cf2.saleSize(), 1_500_000 * 1e6, "no expansion beyond $1.5M");
+        assertFalse(cf2.refundMode());
+        assertEq(cf2.totalAllocatedUsdc(), 1_500_000 * 1e6, "filled in full");
     }
 
     // ============ Fuzz: claimRefund returns exact committed amount ============
 
     /// @notice Fuzz: in refundMode, each participant's claimRefund returns their exact deposit.
-    ///         All 80 seeds commit (79 at $15K, 1 at fuzzed amount) to guarantee cappedDemand
-    ///         is in [MIN_SALE, ELASTIC_TRIGGER), which always triggers refundMode at BASE_SALE
-    ///         because hop-0 ceiling ($564K) < MIN_SALE ($1M).
+    ///         The first 16 seeds commit (15 at $15K, 1 at a fuzzed amount up to $15K), so capped
+    ///         demand is at most $240K < MIN_SALE and refundMode is guaranteed.
     function testFuzz_claimRefund_exactAmount(uint256 seedIdx, uint256 commitAmount) public {
-        seedIdx = bound(seedIdx, 0, seeds.length - 1);
+        seedIdx = bound(seedIdx, 0, BELOW_MIN_SEEDS - 1);
         commitAmount = bound(commitAmount, 50 * 1e6, 15_000 * 1e6);
 
-        // All non-target seeds commit full $15K to guarantee cappedDemand >= MIN_SALE
-        for (uint256 i = 0; i < seeds.length; i++) {
+        // The other seeds in the scenario commit full $15K
+        for (uint256 i = 0; i < BELOW_MIN_SEEDS; i++) {
             if (i == seedIdx) continue;
             uint256 amount = 15_000 * 1e6;
             usdc.mint(seeds[i], amount);
@@ -288,9 +309,8 @@ contract ArmadaCrowdfundRefundModeTest is Test {
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();
 
-        // 80 seeds × max $15K = $1.2M cappedDemand < ELASTIC_TRIGGER ($1.5M)
-        // → saleSize = BASE_SALE → hop-0 ceiling = $564K < MIN_SALE → refundMode guaranteed
-        assertTrue(crowdfund.refundMode(), "Must be in refund mode with only hop-0 at BASE_SALE");
+        // 16 seeds × max $15K = $240K cappedDemand < MIN_SALE → refundMode guaranteed
+        assertTrue(crowdfund.refundMode(), "Must be in refund mode below MIN_SALE");
 
         uint256 balBefore = usdc.balanceOf(seeds[seedIdx]);
         vm.prank(seeds[seedIdx]);
@@ -303,7 +323,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
 
     /// @notice Non-admin can call finalize()
     function test_finalize_permissionless() public {
-        _allSeedsCommitFull();
+        _commitBelowMinimum();
         vm.warp(crowdfund.windowEnd() + 1);
 
         // Call from a random non-admin address
@@ -377,35 +397,8 @@ contract ArmadaCrowdfundRefundModeTest is Test {
     /// @notice After normal finalization (not refundMode), claimRefund() reverts.
     ///         claim() now handles both ARM + refund in a single call.
     function test_claimRefund_revertsAfterSuccessfulFinalize() public {
-        // Need demand spread across hops so totalAllocUsdc >= MIN_SALE.
-        // At BASE_SALE: hop-0 is capped at $564K. Add $436K of eligible hop-1
-        // demand so the post-waterfall allocation reaches the $1M minimum.
-        for (uint256 i = 0; i < 53; i++) {
-            uint256 amount = 15_000 * 1e6;
-            usdc.mint(seeds[i], amount);
-            vm.startPrank(seeds[i]);
-            usdc.approve(address(crowdfund), amount);
-            crowdfund.commit(0, amount);
-            vm.stopPrank();
-        }
-
-        // Create hop-1 participants via seed invites
-        address[] memory hop1Addrs = new address[](109);
-        for (uint256 i = 0; i < 109; i++) {
-            hop1Addrs[i] = address(uint160(0xB000 + i));
-            vm.prank(seeds[i % 53]);
-            crowdfund.invite(hop1Addrs[i], 0);
-        }
-
-        // Hop-1 commits: 109 × $4K = $436K
-        for (uint256 i = 0; i < 109; i++) {
-            uint256 amount = 4_000 * 1e6;
-            usdc.mint(hop1Addrs[i], amount);
-            vm.startPrank(hop1Addrs[i]);
-            usdc.approve(address(crowdfund), amount);
-            crowdfund.commit(1, amount);
-            vm.stopPrank();
-        }
+        // 17 seeds × $15K = $255K ≥ MIN_SALE → success
+        _seedsCommit(17);
 
         vm.warp(crowdfund.windowEnd() + 1);
         crowdfund.finalize();

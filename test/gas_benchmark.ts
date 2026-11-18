@@ -18,7 +18,6 @@ import type { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers"
 import { deployGovernorProxy } from "./helpers/deploy-governor";
 
 const ONE_DAY = 86400;
-const THREE_WEEKS = 21 * ONE_DAY;
 
 const USDC = (n: number) => ethers.parseUnits(n.toString(), 6);
 const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
@@ -45,7 +44,7 @@ describe("Gas Benchmarks", function () {
   // ============================================================
 
   describe("Crowdfund finalize() gas scaling", function () {
-    const participantCounts = [70, 100, 180]; // min 67 for MIN_SALE, max 180 (MAX_SEEDS cap)
+    const participantCounts = [70, 100, 180]; // all hop-0 seeds; any count >= 2 at $15K clears MIN_SALE ($250K needs 17)
     const results: { count: number; gas: bigint; perParticipant: bigint }[] = [];
 
     for (const count of participantCounts) {
@@ -72,7 +71,7 @@ describe("Gas Benchmarks", function () {
         await armToken.addToWhitelist(await crowdfund.getAddress());
 
         // Fund ARM for MAX_SALE
-        await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
+        await armToken.transfer(await crowdfund.getAddress(), ARM(1_500_000));
         await crowdfund.loadArm();
 
         // Add seeds — all participants are hop-0 for simplicity
@@ -80,9 +79,9 @@ describe("Gas Benchmarks", function () {
         { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
         await crowdfund.addSeeds(seeds.map(s => s.address));
 
-        // Each seed commits $15K (max hop-0 cap)
-        // Total: count * $15K. Need >= $1M (MIN_SALE) for finalize() to succeed.
-        // At $15K/participant, need >= 67 participants. All test counts are >= 70.
+        // Each seed commits $15K (well under the $150K hop-0 cap)
+        // Total: count * $15K. Need >= $250K (MIN_SALE) for a success-path finalize().
+        // At $15K/participant, need >= 17 participants. All test counts are >= 70.
 
         const commitAmount = USDC(15_000);
         for (const s of seeds) {
@@ -92,7 +91,7 @@ describe("Gas Benchmarks", function () {
         }
 
         // Skip to after active window
-        await time.increase(THREE_WEEKS + 1);
+        await time.increaseTo((await crowdfund.windowEnd()) + 1n);
 
         // Measure finalize gas. Lazy settlement only writes aggregate state (~10 SSTOREs),
         // so finalize() gas is near-constant regardless of participant count.
@@ -190,7 +189,7 @@ describe("Gas Benchmarks", function () {
         );
         await armToken.addToWhitelist(await crowdfund.getAddress());
         const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
-        await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
+        await armToken.transfer(await crowdfund.getAddress(), ARM(1_500_000));
         await crowdfund.loadArm();
         await time.increaseTo(await crowdfund.windowStart());
 
@@ -237,7 +236,7 @@ describe("Gas Benchmarks", function () {
       const cfAddr = await crowdfund.getAddress();
       await armToken.addToWhitelist(cfAddr);
       await armToken.initAuthorizedDelegators([cfAddr]);
-      await armToken.transfer(cfAddr, ARM(1_800_000));
+      await armToken.transfer(cfAddr, ARM(1_500_000));
       await crowdfund.loadArm();
 
       const count = 100;
@@ -251,19 +250,10 @@ describe("Gas Benchmarks", function () {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
 
-      // 100 seeds × $15K = $1.5M capped → expansion to MAX_SALE, where hop-0
-      // alloc caps at $846K (< MIN_SALE). Add $160K of hop-1 demand (40 × $4K)
-      // so finalize() clears MIN_SALE and does not enter refundMode (otherwise
-      // the claim() calls below revert with "sale in refund mode").
-      const hop1Signers = allSigners.slice(count + 1, count + 41); // 40 signers
-      for (let i = 0; i < hop1Signers.length; i++) {
-        await crowdfund.connect(seeds[i]).invite(hop1Signers[i].address, 0);
-        await usdc.mint(hop1Signers[i].address, USDC(4_000));
-        await usdc.connect(hop1Signers[i]).approve(cfAddr, USDC(4_000));
-        await crowdfund.connect(hop1Signers[i]).commit(1, USDC(4_000));
-      }
+      // 100 seeds × $15K = $1.5M capped: fills the $1.5M sale exactly, so finalize()
+      // takes the success path and every claim() below transfers ARM.
 
-      await time.increase(THREE_WEEKS + 1);
+      await time.increaseTo((await crowdfund.windowEnd()) + 1n);
       await crowdfund.finalize();
 
       // Measure gas for first, middle, and last claims
@@ -503,7 +493,7 @@ describe("Gas Benchmarks", function () {
       );
 
       await armToken.addToWhitelist(await crowdfund.getAddress());
-      await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
+      await armToken.transfer(await crowdfund.getAddress(), ARM(1_500_000));
       await crowdfund.loadArm();
 
       const seeds = allSigners.slice(1, 4);

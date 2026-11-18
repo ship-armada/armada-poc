@@ -25,12 +25,14 @@ contract CrowdfundFinalizeGasTest is Test {
     address public admin;
     address public treasury;
 
-    uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
-    uint256 constant HOP0_CAP = 15_000 * 1e6;
-    uint256 constant HOP1_CAP = 4_000 * 1e6;
-    uint256 constant HOP2_CAP = 1_000 * 1e6;
+    uint256 constant ARM_FUNDING = 1_500_000 * 1e18;
+    uint256 constant HOP0_CAP = 150_000 * 1e6;
     uint256 constant MIN_COMMIT = 50 * 1e6;
-    uint8   constant MAX_SEEDS = 180;
+    uint16  constant MAX_SEEDS = 500;
+    uint256 constant TEAM_WALLETS = 5;          // LAUNCH_TEAM_HOP1_BUDGET
+    uint256 constant INVITES_PER_WALLET = 100;  // HOP1_MAX_INVITES
+    uint256 constant LT_HOP2_BUDGET = 500;      // LAUNCH_TEAM_HOP2_BUDGET
+    uint256 constant STRUCTURAL_MAX = 1505;     // 500 + 5 + 5 * 100 + 500
 
     function setUp() public {
         admin = address(this);
@@ -50,22 +52,24 @@ contract CrowdfundFinalizeGasTest is Test {
     function test_gas_finalize_800()  public { _profile(800); }
     function test_gas_finalize_1000() public { _profile(1000); }
     function test_gas_finalize_1500() public { _profile(1500); }
-    function test_gas_finalize_1600() public { _profile(1600); }
+    // The structural maximum under the relaunch budgets.
+    function test_gas_finalize_1505() public { _profile(STRUCTURAL_MAX); }
 
     // ---------- Profile harness ----------
 
     /// @dev Populate the crowdfund with exactly `targetN` participantNodes entries
     ///      (all committed), then warp past windowEnd and measure finalize() gas.
-    ///      Layout: seeds fill hop-0 up to MAX_SEEDS, then each seed invites up to 3
-    ///      hop-1 nodes, then each hop-1 invites up to 2 hop-2 nodes. Stops when
+    ///      Layout (the relaunch budgets): seeds fill hop-0 up to MAX_SEEDS, then the
+    ///      launch team places up to 5 hop-1 team wallets, each inviting up to 100 hop-2
+    ///      nodes, then up to 500 launch-team hop-2 placements. Stops when
     ///      participantNodes.length == targetN.
     ///
     ///      WHY: gas-per-iteration in _iterateCappedDemand is dominated by the
     ///      participants[addr][hop] SLOAD plus the perHopCapped/globalCapped
     ///      accumulators. Hop distribution affects which hopConfigs slot is read,
     ///      but per-iteration the cost is uniform. Seeds commit at HOP0_CAP so
-    ///      cappedDemand clears MIN_SALE for any N >= 67; smaller hops commit
-    ///      MIN_COMMIT to minimize setup time.
+    ///      cappedDemand clears MIN_SALE for any N >= 2; every other node commits
+    ///      MIN_COMMIT (team wallets too, refunded in full) so every node is committed.
     function _profile(uint256 targetN) internal {
         ArmadaCrowdfund cf = _deploy();
         _populate(cf, targetN);
@@ -90,9 +94,9 @@ contract CrowdfundFinalizeGasTest is Test {
         cf.loadArm();
     }
 
-    /// @dev Walk the invite tree depth-first until participantNodes.length == targetN.
+    /// @dev Build the tree until participantNodes.length == targetN.
     function _populate(ArmadaCrowdfund cf, uint256 targetN) internal {
-        require(targetN <= uint256(MAX_SEEDS) * (1 + 3 + 3 * 2), "targetN exceeds structural max");
+        require(targetN <= STRUCTURAL_MAX, "targetN exceeds structural max");
 
         uint256 seedCount = targetN <= MAX_SEEDS ? targetN : MAX_SEEDS;
         address[] memory seeds = new address[](seedCount);
@@ -106,34 +110,30 @@ contract CrowdfundFinalizeGasTest is Test {
         }
         if (cf.getParticipantCount() >= targetN) return;
 
-        // Hop-1: each seed invites up to 3.
-        uint256 hop1Budget = (targetN - cf.getParticipantCount());
-        address[] memory hop1Addrs = new address[](hop1Budget);
-        uint256 hop1Count = 0;
-        for (uint256 i = 0; i < seedCount && hop1Count < hop1Budget; i++) {
-            for (uint8 j = 0; j < 3 && hop1Count < hop1Budget; j++) {
-                address a = address(uint160(0xE00000 + hop1Count));
-                vm.prank(seeds[i]);
-                cf.invite(a, 0);
-                _commitAs(cf, a, 1, MIN_COMMIT);
-                hop1Addrs[hop1Count] = a;
-                hop1Count++;
-                if (cf.getParticipantCount() >= targetN) return;
-            }
-        }
-
-        // Hop-2: each hop-1 invites up to 2.
-        uint256 hop2Budget = targetN - cf.getParticipantCount();
+        // Hop-1 team wallets, each inviting up to 100 hop-2 nodes.
         uint256 hop2Count = 0;
-        for (uint256 i = 0; i < hop1Count && hop2Count < hop2Budget; i++) {
-            for (uint8 j = 0; j < 2 && hop2Count < hop2Budget; j++) {
+        for (uint256 w = 0; w < TEAM_WALLETS; w++) {
+            address team = address(uint160(0xE00000 + w));
+            cf.launchTeamInvite(team, 0);
+            _commitAs(cf, team, 1, MIN_COMMIT);
+            if (cf.getParticipantCount() >= targetN) return;
+            for (uint256 j = 0; j < INVITES_PER_WALLET; j++) {
                 address a = address(uint160(0xF000000 + hop2Count));
-                vm.prank(hop1Addrs[i]);
+                vm.prank(team);
                 cf.invite(a, 1);
                 _commitAs(cf, a, 2, MIN_COMMIT);
                 hop2Count++;
                 if (cf.getParticipantCount() >= targetN) return;
             }
+        }
+
+        // Launch-team hop-2 placements.
+        for (uint256 i = 0; i < LT_HOP2_BUDGET; i++) {
+            address a = address(uint160(0xF000000 + hop2Count));
+            cf.launchTeamInvite(a, 1);
+            _commitAs(cf, a, 2, MIN_COMMIT);
+            hop2Count++;
+            if (cf.getParticipantCount() >= targetN) return;
         }
     }
 

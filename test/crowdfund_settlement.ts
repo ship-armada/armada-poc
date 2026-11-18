@@ -10,7 +10,6 @@ const Phase = { Active: 0, Finalized: 1, Canceled: 2 };
 
 const USDC = (n: number) => BigInt(n) * 1_000_000n;
 const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
-const THREE_WEEKS = 21 * 24 * 60 * 60;
 const THREE_YEARS = 1095 * 24 * 60 * 60;
 
 describe("Crowdfund Settlement Rework", function () {
@@ -28,7 +27,8 @@ describe("Crowdfund Settlement Rework", function () {
   }
 
   // Helper: set up a crowdfund with seeds committed to reach successful finalization.
-  // Always adds hop-1 demand to ensure totalAllocUsdc > MIN_SALE (avoids refundMode).
+  // Callers pass seedCount × commitUsdc ≥ MIN_SALE ($250K); with 100% hop-0 ceilings the
+  // known tier alone clears it (no other-hop demand needed).
   async function setupAndFinalize(seedCount: number, commitUsdc: bigint) {
     const seeds = allSigners.slice(5, 5 + seedCount);
     for (const s of seeds) {
@@ -40,23 +40,7 @@ describe("Crowdfund Settlement Rework", function () {
       await crowdfund.connect(s).commit(0, commitUsdc);
     }
 
-    // Add $436K of hop-1 demand so projected allocation clears MIN_SALE.
-    const hop1Pool = allSigners.slice(140, 195);
-    const committedSlots = new Map<string, { signer: HardhatEthersSigner; slots: number }>();
-    for (let i = 0; i < 109; i++) {
-      const signer = hop1Pool[i % hop1Pool.length];
-      await crowdfund.connect(seeds[i % seeds.length]).invite(signer.address, 0);
-      const entry = committedSlots.get(signer.address) ?? { signer, slots: 0 };
-      entry.slots++;
-      committedSlots.set(signer.address, entry);
-    }
-    for (const { signer, slots } of committedSlots.values()) {
-      const amount = USDC(4_000 * slots);
-      await fundAndApprove(signer, amount);
-      await crowdfund.connect(signer).commit(1, amount);
-    }
-
-    await time.increase(THREE_WEEKS + 1);
+    await time.increaseTo((await crowdfund.windowEnd()) + 1n);
     await crowdfund.finalize();
     expect(await crowdfund.refundMode()).to.be.false;
     return seeds;
@@ -92,7 +76,7 @@ describe("Crowdfund Settlement Rework", function () {
     await armToken.addToWhitelist(cfAddr);
     await armToken.initAuthorizedDelegators([cfAddr]);
 
-    await armToken.transfer(cfAddr, ARM(1_800_000));
+    await armToken.transfer(cfAddr, ARM(1_500_000));
     await crowdfund.loadArm();
     await time.increaseTo(await crowdfund.windowStart());
   });
@@ -120,7 +104,7 @@ describe("Crowdfund Settlement Rework", function () {
     it("security council can cancel after window but before finalize", async function () {
       await crowdfund.addSeeds([allSigners[5].address]);
   
-      await time.increase(THREE_WEEKS + 1);
+      await time.increaseTo((await crowdfund.windowEnd()) + 1n);
 
       // Window ended, but still Active phase
       await crowdfund.connect(securityCouncil).cancel();
@@ -164,7 +148,7 @@ describe("Crowdfund Settlement Rework", function () {
     it("after cancel: finalize reverts", async function () {
       await crowdfund.addSeeds([allSigners[5].address]);
   
-      await time.increase(THREE_WEEKS + 1);
+      await time.increaseTo((await crowdfund.windowEnd()) + 1n);
 
       await crowdfund.connect(securityCouncil).cancel();
 
@@ -194,7 +178,7 @@ describe("Crowdfund Settlement Rework", function () {
       await crowdfund.withdrawUnallocatedArm();
       const treasuryAfter = await armToken.balanceOf(treasury.address);
 
-      expect(treasuryAfter - treasuryBefore).to.equal(ARM(1_800_000));
+      expect(treasuryAfter - treasuryBefore).to.equal(ARM(1_500_000));
     });
 
     it("emits Cancelled event", async function () {
@@ -271,8 +255,8 @@ describe("Crowdfund Settlement Rework", function () {
     });
 
     it("refundMode does NOT push proceeds (no proceeds to push)", async function () {
-      // 80 seeds at hop-0 only → enters refundMode (hop-0 ceiling < MIN_SALE)
-      const seeds = allSigners.slice(5, 85);
+      // 16 seeds × $15K = $240K < MIN_SALE ($250K) → enters refundMode
+      const seeds = allSigners.slice(5, 21);
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
       }
@@ -281,7 +265,7 @@ describe("Crowdfund Settlement Rework", function () {
       for (const s of seeds) {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      await time.increase(THREE_WEEKS + 1);
+      await time.increaseTo((await crowdfund.windowEnd()) + 1n);
 
       const treasuryBefore = await usdc.balanceOf(treasury.address);
       await crowdfund.finalize();
@@ -317,9 +301,9 @@ describe("Crowdfund Settlement Rework", function () {
       expect(ev.args.refundMode).to.equal(false);
     });
 
-    it("emits Finalized event with saleSize but zero allocations in refundMode", async function () {
-      // 80 seeds at hop-0 only → enters refundMode (hop-0 ceiling < MIN_SALE)
-      const seeds = allSigners.slice(5, 85);
+    it("emits Finalized event with zero saleSize and allocations in refundMode", async function () {
+      // 16 seeds × $15K = $240K < MIN_SALE ($250K) → enters refundMode
+      const seeds = allSigners.slice(5, 21);
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
       }
@@ -328,13 +312,14 @@ describe("Crowdfund Settlement Rework", function () {
       for (const s of seeds) {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      await time.increase(THREE_WEEKS + 1);
+      await time.increaseTo((await crowdfund.windowEnd()) + 1n);
 
-      // saleSize is BASE_SALE ($1.2M) — capped demand $1.2M < ELASTIC_TRIGGER
-      // 80 seeds × $15K each = $1.2M committed; capped to $1.2M (within slot caps)
+      // Capped demand $240K < MIN_SALE takes the capped-demand refund branch, which emits
+      // saleSize 0 (the post-allocation branch, which set saleSize, is unreachable with
+      // 100% ceilings and no hop-2 floor). 16 seeds × $15K = $240K committed and capped.
       await expect(crowdfund.finalize())
         .to.emit(crowdfund, "Finalized")
-        .withArgs(USDC(1_200_000), 0, 0, true, USDC(1_200_000), USDC(1_200_000));
+        .withArgs(0, 0, 0, true, USDC(240_000), USDC(240_000));
     });
   });
 
@@ -376,7 +361,7 @@ describe("Crowdfund Settlement Rework", function () {
 
     it("claimRefund after claim deadline still succeeds (USDC has no expiry)", async function () {
       // Create a refundMode scenario
-      const seeds = allSigners.slice(5, 85);
+      const seeds = allSigners.slice(5, 21);
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
       }
@@ -385,7 +370,7 @@ describe("Crowdfund Settlement Rework", function () {
       for (const s of seeds) {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      await time.increase(THREE_WEEKS + 1);
+      await time.increaseTo((await crowdfund.windowEnd()) + 1n);
       await crowdfund.finalize();
       expect(await crowdfund.refundMode()).to.be.true;
 
@@ -400,7 +385,7 @@ describe("Crowdfund Settlement Rework", function () {
     });
 
     it("claimDeadline is 0 in refundMode", async function () {
-      const seeds = allSigners.slice(5, 85);
+      const seeds = allSigners.slice(5, 21);
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
       }
@@ -409,7 +394,7 @@ describe("Crowdfund Settlement Rework", function () {
       for (const s of seeds) {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      await time.increase(THREE_WEEKS + 1);
+      await time.increaseTo((await crowdfund.windowEnd()) + 1n);
       await crowdfund.finalize();
 
       expect(await crowdfund.refundMode()).to.be.true;
@@ -428,23 +413,15 @@ describe("Crowdfund Settlement Rework", function () {
   describe("Full USDC Token Flow Conservation", function () {
     it("absolute USDC flow: treasury delta + sum(refunds) + residual == totalCommitted", async function () {
       const treasuryBefore = await usdc.balanceOf(treasury.address);
-      const seeds = await setupAndFinalize(80, USDC(15_000));
+      // 80 seeds × $20K = $1.6M oversubscribes the $1.5M sale, so the pro-rata path pays
+      // non-zero refunds and leaves rounding dust.
+      const seeds = await setupAndFinalize(80, USDC(20_000));
       const treasuryAfter = await usdc.balanceOf(treasury.address);
       const treasuryDelta = treasuryAfter - treasuryBefore;
 
-      // Collect hop-1 invitees (same pattern as setupAndFinalize)
-      const hop1Pool = allSigners.slice(140, 195);
-      const inviterCount = Math.min(80, 18);
-      const hop1Invitees: HardhatEthersSigner[] = [];
-      for (let i = 0; i < inviterCount; i++) {
-        for (let j = 0; j < 3 && (i * 3 + j) < hop1Pool.length; j++) {
-          hop1Invitees.push(hop1Pool[i * 3 + j]);
-        }
-      }
-
       // All participants claim via claim() (handles ARM + refund), tracking actual USDC received
       let sumRefundsPaid = 0n;
-      const allParticipants = [...seeds, ...hop1Invitees];
+      const allParticipants = [...seeds];
       for (const p of allParticipants) {
         const before = await usdc.balanceOf(p.address);
         await crowdfund.connect(p).claim(p.address);
@@ -468,8 +445,8 @@ describe("Crowdfund Settlement Rework", function () {
 
   describe("claim() Refund Mode Guard", function () {
     it("claim() reverts when refundMode is true", async function () {
-      // 80 seeds at hop-0 only → hop-0 ceiling $564K < MIN_SALE → refundMode = true
-      const seeds = allSigners.slice(5, 85);
+      // 16 seeds × $15K = $240K < MIN_SALE ($250K) → refundMode = true
+      const seeds = allSigners.slice(5, 21);
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
       }
@@ -478,7 +455,7 @@ describe("Crowdfund Settlement Rework", function () {
       for (const s of seeds) {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      await time.increase(THREE_WEEKS + 1);
+      await time.increaseTo((await crowdfund.windowEnd()) + 1n);
       await crowdfund.finalize();
 
       // Verify we're in refundMode
@@ -492,7 +469,7 @@ describe("Crowdfund Settlement Rework", function () {
 
     it("claimRefund() succeeds when refundMode is true (counterpart)", async function () {
       // Same refundMode setup
-      const seeds = allSigners.slice(5, 85);
+      const seeds = allSigners.slice(5, 21);
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
       }
@@ -501,7 +478,7 @@ describe("Crowdfund Settlement Rework", function () {
       for (const s of seeds) {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      await time.increase(THREE_WEEKS + 1);
+      await time.increaseTo((await crowdfund.windowEnd()) + 1n);
       await crowdfund.finalize();
       expect(await crowdfund.refundMode()).to.be.true;
 
@@ -519,7 +496,7 @@ describe("Crowdfund Settlement Rework", function () {
 
   describe("Multi-Window ARM Sweep (T4.8)", function () {
     it("post-finalization base sale: sweeps unsold ARM immediately", async function () {
-      // 68 seeds × $15K = $1.02M at BASE_SALE
+      // 68 seeds × $15K = $1.02M of the $1.5M sale: $480K of ARM unsold
       const seeds = await setupAndFinalize(68, USDC(15_000));
 
       const totalAlloc = await crowdfund.totalAllocatedArm();
@@ -598,8 +575,8 @@ describe("Crowdfund Settlement Rework", function () {
     });
 
     it("after refundMode finalization: sweeps all ARM (armStillOwed = 0)", async function () {
-      // 80 seeds at hop-0 only (no hop-1 demand) → hop-0 ceiling < MIN_SALE → refundMode
-      const seeds = allSigners.slice(5, 85);
+      // 16 seeds × $15K = $240K < MIN_SALE ($250K) → refundMode
+      const seeds = allSigners.slice(5, 21);
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
       }
@@ -608,7 +585,7 @@ describe("Crowdfund Settlement Rework", function () {
       for (const s of seeds) {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      await time.increase(THREE_WEEKS + 1);
+      await time.increaseTo((await crowdfund.windowEnd()) + 1n);
       await crowdfund.finalize();
 
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
@@ -619,7 +596,7 @@ describe("Crowdfund Settlement Rework", function () {
       await crowdfund.withdrawUnallocatedArm();
       const treasuryAfter = await armToken.balanceOf(treasury.address);
 
-      expect(treasuryAfter - treasuryBefore).to.equal(ARM(1_800_000));
+      expect(treasuryAfter - treasuryBefore).to.equal(ARM(1_500_000));
     });
 
     it("after cancel: sweeps all ARM", async function () {
@@ -632,7 +609,7 @@ describe("Crowdfund Settlement Rework", function () {
       await crowdfund.withdrawUnallocatedArm();
       const treasuryAfter = await armToken.balanceOf(treasury.address);
 
-      expect(treasuryAfter - treasuryBefore).to.equal(ARM(1_800_000));
+      expect(treasuryAfter - treasuryBefore).to.equal(ARM(1_500_000));
     });
 
     it("emits UnallocatedArmWithdrawn event", async function () {

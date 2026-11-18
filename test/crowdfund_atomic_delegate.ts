@@ -8,7 +8,6 @@ import type { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signer
 
 const USDC = (n: number) => BigInt(n) * 1_000_000n;
 const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
-const THREE_WEEKS = 21 * 24 * 60 * 60;
 
 describe("Crowdfund: Atomic Delegation on Claim", function () {
   let deployer: HardhatEthersSigner;
@@ -43,13 +42,14 @@ describe("Crowdfund: Atomic Delegation on Claim", function () {
     await armToken.initAuthorizedDelegators([cfAddr]);
 
     // Fund ARM and verify pre-load
-    await armToken.transfer(cfAddr, ARM(1_800_000));
+    await armToken.transfer(cfAddr, ARM(1_500_000));
     await crowdfund.loadArm();
     await time.increaseTo(await crowdfund.windowStart());
     return crowdfund;
   }
 
-  // Minimal scenario: 70 seeds committing $15k each to reach MIN_SALE
+  // Minimal scenario: 70 seeds committing $15k each ($1.05M) — clears MIN_SALE ($250K) and
+  // fits the $1.5M sale, so every seed is allocated its full commitment.
   async function setupAndFinalize(crowdfund: any) {
     const seeds = allSigners.slice(5, 75); // 70 seeds
     await crowdfund.addSeeds(seeds.map((s: HardhatEthersSigner) => s.address));
@@ -59,32 +59,10 @@ describe("Crowdfund: Atomic Delegation on Claim", function () {
       await crowdfund.connect(s).commit(0, USDC(15_000));
     }
 
-    // Add $436K of hop-1 demand so projected allocation clears MIN_SALE.
-    // Under the July-2026 waterfall hop-0 alloc caps at $564K (base sale), so
-    // 70 seeds ($1.05M capped) alone would enter refundMode. Stack invites onto
-    // a small signer pool (each extra invite raises that node's invitesReceived,
-    // and thus its cap) to reach the $436K needed: $564K + $436K = $1M MIN_SALE.
-    const hop1Pool = allSigners.slice(140, 195);
-    const hop1Invitees: HardhatEthersSigner[] = [];
-    const committedSlots = new Map<string, { signer: HardhatEthersSigner; slots: number }>();
-    for (let i = 0; i < 109; i++) {
-      const invitee = hop1Pool[i % hop1Pool.length];
-      await crowdfund.connect(seeds[i % seeds.length]).invite(invitee.address, 0);
-      const entry = committedSlots.get(invitee.address) ?? { signer: invitee, slots: 0 };
-      entry.slots++;
-      committedSlots.set(invitee.address, entry);
-    }
-    for (const { signer, slots } of committedSlots.values()) {
-      const amount = USDC(4_000 * slots);
-      await fundAndApprove(signer, amount, crowdfund);
-      await crowdfund.connect(signer).commit(1, amount);
-      hop1Invitees.push(signer);
-    }
-
-    await time.increase(THREE_WEEKS + 1);
+    await time.increaseTo((await crowdfund.windowEnd()) + 1n);
     await crowdfund.finalize();
 
-    return { seeds, hop1Invitees };
+    return { seeds };
   }
 
   beforeEach(async function () {

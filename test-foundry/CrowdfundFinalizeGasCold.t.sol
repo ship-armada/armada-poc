@@ -1,4 +1,4 @@
-// ABOUTME: Cold-storage gas profile of ArmadaCrowdfund.finalize() at the July-2026 structural max.
+// ABOUTME: Cold-storage gas profile of ArmadaCrowdfund.finalize() up to the relaunch structural max (1,505).
 // ABOUTME: Uses vm.cool() to model a real tx's first-touch SLOADs vs the warm in-test measurement.
 
 // SPDX-License-Identifier: MIT
@@ -11,23 +11,25 @@ import "../contracts/governance/ArmadaToken.sol";
 import "../contracts/cctp/MockUSDCV2.sol";
 
 /// @notice Cold-storage finalize() gas profile + the regression guard that one-shot finalize() at
-///         the MAX_FINALIZE_NODES cap stays under the EIP-7825 per-tx gas cap (16,777,216 = 2^24).
+///         the largest reachable tree stays under the EIP-7825 per-tx gas cap (16,777,216 = 2^24).
 ///         Method (ported from the closed spike PR #266): vm.cool() before finalize() so first-touch
-///         SLOADs are cold — a real transaction is its own tx and nothing is pre-warmed. Contrast the
-///         merged CrowdfundFinalizeGas.t.sol, which measures WARM slots (pre-warmed by _populate in
-///         the same test tx) and so understates real finalize() gas by ~3.6x.
+///         SLOADs are cold — a real transaction is its own tx and nothing is pre-warmed. Contrast
+///         CrowdfundFinalizeGas.t.sol, which measures WARM slots (pre-warmed by _populate in the
+///         same test tx) and so understates real finalize() gas by ~3.6x.
 ///
-///         Historical, now unreachable because MAX_FINALIZE_NODES bounds the tree at 1,800: at the
-///         2,220-node structural max, cold one-shot finalize() was ~18.6M gas (success) — OVER the
-///         2^24 cap. That finding motivated the cap; this suite profiles reachable counts (≤1,800)
-///         and asserts the cap keeps finalize() submittable.
+///         Historical: under the July-2026 fan-out the structural max was 2,220 nodes (~18.6M gas
+///         cold, OVER the 2^24 cap), which motivated MAX_FINALIZE_NODES = 1,800. Under the relaunch
+///         budgets the tree tops out at 1,505 nodes (500 seeds + 5 team wallets + 500 team-wallet
+///         invites + 500 launch-team hop-2 placements), below the node cap, so the guards below run
+///         at that structural max.
 contract CrowdfundFinalizeGasColdTest is Test {
     MockUSDCV2 public usdc;
     ArmadaToken public armToken;
     address public admin;
     address public treasury;
 
-    uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
+    uint256 constant ARM_FUNDING = 1_500_000 * 1e18;
+    uint256 constant STRUCTURAL_MAX = 1505;
     uint256 constant TX_GAS_CAP = 16_777_216; // EIP-7825 per-tx cap (2^24)
     uint256 constant MIN_COMMIT = 50 * 1e6;     // ArmadaCrowdfund.MIN_COMMIT
 
@@ -51,7 +53,7 @@ contract CrowdfundFinalizeGasColdTest is Test {
     }
 
     function _seedAddr(uint256 i) internal pure returns (address) { return address(uint160(0x10000000 + i)); }
-    function _hop1Addr(uint256 i) internal pure returns (address) { return address(uint160(0x20000000 + i)); }
+    function _teamAddr(uint256 i) internal pure returns (address) { return address(uint160(0x20000000 + i)); }
     function _hop2Addr(uint256 i) internal pure returns (address) { return address(uint160(0x30000000 + i)); }
 
     function _commitAs(ArmadaCrowdfund cf, address who, uint8 hop, uint256 amount) internal {
@@ -62,72 +64,51 @@ contract CrowdfundFinalizeGasColdTest is Test {
         cf.commit(hop, amount);
     }
 
-    /// @dev Build the invite tree for (h0, h1, h2) nodes. Commit amounts are supplied per hop so
-    ///      the same tree can drive either the refund path (MIN_COMMIT everywhere) or the success path.
-    ///      July-2026 structural ceilings: h0 ≤ 180, h1 ≤ 3*h0 + 100, h2 ≤ 2*h1 + 120.
-    function _build(
-        uint256 h0,
-        uint256 h1,
-        uint256 h2,
-        uint256 hop0Amt,
-        uint256 hop1RealCount,
-        uint256 hop1RealAmt
-    ) internal returns (ArmadaCrowdfund cf) {
-        cf = _buildTree(h0, h1, h2);
-
-        // commits: hop-0 at hop0Amt; first hop1RealCount hop-1 nodes at hop1RealAmt, rest at
-        // MIN_COMMIT; all hop-2 at MIN_COMMIT. Every node commits > 0 so the iteration body runs for it.
-        uint256 dust = MIN_COMMIT;
-        for (uint256 i = 0; i < h0; i++) _commitAs(cf, _seedAddr(i), 0, hop0Amt);
-        for (uint256 i = 0; i < h1; i++) _commitAs(cf, _hop1Addr(i), 1, i < hop1RealCount ? hop1RealAmt : dust);
-        for (uint256 i = 0; i < h2; i++) _commitAs(cf, _hop2Addr(i), 2, dust);
+    /// @dev Build the tree for (seeds, team wallets, team-wallet invites, launch-team hop-2
+    ///      placements). Commit amounts: seeds at hop0Amt, every other node at MIN_COMMIT (team
+    ///      wallets too, refunded in full), so the iteration body runs for every node.
+    ///      Relaunch ceilings: seeds ≤ 500, team wallets ≤ 5, invites ≤ 100 per wallet, hop-2
+    ///      placements ≤ 500.
+    function _build(uint256 seeds, uint256 teams, uint256 invites, uint256 ltHop2, uint256 hop0Amt)
+        internal returns (ArmadaCrowdfund cf)
+    {
+        cf = _buildTree(seeds, teams, invites, ltHop2);
+        for (uint256 i = 0; i < seeds; i++) _commitAs(cf, _seedAddr(i), 0, hop0Amt);
+        for (uint256 i = 0; i < teams; i++) _commitAs(cf, _teamAddr(i), 1, MIN_COMMIT);
+        for (uint256 i = 0; i < invites + ltHop2; i++) _commitAs(cf, _hop2Addr(i), 2, MIN_COMMIT);
     }
 
-    /// @dev Build the invite tree only — whitelist seeds/invitees, NO commits. Isolates the
-    ///      per-node cost of iterating an invited-but-uncommitted node (2 cold SLOADs → skip).
-    function _buildTree(uint256 h0, uint256 h1, uint256 h2) internal returns (ArmadaCrowdfund cf) {
-        require(h0 <= 180, "h0 cap");
-        require(h1 <= 3 * h0 + 100, "h1 cap");
-        require(h2 <= 2 * h1 + 120, "h2 cap");
+    /// @dev Build the tree only — whitelist every node, NO commits. Isolates the per-node cost of
+    ///      iterating an invited-but-uncommitted node (2 cold SLOADs → skip).
+    function _buildTree(uint256 seeds, uint256 teams, uint256 invites, uint256 ltHop2)
+        internal returns (ArmadaCrowdfund cf)
+    {
+        require(seeds <= 500, "seed cap");
+        require(teams <= 5, "hop-1 LT budget");
+        require(invites <= teams * 100, "team-wallet invite budget");
+        require(ltHop2 <= 500, "hop-2 LT budget");
 
         cf = _deploy();
 
-        // hop-0 seeds
-        if (h0 > 0) {
-            address[] memory seeds = new address[](h0);
-            for (uint256 i = 0; i < h0; i++) seeds[i] = _seedAddr(i);
-            cf.addSeeds(seeds);
+        if (seeds > 0) {
+            address[] memory s_ = new address[](seeds);
+            for (uint256 i = 0; i < seeds; i++) s_[i] = _seedAddr(i);
+            cf.addSeeds(s_);
         }
-
-        // hop-1: seeds invite up to 3*h0, remainder via launch team (≤ 100)
-        uint256 hop1ViaSeeds = h1 > 3 * h0 ? 3 * h0 : h1;
-        uint256 hop1ViaLT = h1 - hop1ViaSeeds;
-        require(hop1ViaLT <= 100, "hop1 LT budget");
-        for (uint256 i = 0; i < hop1ViaSeeds; i++) {
-            vm.prank(_seedAddr(i / 3));
-            cf.invite(_hop1Addr(i), 0);
-        }
-        for (uint256 i = 0; i < hop1ViaLT; i++) {
-            cf.launchTeamInvite(_hop1Addr(hop1ViaSeeds + i), 0);
-        }
-
-        // hop-2: hop-1 nodes invite up to 2 each, remainder via launch team (≤ 120)
-        uint256 hop2ViaHop1 = h2 > 2 * h1 ? 2 * h1 : h2;
-        uint256 hop2ViaLT = h2 - hop2ViaHop1;
-        require(hop2ViaLT <= 120, "hop2 LT budget");
-        for (uint256 i = 0; i < hop2ViaHop1; i++) {
-            vm.prank(_hop1Addr(i / 2));
+        for (uint256 w = 0; w < teams; w++) cf.launchTeamInvite(_teamAddr(w), 0);
+        for (uint256 i = 0; i < invites; i++) {
+            vm.prank(_teamAddr(i / 100));
             cf.invite(_hop2Addr(i), 1);
         }
-        for (uint256 i = 0; i < hop2ViaLT; i++) {
-            cf.launchTeamInvite(_hop2Addr(hop2ViaHop1 + i), 1);
-        }
+        for (uint256 i = 0; i < ltHop2; i++) cf.launchTeamInvite(_hop2Addr(invites + i), 1);
     }
 
     /// @dev Refund-path tree: MIN_COMMIT everywhere (capped demand << MIN_SALE). Iteration cost is
     ///      identical to the success path; this isolates the loop cost cheaply.
-    function _buildRefund(uint256 h0, uint256 h1, uint256 h2) internal returns (ArmadaCrowdfund cf) {
-        return _build(h0, h1, h2, MIN_COMMIT, 0, 0);
+    function _buildRefund(uint256 seeds, uint256 teams, uint256 invites, uint256 ltHop2)
+        internal returns (ArmadaCrowdfund cf)
+    {
+        return _build(seeds, teams, invites, ltHop2, MIN_COMMIT);
     }
 
     function _measure(ArmadaCrowdfund cf) internal returns (uint256 gasUsed) {
@@ -150,41 +131,40 @@ contract CrowdfundFinalizeGasColdTest is Test {
         );
     }
 
-    // ---- Cold gas profile at reachable node counts (the guard bounds the tree at 1,800). ----
-    function test_cold_0500_refund() public { ArmadaCrowdfund cf = _buildRefund(180, 320, 0);   _report(" 500(refund)",  500, _measure(cf)); }
-    function test_cold_1000_refund() public { ArmadaCrowdfund cf = _buildRefund(180, 540, 280); _report("1000(refund)", 1000, _measure(cf)); }
-    function test_cold_1500_refund() public { ArmadaCrowdfund cf = _buildRefund(180, 640, 680); _report("1500(refund)", 1500, _measure(cf)); }
+    // ---- Cold gas profile at reachable node counts (the budgets bound the tree at 1,505). ----
+    function test_cold_0500_refund() public { ArmadaCrowdfund cf = _buildRefund(300, 2, 100, 98);  _report(" 500(refund)",  500, _measure(cf)); }
+    function test_cold_1000_refund() public { ArmadaCrowdfund cf = _buildRefund(500, 5, 300, 195); _report("1000(refund)", 1000, _measure(cf)); }
+    function test_cold_1500_refund() public { ArmadaCrowdfund cf = _buildRefund(500, 5, 500, 495); _report("1500(refund)", 1500, _measure(cf)); }
 
-    // ---- GUARD: at the MAX_FINALIZE_NODES cap, cold one-shot finalize() must stay under 2^24.
+    // ---- GUARD: at the structural max, cold one-shot finalize() must stay under 2^24.
     //      Regression tripwire — fails if per-node cost or fixed overhead ever rises past the cap.
     //      Refund path (lower bound of the two).
     function test_cold_cap_guard_refund() public {
-        ArmadaCrowdfund cf = _buildRefund(180, 640, 980);
-        assertEq(cf.getParticipantCount(), cf.MAX_FINALIZE_NODES(), "build must equal the node cap");
+        ArmadaCrowdfund cf = _buildRefund(500, 5, 500, 500);
+        assertEq(cf.getParticipantCount(), STRUCTURAL_MAX, "build must equal the structural max");
         uint256 g = _measure(cf);
-        _report("CAP(refund)", cf.getParticipantCount(), g);
-        assertLt(g, TX_GAS_CAP, "finalize() at node cap exceeds 2^24");
+        _report("MAX(refund)", cf.getParticipantCount(), g);
+        assertLt(g, TX_GAS_CAP, "finalize() at structural max exceeds 2^24");
     }
 
-    // ---- GUARD: success path at the cap — the case that matters (a successful raise distributing
-    //      ARM in one finalize() tx). 180 seeds @ $15k + 40 hop-1 @ $4k clears MIN_SALE (expands to
-    //      $1.8M; hop-0 $846k + hop-1 ~$166k + hop-2 dust > $1M).
+    // ---- GUARD: success path at the structural max — the case that matters (a successful raise
+    //      distributing ARM in one finalize() tx). 500 seeds @ $150k oversubscribe the $1.5M sale.
     function test_cold_cap_guard_success() public {
-        ArmadaCrowdfund cf = _build(180, 640, 980, 15_000 * 1e6, 40, 4_000 * 1e6);
-        assertEq(cf.getParticipantCount(), cf.MAX_FINALIZE_NODES(), "build must equal the node cap");
+        ArmadaCrowdfund cf = _build(500, 5, 500, 500, 150_000 * 1e6);
+        assertEq(cf.getParticipantCount(), STRUCTURAL_MAX, "build must equal the structural max");
         uint256 g = _measure(cf);
-        _report("CAP(success)", cf.getParticipantCount(), g);
+        _report("MAX(success)", cf.getParticipantCount(), g);
         assertFalse(cf.refundMode(), "sale unexpectedly entered refund mode");
-        assertLt(g, TX_GAS_CAP, "finalize() at node cap (success) exceeds 2^24");
+        assertLt(g, TX_GAS_CAP, "finalize() at structural max (success) exceeds 2^24");
     }
 
-    // ---- Whitelist-only at the cap: nodes invited, ZERO commits. Isolates the cost of iterating
-    //      invited-but-uncommitted nodes (2 cold SLOADs each → `continue`); shows iteration cost is
-    //      driven by WHITELIST count, not commit count. Zero demand → refund mode.
+    // ---- Whitelist-only at the structural max: nodes invited, ZERO commits. Isolates the cost of
+    //      iterating invited-but-uncommitted nodes (2 cold SLOADs each → `continue`); shows
+    //      iteration cost is driven by WHITELIST count, not commit count. Zero demand → refund mode.
     function test_cold_cap_no_commits() public {
-        ArmadaCrowdfund cf = _buildTree(180, 640, 980);
-        assertEq(cf.getParticipantCount(), cf.MAX_FINALIZE_NODES(), "build must equal the node cap");
-        _report("CAP(whitelist,0-commit)", cf.getParticipantCount(), _measure(cf));
+        ArmadaCrowdfund cf = _buildTree(500, 5, 500, 500);
+        assertEq(cf.getParticipantCount(), STRUCTURAL_MAX, "build must equal the structural max");
+        _report("MAX(whitelist,0-commit)", cf.getParticipantCount(), _measure(cf));
         assertTrue(cf.refundMode(), "zero demand should refund");
     }
 }

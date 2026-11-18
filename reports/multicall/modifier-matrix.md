@@ -12,19 +12,20 @@ Therefore every modifier and inline `require` keyed on `msg.sender` or contract 
 
 | # | Function | Modifier(s) | Inline access / state guards | Preserved under multicall? | Notes |
 |---|---|---|---|---|---|
-| 1 | `addSeeds(address[])` (l. 223) | `onlyLaunchTeam` | — | ✅ | `msg.sender == launchTeam` check is in the modifier; preserved |
-| 2 | `addSeed(address)` (l. 231) | `onlyLaunchTeam` | — | ✅ | same as above |
-| 3 | `loadArm()` (l. 261) | — | `!armLoaded`, balance ≥ required | ✅ | idempotent gate via storage flag |
-| 4 | `invite(address, uint8)` (l. 279) | — | `phase == Active`, `armLoaded`, `block.timestamp ≤ windowEnd`, `msg.sender != launchTeam`, `inviter.isWhitelisted`, budget cap | ✅ | every gate is storage- or timestamp-keyed |
-| 5 | `launchTeamInvite(address, uint8)` (l. 310) | — | `msg.sender == launchTeam`, launch-team invite window, fromHop gate, budget gate | ✅ | sender check still binds via DELEGATECALL |
-| 6 | `commit(uint8, uint256)` (l. 345) | **`nonReentrant`** | `_requireActiveCommitWindow`, whitelist, MIN_COMMIT | ✅ | guard sets/clears `_status` per call; siblings in a bundle are independent ENTER/EXIT cycles |
-| 7 | `commitWithInvite(...)` (l. 374) | **`nonReentrant`** | nonce/deadline/signature, whitelist, MIN_COMMIT | ✅ | EIP-712 digest binds to `inviter` not `msg.sender`; signature still validates |
-| 8 | `revokeInviteNonce(uint256)` (l. 431) | — | nonce > 0, not used | ✅ | `usedNonces[msg.sender][nonce]` — sender-keyed mapping; preserved |
-| 9 | `cancel()` (l. 442) | — | `msg.sender == securityCouncil`, phase gate | ✅ | sender check still binds |
-| 10 | `finalize()` (l. 453) | **`nonReentrant`** | `block.timestamp > windowEnd`, phase gate | ✅ | permissionless; timestamp/phase still enforced |
-| 11 | `claim(address)` (l. 558) | **`nonReentrant`** | phase finalized, not refundMode, `!claimed[msg.sender]`, has commitment | ✅ | sender-keyed `claimed` flag; `transferAndDelegate` audited SAFE (no reentry path) |
-| 12 | `claimRefund()` (l. 605) | **`nonReentrant`** | refundMode \|\| Canceled, `!claimed[msg.sender]`, has commitment | ✅ | same `claimed` flag; `usdc.safeTransfer` is vanilla ERC20 |
-| 13 | `withdrawUnallocatedArm()` (l. 634) | **`nonReentrant`** | phase ∈ {Finalized, Canceled}, sweepable > 0 | ✅ | permissionless; treasury-only recipient |
+| 1 | `addSeeds(address[])` (l. 231) | `onlyLaunchTeam` | — | ✅ | `msg.sender == launchTeam` check is in the modifier; preserved |
+| 2 | `addSeed(address)` (l. 239) | `onlyLaunchTeam` | — | ✅ | same as above |
+| 3 | `loadArm()` (l. 269) | — | `!armLoaded`, balance ≥ required | ✅ | idempotent gate via storage flag |
+| 4 | `invite(address, uint8)` (l. 287) | — | `phase == Active`, `armLoaded`, `block.timestamp ≤ windowEnd`, `msg.sender != launchTeam`, `inviter.isWhitelisted`, budget cap | ✅ | every gate is storage- or timestamp-keyed |
+| 5 | `launchTeamInvite(address, uint8)` (l. 318) | — | `msg.sender == launchTeam`, launch-team invite window, fromHop gate, budget gate | ✅ | sender check still binds via DELEGATECALL |
+| 6 | `extendWindow(uint256)` (l. 359) | `onlyLaunchTeam` | `phase == Active`, `block.timestamp ≤ windowEnd`, `newEnd > windowEnd`, `newEnd ≤ windowStart + MAX_WINDOW_DURATION` | ✅ | sender check in the modifier; timestamp/phase gates are storage- or block-keyed. Bundling with `addSeed`/`launchTeamInvite` is the intended Safe use (`test/crowdfund_extend_window.ts`) |
+| 7 | `commit(uint8, uint256)` (l. 379) | **`nonReentrant`** | `_requireActiveCommitWindow`, whitelist, MIN_COMMIT | ✅ | guard sets/clears `_status` per call; siblings in a bundle are independent ENTER/EXIT cycles |
+| 8 | `commitWithInvite(...)` (l. 408) | **`nonReentrant`** | nonce/deadline/signature, whitelist, MIN_COMMIT | ✅ | EIP-712 digest binds to `inviter` not `msg.sender`; signature still validates |
+| 9 | `revokeInviteNonce(uint256)` (l. 465) | — | nonce > 0, not used | ✅ | `usedNonces[msg.sender][nonce]` — sender-keyed mapping; preserved |
+| 10 | `cancel()` (l. 476) | — | `msg.sender == securityCouncil`, phase gate | ✅ | sender check still binds |
+| 11 | `finalize()` (l. 487) | **`nonReentrant`** | `block.timestamp > windowEnd`, phase gate | ✅ | permissionless; timestamp/phase still enforced |
+| 12 | `claim(address)` (l. 592) | **`nonReentrant`** | phase finalized, not refundMode, `!claimed[msg.sender]`, has commitment | ✅ | sender-keyed `claimed` flag; `transferAndDelegate` audited SAFE (no reentry path) |
+| 13 | `claimRefund()` (l. 639) | **`nonReentrant`** | refundMode \|\| Canceled, `!claimed[msg.sender]`, has commitment | ✅ | same `claimed` flag; `usdc.safeTransfer` is vanilla ERC20 |
+| 14 | `withdrawUnallocatedArm()` (l. 668) | **`nonReentrant`** | phase ∈ {Finalized, Canceled}, sweepable > 0 | ✅ | permissionless; treasury-only recipient |
 
 ## Critical clarification — bundling `nonReentrant` siblings
 

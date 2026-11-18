@@ -293,13 +293,13 @@ A signaling proposal is a non-executable proposal used to measure token-holder p
 |-----------|----------|----------|
 | Proposal threshold | 5,000 ARM | 5,000 ARM |
 | Bond | 1,000 ARM | 1,000 ARM |
-| Quorum | max(20% of circulating voting power, 200,000 ARM) | max(30% of circulating voting power, 200,000 ARM) |
+| Quorum | max(20% of circulating voting power, 50,000 ARM) | max(30% of circulating voting power, 50,000 ARM) |
 | Proposal delay | 48 hours | 48 hours |
 | Voting period | 7 days | 14 days |
 | Execution delay | 3 days | 7 days |
 | Governance quiet period | 10 days post-crowdfund finalization | — (one-time only) |
 
-**Quorum floor: 200,000 ARM.** Quorum is the greater of the percentage-based threshold and this absolute floor. This prevents governance passing on near-zero turnout regardless of how much ARM has been claimed and delegated at any given time. At the base raise of 1.2M ARM, 200,000 ARM represents ~16.7% of the crowdfund allocation — meaningful coordinated participation. The floor sets quorum until eligible supply exceeds 1,000,000 ARM for Standard proposals (20%) or ~666,667 ARM for Extended (30%). It applies to every vote type, including steward-spend defeat and veto ratification.
+**Quorum floor: 50,000 ARM.** Quorum is the greater of the percentage-based threshold and this absolute floor. This prevents governance passing on near-zero turnout regardless of how much ARM has been claimed and delegated at any given time. At the $250,000 minimum raise, 50,000 ARM is 20% of the crowdfund allocation — meaningful coordinated participation, without requiring near-total turnout on a small raise. The floor sets quorum until eligible supply exceeds 250,000 ARM for Standard proposals (20%) or ~166,667 ARM for Extended (30%). It applies to every vote type, including steward-spend defeat and veto ratification.
 
 **Mutability:** `QUORUM_FLOOR` is a compile-time `constant` in the current implementation — adjusting it requires a UUPS governor upgrade (Extended proposal), not the directional Standard/Extended path described in the classification table. The post-launch governor upgrade will introduce a setter; until then, the floor is fixed.
 
@@ -413,7 +413,7 @@ The steward operates within a **per-token budget table** — a governance-manage
 
 Treasury Steward proposals **pass by default** unless governance votes them down within a 7-day review window.
 
-**Defeat condition:** Standard quorum (20% of circulating voting power or 200,000 ARM, whichever is greater) is reached AND a simple majority votes AGAINST. If quorum is not met, the proposal passes by default — the community isn't concerned enough to mobilize.
+**Defeat condition:** Standard quorum (20% of circulating voting power or 50,000 ARM, whichever is greater) is reached AND a simple majority votes AGAINST. If quorum is not met, the proposal passes by default — the community isn't concerned enough to mobilize.
 
 This inverts the normal proposal flow for routine operational spending: the steward acts unless the community objects, rather than requiring active support for every payment.
 
@@ -497,7 +497,7 @@ When the Security Council vetoes a queued proposal:
      No re-submission is required. The community has voted twice
      (once to pass the original proposal, once to deny the veto).
    - **Quorum not met:** Veto stands by default. If the community can't mobilize to override, the SC's security judgment holds.
-4. Ratification uses **standard quorum** (20% of circulating voting power or 200,000 ARM).
+4. Ratification uses **standard quorum** (20% of circulating voting power or 50,000 ARM).
 
 **The ejection consequence is the accountability mechanism.** The SC only vetoes when they're genuinely confident the community will back them — vetoing a proposal the community wanted means losing the seat. This replaces the need for a separate SC bond or punishment mechanism.
 
@@ -540,9 +540,9 @@ Summary (non-authoritative — `ARM_TOKEN.md` takes precedence):
 
 | Allocation | % | Enforcement | Voting power |
 |---|---|---|---|
-| Crowdfund | 10–15% | Non-transferable until governance unlock; lazy settlement (aggregate finalization, per-user computation at claim time — see CROWDFUND.md) | Active once claimed and delegated |
+| Crowdfund | Up to 12.5% (1.5M ARM; 2% at the $250k minimum) | Non-transferable until governance unlock; lazy settlement (aggregate finalization, per-user computation at claim time — see CROWDFUND.md) | Active once claimed and delegated |
 | Early network | 20% | Single shared revenue-lock contract with per-beneficiary allocations. Covers launch team, ecosystem contributors, and reserve for future contributors. All subject to revenue-gated unlock. | Proportional to revenue-unlock % |
-| Treasury | 65–70% | Governance-controlled; whitelisted for transfers | None — `delegate()` reverts for treasury address |
+| Treasury | 67.5% at deploy (8.1M ARM), up to 78% after unsold crowdfund ARM is swept | Governance-controlled; whitelisted for transfers | None — `delegate()` reverts for treasury address |
 
 ### Revenue-Gated Unlocks
 

@@ -193,7 +193,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     // Absolute quorum floor: prevents governance passing on trivial turnout regardless
     // of how small the circulating delegated supply is. Quorum = max(percentage, floor).
-    uint256 public constant QUORUM_FLOOR = 200_000 * 1e18;
+    uint256 public constant QUORUM_FLOOR = 50_000 * 1e18;
 
     // Governance quiet period — no proposals allowed for this duration after crowdfund finalization.
     // One-time bootstrapping constant; not governable.

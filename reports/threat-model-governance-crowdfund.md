@@ -32,7 +32,7 @@
 | G-02 | **Vote after snapshot** | Voter delegates after proposal snapshot to gain power | getPastVotes(snapshotBlock) via ERC20Votes | Integration tests |
 | G-03 | **Checkpoint manipulation** | Attacker corrupts checkpoint history | Append-only ERC20Votes checkpoints; overwrite only same block | ArmadaToken tests |
 | G-04 | **Reentrancy** | Token callback re-enters delegation | ERC20Votes delegation is internal accounting only (no external calls) | — |
-| G-05 | **Quorum bypass** | Proposal passes without quorum | Quorum check in state(); forVotes + againstVotes + abstainVotes; quorum is `max(percentage, QUORUM_FLOOR)` with `QUORUM_FLOOR` = 200,000 ARM (#589) | Governance tests |
+| G-05 | **Quorum bypass** | Proposal passes without quorum | Quorum check in state(); forVotes + againstVotes + abstainVotes; quorum is `max(percentage, QUORUM_FLOOR)` with `QUORUM_FLOOR` = 50,000 ARM (#589; 20% of the $250k minimum raise) | Governance tests |
 | G-06 | **Proposal threshold bypass** | Proposer below the threshold (absolute 5,000 ARM, `PROPOSAL_THRESHOLD`, #249) creates proposal | _checkProposalThreshold at creation | Governance tests |
 | G-07 | **Timelock bypass** | Execute without queuing | TimelockController enforces schedule | Integration tests |
 | G-08 | **block.timestamp manipulation** | Miner influences vote timing | Document miner influence; standard for governance | — |

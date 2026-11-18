@@ -13,7 +13,7 @@ import "./helpers/GovernorDeployHelper.sol";
 // INV-G2: Every recorded vote is reflected in hasVoted mapping
 // INV-G3: Proposal state transitions are monotonic
 // INV-G5: Quorum for a proposal never changes after creation
-// INV-G6: Quorum never falls below QUORUM_FLOOR (100,000 ARM)
+// INV-G6: Quorum never falls below QUORUM_FLOOR (50,000 ARM)
 // ══════════════════════════════════════════════════════════════════════════
 
 /// @title GovernorHandler — Stateful fuzz handler for governance invariant testing
@@ -443,7 +443,7 @@ contract GovernorInvariantTest is Test, GovernorDeployHelper {
     // INV-G6: Quorum never falls below QUORUM_FLOOR
     // ══════════════════════════════════════════════════════════════════════
 
-    /// @notice Quorum for every created proposal is at least QUORUM_FLOOR (100k ARM)
+    /// @notice Quorum for every created proposal is at least QUORUM_FLOOR (50k ARM)
     function invariant_quorumFloor() public view {
         uint256 count = handler.ghost_proposalCount();
         uint256 floor = governor.QUORUM_FLOOR();

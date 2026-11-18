@@ -53,16 +53,18 @@ Other options: `--allow-stack`, `--max-seeds` (default 100 per batch), `--max-in
 Before writing anything, the task checks every row against the live contract:
 
 - the sale is active, ARM is loaded, and the launch-team window has not closed;
-- seeds left (180 cap), launch-team budget left (100 hop-1, 120 hop-2);
+- seeds left (500 cap), launch-team budget left (5 hop-1 team wallets, 500 hop-2);
 - no seed repeated or already added; the launch-team address is not a row;
-- invites stay within each address's invites-received cap (10 at hop 1, 20 at hop 2).
+- invites stay within each address's invites-received cap (1 at every hop).
 
 Any problem stops the run and no files are written. Before the sale opens it only **warns**,
 so batches can be prepared and signed ahead of time.
 
-**Stacking.** Inviting an address that is already invited at that hop (on chain, or earlier in
-the same file) does not fail: it raises that person's commitment cap and invite budget. The
-task refuses this unless you pass `--allow-stack`, and marks those rows `stacked` in the summary.
+**Stacking.** The invites-received cap is 1 at every hop, so inviting an address that is already
+invited at that hop (on chain, or earlier in the same file) would revert on chain. The task
+refuses such a row with an error, with or without `--allow-stack`. (Under a contract with a higher
+cap, a repeat would raise that person's commitment cap and invite budget; the task then accepts it
+only with `--allow-stack` and marks the row `stacked` in the summary.)
 
 ## Output
 

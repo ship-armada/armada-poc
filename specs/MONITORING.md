@@ -85,7 +85,7 @@ Monitoring derives the current lifecycle phase from events and timestamps.
 |---|---|
 | **PRE-ARMED** | No `ArmLoaded` emitted |
 | **ARMED / PRE-OPEN** | `ArmLoaded` emitted; `now < openTimestamp` |
-| **OPEN (days 1-21)** | `ArmLoaded`; `openTimestamp ≤ now ≤ commitmentDeadline`. The launch-team window spans this whole phase: `week1Deadline` equals `commitmentDeadline`, and launch-team actions close strictly before it. |
+| **OPEN (days 1-7, plus any extension)** | `ArmLoaded`; `openTimestamp ≤ now ≤ commitmentDeadline`. The launch-team window spans this whole phase: `week1Deadline` equals `commitmentDeadline`, and launch-team actions close strictly before it. |
 | **DEADLINE PASSED / NOT FINALIZED** | `now > commitmentDeadline`; no `Finalized`; no `Cancelled` |
 | **FINALIZED / SUCCESS / CLAIMS OPEN** | `Finalized(refundMode=false)`; `Allocated` + `AllocatedHop` events emitted individually at each participant's `claim()` time (lazy settlement). |
 | **FINALIZED / REFUND MODE** | `Finalized(refundMode=true)` |
@@ -184,10 +184,10 @@ off-chain alert covers that condition.
 | Field | Value |
 |---|---|
 | **Signal** | Derived seed count from `SeedAdded` |
-| **Condition** | Seed count reaches 80%, 90%, 100% of configured budget (180) |
+| **Condition** | Seed count reaches 80%, 90%, 100% of configured budget (500) |
 | **Severity** | P2 at 80%/90%; P1 at 100% |
 | **Meaning** | Launch-team-window hop-0 expansion capacity running low |
-| **Runbook** | `OPERATIONS.md` §4 Day-14 launch-team checkpoint; §10 decision log |
+| **Runbook** | `OPERATIONS.md` §4 Day-5 launch-team checkpoint; §10 decision log |
 
 ---
 
@@ -196,7 +196,7 @@ off-chain alert covers that condition.
 | Field | Value |
 |---|---|
 | **Signal** | COUNT of ROOT-issued `Invited` events, filtered by `hop` field (where `hop` in the `Invited` event is the invitee's hop level, not `fromHop` — so `hop == 1` counts hop-1 placements and `hop == 2` counts hop-2 placements) |
-| **Condition** | Hop-1 or hop-2 placement count reaches 80%, 90%, 100% of budget (100 and 120 respectively) |
+| **Condition** | Hop-1 or hop-2 placement count reaches 80%, 90%, 100% of budget (5 and 500 respectively) |
 | **Severity** | P2 at 80%/90%; P1 at 100% |
 | **Meaning** | Launch-team discretionary placement capacity running low |
 | **Runbook** | `OPERATIONS.md` §4 Launch-team operating cadence; §10 decision log |
@@ -210,9 +210,9 @@ off-chain alert covers that condition.
 | **Signal** | Derived count of `(address, hop)` pairs where `participation_slots > 1` |
 | **Condition** | Count exceeds configured watch threshold, or grows materially faster than expected baseline |
 | **Severity** | P2 |
-| **Meaning** | Expected under the design — each invite creates a new slot. Alert is for awareness only. |
-| **Runbook** | `OPERATIONS.md` §4/§5 monitoring; no automatic intervention |
-| **Note** | See §9.1. Do not treat as exploit. |
+| **Meaning** | Should never fire: the stacking cap (`maxInvitesReceived`) is 1 at every hop, so the contract rejects a second slot. A count above zero means the deployed constants differ from the spec. |
+| **Runbook** | `OPERATIONS.md` §4/§5 monitoring; verify the deployed `hopConfigs` against PARAMETER_MANIFEST.md |
+| **Note** | See §9.1. |
 
 ---
 
@@ -223,7 +223,7 @@ off-chain alert covers that condition.
 | **Signal** | Derived `capped_demand` |
 | **Condition** | Reaches 80%, 90%, 95%, 100% of `EXPANSION_TRIGGER` ($1,500,000) |
 | **Severity** | P2 |
-| **Meaning** | Sale may expand to MAX_SALE (1.8M ARM); allocation model shifts |
+| **Meaning** | The sale is approaching full subscription. `MAX_SALE == BASE_SALE` ($1.5M), so there is no expansion; past 100%, tiers are pro-rated and hop-0 demand alone at or above $1.5M crowds out hop 2 |
 | **Runbook** | `OPERATIONS.md` §5 pre-finalization checkpoint |
 
 ---
@@ -236,7 +236,7 @@ off-chain alert covers that condition.
 | **Condition** | `projected_allocation < MINIMUM_RAISE` with <72h remaining; then <24h remaining |
 | **Severity** | P2 |
 | **Meaning** | RefundMode risk increasing. Fires even when `capped_demand ≥ MINIMUM_RAISE` if demand is concentrated at hop-0 (its ceiling is below the minimum at both sale sizes) — the remedy is more hop-1/hop-2 participation before the deadline. Note: demand often concentrates near deadline. |
-| **Runbook** | `OPERATIONS.md` §5 Final-week operating cadence; §11 Checkpoint 3 |
+| **Runbook** | `OPERATIONS.md` §5 Final-days operating cadence; §11 Checkpoint 3 |
 
 ---
 
@@ -393,13 +393,13 @@ simply has not been ingested). AH1 covers the resulting blind spot.
 
 ### 9.1 Duplicate same-hop invites are not an exploit
 
-Under the `participation_slots[(address, hop)] × HOP_CAP[hop]` model, each invite to a given hop from any inviter creates a new participation slot. Multiple inviters — or the same inviter issuing multiple invites — each increase the invitee's effective cap at that hop. This is specified behavior, not misuse.
+Under the `participation_slots[(address, hop)] × HOP_CAP[hop]` model, each invite to a given hop creates a participation slot, up to the stacking cap. The cap is 1 at every hop, so a duplicate same-hop invite reverts and no address holds more than one slot at a hop. Reverted duplicate attempts (for example a second redemption of a link by an already-invited address) are expected user errors, not misuse.
 
-Alert A6 exists for operator **awareness**, not for automatic escalation or remediation. The appropriate question when duplicate slots appear is: "is this consistent with expected seed behavior?" not "is this an attack?"
+Alert A6 therefore exists as a configuration check: a duplicate slot can only appear if the deployed constants differ from the spec.
 
 ### 9.2 `refundMode` is not a security incident
 
-`refundMode` is a defined crowdfund outcome that occurs when `capped_demand ≥ MINIMUM_RAISE` but `net_proceeds < MINIMUM_RAISE` after allocation — typically when hop-0 is oversubscribed and later-hop demand doesn't close the gap. It can occur at both base and expanded sale sizes, because hop-0's expanded ceiling is only $846,000.
+`refundMode` is a defined crowdfund outcome that occurs when capped demand is below `MINIMUM_RAISE` ($250k). (The post-allocation check on `net_proceeds` cannot trigger on its own under the current constants: with no floors and 100% ceilings, allocation equals min(capped demand, $1.5M).)
 
 Alert A10 is P1 (not P0) because operators must shift participant guidance immediately, but there is no security threat. Alert text and participant communications must avoid exploit-like framing.
 
@@ -432,15 +432,15 @@ Operators must have read access to the following views before and throughout the
 ### 10.2 Budget view
 
 - Hop-0 count used / 180 total
-- Launch-team hop-1 placements used / 100 total
-- Launch-team hop-2 placements used / 120 total
+- Launch-team hop-1 placements (team wallets) used / 5 total
+- Launch-team hop-2 placements used / 500 total
 - Inviter slot consumption per active seed node (where reconstructable from events)
 
 ### 10.3 Demand view
 
 - Raw committed USDC (per hop and total)
 - Derived `capped_demand` (slot-capped, per hop and total)
-- % of `MINIMUM_RAISE` ($1M)
+- % of `MINIMUM_RAISE` ($250k)
 - % of `EXPANSION_TRIGGER` ($1.5M)
 
 ### 10.4 Settlement view
@@ -487,9 +487,9 @@ Each alert must include:
 | A1, A2 | §3 Deployment sequence (Steps 4–8) |
 | A4, A5 | §4 Launch-team operating cadence; §10 Decision log; §11 Checkpoint 2 |
 | A6 | §4/§5 Monitoring; no automatic action |
-| A7, A8 | §5 Final-week operating cadence; §11 Checkpoint 3 |
+| A7, A8 | §5 Final-days operating cadence; §11 Checkpoint 3 |
 | A9a | `OPERATIONS.md` §11 Checkpoint 3; §6 Finalization procedure |
-| A9b | `OPERATIONS.md` §5 Final-week operating cadence (sub-minimum branch) |
+| A9b | `OPERATIONS.md` §5 Final-days operating cadence (sub-minimum branch) |
 | A10 | §6 Path C (refundMode); §9.7 |
 | A11 | §7 Cancel procedure |
 | A12 | §6 post-finalization verification; §8 |

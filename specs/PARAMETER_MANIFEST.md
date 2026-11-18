@@ -37,13 +37,13 @@ Single source of truth for every concrete value that enters the deployed contrac
 
 | Parameter | Human-readable | Unix timestamp | Mutability | Verified | Notes |
 |---|---|---|---|---|---|
-| Open timestamp | 2026-10-08 16:00:00 UTC | `1791475200` | Immutable (constructor) | ☐ | Commitment window, hop-0 additions, and invites begin here. Set as `CROWDFUND_OPEN_TIME` (ISO 8601 UTC, e.g. `2026-10-08T17:00:00Z`) in `config/mainnet.env` — required on mainnet; `setup:mainnet` refuses to start unless it is 6h–60d away (`CROWDFUND_OPEN_MIN_LEAD_SECONDS` / `CROWDFUND_OPEN_MAX_LEAD_SECONDS` in `scripts/deploy-utils.ts`). The 6h minimum can be shortened with the `CROWDFUND_OPEN_MIN_LEAD_SECONDS` env var (hard floor 1h); Launch 1 sets it to `3600`. |
-| Launch-team invite deadline | Open + 21 days (equals the commitment deadline): 2026-10-29 16:00:00 UTC | `1793289600` | Constructor; launch team can extend (with the commitment deadline) | ☐ | `addSeed()` and `launchTeamInvite()` revert at and after this (strict `<`; participant actions stay open for that final second). `extendWindow()` moves it together with the commitment deadline |
-| Commitment deadline | Open + 21 days: 2026-10-29 16:00:00 UTC | `1793289600` | Constructor; launch team can extend, only later, up to the maximum window | ☐ | `commit()`, `commitWithInvite()`, `invite()` revert after this. `extendWindow()` can move it later while the window is open |
-| Maximum window | Open + `MAX_WINDOW_DURATION` (currently `2 × WINDOW_DURATION` = 42 days, a placeholder pending the relaunch decision) | Derived from open timestamp | Immutable (constant) | ☐ | Hard cap for `extendWindow()`; bounds participants' USDC lock-up |
+| Open timestamp | `[TBD]` | `[TBD]` | Immutable (constructor) | ☐ | Commitment window, hop-0 additions, and invites begin here. Set as `CROWDFUND_OPEN_TIME` (ISO 8601 UTC, e.g. `2026-10-08T17:00:00Z`) in `config/mainnet.env` — required on mainnet; `setup:mainnet` refuses to start unless it is 6h–60d away (`CROWDFUND_OPEN_MIN_LEAD_SECONDS` / `CROWDFUND_OPEN_MAX_LEAD_SECONDS` in `scripts/deploy-utils.ts`). The 6h minimum can be shortened with the `CROWDFUND_OPEN_MIN_LEAD_SECONDS` env var (hard floor 1h); Launch 1 sets it to `3600`. |
+| Launch-team invite deadline | Open + 7 days (equals the commitment deadline): `[TBD]` | `[TBD]` | Constructor; launch team can extend (with the commitment deadline) | ☐ | `addSeed()` and `launchTeamInvite()` revert at and after this (strict `<`; participant actions stay open for that final second). `extendWindow()` moves it together with the commitment deadline |
+| Commitment deadline | Open + 7 days (`WINDOW_DURATION`): `[TBD]` | `[TBD]` | Constructor; launch team can extend, only later, up to the maximum window | ☐ | `commit()`, `commitWithInvite()`, `invite()` revert after this. `extendWindow()` can move it later while the window is open |
+| Maximum window | Open + `MAX_WINDOW_DURATION` (14 days) | Derived from open timestamp | Immutable (constant) | ☐ | Hard cap for `extendWindow()`; bounds participants' USDC lock-up |
 | Claim deadline | Finalization + 3 years | Computed at finalization | Immutable (derived) | — | `claim()` permitted when `block.timestamp <= finalizationTimestamp + 94_608_000`. Sweep eligible at `>`. |
 
-**Timestamp verification:** Convert each unix timestamp back to human-readable and confirm date, time, and timezone match intent. Verify `launchTeamInviteEnd() == windowStart() + 1_814_400` (21 × 86400). Verify `windowEnd() == windowStart() + 1_814_400` (21 × 86400) — the two deadlines are equal. These hold at deploy; after any `extendWindow()` call both deadlines equal the latest `WindowExtended.newEnd`.
+**Timestamp verification:** Convert each unix timestamp back to human-readable and confirm date, time, and timezone match intent. Verify `launchTeamInviteEnd() == windowStart() + 604_800` (7 × 86400). Verify `windowEnd() == windowStart() + 1_814_400` (21 × 86400) — the two deadlines are equal. These hold at deploy; after any `extendWindow()` call both deadlines equal the latest `WindowExtended.newEnd`.
 
 **3-year duration:** Exactly `94_608_000 seconds` (1,095 days = 3 × 365 days). This is a fixed second count, not 3 calendar years — does not account for leap years.
 
@@ -53,10 +53,10 @@ Single source of truth for every concrete value that enters the deployed contrac
 
 | Parameter | Human-readable | Contract value | Unit | Mutability | Verified |
 |---|---|---|---|---|---|
-| BASE_SALE | $1,200,000 USDC (= 1,200,000 ARM at $1) | `1_200_000_000_000` | USDC (6 dec) | Immutable (constant) | ☐ |
-| MAX_SALE | $1,800,000 USDC (= 1,800,000 ARM at $1) | `1_800_000_000_000` | USDC (6 dec) | Immutable (constant) | ☐ |
-| MIN_SALE (spec: MINIMUM_RAISE) | $1,000,000 USDC | `1_000_000_000_000` | USDC (6 dec) | Immutable (constant) | ☐ |
-| ELASTIC_TRIGGER (spec: EXPANSION_TRIGGER) | $1,500,000 USDC capped demand | `1_500_000_000_000` | USDC (6 dec) | Immutable (constant) | ☐ |
+| BASE_SALE | $1,500,000 USDC (= 1,500,000 ARM at $1) | `1_500_000_000_000` | USDC (6 dec) | Immutable (constant) | ☐ |
+| MAX_SALE | $1,500,000 USDC (= 1,500,000 ARM at $1; equal to BASE_SALE, so no expansion) | `1_500_000_000_000` | USDC (6 dec) | Immutable (constant) | ☐ |
+| MIN_SALE (spec: MINIMUM_RAISE) | $250,000 USDC | `250_000_000_000` | USDC (6 dec) | Immutable (constant) | ☐ |
+| ELASTIC_TRIGGER (spec: EXPANSION_TRIGGER) | $1,500,000 USDC capped demand (equal to the sale size, so it has no effect) | `1_500_000_000_000` | USDC (6 dec) | Immutable (constant) | ☐ |
 | ARM_PRICE | $1.00 per ARM | `1_000_000` (1e6 USDC per 1e18 ARM) | Ratio | Immutable (constant) | ☐ |
 | TOTAL_SUPPLY | 12,000,000 ARM | `12_000_000_000_000_000_000_000_000` | ARM (18 dec) | — | Reference only (not in crowdfund contract) |
 
@@ -71,22 +71,22 @@ Single source of truth for every concrete value that enters the deployed contrac
 
 | Parameter | Hop-0 | Hop-1 | Hop-2 | Mutability |
 |---|---|---|---|---|
-| `HOPn_CAP_USDC` (per slot) | $15,000 (`15_000_000_000` USDC) | $4,000 (`4_000_000_000` USDC) | $1,000 (`1_000_000_000` USDC) | Immutable (constant) |
-| `HOPn_CEILING_BPS` | 6000 (60% of base pool, then less extra floor) | 4500 (45% of base pool) | — (no enforced ceiling) | Immutable (constant) |
-| HOP2_BASE_FLOOR_BPS | — | — | 500 (5% of sale_size) | Immutable (constant) |
-| HOP2_EXTRA_FLOOR_BPS | — | — | 1000 (additional 10% of sale_size) | Immutable (constant) |
-| Outgoing invite slots per slot (`HOPn_MAX_INVITES`) | 3 | 2 | 0 | Immutable (constant) |
-| Incoming invite stacking cap (`HOPn_MAX_INVITES_RECEIVED`) | 1 | 10 | 20 | Immutable (constant) |
+| Role | Known contributors | Team inviter wallets | Invited contributors | — |
+| `HOPn_CAP_USDC` (per slot) | $150,000 (`150_000_000_000` USDC) | $0 (`0`) | $10,000 (`10_000_000_000` USDC) | Immutable (constant) |
+| `HOPn_CEILING_BPS` | 10000 (100% of base pool) | 10000 (100% of base pool) | — (no enforced ceiling) | Immutable (constant) |
+| HOP2_BASE_FLOOR_BPS | — | — | 0 | Immutable (constant) |
+| HOP2_EXTRA_FLOOR_BPS | — | — | 0 | Immutable (constant) |
+| Outgoing invite slots per slot (`HOPn_MAX_INVITES`) | 0 | 100 | 0 | Immutable (constant) |
+| Incoming invite stacking cap (`HOPn_MAX_INVITES_RECEIVED`) | 1 | 1 | 1 | Immutable (constant) |
 | Slot source | `SeedAdded` | `Invited` | `Invited` | — |
 
 **Cap formula:** Per-address cap at hop = `participation_slots[(address, hop)] × HOP_CAP[hop]`
 
-**Stacking cap semantics:** `maxInvitesReceived` bounds how many inbound invite edges a single (address, hop) node can accept. Hop-0 cannot stack at all — its only inviter is the launchTeam sentinel via `addSeed`. Hop-1 nodes can stack up to 10× (each accepted invite increments `invitesReceived`, scaling both their effective USDC cap and their outgoing invite budget). Hop-2 nodes can stack up to 20×. The cap is enforced inside `invite()` / `commitWithInvite()` — re-inviting a node already at its stacking cap reverts.
+**Stacking cap semantics:** `maxInvitesReceived` bounds how many inbound invite edges a single (address, hop) node can accept. It is 1 at every hop, so no node can stack: each `(address, hop)` holds at most one cap and (at hop 1) one 100-slot invite budget. The cap is enforced inside `invite()`, `commitWithInvite()` and `launchTeamInvite()` — re-inviting an already-invited node reverts.
 
 **Commitment floor (`MIN_COMMIT`):** `50 USDC` (`50_000_000` USDC, 6 decimals). Both `commit()` and `commitWithInvite()` revert with `amount < MIN_COMMIT`. Immutable (constant). Sized to keep dust commits out of the participant graph — every commit registers a `participantNode`, and the rounding buffer at finalization is bounded by `participantNodes.length`. Not enforced as a percentage of cap.
 
-**Ceiling amounts at base ($1.2M):** base pool = $1.14M; hop-2 floor = $180k; available = $1.02M; hop-0 ceiling = $564k; hop-1 raw ceiling = $513k and can rise to $1.02M with all hop-0 capacity rolled forward.
-**Ceiling amounts at expanded ($1.8M):** base pool = $1.71M; hop-2 floor = $270k; available = $1.53M; hop-0 ceiling = $846k; hop-1 raw ceiling = $769.5k and can rise to $1.53M with all hop-0 capacity rolled forward.
+**Ceiling amounts ($1.5M, the only sale size):** base pool = $1.5M; hop-2 floor = $0; available = $1.5M; hop-0 ceiling = $1.5M; hop-1 ceiling = $1.5M less hop-0's allocation; hop-2 receives what hop-0 and hop-1 leave. This is a priority fill: total allocation = min(capped demand, $1.5M), and hop-2 allocations are not guaranteed.
 
 ---
 
@@ -94,11 +94,11 @@ Single source of truth for every concrete value that enters the deployed contrac
 
 | Parameter | Value | Mutability | Verified | Notes |
 |---|---|---|---|---|
-| Hop-0 budget (`MAX_SEEDS`) | 180 | Immutable (constant) | ☐ | Max `addSeed()` calls |
-| Launch-team hop-1 budget (`LAUNCH_TEAM_HOP1_BUDGET`) | 100 | Immutable (constant) | ☐ | Max `launchTeamInvite(_, 0)` calls |
-| Launch-team hop-2 budget (`LAUNCH_TEAM_HOP2_BUDGET`) | 120 | Immutable (constant) | ☐ | Max `launchTeamInvite(_, 1)` calls |
-| `MAX_FINALIZE_NODES` | 1,800 | Immutable (constant) | ☐ | Hard cap on total `participantNodes`, enforced in `_initParticipant`. Keeps one-shot `finalize()` (~8,200 gas/node cold, ~15.2M at 1,800) under the **16,777,216 (2^24, EIP-7825) per-tx gas cap**. Node creation reverts `"node cap reached"` beyond it. |
-| Structural max network size | 2,220 nodes | Derived | — | 180 + 640 + 1,400 — but `MAX_FINALIZE_NODES` (1,800) binds first, so 2,220 is not reachable (see CROWDFUND.md) |
+| Hop-0 budget (`MAX_SEEDS`) | 500 (`uint16`) | Immutable (constant) | ☐ | Max `addSeed()` calls. A single `addSeeds` of 500 exceeds the per-tx gas cap; batch at most 180 (docs/safe-launch-batches.md) |
+| Launch-team hop-1 budget (`LAUNCH_TEAM_HOP1_BUDGET`) | 5 (`uint8`) | Immutable (constant) | ☐ | Max `launchTeamInvite(_, 0)` calls: the team inviter wallets |
+| Launch-team hop-2 budget (`LAUNCH_TEAM_HOP2_BUDGET`) | 500 (`uint16`) | Immutable (constant) | ☐ | Max `launchTeamInvite(_, 1)` calls |
+| `MAX_FINALIZE_NODES` | 1,800 | Immutable (constant) | ☐ | Hard cap on total `participantNodes`, enforced in `_initParticipant`. Keeps one-shot `finalize()` (~8,200 gas/node cold, ~15.2M at 1,800) under the **16,777,216 (2^24, EIP-7825) per-tx gas cap**. Node creation reverts `"node cap reached"` beyond it. Unreachable under the budgets below (a backstop). |
+| Structural max network size | 1,505 nodes | Derived | — | 500 hop-0 + 5 team wallets + 500 team-wallet invites (5 × 100) + 500 launch-team hop-2. Below `MAX_FINALIZE_NODES`; one-shot `finalize()` at 1,505 measures ~11.5M gas (real receipt, `scripts/crowdfund_gas_dryrun.ts`) |
 
 ---
 
@@ -200,7 +200,7 @@ Fill after deployment. This section is the permanent record.
 | Deployer address | `[fill after deploy]` |
 | `loadArm()` TX hash | `[fill after deploy]` |
 | `DOMAIN_SEPARATOR()` verified | ☐ |
-| ARM balance verified (1,800,000e18) | ☐ |
+| ARM balance verified (≥ 1,500,000e18, MAX_SALE) | ☐ |
 | Observer confirmed operational | ☐ |
 | Committer confirmed operational | ☐ |
 | Settlement mode confirmed | Lazy settlement |
@@ -220,7 +220,7 @@ Every parameter in this contract falls into one of three categories:
 **The only admin-mutable parameter in the crowdfund contract is the commitment deadline.** The launch team can extend it (together with the launch-team deadline) via `extendWindow()`, only while the window is open, only later, and never beyond the predeclared maximum window. No other parameter can change after deployment.
 
 The only role-gated *actions* are:
-- ROOT: `addSeed()`, `launchTeamInvite()` — days 1-21 only (the full commitment window, including any extension)
+- ROOT: `addSeed()`, `launchTeamInvite()` — during the commitment window only (days 1-7, plus any extension)
 - ROOT: `extendWindow()` — while the window is open, up to the maximum window
 - Security Council: `cancel()` — pre-finalization only
 

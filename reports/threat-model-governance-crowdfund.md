@@ -56,9 +56,9 @@
 | C-05 | **Reentrancy** | claim/refund re-entered | ReentrancyGuard | ReentrancyAttacker tests |
 | C-06 | **Hop cap bypass** | Commit exceeds the participant's effective cap | Over-cap commits are accepted by design; the cap is applied at finalization (capped demand) and the excess is refunded at settlement | Integration tests |
 | C-07 | **Invite graph cycles** | invitee invites inviter | Invite graph is tree; hop = inviter.hop + 1 | — |
-| C-08 | **finalize() DoS** | Unbounded loop over participants | O(n participants); hard cap `MAX_FINALIZE_NODES = 1800` enforced in `_initParticipant`, sized for the 2^24 per-tx gas cap | Adversarial tests |
+| C-08 | **finalize() DoS** | Unbounded loop over participants | O(n participants); node budgets bound the tree at 1,505 nodes (~11.5M gas measured); hard cap `MAX_FINALIZE_NODES = 1800` enforced in `_initParticipant` as a backstop, sized for the 2^24 per-tx gas cap | Adversarial tests |
 | C-09 | **Treasury zero address** | withdrawUnallocatedArm() sends ARM to zero address | `require(_treasury != address(0))` in constructor; treasury is immutable | Adversarial tests |
-| C-10 | **Elastic expansion edge** | totalCommitted exactly at ELASTIC_TRIGGER | Boundary tests | Adversarial tests |
+| C-10 | **Elastic expansion edge** | totalCommitted exactly at ELASTIC_TRIGGER | `BASE_SALE == MAX_SALE`, so the trigger selects the same sale size either way; boundary tests pin this | Adversarial tests, `CrowdfundElasticFuzz.t.sol` |
 | C-11 | **Signed invite replay** | EIP-712 signed invite replayed to commit multiple times | Nonce tracking via `usedNonces` mapping; each nonce consumed on first use; `revokeInviteNonce()` for preemptive revocation | EIP-712 tests |
 
 ---

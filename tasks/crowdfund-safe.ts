@@ -1,13 +1,14 @@
-// ABOUTME: Hardhat tasks that write Safe Transaction Builder batch files: launch-team seeds and invites
-// ABOUTME: from a CSV (cf-safe-batch) and the security council's emergency cancel (cf-safe-cancel).
+// ABOUTME: Hardhat tasks that write Safe Transaction Builder files: launch-team seeds and invites from a CSV
+// ABOUTME: (cf-safe-batch), the launch-team window extension (cf-safe-extend), and the security council's cancel.
 
 /**
  * Usage (crowdfund address from the network's manifest, or --crowdfund):
  *   npx hardhat cf-safe-batch --file launch.csv --network mainnetHub [--allow-stack] [--check]
  *   npx hardhat cf-safe-cancel --network mainnetHub
+ *   npx hardhat cf-safe-extend --end 2026-12-01T16:00:00Z --network mainnetHub
  *
  * CSV header: address,hop,label — hop 0 = seed, 1 or 2 = launch-team invite to that hop.
- * Output goes to safe-batches/<time>-launch|cancel/ (gitignored): one Transaction Builder file
+ * Output goes to safe-batches/<time>-launch|cancel|extend/ (gitignored): one Transaction Builder file
  * per Safe transaction plus summary.md for the signers. See docs/safe-launch-batches.md.
  */
 
@@ -23,13 +24,18 @@ import {
   DEFAULT_MAX_SEEDS_PER_BATCH,
   batchFileName,
   cancelBatchFile,
+  extendBatchFile,
   launchBatchFile,
   parseLaunchCsv,
+  parseUtcSeconds,
   phaseName,
   planLaunchBatches,
   readCancelTarget,
+  readExtendTarget,
   readLaunchState,
+  renderExtendSummary,
   renderLaunchSummary,
+  validateExtension,
   validateLaunchRows,
 } from "../scripts/safe-batch";
 
@@ -161,5 +167,33 @@ task("cf-safe-cancel", "Write the security council's emergency cancel() as a Saf
       "",
     ].join("\n"));
     console.log(`Wrote ${path.join(dir, "cancel.json")} for the security-council Safe ${target.securityCouncil}`);
+    return dir;
+  }));
+
+task("cf-safe-extend", "Write the launch team's extendWindow(newEnd) as a Safe Transaction Builder file")
+  .addParam("end", "New commitment deadline, ISO 8601 UTC like 2026-12-01T16:00:00Z")
+  .addOptionalParam("crowdfund", "Crowdfund address (default: the network's crowdfund manifest)")
+  .addOptionalParam("out", "Directory for the run's output folder", "safe-batches")
+  .setAction(reported("cf-safe-extend", async (args: any, hre) => {
+    const newEnd = parseUtcSeconds(args.end, "--end");
+    const provider = hre.ethers.provider;
+    const crowdfund = resolveCrowdfund(hre.network.name, args.crowdfund);
+    if (await provider.getCode(crowdfund) === "0x") throw new Error(`No contract at the crowdfund address ${crowdfund}`);
+
+    const target = await readExtendTarget(provider, crowdfund);
+    const validation = validateExtension(target, newEnd);
+    if (await provider.getCode(target.launchTeam) === "0x") {
+      validation.errors.push(`The launch team ${target.launchTeam} is not a contract; this file is for a Safe`);
+    }
+    for (const warning of validation.warnings) console.log(`WARNING: ${warning}`);
+    if (validation.errors.length) {
+      throw new Error(`Refusing to write the extension:\n  ${validation.errors.join("\n  ")}`);
+    }
+
+    const dir = createRunDir(args.out, "extend");
+    fs.writeFileSync(path.join(dir, "extend.json"), JSON.stringify(extendBatchFile(target, newEnd, Date.now()), null, 2) + "\n");
+    fs.writeFileSync(path.join(dir, "summary.md"), renderExtendSummary(target, newEnd, validation.warnings));
+    console.log(`Wrote ${path.join(dir, "extend.json")} for the launch-team Safe ${target.launchTeam}`);
+    console.log(`It must be executed before ${new Date(target.windowEnd * 1000).toISOString()}; signers check it against summary.md`);
     return dir;
   }));

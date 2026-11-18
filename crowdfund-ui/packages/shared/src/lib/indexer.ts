@@ -62,6 +62,7 @@ const BIGINT_FIELDS_BY_EVENT: Partial<Record<CrowdfundEvent['type'], readonly st
   UnallocatedArmWithdrawn: ['amount'],
   Invited: ['nonce'],
   InviteNonceRevoked: ['nonce'],
+  WindowExtended: ['previousEnd', 'newEnd'],
 }
 
 function reviveArgs(type: CrowdfundEvent['type'], args: Record<string, unknown>): Record<string, unknown> {

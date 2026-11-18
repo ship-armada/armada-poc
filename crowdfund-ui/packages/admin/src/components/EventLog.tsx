@@ -5,6 +5,7 @@ import { useState, useMemo } from 'react'
 import {
   formatUsdc,
   formatArm,
+  formatUtcDateTime,
   truncateAddress,
   type CrowdfundEvent,
   type CrowdfundEventType,
@@ -29,12 +30,13 @@ const EVENT_COLORS: Record<CrowdfundEventType, string> = {
   RefundClaimed: 'bg-amber-500/20 text-amber-500',
   InviteNonceRevoked: 'bg-amber-500/20 text-amber-500',
   UnallocatedArmWithdrawn: 'bg-amber-500/20 text-amber-500',
+  WindowExtended: 'bg-amber-500/20 text-amber-500',
 }
 
 const ALL_EVENT_TYPES: CrowdfundEventType[] = [
   'ArmLoaded', 'SeedAdded', 'Invited', 'LaunchTeamInvited', 'Committed', 'Finalized',
   'Cancelled', 'Allocated', 'AllocatedHop', 'RefundClaimed',
-  'InviteNonceRevoked', 'UnallocatedArmWithdrawn',
+  'InviteNonceRevoked', 'UnallocatedArmWithdrawn', 'WindowExtended',
 ]
 
 function formatEventData(event: CrowdfundEvent): string {
@@ -60,6 +62,8 @@ function formatEventData(event: CrowdfundEvent): string {
       return `${truncateAddress(args.inviter as string)} nonce=${String(args.nonce)}`
     case 'UnallocatedArmWithdrawn':
       return `${truncateAddress(args.treasury as string)} ${formatArm(args.amount as bigint)}`
+    case 'WindowExtended':
+      return `deadline -> ${formatUtcDateTime(Number(args.newEnd))}`
     default:
       return ''
   }

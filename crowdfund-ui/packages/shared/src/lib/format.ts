@@ -146,6 +146,14 @@ function formatEndDateTime(unixSeconds: number): string {
   })
 }
 
+/** "2026-12-01 16:00 UTC" from a unix timestamp (seconds). Unambiguous across
+ *  timezones, for operator-facing views such as the event logs. Returns '' at or
+ *  before 0. */
+export function formatUtcDateTime(unixSeconds: number): string {
+  if (!Number.isFinite(unixSeconds) || unixSeconds <= 0) return ''
+  return `${new Date(unixSeconds * 1000).toISOString().slice(0, 16).replace('T', ' ')} UTC`
+}
+
 /**
  * Hover-tooltip detail for a crowdfund countdown: the local end timestamp, e.g.
  * "Ends Jun 14, 2:42 PM" (no year, fits on one line). Shared by the stats banner

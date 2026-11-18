@@ -173,6 +173,18 @@ describe('parseCrowdfundEvent', () => {
     expect(result!.args.amount).toBe(amount)
   })
 
+  // WHY: the launch team's window extension must reach the event logs and the indexer with
+  // both timestamps intact; if the fragment or the type list missed it, parsing would silently
+  // drop it (unknown events return null).
+  it('parses WindowExtended event', () => {
+    const log = encodeLog('WindowExtended', [1_796_140_800n, 1_796_313_600n])
+    const result = parseCrowdfundEvent(log)
+    expect(result).not.toBeNull()
+    expect(result!.type).toBe('WindowExtended')
+    expect(result!.args.previousEnd).toBe(1_796_140_800n)
+    expect(result!.args.newEnd).toBe(1_796_313_600n)
+  })
+
   it('returns null for unrecognized log topics', () => {
     const result = parseCrowdfundEvent({
       blockNumber: 100,

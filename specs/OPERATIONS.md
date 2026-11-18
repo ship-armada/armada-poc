@@ -240,7 +240,7 @@ The launch-team window (days 1-21, the full commitment window) is the highest-ri
 | | |
 |---|---|
 | **Actor** | ROOT (launch team multisig) |
-| **Action** | Call `extendWindow(newEnd)` from the launch-team Safe. It can be batched with `addSeed()` / `launchTeamInvite()` calls in one Safe transaction (the crowdfund's `multicall`) |
+| **Action** | Call `extendWindow(newEnd)` from the launch-team Safe: `npx hardhat cf-safe-extend --end <ISO 8601 UTC>` writes the Transaction Builder file and a summary for the signers (`docs/safe-launch-batches.md`). The call can also be bundled with `addSeed()` / `launchTeamInvite()` calls in one Safe transaction |
 | **Preconditions** | The transaction must be **mined before `windowEnd`** (after that, extension is impossible and anyone may finalize), so start collecting signatures well ahead of the deadline. `newEnd` is later than the current `windowEnd` and no later than `windowStart + MAX_WINDOW_DURATION`. Decision and rationale recorded in the decision log (§10). New deadline announced to participants |
 | **On-chain confirmation** | `WindowExtended(previousEnd, newEnd)` emitted; `windowEnd()` and `launchTeamInviteEnd()` both return `newEnd`; committer countdown shows the new deadline (it re-reads `windowEnd` on every poll); `evaluate-alerts` picks it up on its next run |
 | **Fallback** | An extension cannot be undone or shortened. If the new deadline was set too late, the window simply stays open longer; if it was set too early, extend again before it passes |

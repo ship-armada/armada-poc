@@ -1,4 +1,4 @@
-// ABOUTME: Safe Transaction Builder batches for launch-team seeds/invites and the security-council
+// ABOUTME: Safe Transaction Builder files for launch-team seeds/invites, the window extension, and the security-council
 // ABOUTME: cancel: CSV parsing, contract-state validation, batching, file format, and execution via a real Safe.
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -16,6 +16,13 @@ import {
   txBuilderChecksum,
   LAUNCH_TEAM_METHODS,
   CANCEL_METHOD,
+  EXTEND_METHOD,
+  EXTEND_URGENT_SECONDS,
+  validateExtension,
+  extendBatchFile,
+  renderExtendSummary,
+  parseUtcSeconds,
+  type ExtendTarget,
   type LaunchRow,
   type LaunchState,
   type TxBuilderFile,
@@ -112,7 +119,7 @@ describe("Safe batches for launch-team and security-council actions", function (
     // encode a call to a function that does not exist.
     it("declares methods that match the ArmadaCrowdfund ABI", async function () {
       const artifact = await hre.artifacts.readArtifact("ArmadaCrowdfund");
-      for (const method of [...Object.values(LAUNCH_TEAM_METHODS), CANCEL_METHOD]) {
+      for (const method of [...Object.values(LAUNCH_TEAM_METHODS), CANCEL_METHOD, EXTEND_METHOD]) {
         const abi = artifact.abi.find((f: any) => f.type === "function" && f.name === method.name);
         expect(abi, method.name).to.not.equal(undefined);
         expect(method.inputs.map((i) => [i.name, i.type])).to.deep.equal(abi.inputs.map((i: any) => [i.name, i.type]));
@@ -242,7 +249,70 @@ describe("Safe batches for launch-team and security-council actions", function (
     });
   });
 
-  describe("with a real Safe (cf-safe-batch / cf-safe-cancel tasks)", function () {
+  describe("window extension (cf-safe-extend helpers)", function () {
+    /** An open sale: started at 1,000, ends at 10,000, maximum end 20,000, now 5,000. */
+    const target = (overrides: Partial<ExtendTarget> = {}): ExtendTarget => ({
+      chainId: 1, crowdfund: CROWDFUND, launchTeam: LAUNCH_TEAM, now: 5_000, phase: 0,
+      windowStart: 1_000, windowEnd: 10_000, maxWindowDuration: 19_000,
+      ...overrides,
+    });
+
+    // WHY: the deadline is typed by an operator. A zone-less time would be read in their local
+    // timezone and a bare number could be seconds or milliseconds; only canonical UTC is accepted.
+    it("parses canonical ISO 8601 UTC and rejects ambiguous forms", function () {
+      expect(parseUtcSeconds("2026-12-01T16:00:00Z", "--end")).to.equal(Date.UTC(2026, 11, 1, 16) / 1000);
+      for (const bad of ["2026-12-01T16:00:00", "2026-12-01T16:00:00.000Z", "1796140800", "2026-13-01T16:00:00Z", "2026-12-01"]) {
+        expect(() => parseUtcSeconds(bad, "--end"), bad).to.throw(/--end must be ISO 8601 UTC/);
+      }
+    });
+
+    // WHY: the file must only be written when extendWindow() would succeed as of now: later
+    // than the current end, within the maximum, sale active, window not yet ended.
+    it("accepts an extension within the rules and rejects each violation", function () {
+      // (The fixture is within EXTEND_URGENT_SECONDS of its end, so it also warns; see the next case.)
+      expect(validateExtension(target(), 15_000).errors).to.deep.equal([]);
+      expect(validateExtension(target(), 20_000).errors).to.deep.equal([]); // exactly the maximum
+      for (const [t, newEnd, message] of [
+        [target(), 10_000, /must be later than the current end/],
+        [target(), 9_000, /must be later than the current end/],
+        [target(), 20_001, /past the maximum window end/],
+        [target({ phase: 2 }), 15_000, /not active/],
+        [target({ now: 10_001 }), 15_000, /can no longer be extended/],
+      ] as const) {
+        expect(validateExtension(t, newEnd).errors.join(), String(newEnd)).to.match(message);
+      }
+    });
+
+    // WHY: the extension only counts if the Safe executes it before the current deadline; with
+    // little time left the operator must be told, since a late execution can never be retried.
+    it("warns when little time is left before the current deadline", function () {
+      const close = target({ now: 10_000 - EXTEND_URGENT_SECONDS + 3_600 });
+      expect(validateExtension(close, 15_000).warnings.join()).to.match(/Safe must execute before/);
+      expect(validateExtension(target({ now: 10_000 - EXTEND_URGENT_SECONDS - 1 }), 15_000).warnings).to.deep.equal([]);
+    });
+
+    // WHY: the builder must encode exactly extendWindow(newEnd) to the crowdfund, from the
+    // launch-team Safe on the right chain, with a checksum it accepts; the summary is the
+    // signer's only reference for the new end and the execute-by deadline.
+    it("writes a file that encodes extendWindow(newEnd) and a summary with the deadlines", function () {
+      const file = extendBatchFile(target(), 15_000, 1_700_000_000_000);
+      const cf = new ethers.Interface(["function extendWindow(uint256)"]);
+      expect(file.transactions.map(builderCalldata)).to.deep.equal([cf.encodeFunctionData("extendWindow", [15_000])]);
+      expect(file.transactions[0].to).to.equal(CROWDFUND);
+      expect(file.chainId).to.equal("1");
+      expect(file.meta.createdFromSafeAddress).to.equal(LAUNCH_TEAM);
+      const { checksum, ...meta } = file.meta;
+      expect(checksum).to.equal(txBuilderChecksum({ ...file, meta }));
+
+      const summary = renderExtendSummary(target(), 15_000, ["a warning"]);
+      expect(summary).to.include("| **New end** | **1970-01-01T04:10:00.000Z** | **15000** |")
+        .and.include("| Maximum end | 1970-01-01T05:33:20.000Z | 20000 |")
+        .and.include("must be executed before 1970-01-01T02:46:40.000Z")
+        .and.include("- a warning");
+    });
+  });
+
+  describe("with a real Safe (cf-safe-batch / cf-safe-extend / cf-safe-cancel tasks)", function () {
     // Safe v1.4.1, the version the Safe web app deploys on mainnet, from @safe-global/safe-contracts.
     const safeArtifact = (p: string) => JSON.parse(fs.readFileSync(path.join(__dirname, "..", "node_modules",
       "@safe-global", "safe-contracts", "build", "artifacts", "contracts", p), "utf8"));
@@ -386,6 +456,32 @@ describe("Safe batches for launch-team and security-council actions", function (
         .to.equal(undefined);
       expect(fs.readdirSync(tmp)).to.deep.equal(["launch.csv"]);
       expect(logged.join("\n")).to.include("Check passed");
+    });
+
+    // WHY: end to end — the cf-safe-extend file, executed through the 1-of-3 launch-team Safe,
+    // must move the deadline; re-running with the same end, or after the deadline has passed,
+    // must refuse and write nothing, since extendWindow() would revert.
+    it("writes an extendWindow() file that the launch-team Safe executes", async function () {
+      const { crowdfund, cfAddress, launchSafe, multiSend, launchOwners } = await fixture();
+      await time.increaseTo(await crowdfund.windowStart());
+      const newEnd = Number(await crowdfund.windowEnd()) + 2 * 86400;
+      const end = new Date(newEnd * 1000).toISOString().replace(".000Z", "Z");
+
+      const dir: string = await hre.run("cf-safe-extend", { end, crowdfund: cfAddress, out: tmp });
+      const [file] = readFiles(dir);
+      expect(file.meta.createdFromSafeAddress).to.equal(await launchSafe.getAddress());
+      expect(fs.readFileSync(path.join(dir, "summary.md"), "utf8")).to.include(`| **New end** | **${end.replace("Z", ".000Z")}** | **${newEnd}** |`);
+      await executeFile(launchSafe, multiSend, launchOwners, file);
+      expect(await crowdfund.windowEnd()).to.equal(BigInt(newEnd));
+      expect(await crowdfund.launchTeamInviteEnd()).to.equal(BigInt(newEnd));
+
+      const before = fs.readdirSync(tmp);
+      await expect(hre.run("cf-safe-extend", { end, crowdfund: cfAddress, out: tmp })).to.be.rejectedWith(/must be later/);
+      await time.increaseTo(newEnd + 1);
+      const later = new Date((newEnd + 86400) * 1000).toISOString().replace(".000Z", "Z");
+      await expect(hre.run("cf-safe-extend", { end: later, crowdfund: cfAddress, out: tmp }))
+        .to.be.rejectedWith(/can no longer be extended/);
+      expect(fs.readdirSync(tmp)).to.deep.equal(before);
     });
 
     // WHY: the security council's emergency cancel must be ready to execute from its Safe

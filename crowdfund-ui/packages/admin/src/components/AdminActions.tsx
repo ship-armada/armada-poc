@@ -14,6 +14,7 @@ import { SettlementSummary } from './SettlementSummary'
 import { TreasuryMonitor } from './TreasuryMonitor'
 import { ArmSweepPanel } from './ArmSweepPanel'
 import { CancelPanel } from './CancelPanel'
+import { ExtendWindowPanel } from './ExtendWindowPanel'
 
 export interface AdminActionsProps {
   state: AdminState
@@ -66,6 +67,18 @@ export function AdminActions({ state, role, signer, crowdfundAddress, treasury, 
               blockTimestamp={state.blockTimestamp}
               launchTeamInviteEnd={state.launchTeamInviteEnd}
               provider={provider}
+            />
+          )}
+
+          {/* Window extension — LT only, while the window is open (hidden on contracts without extendWindow) */}
+          {isLT && state.windowEnd > 0 && state.blockTimestamp <= state.windowEnd && (
+            <ExtendWindowPanel
+              signer={signer}
+              crowdfundAddress={crowdfundAddress}
+              provider={provider}
+              windowStart={state.windowStart}
+              windowEnd={state.windowEnd}
+              blockTimestamp={state.blockTimestamp}
             />
           )}
 

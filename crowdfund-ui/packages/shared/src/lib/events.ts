@@ -1,5 +1,5 @@
 // ABOUTME: Crowdfund event type definitions and parsing utilities.
-// ABOUTME: Converts raw ethers log entries into typed CrowdfundEvent objects (12 event types).
+// ABOUTME: Converts raw ethers log entries into typed CrowdfundEvent objects (13 event types).
 
 import { Interface } from 'ethers'
 import { CROWDFUND_ABI_FRAGMENTS } from './constants.js'
@@ -18,6 +18,7 @@ export type CrowdfundEventType =
   | 'RefundClaimed'
   | 'InviteNonceRevoked'
   | 'UnallocatedArmWithdrawn'
+  | 'WindowExtended'
 
 /** Raw log shape from eth_getLogs or ethers provider */
 export interface RawLog {
@@ -52,6 +53,7 @@ export const VALID_EVENT_TYPES: ReadonlySet<string> = new Set<string>([
   'RefundClaimed',
   'InviteNonceRevoked',
   'UnallocatedArmWithdrawn',
+  'WindowExtended',
 ])
 
 const crowdfundInterface = new Interface(CROWDFUND_ABI_FRAGMENTS)

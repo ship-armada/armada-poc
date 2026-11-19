@@ -23,7 +23,7 @@
  * Usage:
  *   npx hardhat run scripts/crowdfund_populate.ts --network hub
  *   TARGET=1200000 npx hardhat run scripts/crowdfund_populate.ts --network hub
- *   TARGET=1500000 HOPS=true INVITED=30 npx hardhat run scripts/crowdfund_populate.ts --network hub
+ *   TARGET=1800000 HOPS=true INVITED=30 npx hardhat run scripts/crowdfund_populate.ts --network hub
  */
 
 import { ethers, network } from "hardhat";

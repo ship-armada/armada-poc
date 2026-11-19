@@ -20,13 +20,13 @@ The UI is built for one deployment at a time, selected by `VITE_CROWDFUND_PROFIL
 
 **Relaunch profile differences** (see CROWDFUND.md for the sale itself):
 
-- **Tiers, not hops.** Hop 0 is labelled "Known" ($150k cap), hop 2 "Invited" ($10k cap). Hop 1 holds up to five team inviter wallets ($0 cap), labelled "Team" where shown at all.
+- **Tiers, not hops.** Hop 0 is labelled "Known" ($100k cap), hop 2 "Invited" ($10k per invite). Hop 1 holds the one team inviter wallet ($0 cap), labelled "Team" where shown at all.
 - **Team wallets are invite-only.** A wallet whose every position has a $0 cap gets no commit flow and no Participate buttons; its invite card takes the Participate card's place. Its invite list is the compact "Invite to Invited · N invites left" row plus the links it has issued.
 - **Link-only invites.** Direct invite by address (Path B), the self-invite shortcut and the self-fill ("max out") flow are not offered; the Invite button opens the link screen directly.
 - **Team wallets hidden from public views.** The participants list, graph and Details modal (participants table, event log, per-tier stats) are built from `toPublicEvents()` (`shared/src/lib/publicEvents.ts`): team wallets are dropped and their invitees shown as invited by Armada, exactly like direct launch-team placements. A disclosure under the Details participants table explains this; the wallets remain visible on-chain. The connected wallet's own position, eligibility and invite slots use the real graph.
-- **No stacking.** A repeat invite to an already-invited address at the same hop reverts on-chain.
-- **Priority fill copy.** With no floors and 100% ceilings (`isPriorityFill()`), the allocation caveat reads "If total demand exceeds the $1.5M sale, you may receive a reduced allocation or none, and the rest comes back to you", the "refund after allocation" FAQ item is hidden, and the below-minimum claim gate does not mention per-hop limits.
-- **Zero-ARM refund claim.** A participant allocated 0 ARM with a refund (e.g. Invited crowded out by the Known tier) sees a single "Claim your refund" screen that calls `claim(address(0))`, with no delegate step. This applies on every profile.
+- **Stacking at Invited only.** An Invited address can receive up to 20 invites, each adding $10k of cap (up to $200k); the 21st reverts on-chain. A repeat Known or Team placement reverts.
+- **Allocation copy.** Allocation equals min(capped demand, sale size) under the relaunch's reserve model (`allocationMatchesDemand()`), so the allocation caveat reads "If total demand exceeds the $1.8M sale, you get a pro-rata share and the rest comes back to you", the "refund after allocation" FAQ item is hidden, and the below-minimum claim gate does not mention per-hop limits. The per-tier status tables label Invited by its $300K reserve and Known by "Remainder".
+- **Zero-ARM refund claim.** A participant allocated 0 ARM with a refund (e.g. the team wallet, refunded in full under its $0 cap) sees a single "Claim your refund" screen that calls `claim(address(0))`, with no delegate step. This applies on every profile.
 
 ---
 

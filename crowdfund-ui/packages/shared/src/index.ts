@@ -61,7 +61,15 @@ export {
   isValidEnsName,
 } from './lib/addressInput.js'
 
-export { estimateAllocation, estimateUserArmAllocation, isPriorityFill, projectsRefundMode } from './lib/allocation.js'
+export {
+  allocationMatchesDemand,
+  estimateAllocation,
+  estimateUserArmAllocation,
+  hop2HasFloor,
+  hopCeilingLabel,
+  projectedLaunchTeamPayment,
+  projectsRefundMode,
+} from './lib/allocation.js'
 export { toPublicEvents } from './lib/publicEvents.js'
 export type { AllocationConfig, AllocationEstimate, HopAllocationStats, UserHopPosition } from './lib/allocation.js'
 

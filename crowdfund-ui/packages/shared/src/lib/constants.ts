@@ -33,9 +33,21 @@ export interface CrowdfundConstants {
   readonly CLAIM_DEADLINE_DURATION: number
   /** Matches ArmadaGovernor.QUIET_PERIOD_DURATION. */
   readonly GOVERNANCE_QUIET_PERIOD: number
+  /** How finalize() splits the sale between hops (see lib/allocation.ts): `waterfall` is the
+   *  floor/ceiling waterfall (Launch 1, medi); `hop2Reserve` gives hop 2 first priority for
+   *  HOP2_RESERVE_USDC, with unused capacity rolling both ways (relaunch). */
+  readonly ALLOCATION_MODEL: AllocationModel
+  /** Waterfall model only: hop-2 floors as a share of the sale. */
   readonly HOP2_BASE_FLOOR_BPS: number
   readonly HOP2_EXTRA_FLOOR_BPS: number
+  /** hop2Reserve model only: hop 2's first-priority capacity (USDC, 6 decimals). */
+  readonly HOP2_RESERVE_USDC: bigint
+  /** USDC paid to the launch team on a successful finalize, before the treasury (0 = none). */
+  readonly TEAM_PAYMENT_USDC: bigint
 }
+
+/** The allocation algorithm a deployment's contract runs at finalize(). */
+export type AllocationModel = 'waterfall' | 'hop2Reserve'
 
 /** UI features that differ between deployments. */
 export interface CrowdfundFeatures {
@@ -71,8 +83,11 @@ export const CONSTANTS_BY_PROFILE: Record<CrowdfundProfile, CrowdfundConstants> 
     LAUNCH_TEAM_INVITE_PERIOD: 21 * 24 * 60 * 60, // 21 days (equal to WINDOW_DURATION)
     CLAIM_DEADLINE_DURATION: 1095 * 24 * 60 * 60, // 3 years
     GOVERNANCE_QUIET_PERIOD: 10 * 24 * 60 * 60, // 10 days
+    ALLOCATION_MODEL: 'waterfall',
     HOP2_BASE_FLOOR_BPS: 500, // 5%
     HOP2_EXTRA_FLOOR_BPS: 1000, // additional 10%, funded from hop-0's ceiling
+    HOP2_RESERVE_USDC: 0n,
+    TEAM_PAYMENT_USDC: 0n,
   },
   medi: {
     BASE_SALE: 1_000n * 10n ** 6n,
@@ -93,25 +108,31 @@ export const CONSTANTS_BY_PROFILE: Record<CrowdfundProfile, CrowdfundConstants> 
     LAUNCH_TEAM_INVITE_PERIOD: 14 * 24 * 60 * 60, // 14 days (equal to WINDOW_DURATION on medi-Sepolia)
     CLAIM_DEADLINE_DURATION: 60 * 24 * 60 * 60, // 60 days
     GOVERNANCE_QUIET_PERIOD: 1 * 24 * 60 * 60, // 1 day
+    ALLOCATION_MODEL: 'waterfall',
     HOP2_BASE_FLOOR_BPS: 500, // 5%
     HOP2_EXTRA_FLOOR_BPS: 0, // medi-Sepolia contracts predate the extra hop-2 floor
+    HOP2_RESERVE_USDC: 0n,
+    TEAM_PAYMENT_USDC: 0n,
   },
   relaunch: {
-    BASE_SALE: 1_500_000n * 10n ** 6n,
-    MAX_SALE: 1_500_000n * 10n ** 6n, // equal to BASE_SALE: no elastic expansion
+    BASE_SALE: 1_800_000n * 10n ** 6n,
+    MAX_SALE: 1_800_000n * 10n ** 6n, // equal to BASE_SALE: no elastic expansion
     MIN_SALE: 250_000n * 10n ** 6n,
-    ELASTIC_TRIGGER: 1_500_000n * 10n ** 6n,
+    ELASTIC_TRIGGER: 1_800_000n * 10n ** 6n,
     ARM_PRICE: 1_000_000n,
     MAX_SEEDS: 500,
-    LAUNCH_TEAM_HOP1_BUDGET: 5, // team inviter wallets
+    LAUNCH_TEAM_HOP1_BUDGET: 1, // the team inviter wallet
     LAUNCH_TEAM_HOP2_BUDGET: 500,
-    MIN_COMMIT: 50n * 10n ** 6n,
-    WINDOW_DURATION: 7 * 24 * 60 * 60, // 7 days (extendable on-chain up to MAX_WINDOW_DURATION)
-    LAUNCH_TEAM_INVITE_PERIOD: 7 * 24 * 60 * 60, // 7 days (equal to WINDOW_DURATION)
+    MIN_COMMIT: 100n * 10n ** 6n,
+    WINDOW_DURATION: 5 * 24 * 60 * 60, // 5 days (extendable on-chain up to MAX_WINDOW_DURATION)
+    LAUNCH_TEAM_INVITE_PERIOD: 5 * 24 * 60 * 60, // 5 days (equal to WINDOW_DURATION)
     CLAIM_DEADLINE_DURATION: 1095 * 24 * 60 * 60, // 3 years
     GOVERNANCE_QUIET_PERIOD: 10 * 24 * 60 * 60, // 10 days
-    HOP2_BASE_FLOOR_BPS: 0, // no hop-2 reserve: priority fill
+    ALLOCATION_MODEL: 'hop2Reserve',
+    HOP2_BASE_FLOOR_BPS: 0, // waterfall model only
     HOP2_EXTRA_FLOOR_BPS: 0,
+    HOP2_RESERVE_USDC: 300_000n * 10n ** 6n,
+    TEAM_PAYMENT_USDC: 250_000n * 10n ** 6n,
   },
 }
 
@@ -129,11 +150,12 @@ export const HOP_CONFIGS_BY_PROFILE: Record<
     { ceilingBps: 4500, capUsdc: 20n * 10n ** 6n, maxInvites: 2, maxInvitesReceived: 10 },
     { ceilingBps: 0, capUsdc: 10n * 10n ** 6n, maxInvites: 0, maxInvitesReceived: 20 },
   ],
-  // Known contributors / team inviter wallets ($0 cap, invite links only) / invited contributors.
+  // Known contributors / the team inviter wallet ($0 cap, invite links only) / invited contributors
+  // ($10k per invite, stacking to 20). ceilingBps is unused by the reserve model (0, as on-chain).
   relaunch: [
-    { ceilingBps: 10000, capUsdc: 150_000n * 10n ** 6n, maxInvites: 0, maxInvitesReceived: 1 },
-    { ceilingBps: 10000, capUsdc: 0n, maxInvites: 100, maxInvitesReceived: 1 },
-    { ceilingBps: 0, capUsdc: 10_000n * 10n ** 6n, maxInvites: 0, maxInvitesReceived: 1 },
+    { ceilingBps: 0, capUsdc: 100_000n * 10n ** 6n, maxInvites: 0, maxInvitesReceived: 1 },
+    { ceilingBps: 0, capUsdc: 0n, maxInvites: 100, maxInvitesReceived: 1 },
+    { ceilingBps: 0, capUsdc: 10_000n * 10n ** 6n, maxInvites: 0, maxInvitesReceived: 20 },
   ],
 }
 
@@ -205,6 +227,7 @@ export const CROWDFUND_ABI_FRAGMENTS = [
   'event InviteNonceRevoked(address indexed inviter, uint256 nonce)',
   'event UnallocatedArmWithdrawn(address indexed treasury, uint256 amount)',
   'event WindowExtended(uint256 previousEnd, uint256 newEnd)',
+  'event LaunchTeamPaid(address indexed recipient, uint256 amount)',
   'function phase() view returns (uint8)',
   'function armLoaded() view returns (bool)',
   'function totalCommitted() view returns (uint256)',

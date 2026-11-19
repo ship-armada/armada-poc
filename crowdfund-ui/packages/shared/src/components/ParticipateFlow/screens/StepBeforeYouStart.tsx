@@ -12,7 +12,7 @@ import { DISCORD_URL, X_URL } from '../../../lib/socials'
 import { CROWDFUND_CONSTANTS } from '../../../lib/constants'
 import styles from './StepBeforeYouStart.module.css'
 import { formatUsdcShort, hopLabel, hopTagLabel } from '../../../lib/format'
-import { isPriorityFill } from '../../../lib/allocation'
+import { allocationMatchesDemand } from '../../../lib/allocation'
 
 const HOP_TAG_LABEL: Record<HopVariant, string> = {
   seed: hopTagLabel(0),
@@ -145,11 +145,11 @@ function inviteBullet(
   return `${base} You can increase your commit limit by self-inviting — up to $${formatUsdc(ceiling)}.`
 }
 
-/** The allocation caveat. Under priority fill (the relaunch) a tier can get nothing even when it is
- *  not itself oversubscribed, so the wording covers a reduced allocation or none. */
-export function allocationBullet(priorityFill: boolean, saleSizeUsdc: bigint): string {
-  return priorityFill
-    ? `Allocation isn’t guaranteed. If total demand exceeds the ${formatUsdcShort(saleSizeUsdc)} sale, you may receive a reduced allocation or none, and the rest comes back to you.`
+/** The allocation caveat. When allocation matches demand (the relaunch), pro-rating starts only once
+ *  total demand exceeds the sale, so the wording keys off the sale size rather than one hop. */
+export function allocationBullet(matchesDemand: boolean, saleSizeUsdc: bigint): string {
+  return matchesDemand
+    ? `Allocation isn’t guaranteed. If total demand exceeds the ${formatUsdcShort(saleSizeUsdc)} sale, you get a pro-rata share and the rest comes back to you.`
     : 'Allocation isn’t guaranteed. If your hop is oversubscribed you get a pro-rata share and the rest comes back to you.'
 }
 
@@ -167,7 +167,7 @@ function knowItems(
   if (invites) items.push(invites)
 
   items.push(
-    allocationBullet(isPriorityFill(), CROWDFUND_CONSTANTS.MAX_SALE),
+    allocationBullet(allocationMatchesDemand(), CROWDFUND_CONSTANTS.MAX_SALE),
     `If the raise ends under $${formatUsdc(minSaleUsdc)}, everyone gets a full refund.`,
     'ARM is claimed after the window closes. Voting power starts once you claim and delegate.',
   )

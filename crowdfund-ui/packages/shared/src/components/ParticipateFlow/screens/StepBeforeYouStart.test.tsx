@@ -77,12 +77,12 @@ describe('StepBeforeYouStart refund threshold', () => {
 })
 
 describe('allocationBullet', () => {
-  // WHY: under priority fill (the relaunch) a tier can be refunded in full even when it is not itself
-  // oversubscribed, so the "if your hop is oversubscribed" wording is wrong there; the decided copy
-  // says the allocation may be reduced or none.
-  it('uses the reduced-or-none wording with the sale size under priority fill', () => {
-    expect(allocationBullet(true, 1_500_000_000_000n)).toBe(
-      'Allocation isn’t guaranteed. If total demand exceeds the $1.5M sale, you may receive a reduced allocation or none, and the rest comes back to you.',
+  // WHY: when allocation matches demand (the relaunch) pro-rating starts only once total demand
+  // exceeds the sale, so the "if your hop is oversubscribed" wording is wrong there. The hop-2
+  // reserve means no tier is crowded out to nothing, so the decided copy promises a pro-rata share.
+  it('uses the sale-wide pro-rata wording with the sale size when allocation matches demand', () => {
+    expect(allocationBullet(true, 1_800_000_000_000n)).toBe(
+      'Allocation isn’t guaranteed. If total demand exceeds the $1.8M sale, you get a pro-rata share and the rest comes back to you.',
     )
   })
 

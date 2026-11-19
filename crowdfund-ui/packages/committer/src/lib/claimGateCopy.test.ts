@@ -1,5 +1,5 @@
 // ABOUTME: Tests for the below-minimum claim gate message: the "after per-hop allocation limits" clause
-// ABOUTME: appears only where hop limits can cause the shortfall (not under priority fill).
+// ABOUTME: appears only where hop limits can cause the shortfall (not when allocation matches demand).
 
 import { describe, it, expect } from 'vitest'
 import { belowMinimumMessage } from './claimGateCopy'
@@ -7,8 +7,9 @@ import { belowMinimumMessage } from './claimGateCopy'
 const MIN = 250_000_000_000n
 
 describe('belowMinimumMessage', () => {
-  // WHY: under priority fill only low demand can miss the minimum, so blaming per-hop limits is false.
-  it('omits the per-hop clause under priority fill', () => {
+  // WHY: when allocation matches demand (the relaunch) only low demand can miss the minimum, so
+  // blaming per-hop limits is false.
+  it('omits the per-hop clause when allocation matches demand', () => {
     expect(belowMinimumMessage(true, MIN, 5_000_000_000n)).toBe(
       "The crowdfund didn't reach the $250,000 minimum fund. Once it's finalized, you'll be able to claim a refund of your committed $5,000 from here.",
     )

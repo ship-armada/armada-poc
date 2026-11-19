@@ -27,7 +27,7 @@ import {
   isValidEnsName,
   truncateAddress,
   ADDRESS_INPUT_MAX_LENGTH,
-  isPriorityFill,
+  allocationMatchesDemand,
 } from '@armada/crowdfund-shared'
 import { belowMinimumMessage } from '@/lib/claimGateCopy'
 import { Button as ArmadaButton, Tooltip } from '@armada/ui'
@@ -785,7 +785,7 @@ function ClaimFlowScreens(props: ClaimFlowV2Props) {
       return (
         <GateShell title="Sale ended below minimum">
           <p className={styles.gateBody}>
-            {belowMinimumMessage(isPriorityFill(), CROWDFUND_CONSTANTS.MIN_SALE, props.totalCommitted)}
+            {belowMinimumMessage(allocationMatchesDemand(), CROWDFUND_CONSTANTS.MIN_SALE, props.totalCommitted)}
           </p>
           <p className={styles.gateBodyFootnote}>
             Finalization is permissionless — anyone can trigger it. Refresh this page once

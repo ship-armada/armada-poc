@@ -21,30 +21,34 @@ describe('relaunch profile', () => {
   // test-foundry/CrowdfundRelaunchConfig.t.sol); a drift shows wrong caps or refund projections.
   it('matches the relaunch contract sale and budget constants', () => {
     const c = CONSTANTS_BY_PROFILE.relaunch
-    expect(c.BASE_SALE).toBe(1_500_000n * USDC)
-    expect(c.MAX_SALE).toBe(1_500_000n * USDC)
-    expect(c.ELASTIC_TRIGGER).toBe(1_500_000n * USDC)
+    expect(c.BASE_SALE).toBe(1_800_000n * USDC)
+    expect(c.MAX_SALE).toBe(1_800_000n * USDC)
+    expect(c.ELASTIC_TRIGGER).toBe(1_800_000n * USDC)
     expect(c.MIN_SALE).toBe(250_000n * USDC)
     expect(c.ARM_PRICE).toBe(1_000_000n)
     expect(c.MAX_SEEDS).toBe(500)
-    expect(c.LAUNCH_TEAM_HOP1_BUDGET).toBe(5)
+    expect(c.LAUNCH_TEAM_HOP1_BUDGET).toBe(1)
     expect(c.LAUNCH_TEAM_HOP2_BUDGET).toBe(500)
-    expect(c.MIN_COMMIT).toBe(50n * USDC)
-    expect(c.WINDOW_DURATION).toBe(7 * DAY)
-    expect(c.LAUNCH_TEAM_INVITE_PERIOD).toBe(7 * DAY)
+    expect(c.MIN_COMMIT).toBe(100n * USDC)
+    expect(c.WINDOW_DURATION).toBe(5 * DAY)
+    expect(c.LAUNCH_TEAM_INVITE_PERIOD).toBe(5 * DAY)
     expect(c.CLAIM_DEADLINE_DURATION).toBe(1095 * DAY)
     expect(c.GOVERNANCE_QUIET_PERIOD).toBe(10 * DAY)
+    expect(c.ALLOCATION_MODEL).toBe('hop2Reserve')
+    expect(c.HOP2_RESERVE_USDC).toBe(300_000n * USDC)
+    expect(c.TEAM_PAYMENT_USDC).toBe(250_000n * USDC)
     expect(c.HOP2_BASE_FLOOR_BPS).toBe(0)
     expect(c.HOP2_EXTRA_FLOOR_BPS).toBe(0)
   })
 
-  // WHY: hop configs drive caps, invite-slot counts and the waterfall ceilings. Known: $150k, no
-  // invites; Team wallets: $0 cap, 100 invites; Invited: $10k, no invites; no stacking anywhere.
+  // WHY: hop configs drive caps, invite-slot counts and stacking limits. Known: $100k, no invites;
+  // Team wallet: $0 cap, 100 invites; Invited: $10k per invite, stacking to 20 invites. ceilingBps
+  // is unused by the reserve model, and 0 as in the contract.
   it('matches the relaunch contract hop configs', () => {
     expect(HOP_CONFIGS_BY_PROFILE.relaunch).toEqual([
-      { ceilingBps: 10000, capUsdc: 150_000n * USDC, maxInvites: 0, maxInvitesReceived: 1 },
-      { ceilingBps: 10000, capUsdc: 0n, maxInvites: 100, maxInvitesReceived: 1 },
-      { ceilingBps: 0, capUsdc: 10_000n * USDC, maxInvites: 0, maxInvitesReceived: 1 },
+      { ceilingBps: 0, capUsdc: 100_000n * USDC, maxInvites: 0, maxInvitesReceived: 1 },
+      { ceilingBps: 0, capUsdc: 0n, maxInvites: 100, maxInvitesReceived: 1 },
+      { ceilingBps: 0, capUsdc: 10_000n * USDC, maxInvites: 0, maxInvitesReceived: 20 },
     ])
   })
 
@@ -77,6 +81,16 @@ describe('mainnet profile', () => {
     expect(c.MAX_SALE).toBe(1_800_000n * USDC)
     expect(c.MIN_SALE).toBe(1_000_000n * USDC)
     expect(c.MAX_SEEDS).toBe(180)
+  })
+
+  // WHY: Launch 1 and the medi testnet deployments run the floor/ceiling waterfall and pay no
+  // launch team at settlement; only the relaunch uses the reserve model and team payment.
+  it('keeps the waterfall model and no team payment outside the relaunch', () => {
+    for (const p of ['mainnet', 'medi'] as const) {
+      expect(CONSTANTS_BY_PROFILE[p].ALLOCATION_MODEL).toBe('waterfall')
+      expect(CONSTANTS_BY_PROFILE[p].HOP2_RESERVE_USDC).toBe(0n)
+      expect(CONSTANTS_BY_PROFILE[p].TEAM_PAYMENT_USDC).toBe(0n)
+    }
   })
 })
 

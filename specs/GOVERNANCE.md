@@ -229,7 +229,7 @@ principle to the full proposal classification system.
 | Setter / action | Extended (loosening) | Standard (tightening) |
 |---|---|---|
 | Fee parameters | Increase | Decrease |
-| Treasury outflow limit | Increase limit or extend window | Decrease limit or shorten window |
+| Treasury outflow limit | Increase limit or extend window | Decrease limit or shorten window (Extended at launch; see the implementation note below) |
 | Quorum | Decrease | Increase |
 | Voting period | Decrease (less scrutiny time) | Increase (more scrutiny time) |
 | Execution delay | Decrease (less veto time) | Increase (more veto time) |
@@ -328,7 +328,7 @@ Most reusable governance parameters listed above are themselves governable — l
 | **Parameters** | Governance parameters — loosening changes (quorum decrease, voting period decrease, execution delay decrease, proposal delay decrease, proposal threshold decrease, bond decrease, quorum floor decrease) | Extended |
 | **Parameters** | Governance parameters — tightening changes (quorum increase, voting period increase, execution delay increase, proposal delay increase, proposal threshold increase, bond increase, quorum floor increase) | Standard |
 | **Parameters** | Treasury outflow rate limit increases or window extensions (loosening) | Extended |
-| **Parameters** | Treasury outflow rate limit decreases or window reductions (tightening) | Standard |
+| **Parameters** | Treasury outflow rate limit decreases or window reductions (tightening) | Standard (Extended at launch; see §Standard vs. extended classification, implementation note) |
 | **Steward** | Treasury Steward election | Extended |
 | **Steward** | Treasury Steward removal | Standard |
 | **Steward** | Steward budget table — add token, increase limit, extend window (loosening) | Extended |
@@ -821,11 +821,11 @@ The 24-day activation delay exceeds the maximum Extended proposal governance cyc
 This structurally prevents two attack patterns:
 
 - **Atomic batch attack:** a single proposal cannot batch a parameter loosening and a treasury drain. The drain executes against the old (tighter) active parameters and reverts.
-- **Pre-execution overlap:** a drain proposal submitted *before* the parameter-loosening proposal executes will complete its own governance cycle before the pending change activates, so it executes against the old parameters and reverts.
+- **Pre-execution overlap:** a drain proposal whose governance cycle completes before the pending change activates executes against the old parameters and reverts. Because a succeeded proposal can be queued up to 14 days after its vote ends (`QUEUE_GRACE_PERIOD`), this covers only drains whose vote ends more than 14 days before activation: with the loosening executing on day 23 and activating on day 47, an Extended drain submitted from about day 17 can wait, queue once the change activates, and execute around day 54 (see the residual gap below).
 
 Under governance capture and current timings, the minimum drain timeline is approximately 47 days across two separate Extended proposals, each with an independent Security Council veto opportunity and 24 days of publicly-visible pending state between them.
 
-**Residual gap:** a drain proposal submitted *after* the parameter-loosening proposal executes but *before* the pending change activates can be timed to execute at or after activation and benefit from the loosened parameters. Closing this gap requires proposal-time snapshotting of outflow parameters, where treasury-spend proposals are evaluated against the parameters active when they were queued rather than when they execute. This is planned as a post-launch governor upgrade and would extend the minimum drain timeline to approximately 70 days across two fully separated governance cycles.
+**Residual gap:** a drain proposal whose queue window reaches the activation (submitted from about day 17, whether before or after the parameter-loosening proposal executes) can be timed to execute at or after activation and benefit from the loosened parameters. Each such drain is still a separate proposal with its own Security Council veto window. Closing this gap requires proposal-time snapshotting of outflow parameters, where treasury-spend proposals are evaluated against the parameters active when they were queued rather than when they execute. This is planned as a post-launch governor upgrade and would extend the minimum drain timeline to approximately 70 days across two fully separated governance cycles.
 
 The pending parameter values are publicly readable from storage at all times. During the 24-day activation window, any token holder or monitoring system can observe that a loosening change is pending. External monitoring infrastructure subscribes to `OutflowLimitIncreaseScheduled`, `OutflowLimitActivated`, and `OutflowLimitDecreased` events for real-time visibility.
 

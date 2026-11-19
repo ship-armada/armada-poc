@@ -593,6 +593,30 @@ Each alert must include:
 - If not recognized: the steward Safe can `cancel()` its own proposal while it is Active (7-day review). Once it is Queued, the Security Council calls `veto(proposalId, rationaleHash)` before the timelock delay (2 days) elapses — or, for a sale-window proposal, before `finalize()` funds the treasury. Until 70 days after finalization (the veto bootstrap) the veto is final: no ratification vote is created (`ProposalVetoed` ratificationId 0).
 - Once governance has voters, a Standard `removeSteward()` proposal voids every queued steward proposal at execute time.
 
+## 12f. Security Council Proposal Watchlist
+
+**What:** Decode the calldata of every queued proposal and flag any call that can weaken the Security Council's veto protection or take over governance.
+
+**Why:** No path changes funds, upgrades, parameters or the Security Council without a governor proposal and the timelock queue, so the veto is the backstop for every one of them. Each call below can itself be vetoed, but only if the Security Council recognizes it during the timelock delay (at least 2 days). They are all classified Extended (explicitly or by the fail-closed default), but the classification does not say which ones remove protections.
+
+**Signal:** `ProposalQueued(proposalId, …)`; decode each target + calldata from `ProposalCreated` / `getProposalActions`. Flag any of:
+
+| Call | Target | Why it matters |
+|---|---|---|
+| `grantRole` | Timelock | A new proposer, executor or admin could schedule or run operations outside the governor; an admin could then revoke the governor's CANCELLER, which `veto()` needs (proposals that revoke the governor's roles directly are rejected at proposal time) |
+| `updateDelay` | Timelock | Changes the timelock delay (capped at 2 days at proposal time; the veto window stays at least the proposal's execution delay) |
+| `upgradeTo` / `upgradeToAndCall` | Governor, RevenueCounter | Replaces the logic, including the veto, bootstrap and classification rules |
+| `setSecurityCouncil` | Governor | Replaces or removes the Security Council |
+| `removeExtendedSelector` + `addStandardSelector` | Governor | Together downgrade a call (e.g. `setSecurityCouncil`) to Standard |
+| `addAuthorizedDelegator` | ARM token | An authorized delegator can re-delegate any holder's votes: a governance takeover |
+| `addExcludedAddress` | Governor | Shrinks the eligible supply, lowering the quorum every later proposal needs |
+| `setFeeCollector` / `attestRevenue` | RevenueCounter | Changes recognized revenue, which unlocks RevenueLock voting power and moves the wind-down condition |
+| `setTransferable(true)` / `addToWhitelist` | ARM token | Irreversible transfer policy changes |
+
+**Severity:** P1.
+
+**Response:** Confirm the call against a published rationale and expected parameters. If it is not recognized or would remove veto protection without an agreed reason, the Security Council calls `veto(proposalId, rationaleHash)` before the timelock delay elapses. During the 70-day veto bootstrap the veto is final; afterwards it opens a ratification vote (GOVERNANCE.md §Veto mechanism).
+
 ---
 
 ## 13. Threshold Placeholders

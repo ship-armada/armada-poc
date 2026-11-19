@@ -548,3 +548,37 @@ describe('ClaimFlowV2 wrong-network gate', () => {
     expect(screen.queryByText('Wrong network')).toBeNull()
   })
 })
+
+// WHY: on a successful sale a contributor can be allocated 0 ARM and refunded in full (on the
+// relaunch, an Invited contributor crowded out by the Known tier, or a $0-cap team wallet). They
+// must not be walked through an ARM claim with a delegate step for 0 ARM; a single refund claim
+// with no delegate (`claim(address(0))`) is the honest path, and the contract allows it.
+describe('ClaimFlowV2 zero-ARM refund on a successful sale', () => {
+  const REFUND = 5_000n * 1_000_000n
+
+  it('offers a single refund claim with no delegate step and submits claim(address(0))', async () => {
+    allocationFor = () => Promise.resolve([0n, REFUND])
+
+    renderClaim(<ClaimFlowV2 {...baseProps} signer={{} as never} walletAddress={ADDR_A} />)
+
+    expect(await screen.findByText('Claim your refund')).toBeTruthy()
+    expect(screen.getByText(/No ARM was allocated to your commitment/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Start' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Claim $5,000 refund' }))
+
+    // The done screen after a claim is covered by the revisit test below (this harness's mocked
+    // signer does not carry a submitted claim through to a receipt).
+    await waitFor(() => expect(lastClaimDelegate).toBe('0x' + '0'.repeat(40)))
+  })
+
+  it('shows the refund-only done screen when revisiting after claiming', async () => {
+    claimedFor = () => Promise.resolve(true)
+    allocationFor = () => Promise.resolve([0n, REFUND])
+
+    renderClaim(<ClaimFlowV2 {...baseProps} walletAddress={ADDR_A} />)
+
+    expect(await screen.findByText(/USDC refund returned to your wallet/)).toBeTruthy()
+    expect(screen.queryByText('ARM claimed.')).toBeNull()
+  })
+})

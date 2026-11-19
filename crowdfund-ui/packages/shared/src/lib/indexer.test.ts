@@ -21,6 +21,21 @@ describe('reviveIndexedEvent', () => {
     expect(event.args.amount).toBe(1_000_000n)
   })
 
+  // WHY: the indexer serves uint256 args as decimal strings; WindowExtended's timestamps
+  // must come back as bigints like the RPC path produces, or consumers doing Number(...) /
+  // comparisons would see a different shape depending on the data source.
+  it('revives WindowExtended timestamps as bigints', () => {
+    const event = reviveIndexedEvent({
+      type: 'WindowExtended',
+      blockNumber: 200,
+      transactionHash: '0xabc',
+      logIndex: 2,
+      args: { previousEnd: '1796140800', newEnd: '1796313600' },
+    })
+    expect(event.args.previousEnd).toBe(1_796_140_800n)
+    expect(event.args.newEnd).toBe(1_796_313_600n)
+  })
+
   it('revives an event type with no bigint args', () => {
     const event = reviveIndexedEvent({
       type: 'Cancelled',

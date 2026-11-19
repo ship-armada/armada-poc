@@ -44,7 +44,7 @@ export interface CrowdfundParams {
   openTimestamp: number
   /** Unix seconds; launch-team invite deadline (launchTeamInviteEnd, equal to commitmentDeadline). The name is a legacy misnomer. */
   week1Deadline: number
-  /** Unix seconds; openTimestamp + 21 days. */
+  /** Unix seconds; matches contract windowEnd (openTimestamp + WINDOW_DURATION, later if extendWindow was called). */
   commitmentDeadline: number
 }
 

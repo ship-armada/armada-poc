@@ -1,5 +1,5 @@
-// ABOUTME: Builds Safe Transaction Builder batch files for launch-team seeds/invites (from a CSV) and the
-// ABOUTME: security-council cancel, after checking every row against the crowdfund's on-chain state.
+// ABOUTME: Builds Safe Transaction Builder files for launch-team seeds/invites (from a CSV), the launch-team
+// ABOUTME: window extension, and the security-council cancel, after checking them against on-chain state.
 
 import { Contract, getAddress, id, isAddress, type Provider } from "ethers";
 
@@ -103,6 +103,12 @@ export const LAUNCH_TEAM_METHODS: Record<"addSeeds" | "launchTeamInvite", Contra
 
 export const CANCEL_METHOD: ContractMethod = { inputs: [], name: "cancel", payable: false };
 
+export const EXTEND_METHOD: ContractMethod = {
+  inputs: [{ internalType: "uint256", name: "newEnd", type: "uint256" }],
+  name: "extendWindow",
+  payable: false,
+};
+
 const PHASE_NAMES = ["Active", "Finalized", "Canceled"];
 const HEADER = ["address", "hop", "label"];
 
@@ -155,6 +161,8 @@ const CROWDFUND_READ_ABI = [
   "function armLoaded() view returns (bool)",
   "function windowStart() view returns (uint256)",
   "function launchTeamInviteEnd() view returns (uint256)",
+  "function windowEnd() view returns (uint256)",
+  "function MAX_WINDOW_DURATION() view returns (uint256)",
   "function MAX_SEEDS() view returns (uint8)",
   "function LAUNCH_TEAM_HOP1_BUDGET() view returns (uint8)",
   "function LAUNCH_TEAM_HOP2_BUDGET() view returns (uint8)",
@@ -206,6 +214,79 @@ export async function readCancelTarget(provider: Provider, crowdfundAddress: str
 }
 
 export const phaseName = (phase: number): string => PHASE_NAMES[phase] ?? String(phase);
+
+/** The window and launch team, for the extendWindow() file. */
+export interface ExtendTarget {
+  chainId: number;
+  crowdfund: string;
+  launchTeam: string;
+  now: number;
+  phase: number;
+  windowStart: number;
+  windowEnd: number;
+  maxWindowDuration: number;
+}
+
+export async function readExtendTarget(provider: Provider, crowdfundAddress: string): Promise<ExtendTarget> {
+  const cf = new Contract(crowdfundAddress, CROWDFUND_READ_ABI, provider);
+  const [network, block] = await Promise.all([provider.getNetwork(), provider.getBlock("latest")]);
+  const [launchTeam, phase, windowStart, windowEnd, maxWindowDuration] = await Promise.all([
+    cf.launchTeam(), cf.phase(), cf.windowStart(), cf.windowEnd(), cf.MAX_WINDOW_DURATION(),
+  ]);
+  return {
+    chainId: Number(network.chainId), crowdfund: getAddress(crowdfundAddress), launchTeam: getAddress(launchTeam),
+    now: block!.timestamp, phase: Number(phase), windowStart: Number(windowStart), windowEnd: Number(windowEnd),
+    maxWindowDuration: Number(maxWindowDuration),
+  };
+}
+
+/** Below this much time to the current deadline, signers are warned to execute promptly. */
+export const EXTEND_URGENT_SECONDS = 24 * 3600;
+
+/** Latest end extendWindow() accepts: windowStart + MAX_WINDOW_DURATION. */
+export const maxWindowEnd = (target: ExtendTarget): number => target.windowStart + target.maxWindowDuration;
+
+/**
+ * Check a new end against the contract's extendWindow() rules so the Safe transaction does not
+ * revert, as of now. The Safe must still execute before the current windowEnd: after it, an
+ * extension is impossible, so a short time remaining is a warning.
+ */
+export function validateExtension(target: ExtendTarget, newEnd: number): { errors: string[]; warnings: string[] } {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  if (target.phase !== 0) {
+    errors.push(`The crowdfund is not active (phase ${phaseName(target.phase)}); extendWindow() would revert`);
+  }
+  if (target.now > target.windowEnd) {
+    errors.push(`The window ended at ${iso(target.windowEnd)}; it can no longer be extended`);
+  }
+  if (newEnd <= target.windowEnd) {
+    errors.push(`The new end ${iso(newEnd)} must be later than the current end ${iso(target.windowEnd)}`);
+  }
+  if (newEnd > maxWindowEnd(target)) {
+    errors.push(`The new end ${iso(newEnd)} is past the maximum window end ${iso(maxWindowEnd(target))} (windowStart + MAX_WINDOW_DURATION)`);
+  }
+  const remaining = target.windowEnd - target.now;
+  if (errors.length === 0 && remaining < EXTEND_URGENT_SECONDS) {
+    warnings.push(`Only ${(remaining / 3600).toFixed(1)}h until ${iso(target.windowEnd)}: the Safe must execute before then, or the window can never be extended`);
+  }
+  return { errors, warnings };
+}
+
+/**
+ * Parse a canonical ISO 8601 UTC timestamp (explicit "Z", whole seconds) to unix seconds. Same
+ * rule as CROWDFUND_OPEN_TIME: a zone-less string would be read in the operator's local timezone,
+ * and a bare number could be seconds or milliseconds.
+ */
+export function parseUtcSeconds(value: string, name: string): number {
+  const parsedMs = Date.parse(value);
+  // The round-trip rejects calendar overflow (e.g. month 13) that Date.parse may normalize.
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(value) || Number.isNaN(parsedMs) ||
+      new Date(parsedMs).toISOString() !== value.replace("Z", ".000Z")) {
+    throw new Error(`${name} must be ISO 8601 UTC like 2026-10-08T17:00:00Z, got "${value}"`);
+  }
+  return parsedMs / 1000;
+}
 
 /**
  * Check rows against the crowdfund state so no batch reverts on chain. Errors block writing any
@@ -350,6 +431,55 @@ export function cancelBatchFile(chainId: number, crowdfund: string, securityCoun
       to: getAddress(crowdfund), value: "0", data: null, contractMethod: CANCEL_METHOD, contractInputsValues: {},
     }],
   });
+}
+
+/** The launch team's extendWindow(newEnd) as a one-transaction file. */
+export function extendBatchFile(target: ExtendTarget, newEnd: number, createdAt: number): TxBuilderFile {
+  return withChecksum({
+    version: "1.0",
+    chainId: String(target.chainId),
+    createdAt,
+    meta: {
+      name: `Armada launch team: extend the window to ${iso(newEnd)}`,
+      description: "Window extension from npx hardhat cf-safe-extend. Execute before the current deadline; compare the call with summary.md.",
+      txBuilderVersion: TX_BUILDER_VERSION,
+      createdFromSafeAddress: target.launchTeam,
+      createdFromOwnerAddress: "",
+    },
+    transactions: [{
+      to: target.crowdfund, value: "0", data: null, contractMethod: EXTEND_METHOD,
+      contractInputsValues: { newEnd: String(newEnd) },
+    }],
+  });
+}
+
+/** The signer's checklist for an extension: current, new and maximum end, and the execute-by deadline. */
+export function renderExtendSummary(target: ExtendTarget, newEnd: number, warnings: string[]): string {
+  const days = (seconds: number) => `${(seconds / 86400).toFixed(2)} days`;
+  return [
+    "# Launch team: extend the commitment window",
+    "",
+    `- Chain: ${target.chainId}`,
+    `- Crowdfund: ${target.crowdfund}`,
+    `- Launch-team Safe: ${target.launchTeam}`,
+    "",
+    "| | UTC | Unix |",
+    "|---|---|---|",
+    `| Current end | ${iso(target.windowEnd)} | ${target.windowEnd} |`,
+    `| **New end** | **${iso(newEnd)}** | **${newEnd}** |`,
+    `| Maximum end | ${iso(maxWindowEnd(target))} | ${maxWindowEnd(target)} |`,
+    "",
+    `Adds ${days(newEnd - target.windowEnd)}; ${days(maxWindowEnd(target) - newEnd)} of extension room remain after it.`,
+    "",
+    ...(warnings.length ? ["## Warnings", "", ...warnings.map((w) => `- ${w}`), ""] : []),
+    "One call: extendWindow(newEnd) on the crowdfund. The Safe app shows newEnd as the unix value above.",
+    `It moves both the commitment and launch-team deadlines. It cannot be undone or shortened, and it`,
+    `**must be executed before ${iso(target.windowEnd)}**: after that, extendWindow() reverts and anyone can finalize.`,
+    "",
+    "In the Safe app: Apps → Transaction Builder → drag in extend.json → check newEnd against this file →",
+    "Create batch → Simulate → sign and execute. Record the decision in the decision log (specs/OPERATIONS.md §10).",
+    "",
+  ].join("\n");
 }
 
 /** Batch file name, e.g. batch-2-of-5-invites.json. */

@@ -76,6 +76,11 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
     // strict `< launchTeamInviteEnd` check, so the launch team is closed out at exactly windowEnd while
     // participant invite/commit (`<= windowEnd`) remain open for that final second.
     uint256 public constant LAUNCH_TEAM_INVITE_PERIOD = WINDOW_DURATION;
+    // Hard cap on the total window (windowStart to windowEnd) including any extendWindow calls.
+    // Bounds how long participant USDC can stay locked before finalize becomes callable.
+    // TODO: placeholder pending the relaunch window decision (max extension). Set the final value
+    // once the team picks the base window and maximum extension.
+    uint256 public constant MAX_WINDOW_DURATION = 2 * WINDOW_DURATION;
     uint256 public constant CLAIM_DEADLINE_DURATION = 1095 days; // 3 years
     uint256 public constant MIN_COMMIT = 50 * 1e6;               // $50 USDC minimum per commit
     // Per-hop invite stacking caps are stored in hopConfigs[].maxInvitesReceived (1, 10, 20)
@@ -111,10 +116,12 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
     bool public armLoaded;               // ARM pre-load verification
     bool public refundMode;              // true when finalize() entered refund mode (proceeds < MIN_SALE)
 
-    // Timing (set once in constructor, never modified)
+    // Timing. windowStart is fixed in the constructor. windowEnd and launchTeamInviteEnd are set
+    // in the constructor and can only move later, together, via extendWindow (capped at
+    // windowStart + MAX_WINDOW_DURATION).
     uint256 public immutable windowStart;
-    uint256 public immutable windowEnd;
-    uint256 public immutable launchTeamInviteEnd;
+    uint256 public windowEnd;
+    uint256 public launchTeamInviteEnd;
 
     // Hop configuration (set in constructor)
     HopConfig[3] public hopConfigs;
@@ -170,6 +177,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
         uint256 totalCommitted
     );
     event Cancelled(address indexed caller, uint256 timestamp);
+    event WindowExtended(uint256 previousEnd, uint256 newEnd);
     event RefundClaimed(address indexed participant, uint256 usdcAmount);
     event UnallocatedArmWithdrawn(address indexed treasury, uint256 amount);
     event ArmLoaded(address indexed caller, uint256 balance, uint256 required);
@@ -335,6 +343,32 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
 
         emit Invited(launchTeam, invitee, inviteeHop, 0);
         emit LaunchTeamInvited(invitee, inviteeHop);
+    }
+
+    // ============ Window Extension ============
+
+    /// @notice Launch team extends the commitment window. Moves windowEnd and launchTeamInviteEnd
+    ///         together, so commits, participant invites and launch-team whitelisting all stay open
+    ///         until the new end. Can be called repeatedly, each time to a later end.
+    /// @dev Only callable while the window is still open (block.timestamp <= windowEnd). Once
+    ///      windowEnd has passed, anyone may finalize, so allowing an extension then would let the
+    ///      launch team reopen a closed sale. The total window is capped at MAX_WINDOW_DURATION
+    ///      from windowStart.
+    /// @param newEnd New windowEnd timestamp. Must be later than the current windowEnd and no later
+    ///        than windowStart + MAX_WINDOW_DURATION.
+    function extendWindow(uint256 newEnd) external onlyLaunchTeam {
+        require(phase == Phase.Active, "ArmadaCrowdfund: not active");
+        // Cache windowEnd: read three times below.
+        uint256 previousEnd = windowEnd;
+        require(block.timestamp <= previousEnd, "ArmadaCrowdfund: window ended");
+        require(newEnd > previousEnd, "ArmadaCrowdfund: must extend window");
+        require(newEnd <= windowStart + MAX_WINDOW_DURATION, "ArmadaCrowdfund: exceeds max window");
+
+        windowEnd = newEnd;
+        // The launch-team window spans the full commitment window (see LAUNCH_TEAM_INVITE_PERIOD).
+        launchTeamInviteEnd = newEnd;
+
+        emit WindowExtended(previousEnd, newEnd);
     }
 
     // ============ Commitments ============

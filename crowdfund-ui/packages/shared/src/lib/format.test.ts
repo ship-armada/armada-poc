@@ -14,6 +14,7 @@ import {
   formatTimeLeftDetail,
   formatOpensAtDetail,
   formatOpensCountdown,
+  formatUtcDateTime,
   hopLabel,
   phaseName,
   phaseColor,
@@ -234,6 +235,18 @@ describe('formatOpensAtDetail', () => {
 
   it('returns empty when the opening time is unknown', () => {
     expect(formatOpensAtDetail(0)).toBe('')
+  })
+})
+
+describe('formatUtcDateTime', () => {
+  // WHY: operator views (event logs) show deadlines that signers compare against Safe
+  // summaries written in UTC; a local-time rendering would differ by the viewer's offset.
+  it('renders minutes-precision UTC regardless of the local timezone', () => {
+    expect(formatUtcDateTime(Date.UTC(2026, 11, 1, 16, 0, 59) / 1000)).toBe('2026-12-01 16:00 UTC')
+  })
+
+  it('returns empty when the timestamp is unknown', () => {
+    expect(formatUtcDateTime(0)).toBe('')
   })
 })
 

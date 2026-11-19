@@ -38,11 +38,12 @@ Single source of truth for every concrete value that enters the deployed contrac
 | Parameter | Human-readable | Unix timestamp | Mutability | Verified | Notes |
 |---|---|---|---|---|---|
 | Open timestamp | 2026-10-08 16:00:00 UTC | `1791475200` | Immutable (constructor) | ☐ | Commitment window, hop-0 additions, and invites begin here. Set as `CROWDFUND_OPEN_TIME` (ISO 8601 UTC, e.g. `2026-10-08T17:00:00Z`) in `config/mainnet.env` — required on mainnet; `setup:mainnet` refuses to start unless it is 6h–60d away (`CROWDFUND_OPEN_MIN_LEAD_SECONDS` / `CROWDFUND_OPEN_MAX_LEAD_SECONDS` in `scripts/deploy-utils.ts`). The 6h minimum can be shortened with the `CROWDFUND_OPEN_MIN_LEAD_SECONDS` env var (hard floor 1h); Launch 1 sets it to `3600`. |
-| Launch-team invite deadline | Open + 21 days (equals the commitment deadline): 2026-10-29 16:00:00 UTC | `1793289600` | Immutable (constructor) | ☐ | `addSeed()` and `launchTeamInvite()` revert at and after this (strict `<`; participant actions stay open for that final second) |
-| Commitment deadline | Open + 21 days: 2026-10-29 16:00:00 UTC | `1793289600` | Immutable (constructor) | ☐ | `commit()`, `commitWithInvite()`, `invite()` revert after this |
+| Launch-team invite deadline | Open + 21 days (equals the commitment deadline): 2026-10-29 16:00:00 UTC | `1793289600` | Constructor; launch team can extend (with the commitment deadline) | ☐ | `addSeed()` and `launchTeamInvite()` revert at and after this (strict `<`; participant actions stay open for that final second). `extendWindow()` moves it together with the commitment deadline |
+| Commitment deadline | Open + 21 days: 2026-10-29 16:00:00 UTC | `1793289600` | Constructor; launch team can extend, only later, up to the maximum window | ☐ | `commit()`, `commitWithInvite()`, `invite()` revert after this. `extendWindow()` can move it later while the window is open |
+| Maximum window | Open + `MAX_WINDOW_DURATION` (currently `2 × WINDOW_DURATION` = 42 days, a placeholder pending the relaunch decision) | Derived from open timestamp | Immutable (constant) | ☐ | Hard cap for `extendWindow()`; bounds participants' USDC lock-up |
 | Claim deadline | Finalization + 3 years | Computed at finalization | Immutable (derived) | — | `claim()` permitted when `block.timestamp <= finalizationTimestamp + 94_608_000`. Sweep eligible at `>`. |
 
-**Timestamp verification:** Convert each unix timestamp back to human-readable and confirm date, time, and timezone match intent. Verify `launchTeamInviteEnd() == windowStart() + 1_814_400` (21 × 86400). Verify `windowEnd() == windowStart() + 1_814_400` (21 × 86400) — the two deadlines are equal.
+**Timestamp verification:** Convert each unix timestamp back to human-readable and confirm date, time, and timezone match intent. Verify `launchTeamInviteEnd() == windowStart() + 1_814_400` (21 × 86400). Verify `windowEnd() == windowStart() + 1_814_400` (21 × 86400) — the two deadlines are equal. These hold at deploy; after any `extendWindow()` call both deadlines equal the latest `WindowExtended.newEnd`.
 
 **3-year duration:** Exactly `94_608_000 seconds` (1,095 days = 3 × 365 days). This is a fixed second count, not 3 calendar years — does not account for leap years.
 
@@ -216,13 +217,14 @@ Every parameter in this contract falls into one of three categories:
 | **Immutable (constructor)** | Set once at deployment via constructor args. Cannot change after deployment. | Treasury address, ROOT address, Security Council address, timestamps, chainId |
 | **Immutable (derived)** | Computed at deployment or finalization from other immutables. Cannot change. | DOMAIN_SEPARATOR, claim deadline (finalizationTimestamp + 3 years) |
 
-**There are no admin-mutable parameters in the crowdfund contract.** No address can change any parameter after deployment. This is intentional — the mechanism is fully predeclared.
+**The only admin-mutable parameter in the crowdfund contract is the commitment deadline.** The launch team can extend it (together with the launch-team deadline) via `extendWindow()`, only while the window is open, only later, and never beyond the predeclared maximum window. No other parameter can change after deployment.
 
 The only role-gated *actions* are:
-- ROOT: `addSeed()`, `launchTeamInvite()` — days 1-21 only (the full commitment window)
+- ROOT: `addSeed()`, `launchTeamInvite()` — days 1-21 only (the full commitment window, including any extension)
+- ROOT: `extendWindow()` — while the window is open, up to the maximum window
 - Security Council: `cancel()` — pre-finalization only
 
-Neither of these changes a parameter. They execute predeclared actions within predeclared budgets.
+Apart from `extendWindow()`, none of these changes a parameter. They execute predeclared actions within predeclared budgets.
 
 ---
 

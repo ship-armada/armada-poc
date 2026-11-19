@@ -6,6 +6,7 @@ import type { JsonRpcProvider } from 'ethers'
 import {
   formatUsdc,
   formatArm,
+  formatUtcDateTime,
   truncateAddress,
   useENS,
   type CrowdfundEvent,
@@ -38,6 +39,7 @@ const EVENT_CATEGORY: Record<CrowdfundEventType, EventCategory> = {
   RefundClaimed: 'warning',
   InviteNonceRevoked: 'warning',
   UnallocatedArmWithdrawn: 'warning',
+  WindowExtended: 'warning',
 }
 
 const CATEGORY_CLASS: Record<EventCategory, string> = {
@@ -75,6 +77,8 @@ function formatEventData(event: CrowdfundEvent, name: (addr: string) => string):
       return `${name(args.inviter as string)} · nonce ${String(args.nonce)}`
     case 'UnallocatedArmWithdrawn':
       return `${name(args.treasury as string)} · ${formatArm(args.amount as bigint)}`
+    case 'WindowExtended':
+      return `deadline → ${formatUtcDateTime(Number(args.newEnd))}`
     default:
       return ''
   }

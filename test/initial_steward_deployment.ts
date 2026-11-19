@@ -196,9 +196,9 @@ describe("Sale-window steward exposure with a deploy-time budget (accepted risk,
 
     await armToken.initWhitelist([deployer.address, crowdfundAddress, treasuryAddress]);
     await armToken.initAuthorizedDelegators([crowdfundAddress]);
-    await armToken.transfer(crowdfundAddress, ARM(1_500_000));
+    await armToken.transfer(crowdfundAddress, ARM(1_800_000));
     await crowdfund.loadArm();
-    await armToken.transfer(treasuryAddress, ARM(8_100_000));
+    await armToken.transfer(treasuryAddress, ARM(7_800_000));
     await armToken.transfer(lockStandIn.address, ARM(2_400_000));
 
     const asTimelock = timelockExecutor(timelock);
@@ -236,12 +236,12 @@ describe("Sale-window steward exposure with a deploy-time budget (accepted risk,
     const second = await proposeSpend(governor, stewardKey, usdc, recipient.address, USDC(60_000));
     const third = await proposeSpend(governor, stewardKey, usdc, recipient.address, USDC(60_000));
 
-    // Seeds commit during the sale: 100 × $15K fills the $1.5M sale at hop 0, clearing the $250K
+    // Seeds commit during the sale: 100 × $18K fills the $1.8M sale at hop 0, clearing the $250K
     // minimum. The USDC stays in the crowdfund until finalize, so the treasury is still empty.
     for (const seed of seeds) {
-      await usdc.mint(seed.address, USDC(15_000));
-      await usdc.connect(seed).approve(await crowdfund.getAddress(), USDC(15_000));
-      await crowdfund.connect(seed).commit(0, USDC(15_000));
+      await usdc.mint(seed.address, USDC(18_000));
+      await usdc.connect(seed).approve(await crowdfund.getAddress(), USDC(18_000));
+      await crowdfund.connect(seed).commit(0, USDC(18_000));
     }
 
     // Nobody holds voting power during the sale, so the proposals cannot be voted down.
@@ -254,15 +254,18 @@ describe("Sale-window steward exposure with a deploy-time budget (accepted risk,
     await time.increase(2 * ONE_DAY + 1);
     await expect(governor.execute(first)).to.be.revertedWith(UNDERLYING_REVERT);
 
-    // The security council vetoes one queued proposal; it can never execute.
+    // The security council vetoes one queued proposal; it cannot execute unless a ratification
+    // vote overturns the veto. The crowdfund has not finalized, so the veto bootstrap (which
+    // starts at finalization) has not begun and the veto opens the normal ratification vote.
     await governor.connect(sc).veto(third, ethers.id("compromised steward"));
     expect(await governor.state(third)).to.equal(CANCELED);
+    expect(await governor.vetoRatificationId(third)).to.not.equal(0n);
 
-    // The 7-day sale window has already closed (the proposals' 9-day vote + queue outlasts it).
-    // The sale finalizes and pushes proceeds to the treasury.
+    // The 5-day sale window has already closed (the proposals' 9-day vote + queue outlasts it).
+    // The sale finalizes and pushes proceeds, less the $250K launch-team payment, to the treasury.
     expect(BigInt(await time.latest())).to.be.gt(await crowdfund.windowEnd());
     await crowdfund.finalize();
-    expect(await usdc.balanceOf(await treasury.getAddress())).to.be.gt(USDC(120_000));
+    expect(await usdc.balanceOf(await treasury.getAddress())).to.equal(USDC(1_550_000));
 
     // The first queued spend now pays out; the second exceeds the 30-day budget. stewardSpend
     // checks the budget before the outflow limit, so a zero remaining budget is the revert.

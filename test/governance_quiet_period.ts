@@ -1,5 +1,5 @@
-// ABOUTME: Tests the immutable 10-day governance quiet period after crowdfund finalization.
-// ABOUTME: Covers proposal blocking, boundary conditions, edge cases, and access control.
+// ABOUTME: Tests the immutable 10-day governance quiet period and 70-day veto bootstrap after crowdfund finalization.
+// ABOUTME: Covers proposal blocking, final early vetoes, boundary conditions, edge cases, and access control.
 
 /**
  * Governance Quiet Period Tests (T6.1)
@@ -17,6 +17,7 @@ import { deployGovernorProxy } from "./helpers/deploy-governor";
 const ProposalType = { Standard: 0, Extended: 1, VetoRatification: 2 };
 const ONE_DAY = 86400;
 const QUIET_PERIOD = 10 * ONE_DAY;
+const VETO_BOOTSTRAP = 70 * ONE_DAY;
 
 const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
 const USDC = (n: number) => ethers.parseUnits(n.toString(), 6);
@@ -82,8 +83,8 @@ describe("Governance Quiet Period (T6.1)", function () {
     // Initialize token whitelist (after crowdfund is deployed, before transfers)
     await armToken.initWhitelist([deployer.address, await crowdfund.getAddress(), treasuryAddr.address]);
 
-    // Fund ARM to crowdfund (1.5M for MAX_SALE)
-    await armToken.transfer(await crowdfund.getAddress(), ARM(1_500_000));
+    // Fund ARM to crowdfund (1.8M for MAX_SALE)
+    await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
     await crowdfund.loadArm();
 
     governor = await deployGovernorProxy(
@@ -277,6 +278,68 @@ describe("Governance Quiet Period (T6.1)", function () {
       // After quiet period, proposal succeeds
       await time.increase(8 * ONE_DAY);
       await expect(propose()).to.not.be.reverted;
+    });
+  });
+
+  // ============ Veto bootstrap ============
+
+  describe("Veto bootstrap (first 70 days after finalization)", function () {
+    let sc: SignerWithAddress;
+
+    // Propose, pass and queue a proposal, returning its id.
+    async function proposeAndQueue(description: string): Promise<bigint> {
+      await propose(description);
+      const id = await governor.proposalCount();
+      const [, , voteStart, voteEnd] = await governor.getProposal(id);
+      await time.increaseTo(voteStart + 1n);
+      await governor.castVote(id, 1);
+      await time.increaseTo(voteEnd + 1n);
+      await governor.queue(id);
+      return id;
+    }
+
+    beforeEach(async function () {
+      sc = nonDeployer;
+      await governor.setCrowdfundAddress(await crowdfund.getAddress());
+      await governor.setSecurityCouncil(sc.address); // deployer bootstrap path
+      // veto() cancels the queued timelock operation.
+      await timelockController.grantRole(await timelockController.CANCELLER_ROLE(), await governor.getAddress());
+      await finalizeCrowdfund();
+      await lockArmForProposal();
+      await time.increase(QUIET_PERIOD);
+    });
+
+    // WHY: with the real crowdfund and governor, a veto inside the bootstrap is final: the
+    // proposal is canceled for good and no ratification vote is created to challenge it.
+    it("a veto within 70 days of finalization is final (no ratification vote)", async function () {
+      const id = await proposeAndQueue("early proposal");
+      const finalizedAt = await crowdfund.finalizedAt();
+      expect(BigInt(await time.latest())).to.be.lt(finalizedAt + BigInt(VETO_BOOTSTRAP));
+      const countBefore = await governor.proposalCount();
+      const rationale = ethers.id("bootstrap veto");
+
+      await expect(governor.connect(sc).veto(id, rationale))
+        .to.emit(governor, "ProposalVetoed").withArgs(id, rationale, 0);
+
+      expect(await governor.proposalCount()).to.equal(countBefore);
+      expect(await governor.vetoRatificationId(id)).to.equal(0);
+      expect(await governor.state(id)).to.equal(6); // ProposalState.Canceled
+      expect(await governor.securityCouncil()).to.equal(sc.address);
+    });
+
+    // WHY: from finalizedAt + 70 days a veto follows the normal path again and opens the
+    // 14-day ratification vote, so later vetoes stay challengeable.
+    it("a veto from finalizedAt + 70 days creates a ratification vote", async function () {
+      const finalizedAt = await crowdfund.finalizedAt();
+      const id = await proposeAndQueue("late proposal");
+      await time.increaseTo(finalizedAt + BigInt(VETO_BOOTSTRAP));
+      const rationale = ethers.id("post-bootstrap veto");
+
+      await expect(governor.connect(sc).veto(id, rationale))
+        .to.emit(governor, "ProposalVetoed").withArgs(id, rationale, id + 1n);
+
+      expect(await governor.vetoRatificationId(id)).to.equal(id + 1n);
+      expect(await governor.ratificationOf(id + 1n)).to.equal(id);
     });
   });
 });

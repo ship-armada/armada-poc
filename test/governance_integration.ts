@@ -504,9 +504,9 @@ describe("Governance Integration", function () {
       expect(actualQuorum).to.equal(expectedQuorum);
     });
 
-    it("should enforce quorum floor when percentage-based quorum is below 50k ARM", async function () {
+    it("should enforce quorum floor when percentage-based quorum is below 100k ARM", async function () {
       // Exclude Alice and Bob from quorum denominator, leaving eligible supply = 0.
-      // Percentage quorum = 20% of 0 = 0, which is below the 50k floor.
+      // Percentage quorum = 20% of 0 = 0, which is below the 100k floor.
       // The floor should apply.
       await governor.setExcludedAddresses([alice.address, bob.address]);
 
@@ -517,13 +517,13 @@ describe("Governance Integration", function () {
         ProposalType.Standard, targets, values, calldatas, "Quorum floor test"
       );
 
-      const QUORUM_FLOOR = ethers.parseUnits("50000", ARM_DECIMALS);
+      const QUORUM_FLOOR = ethers.parseUnits("100000", ARM_DECIMALS);
       const actualQuorum = await governor.quorum(1);
       expect(actualQuorum).to.equal(QUORUM_FLOOR);
     });
 
     it("should use percentage-based quorum when it exceeds the floor", async function () {
-      // With default setup: eligible = 4.2M ARM, 20% = 840k ARM > 50k floor.
+      // With default setup: eligible = 4.2M ARM, 20% = 840k ARM > 100k floor.
       // Percentage should win.
       const targets = [await treasury.getAddress()];
       const values = [0n];
@@ -534,7 +534,7 @@ describe("Governance Integration", function () {
 
       const expectedEligible = TOTAL_SUPPLY - TREASURY_AMOUNT;
       const expectedQuorum = (expectedEligible * 2000n) / 10000n;
-      const QUORUM_FLOOR = ethers.parseUnits("50000", ARM_DECIMALS);
+      const QUORUM_FLOOR = ethers.parseUnits("100000", ARM_DECIMALS);
 
       const actualQuorum = await governor.quorum(1);
       expect(actualQuorum).to.equal(expectedQuorum);
@@ -552,7 +552,7 @@ describe("Governance Integration", function () {
         ProposalType.Extended, targets, values, calldatas, "Extended quorum floor test"
       );
 
-      const QUORUM_FLOOR = ethers.parseUnits("50000", ARM_DECIMALS);
+      const QUORUM_FLOOR = ethers.parseUnits("100000", ARM_DECIMALS);
       expect(await governor.quorum(1)).to.equal(QUORUM_FLOOR);
     });
   });
@@ -1042,7 +1042,7 @@ describe("Governance Integration", function () {
       expect(votingDelay).to.equal(0);
       expect(votingPeriod).to.equal(FOURTEEN_DAYS);
       expect(executionDelay).to.equal(0);
-      expect(quorumBps).to.equal(2000);
+      expect(quorumBps).to.equal(4000); // 40%: overturning a veto needs broad turnout
     });
 
     it("should reject manual creation of VetoRatification proposals", async function () {

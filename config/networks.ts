@@ -114,8 +114,8 @@ export interface NetworkConfig {
   /**
    * ARM token distribution (12M total supply).
    * All values are whole-token counts (no decimals). The deployer retains the remainder.
-   *   Treasury:    8.1M — protocol treasury (67.5%)
-   *   Crowdfund:   1.5M — backs MAX_SALE at $1/ARM
+   *   Treasury:    7.8M — protocol treasury (65%)
+   *   Crowdfund:   1.8M — backs MAX_SALE at $1/ARM
    *   RevenueLock: 2.4M — team, advisors, airdrop and reserve (20% combined)
    *   Deployer remainder: 0
    */
@@ -512,8 +512,8 @@ export function getNetworkConfig(): NetworkConfig {
     },
     arm: {
       windowDuration: numEnv("OUTFLOW_ARM_WINDOW", 2592000),                          // 30 days
-      limitBps: numEnv("OUTFLOW_ARM_BPS", 300),                                       // 3%
-      limitAbsolute: optionalEnv("OUTFLOW_ARM_ABSOLUTE", "250000000000000000000000"), // 250,000 ARM (18dp)
+      limitBps: numEnv("OUTFLOW_ARM_BPS", 2),                                         // 0.02%
+      limitAbsolute: optionalEnv("OUTFLOW_ARM_ABSOLUTE", "25000000000000000000000"),  // 25,000 ARM (18dp)
       floorAbsolute: optionalEnv("OUTFLOW_ARM_FLOOR", "0"),                           // none
     },
     eth: {
@@ -545,8 +545,8 @@ export function getNetworkConfig(): NetworkConfig {
     ethUsdcPrice: numEnv("ETH_USDC_PRICE", 2000),
     treasuryAddress,
     armDistribution: {
-      treasury: optionalEnv("ARM_TREASURY_ALLOCATION", "8100000"),
-      crowdfund: optionalEnv("ARM_CROWDFUND_ALLOCATION", "1500000"),
+      treasury: optionalEnv("ARM_TREASURY_ALLOCATION", "7800000"),
+      crowdfund: optionalEnv("ARM_CROWDFUND_ALLOCATION", "1800000"),
       revenueLock: optionalEnv("ARM_REVENUE_LOCK_ALLOCATION", "2400000"),
     },
     revenueLockBeneficiaries,

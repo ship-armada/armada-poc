@@ -193,13 +193,16 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
 
     // Absolute quorum floor: prevents governance passing on trivial turnout regardless
     // of how small the circulating delegated supply is. Quorum = max(percentage, floor).
-    uint256 public constant QUORUM_FLOOR = 50_000 * 1e18;
+    uint256 public constant QUORUM_FLOOR = 100_000 * 1e18;
 
     // Governance quiet period — no proposals allowed for this duration after crowdfund finalization.
     // One-time bootstrapping constant; not governable.
     address public crowdfundAddress;
     bool public crowdfundAddressLocked;
     uint256 internal constant QUIET_PERIOD_DURATION = 10 days;
+    // Veto bootstrap — for this duration after crowdfund finalization (quiet period included),
+    // a Security Council veto is final: no ratification vote is created. Not governable.
+    uint256 internal constant VETO_BOOTSTRAP_DURATION = 70 days;
 
     // Wind-down integration: when triggered, governance permanently stops accepting new proposals.
     // The wind-down contract is registered via one-time setter; only it can flip the flag.
@@ -349,7 +352,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             quorumBps: 3000
         });
 
-        // VetoRatification: immediate voting, 14d period, no execution delay, 20% quorum.
+        // VetoRatification: immediate voting, 14d period, no execution delay, 40% quorum.
         // These params bypass setProposalTypeParams() bounds (MIN_VOTING_DELAY=1d,
         // MIN_EXECUTION_DELAY=2d), making VetoRatification timing effectively immutable
         // via governance. Only the veto mechanism can create these proposals.
@@ -357,7 +360,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
             votingDelay: 0,
             votingPeriod: 14 days,
             executionDelay: 0,
-            quorumBps: 2000
+            quorumBps: 4000
         });
 
         // Steward: immediate voting, 7d review window, 2d timelock, 20% quorum.
@@ -538,7 +541,7 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         return _excludedFromQuorum;
     }
 
-    /// @notice One-time setter: register the crowdfund contract for quiet period checks.
+    /// @notice One-time setter: register the crowdfund contract for the quiet period and veto bootstrap.
     /// Deployer-only; locks permanently after the first call.
     function setCrowdfundAddress(address _crowdfund) external {
         if (msg.sender != deployer) revert Gov_NotDeployer();
@@ -690,6 +693,8 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     // ============ Veto Mechanism ============
 
     /// @notice Security Council vetoes a queued proposal, triggering a ratification vote.
+    /// During the veto bootstrap (see _inVetoBootstrap) the veto is final: the proposal stays
+    /// canceled and no ratification vote is created (ratificationId 0 in ProposalVetoed).
     /// @param proposalId The queued proposal to veto
     /// @param rationaleHash Off-chain rationale hash for verifiability
     function veto(uint256 proposalId, bytes32 rationaleHash) external {
@@ -714,8 +719,9 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
         );
         tl.cancel(timelockId);
 
-        // Auto-create ratification vote
-        uint256 ratId = _createRatificationProposal(proposalId, rationaleHash);
+        // Auto-create ratification vote, unless the veto is final (bootstrap)
+        uint256 ratId;
+        if (!_inVetoBootstrap()) ratId = _createRatificationProposal(proposalId, rationaleHash);
 
         emit ProposalVetoed(proposalId, rationaleHash, ratId);
     }
@@ -1631,17 +1637,29 @@ contract ArmadaGovernor is Initializable, ReentrancyGuardUpgradeable, UUPSUpgrad
     }
 
     /// @dev Block proposals during the quiet period after crowdfund finalization.
-    ///      Reads finalizedAt from the crowdfund contract. Skips gracefully if no
-    ///      crowdfund is registered or crowdfund isn't finalized.
+    ///      Skips gracefully if no crowdfund is registered or crowdfund isn't finalized.
     function _checkQuietPeriod() internal view {
-        // Cache crowdfundAddress: read twice (audit-76).
-        address cf = crowdfundAddress;
-        if (cf == address(0)) return;
-
-        uint256 _finalizedAt = IArmadaCrowdfundReadable(cf).finalizedAt();
-        if (_finalizedAt == 0) return;
+        (bool registered, uint256 _finalizedAt) = _crowdfundFinalizedAt();
+        if (!registered || _finalizedAt == 0) return;
 
         if (block.timestamp < _finalizedAt + QUIET_PERIOD_DURATION) revert Gov_QuietPeriodActive();
+    }
+
+    /// @dev True while Security Council vetoes are final: for VETO_BOOTSTRAP_DURATION after
+    ///      crowdfund finalization. False if no crowdfund is registered or it never finalizes
+    ///      (e.g. canceled), so the bootstrap can never leave vetoes final indefinitely.
+    function _inVetoBootstrap() internal view returns (bool) {
+        (bool registered, uint256 _finalizedAt) = _crowdfundFinalizedAt();
+        return registered && _finalizedAt != 0 && block.timestamp < _finalizedAt + VETO_BOOTSTRAP_DURATION;
+    }
+
+    /// @dev Reads finalizedAt from the registered crowdfund (0 until it finalizes).
+    ///      registered is false, and no call is made, if no crowdfund is registered.
+    function _crowdfundFinalizedAt() internal view returns (bool registered, uint256 finalizedAt_) {
+        // Cache crowdfundAddress: read twice (audit-76).
+        address cf = crowdfundAddress;
+        if (cf == address(0)) return (false, 0);
+        return (true, IArmadaCrowdfundReadable(cf).finalizedAt());
     }
 
     // ============ UUPS ============

@@ -11,6 +11,15 @@ import "../contracts/governance/IArmadaGovernance.sol";
 import "@openzeppelin/contracts/governance/TimelockController.sol";
 import "./helpers/GovernorDeployHelper.sol";
 
+/// @dev Minimal crowdfund stand-in: the governor reads only finalizedAt (IArmadaCrowdfundReadable).
+contract MockFinalizedCrowdfund {
+    uint256 public finalizedAt;
+
+    function setFinalizedAt(uint256 t) external {
+        finalizedAt = t;
+    }
+}
+
 /// @title GovernorVetoTest — Tests for SC veto, ratification, ejection, proposal restoration, and re-veto prevention
 contract GovernorVetoTest is Test, GovernorDeployHelper {
     // Mirror events from governor for expectEmit
@@ -931,5 +940,111 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         vm.prank(bob);
         governor.castVote(proposalId, 1);
         assertTrue(governor.hasVoted(proposalId, bob));
+    }
+
+    // ======== Veto bootstrap ========
+
+    uint256 constant VETO_BOOTSTRAP = 70 days;
+    uint256 constant QUIET_PERIOD = 10 days;
+
+    /// @dev Register a mock crowdfund finalized `agoSeconds` before now.
+    function _registerCrowdfundFinalizedAgo(uint256 agoSeconds) internal returns (MockFinalizedCrowdfund cf) {
+        cf = new MockFinalizedCrowdfund();
+        vm.warp(block.timestamp + agoSeconds); // keep finalizedAt > 0 (block.timestamp starts at 1)
+        cf.setFinalizedAt(block.timestamp - agoSeconds);
+        governor.setCrowdfundAddress(address(cf));
+    }
+
+    /// @dev WHY: the bootstrap's governance parameters are pinned so a constant edit is caught:
+    ///      ratification needs 40% quorum, and every proposal type has a 100k ARM quorum floor.
+    function test_bootstrap_ratificationQuorumAndFloorPinned() public {
+        (, , , uint256 quorumBps) = governor.proposalTypeParams(ProposalType.VetoRatification);
+        assertEq(quorumBps, 4000, "ratification quorum 40%");
+        assertEq(governor.QUORUM_FLOOR(), 100_000 * 1e18, "quorum floor 100k ARM");
+    }
+
+    /// @dev WHY: within 70 days of crowdfund finalization a veto is final: the proposal is
+    ///      canceled for good and no ratification vote exists to challenge it (team brief §5).
+    function test_bootstrap_vetoWithin70DaysIsFinal() public {
+        // Finalized just past the quiet period, so proposing is allowed; queuing takes ~16 days.
+        _registerCrowdfundFinalizedAgo(QUIET_PERIOD + 1);
+        uint256 proposalId = _createAndQueueProposal(alice);
+        uint256 countBefore = governor.proposalCount();
+        bytes32 rationaleHash = keccak256("bootstrap veto");
+
+        vm.expectEmit(true, false, false, true);
+        emit ProposalVetoed(proposalId, rationaleHash, 0);
+        vm.prank(sc);
+        governor.veto(proposalId, rationaleHash);
+
+        assertEq(governor.proposalCount(), countBefore, "no ratification proposal created");
+        assertEq(governor.vetoRatificationId(proposalId), 0, "no ratification linked");
+        assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Canceled), "permanently canceled");
+        assertEq(governor.securityCouncil(), sc, "SC keeps its seat");
+    }
+
+    /// @dev WHY: the boundary is strict: at exactly finalizedAt + 70 days the bootstrap has ended
+    ///      and a veto triggers the normal ratification vote.
+    function test_bootstrap_vetoAtExactly70DaysCreatesRatification() public {
+        MockFinalizedCrowdfund cf = _registerCrowdfundFinalizedAgo(QUIET_PERIOD + 1);
+        uint256 proposalId = _createAndQueueProposal(alice);
+        vm.warp(cf.finalizedAt() + VETO_BOOTSTRAP);
+
+        vm.prank(sc);
+        governor.veto(proposalId, keccak256("post-bootstrap veto"));
+
+        uint256 ratId = governor.proposalCount();
+        assertEq(governor.ratificationOf(ratId), proposalId, "ratification created");
+        assertEq(governor.vetoRatificationId(proposalId), ratId);
+    }
+
+    /// @dev WHY: one second before the boundary the veto is still final.
+    function test_bootstrap_vetoOneSecondBefore70DaysIsFinal() public {
+        MockFinalizedCrowdfund cf = _registerCrowdfundFinalizedAgo(QUIET_PERIOD + 1);
+        uint256 proposalId = _createAndQueueProposal(alice);
+        vm.warp(cf.finalizedAt() + VETO_BOOTSTRAP - 1);
+
+        vm.prank(sc);
+        governor.veto(proposalId, keccak256("last-second veto"));
+
+        assertEq(governor.vetoRatificationId(proposalId), 0, "still final");
+    }
+
+    /// @dev WHY: the bootstrap starts at finalization. A crowdfund that never finalizes (still
+    ///      open, or canceled: cancel() leaves finalizedAt at 0) must not leave vetoes final
+    ///      indefinitely, so a veto before finalization opens the normal ratification vote.
+    function test_bootstrap_vetoBeforeFinalizationCreatesRatification() public {
+        MockFinalizedCrowdfund cf = new MockFinalizedCrowdfund(); // finalizedAt == 0
+        governor.setCrowdfundAddress(address(cf));
+        uint256 proposalId = _createAndQueueProposal(alice);
+
+        vm.prank(sc);
+        governor.veto(proposalId, keccak256("pre-finalization veto"));
+
+        uint256 ratId = governor.proposalCount();
+        assertEq(governor.vetoRatificationId(proposalId), ratId, "ratification before finalization");
+        assertEq(governor.ratificationOf(ratId), proposalId);
+    }
+
+    /// @dev WHY: early vetoes do not become challengeable retroactively: once the bootstrap ends,
+    ///      the earlier vetoed proposal stays canceled and no ratification can be opened for it,
+    ///      while a new veto after the bootstrap does get a ratification vote.
+    function test_bootstrap_earlyVetoStaysFinalAfterBootstrapEnds() public {
+        MockFinalizedCrowdfund cf = _registerCrowdfundFinalizedAgo(QUIET_PERIOD + 1);
+        uint256 early = _createAndQueueProposal(alice);
+        vm.prank(sc);
+        governor.veto(early, keccak256("early"));
+
+        vm.warp(cf.finalizedAt() + VETO_BOOTSTRAP);
+        assertEq(uint256(governor.state(early)), uint256(ProposalState.Canceled), "still canceled");
+        assertEq(governor.vetoRatificationId(early), 0, "still no ratification");
+        vm.prank(sc);
+        vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotQueued.selector));
+        governor.veto(early, keccak256("again"));
+
+        uint256 late = _createAndQueueProposal(alice);
+        vm.prank(sc);
+        governor.veto(late, keccak256("late"));
+        assertEq(governor.ratificationOf(governor.proposalCount()), late, "late veto is challengeable");
     }
 }

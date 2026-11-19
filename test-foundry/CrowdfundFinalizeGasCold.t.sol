@@ -1,4 +1,4 @@
-// ABOUTME: Cold-storage gas profile of ArmadaCrowdfund.finalize() up to the relaunch structural max (1,505).
+// ABOUTME: Cold-storage gas profile of ArmadaCrowdfund.finalize() up to the relaunch structural max (1,101).
 // ABOUTME: Uses vm.cool() to model a real tx's first-touch SLOADs vs the warm in-test measurement.
 
 // SPDX-License-Identifier: MIT
@@ -19,19 +19,19 @@ import "../contracts/cctp/MockUSDCV2.sol";
 ///
 ///         Historical: under the July-2026 fan-out the structural max was 2,220 nodes (~18.6M gas
 ///         cold, OVER the 2^24 cap), which motivated MAX_FINALIZE_NODES = 1,800. Under the relaunch
-///         budgets the tree tops out at 1,505 nodes (500 seeds + 5 team wallets + 500 team-wallet
-///         invites + 500 launch-team hop-2 placements), below the node cap, so the guards below run
-///         at that structural max.
+///         budgets the tree tops out at 1,101 nodes (500 seeds + 1 team wallet + 100 team-wallet
+///         invites + 500 launch-team hop-2 placements; stacking adds slots, not nodes), below the
+///         node cap, so the guards below run at that structural max.
 contract CrowdfundFinalizeGasColdTest is Test {
     MockUSDCV2 public usdc;
     ArmadaToken public armToken;
     address public admin;
     address public treasury;
 
-    uint256 constant ARM_FUNDING = 1_500_000 * 1e18;
-    uint256 constant STRUCTURAL_MAX = 1505;
+    uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
+    uint256 constant STRUCTURAL_MAX = 1101;
     uint256 constant TX_GAS_CAP = 16_777_216; // EIP-7825 per-tx cap (2^24)
-    uint256 constant MIN_COMMIT = 50 * 1e6;     // ArmadaCrowdfund.MIN_COMMIT
+    uint256 constant MIN_COMMIT = 100 * 1e6;    // ArmadaCrowdfund.MIN_COMMIT
 
     function setUp() public {
         admin = address(this);
@@ -67,7 +67,7 @@ contract CrowdfundFinalizeGasColdTest is Test {
     /// @dev Build the tree for (seeds, team wallets, team-wallet invites, launch-team hop-2
     ///      placements). Commit amounts: seeds at hop0Amt, every other node at MIN_COMMIT (team
     ///      wallets too, refunded in full), so the iteration body runs for every node.
-    ///      Relaunch ceilings: seeds ≤ 500, team wallets ≤ 5, invites ≤ 100 per wallet, hop-2
+    ///      Relaunch ceilings: seeds ≤ 500, team wallets ≤ 1, invites ≤ 100 per wallet, hop-2
     ///      placements ≤ 500.
     function _build(uint256 seeds, uint256 teams, uint256 invites, uint256 ltHop2, uint256 hop0Amt)
         internal returns (ArmadaCrowdfund cf)
@@ -84,7 +84,7 @@ contract CrowdfundFinalizeGasColdTest is Test {
         internal returns (ArmadaCrowdfund cf)
     {
         require(seeds <= 500, "seed cap");
-        require(teams <= 5, "hop-1 LT budget");
+        require(teams <= 1, "hop-1 LT budget");
         require(invites <= teams * 100, "team-wallet invite budget");
         require(ltHop2 <= 500, "hop-2 LT budget");
 
@@ -131,16 +131,15 @@ contract CrowdfundFinalizeGasColdTest is Test {
         );
     }
 
-    // ---- Cold gas profile at reachable node counts (the budgets bound the tree at 1,505). ----
-    function test_cold_0500_refund() public { ArmadaCrowdfund cf = _buildRefund(300, 2, 100, 98);  _report(" 500(refund)",  500, _measure(cf)); }
-    function test_cold_1000_refund() public { ArmadaCrowdfund cf = _buildRefund(500, 5, 300, 195); _report("1000(refund)", 1000, _measure(cf)); }
-    function test_cold_1500_refund() public { ArmadaCrowdfund cf = _buildRefund(500, 5, 500, 495); _report("1500(refund)", 1500, _measure(cf)); }
+    // ---- Cold gas profile at reachable node counts (the budgets bound the tree at 1,101). ----
+    function test_cold_0500_refund() public { ArmadaCrowdfund cf = _buildRefund(300, 1, 100, 99);  _report(" 500(refund)",  500, _measure(cf)); }
+    function test_cold_1000_refund() public { ArmadaCrowdfund cf = _buildRefund(500, 1, 100, 399); _report("1000(refund)", 1000, _measure(cf)); }
 
     // ---- GUARD: at the structural max, cold one-shot finalize() must stay under 2^24.
     //      Regression tripwire — fails if per-node cost or fixed overhead ever rises past the cap.
     //      Refund path (lower bound of the two).
     function test_cold_cap_guard_refund() public {
-        ArmadaCrowdfund cf = _buildRefund(500, 5, 500, 500);
+        ArmadaCrowdfund cf = _buildRefund(500, 1, 100, 500);
         assertEq(cf.getParticipantCount(), STRUCTURAL_MAX, "build must equal the structural max");
         uint256 g = _measure(cf);
         _report("MAX(refund)", cf.getParticipantCount(), g);
@@ -148,9 +147,10 @@ contract CrowdfundFinalizeGasColdTest is Test {
     }
 
     // ---- GUARD: success path at the structural max — the case that matters (a successful raise
-    //      distributing ARM in one finalize() tx). 500 seeds @ $150k oversubscribe the $1.5M sale.
+    //      distributing ARM and paying the team in one finalize() tx). 500 seeds @ $100k
+    //      oversubscribe the $1.8M sale.
     function test_cold_cap_guard_success() public {
-        ArmadaCrowdfund cf = _build(500, 5, 500, 500, 150_000 * 1e6);
+        ArmadaCrowdfund cf = _build(500, 1, 100, 500, 100_000 * 1e6);
         assertEq(cf.getParticipantCount(), STRUCTURAL_MAX, "build must equal the structural max");
         uint256 g = _measure(cf);
         _report("MAX(success)", cf.getParticipantCount(), g);
@@ -162,7 +162,7 @@ contract CrowdfundFinalizeGasColdTest is Test {
     //      iterating invited-but-uncommitted nodes (2 cold SLOADs each → `continue`); shows
     //      iteration cost is driven by WHITELIST count, not commit count. Zero demand → refund mode.
     function test_cold_cap_no_commits() public {
-        ArmadaCrowdfund cf = _buildTree(500, 5, 500, 500);
+        ArmadaCrowdfund cf = _buildTree(500, 1, 100, 500);
         assertEq(cf.getParticipantCount(), STRUCTURAL_MAX, "build must equal the structural max");
         _report("MAX(whitelist,0-commit)", cf.getParticipantCount(), _measure(cf));
         assertTrue(cf.refundMode(), "zero demand should refund");

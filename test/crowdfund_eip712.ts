@@ -61,8 +61,9 @@ describe("Crowdfund EIP-712 Invites", function () {
     await usdc.connect(signer).approve(await crowdfund.getAddress(), amount);
   }
 
-  // Setup helper: the launch team places hop-1 team inviter wallets (the only tier that can
-  // invite; their links bring invitees into hop-2) and advances to window start
+  // Setup helper: the launch team places the hop-1 team inviter wallet (the only tier that can
+  // invite; its links bring invitees into hop-2) and advances to window start. The launch
+  // team's hop-1 budget is one placement, so callers pass a single wallet.
   async function setupWithTeamWallets(teamWallets: SignerWithAddress[]) {
     const ws = Number(await crowdfund.windowStart());
     if ((await time.latest()) < ws) await time.increaseTo(ws);
@@ -129,7 +130,7 @@ describe("Crowdfund EIP-712 Invites", function () {
     await armToken.initAuthorizedDelegators([cfAddr]);
 
     // Fund ARM to crowdfund (enough for MAX_SALE) and load
-    const CROWDFUND_ARM_FUNDING = ARM(1_500_000);
+    const CROWDFUND_ARM_FUNDING = ARM(1_800_000);
     await armToken.transfer(cfAddr, CROWDFUND_ARM_FUNDING);
     await crowdfund.loadArm();
     await time.increaseTo(await crowdfund.windowStart());
@@ -316,6 +317,8 @@ describe("Crowdfund EIP-712 Invites", function () {
     });
 
     it("should revert when inviter budget is exhausted", async function () {
+      // WHY: each signed link spends one of the inviter's slots, so a leaked or reused set of
+      // links cannot whitelist more invitees than the inviter's budget allows.
       // team1 has 100 invite slots (1 invitesReceived * 100 maxInvites at hop-1)
       await setupWithTeamWallets([team1]);
       const deadline = await futureDeadline();
@@ -323,20 +326,20 @@ describe("Crowdfund EIP-712 Invites", function () {
 
       // Use all 100 invite slots via signed invites
       for (let i = 0; i < 100; i++) {
-        await fundAndApprove(invitees[i], USDC(50));
+        await fundAndApprove(invitees[i], USDC(100));
         const sig = await signInvite(team1, 1, i + 1, deadline);
         await crowdfund
           .connect(invitees[i])
-          .commitWithInvite(team1.address, 1, i + 1, deadline, sig, USDC(50));
+          .commitWithInvite(team1.address, 1, i + 1, deadline, sig, USDC(100));
       }
 
       // 101st invite should fail
-      await fundAndApprove(invitees[100], USDC(50));
+      await fundAndApprove(invitees[100], USDC(100));
       const sig101 = await signInvite(team1, 1, 101, deadline);
       await expect(
         crowdfund
           .connect(invitees[100])
-          .commitWithInvite(team1.address, 1, 101, deadline, sig101, USDC(50))
+          .commitWithInvite(team1.address, 1, 101, deadline, sig101, USDC(100))
       ).to.be.revertedWith("ArmadaCrowdfund: invite limit reached");
     });
 
@@ -411,25 +414,34 @@ describe("Crowdfund EIP-712 Invites", function () {
     });
 
     it("should revert when invitee already at maxInvitesReceived", async function () {
-      // Hop-2 maxInvitesReceived=1 (no stacking). team1 places alice at hop-2 directly;
-      // a link from team2 for alice must then revert without being consumed.
-      await setupWithTeamWallets([team1, team2]);
-      await crowdfund.connect(team1).invite(alice.address, 1);
-      expect(await crowdfund.getInvitesReceived(alice.address, 2)).to.equal(1);
+      // WHY: hop-2 stacks up to maxInvitesReceived=20 invites ($10K of cap each). A link that
+      // would push an invitee past the limit must revert, and the revert must roll back the
+      // nonce so the inviter's link is not burned. A link that lands the 20th slot still works.
+      await setupWithTeamWallets([team1]);
+      for (let i = 0; i < 19; i++) {
+        await crowdfund.connect(team1).invite(alice.address, 1);
+      }
+      expect(await crowdfund.getInvitesReceived(alice.address, 2)).to.equal(19);
 
       const deadline = await futureDeadline();
-      const nonce = 1;
-      const signature = await signInvite(team2, 1, nonce, deadline);
 
-      await fundAndApprove(alice, USDC(1_000));
+      // The 20th invite arrives via a signed link and stacks (cap 20 × $10K = $200K)
+      const sig20 = await signInvite(team1, 1, 1, deadline);
+      await crowdfund
+        .connect(alice)
+        .commitWithInvite(team1.address, 1, 1, deadline, sig20, USDC(1_000));
+      expect(await crowdfund.getInvitesReceived(alice.address, 2)).to.equal(20);
+      expect(await crowdfund.getEffectiveCap(alice.address, 2)).to.equal(USDC(200_000));
 
-      // Should revert: alice already at maxInvitesReceived for hop-2
+      // A 21st invite via a link reverts: alice is at maxInvitesReceived for hop-2
+      const nonce = 2;
+      const signature = await signInvite(team1, 1, nonce, deadline);
       await expect(
         crowdfund
           .connect(alice)
-          .commitWithInvite(team2.address, 1, nonce, deadline, signature, USDC(1_000))
+          .commitWithInvite(team1.address, 1, nonce, deadline, signature, USDC(1_000))
       ).to.be.revertedWith("ArmadaCrowdfund: max invites received");
-      expect(await crowdfund.usedNonces(team2.address, nonce)).to.be.false;
+      expect(await crowdfund.usedNonces(team1.address, nonce)).to.be.false;
     });
   });
 
@@ -504,22 +516,22 @@ describe("Crowdfund EIP-712 Invites", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
     });
 
-    it("commitWithInvite with amount < MIN_COMMIT ($50) reverts", async function () {
+    it("commitWithInvite with amount < MIN_COMMIT ($100) reverts", async function () {
       await setupWithTeamWallets([team1]);
       const deadline = await futureDeadline();
       const nonce = 101;
 
       const signature = await signInvite(team1, 1, nonce, deadline);
 
-      // $49.999999 (one wei below MIN_COMMIT)
+      // $99.999999 (one wei below MIN_COMMIT)
       await expect(
         crowdfund.connect(inviteeA).commitWithInvite(
-          team1.address, 1, nonce, deadline, signature, USDC(50) - 1n
+          team1.address, 1, nonce, deadline, signature, USDC(100) - 1n
         )
       ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
     });
 
-    it("commitWithInvite with exactly MIN_COMMIT ($50) succeeds", async function () {
+    it("commitWithInvite with exactly MIN_COMMIT ($100) succeeds", async function () {
       await setupWithTeamWallets([team1]);
       const deadline = await futureDeadline();
       const nonce = 102;
@@ -527,11 +539,11 @@ describe("Crowdfund EIP-712 Invites", function () {
       const signature = await signInvite(team1, 1, nonce, deadline);
 
       await crowdfund.connect(inviteeA).commitWithInvite(
-        team1.address, 1, nonce, deadline, signature, USDC(50)
+        team1.address, 1, nonce, deadline, signature, USDC(100)
       );
 
       const committed = await crowdfund.getCommitment(inviteeA.address, 2);
-      expect(committed).to.equal(USDC(50));
+      expect(committed).to.equal(USDC(100));
     });
   });
 

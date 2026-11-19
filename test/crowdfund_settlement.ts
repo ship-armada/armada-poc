@@ -1,5 +1,5 @@
-// ABOUTME: Tests for crowdfund settlement: security council cancel, proceeds push,
-// ABOUTME: claim deadline, and multi-window ARM sweep.
+// ABOUTME: Tests for crowdfund settlement: security council cancel, launch-team payment and
+// ABOUTME: treasury proceeds push, claim deadline, and multi-window ARM sweep.
 
 import { expect } from "chai";
 import { ethers } from "hardhat";
@@ -11,6 +11,8 @@ const Phase = { Active: 0, Finalized: 1, Canceled: 2 };
 const USDC = (n: number) => BigInt(n) * 1_000_000n;
 const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
 const THREE_YEARS = 1095 * 24 * 60 * 60;
+// Mirrors ArmadaCrowdfund.TEAM_PAYMENT_USDC: paid to launchTeam on a successful finalize.
+const TEAM_PAYMENT = USDC(250_000);
 
 describe("Crowdfund Settlement Rework", function () {
   let deployer: HardhatEthersSigner;
@@ -27,8 +29,10 @@ describe("Crowdfund Settlement Rework", function () {
   }
 
   // Helper: set up a crowdfund with seeds committed to reach successful finalization.
-  // Callers pass seedCount × commitUsdc ≥ MIN_SALE ($250K); with 100% hop-0 ceilings the
-  // known tier alone clears it (no other-hop demand needed).
+  // Callers pass seedCount × commitUsdc ≥ MIN_SALE ($250K) with commitUsdc ≤ the $100K hop-0
+  // cap. With no hop-2 demand the unused hop-2 reserve rolls to hop-0, so the known tier alone
+  // clears MIN_SALE and can fill up to the full $1.8M sale. Note: launchTeam is the deployer,
+  // so the deployer's USDC balance receives the team payment.
   async function setupAndFinalize(seedCount: number, commitUsdc: bigint) {
     const seeds = allSigners.slice(5, 5 + seedCount);
     for (const s of seeds) {
@@ -76,7 +80,7 @@ describe("Crowdfund Settlement Rework", function () {
     await armToken.addToWhitelist(cfAddr);
     await armToken.initAuthorizedDelegators([cfAddr]);
 
-    await armToken.transfer(cfAddr, ARM(1_500_000));
+    await armToken.transfer(cfAddr, ARM(1_800_000));
     await crowdfund.loadArm();
     await time.increaseTo(await crowdfund.windowStart());
   });
@@ -171,6 +175,32 @@ describe("Crowdfund Settlement Rework", function () {
       expect(usdcAfter - usdcBefore).to.equal(USDC(10_000));
     });
 
+    it("after cancel: launch team is not paid and treasury receives no USDC", async function () {
+      // WHY: The team payment is part of the success path only. A cancelled sale must return
+      // every deposited dollar to participants; paying the launch team (or the treasury) from
+      // a cancelled sale would leave the last refund claimants short.
+      const seeds = allSigners.slice(5, 25);
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(15_000));
+      }
+      await crowdfund.addSeeds(seeds.map((s: HardhatEthersSigner) => s.address));
+      for (const s of seeds) {
+        await crowdfund.connect(s).commit(0, USDC(15_000));
+      }
+
+      const teamBefore = await usdc.balanceOf(deployer.address);
+      const treasuryBefore = await usdc.balanceOf(treasury.address);
+      await crowdfund.connect(securityCouncil).cancel();
+      for (const s of seeds) {
+        await crowdfund.connect(s).claimRefund();
+      }
+
+      expect(await usdc.balanceOf(deployer.address)).to.equal(teamBefore);
+      expect(await usdc.balanceOf(treasury.address)).to.equal(treasuryBefore);
+      expect(await usdc.balanceOf(await crowdfund.getAddress())).to.equal(0);
+      expect(await crowdfund.queryFilter(crowdfund.filters.LaunchTeamPaid())).to.have.lengthOf(0);
+    });
+
     it("after cancel: ARM is recoverable", async function () {
       await crowdfund.connect(securityCouncil).cancel();
 
@@ -178,7 +208,7 @@ describe("Crowdfund Settlement Rework", function () {
       await crowdfund.withdrawUnallocatedArm();
       const treasuryAfter = await armToken.balanceOf(treasury.address);
 
-      expect(treasuryAfter - treasuryBefore).to.equal(ARM(1_500_000));
+      expect(treasuryAfter - treasuryBefore).to.equal(ARM(1_800_000));
     });
 
     it("emits Cancelled event", async function () {
@@ -216,17 +246,44 @@ describe("Crowdfund Settlement Rework", function () {
   // ============================================================
 
   describe("Proceeds Pushed at Finalization (T4.6)", function () {
-    it("treasury receives proceeds in the same tx as finalize", async function () {
+    it("launch team receives $250K and treasury the remainder in the same tx as finalize", async function () {
+      // WHY: finalize() pushes the net proceeds out immediately: exactly TEAM_PAYMENT_USDC to
+      // launchTeam and the rest to the treasury. 80 seeds × $15K = $1.2M is under the $1.8M
+      // sale, so no hop is pro-rated and no rounding buffer is held: the split is exact.
       const treasuryBefore = await usdc.balanceOf(treasury.address);
+      const teamBefore = await usdc.balanceOf(deployer.address);
       await setupAndFinalize(80, USDC(15_000));
       const treasuryAfter = await usdc.balanceOf(treasury.address);
+      const teamAfter = await usdc.balanceOf(deployer.address);
 
       const totalAllocUsdc = await crowdfund.totalAllocatedUsdc();
-      const pushed = treasuryAfter - treasuryBefore;
-      expect(totalAllocUsdc).to.be.gt(0);
-      // Proceeds pushed = totalAllocUsdc minus a small rounding buffer (1 per participant node)
-      expect(pushed).to.be.lte(totalAllocUsdc);
-      expect(pushed).to.be.gte(totalAllocUsdc - 500n); // at most ~500 participants' worth of buffer
+      expect(totalAllocUsdc).to.equal(USDC(1_200_000));
+      expect(teamAfter - teamBefore).to.equal(TEAM_PAYMENT);
+      expect(treasuryAfter - treasuryBefore).to.equal(totalAllocUsdc - TEAM_PAYMENT);
+
+      const paid = await crowdfund.queryFilter(crowdfund.filters.LaunchTeamPaid());
+      expect(paid).to.have.lengthOf(1);
+      expect(paid[0].args.recipient).to.equal(deployer.address);
+      expect(paid[0].args.amount).to.equal(TEAM_PAYMENT);
+    });
+
+    it("pro-rated sale: treasury receives totalAllocated − rounding buffer − team payment", async function () {
+      // WHY: When a hop is pro-rated, finalize() holds back one USDC unit per participant node
+      // so lazy floor-division refunds can never run the contract short. That buffer comes out
+      // of the treasury's share, never the team's: launchTeam still receives exactly $250K.
+      // 70 seeds × $26K = $1.82M of capped hop-0 demand exceeds the $1.8M sale.
+      const treasuryBefore = await usdc.balanceOf(treasury.address);
+      const teamBefore = await usdc.balanceOf(deployer.address);
+      await setupAndFinalize(70, USDC(26_000));
+      const treasuryAfter = await usdc.balanceOf(treasury.address);
+      const teamAfter = await usdc.balanceOf(deployer.address);
+
+      const totalAllocUsdc: bigint = await crowdfund.totalAllocatedUsdc();
+      const buffer: bigint = await crowdfund.getParticipantCount();
+      expect(totalAllocUsdc).to.equal(USDC(1_800_000));
+      expect(buffer).to.equal(70n);
+      expect(teamAfter - teamBefore).to.equal(TEAM_PAYMENT);
+      expect(treasuryAfter - treasuryBefore).to.equal(totalAllocUsdc - buffer - TEAM_PAYMENT);
     });
 
     it("contract balance after finalize covers all refunds", async function () {
@@ -236,7 +293,9 @@ describe("Crowdfund Settlement Rework", function () {
       const totalCommitted = await crowdfund.totalCommitted();
       const totalAllocUsdc = await crowdfund.totalAllocatedUsdc();
 
-      // Contract retains slightly more than (totalCommitted - totalAllocUsdc) due to rounding buffer
+      // WHY: The contract must keep at least every refund it owes. With no pro-rated hop no
+      // rounding buffer is held, so it keeps exactly totalCommitted - totalAllocUsdc; the
+      // upper bound allows for a buffer of at most one unit per participant node.
       expect(contractUsdc).to.be.gte(totalCommitted - totalAllocUsdc);
       expect(contractUsdc).to.be.lte(totalCommitted - totalAllocUsdc + 500n);
     });
@@ -249,12 +308,15 @@ describe("Crowdfund Settlement Rework", function () {
         await crowdfund.connect(s).claim(s.address);
       }
 
-      // Contract should have minimal USDC left (dust from rounding)
+      // WHY: After every participant claims, nothing deposited may remain stuck. No hop is
+      // pro-rated here, so there is no rounding dust and the contract is fully drained.
       const contractUsdc = await usdc.balanceOf(await crowdfund.getAddress());
-      expect(contractUsdc).to.be.lte(USDC(1));
+      expect(contractUsdc).to.equal(0);
     });
 
-    it("refundMode does NOT push proceeds (no proceeds to push)", async function () {
+    it("refundMode does NOT push proceeds or pay the launch team", async function () {
+      // WHY: In refund mode every participant is owed a full refund. Pushing any USDC to the
+      // treasury or launch team would leave the contract unable to honour those refunds.
       // 16 seeds × $15K = $240K < MIN_SALE ($250K) → enters refundMode
       const seeds = allSigners.slice(5, 21);
       for (const s of seeds) {
@@ -268,12 +330,16 @@ describe("Crowdfund Settlement Rework", function () {
       await time.increaseTo((await crowdfund.windowEnd()) + 1n);
 
       const treasuryBefore = await usdc.balanceOf(treasury.address);
-      await crowdfund.finalize();
+      const teamBefore = await usdc.balanceOf(deployer.address);
+      await expect(crowdfund.finalize()).to.not.emit(crowdfund, "LaunchTeamPaid");
       const treasuryAfter = await usdc.balanceOf(treasury.address);
+      const teamAfter = await usdc.balanceOf(deployer.address);
 
       expect(await crowdfund.refundMode()).to.be.true;
       // No USDC pushed in refundMode
       expect(treasuryAfter - treasuryBefore).to.equal(0);
+      expect(teamAfter - teamBefore).to.equal(0);
+      expect(await usdc.balanceOf(await crowdfund.getAddress())).to.equal(USDC(240_000));
     });
 
     it("emits Finalized event on normal finalization", async function () {
@@ -315,8 +381,8 @@ describe("Crowdfund Settlement Rework", function () {
       await time.increaseTo((await crowdfund.windowEnd()) + 1n);
 
       // Capped demand $240K < MIN_SALE takes the capped-demand refund branch, which emits
-      // saleSize 0 (the post-allocation branch, which set saleSize, is unreachable with
-      // 100% ceilings and no hop-2 floor). 16 seeds × $15K = $240K committed and capped.
+      // saleSize 0 (the post-allocation branch, which sets saleSize, is unreachable because
+      // allocated USDC = min(capped demand, saleSize)). 16 seeds × $15K = $240K committed and capped.
       await expect(crowdfund.finalize())
         .to.emit(crowdfund, "Finalized")
         .withArgs(0, 0, 0, true, USDC(240_000), USDC(240_000));
@@ -411,13 +477,18 @@ describe("Crowdfund Settlement Rework", function () {
   // ============================================================
 
   describe("Full USDC Token Flow Conservation", function () {
-    it("absolute USDC flow: treasury delta + sum(refunds) + residual == totalCommitted", async function () {
+    it("absolute USDC flow: team payment + treasury delta + sum(refunds) + residual == totalCommitted", async function () {
+      // WHY: Settlement-completion identity. Every deposited USDC unit must end up with the
+      // launch team, the treasury, a refunded participant, or as bounded dust in the contract.
       const treasuryBefore = await usdc.balanceOf(treasury.address);
-      // 80 seeds × $20K = $1.6M oversubscribes the $1.5M sale, so the pro-rata path pays
-      // non-zero refunds and leaves rounding dust.
-      const seeds = await setupAndFinalize(80, USDC(20_000));
+      const teamBefore = await usdc.balanceOf(deployer.address);
+      // 70 seeds × $26K = $1.82M oversubscribes the $1.8M sale, so the pro-rata path pays
+      // non-zero refunds and leaves rounding dust ($26K × 1.8M / 1.82M is not a whole unit).
+      const seeds = await setupAndFinalize(70, USDC(26_000));
       const treasuryAfter = await usdc.balanceOf(treasury.address);
       const treasuryDelta = treasuryAfter - treasuryBefore;
+      const teamDelta = (await usdc.balanceOf(deployer.address)) - teamBefore;
+      expect(teamDelta).to.equal(TEAM_PAYMENT);
 
       // All participants claim via claim() (handles ARM + refund), tracking actual USDC received
       let sumRefundsPaid = 0n;
@@ -433,7 +504,7 @@ describe("Crowdfund Settlement Rework", function () {
       const totalCommitted = await crowdfund.totalCommitted();
 
       // Conservation: every USDC deposited is accounted for
-      expect(treasuryDelta + sumRefundsPaid + residual).to.equal(totalCommitted);
+      expect(teamDelta + treasuryDelta + sumRefundsPaid + residual).to.equal(totalCommitted);
       // Contract should have only dust remaining
       expect(residual).to.be.lte(USDC(1));
     });
@@ -496,7 +567,9 @@ describe("Crowdfund Settlement Rework", function () {
 
   describe("Multi-Window ARM Sweep (T4.8)", function () {
     it("post-finalization base sale: sweeps unsold ARM immediately", async function () {
-      // 68 seeds × $15K = $1.02M of the $1.5M sale: $480K of ARM unsold
+      // WHY: ARM for the unsold part of the sale is not owed to anyone, so it must be
+      // sweepable to the treasury right after finalize rather than locked for 3 years.
+      // 68 seeds × $15K = $1.02M of the $1.8M sale: 780K ARM unsold
       const seeds = await setupAndFinalize(68, USDC(15_000));
 
       const totalAlloc = await crowdfund.totalAllocatedArm();
@@ -596,7 +669,7 @@ describe("Crowdfund Settlement Rework", function () {
       await crowdfund.withdrawUnallocatedArm();
       const treasuryAfter = await armToken.balanceOf(treasury.address);
 
-      expect(treasuryAfter - treasuryBefore).to.equal(ARM(1_500_000));
+      expect(treasuryAfter - treasuryBefore).to.equal(ARM(1_800_000));
     });
 
     it("after cancel: sweeps all ARM", async function () {
@@ -609,7 +682,7 @@ describe("Crowdfund Settlement Rework", function () {
       await crowdfund.withdrawUnallocatedArm();
       const treasuryAfter = await armToken.balanceOf(treasury.address);
 
-      expect(treasuryAfter - treasuryBefore).to.equal(ARM(1_500_000));
+      expect(treasuryAfter - treasuryBefore).to.equal(ARM(1_800_000));
     });
 
     it("emits UnallocatedArmWithdrawn event", async function () {

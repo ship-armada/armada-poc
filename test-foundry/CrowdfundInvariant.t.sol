@@ -12,7 +12,7 @@ import "../contracts/cctp/MockUSDCV2.sol";
 ///      Tracks ghost variables for invariant assertions.
 contract CrowdfundHandler is Test {
     // Per-hop caps (relaunch): known contributors, team inviter wallets, invited contributors.
-    uint256 constant HOP0_CAP = 150_000 * 1e6;
+    uint256 constant HOP0_CAP = 100_000 * 1e6;
     uint256 constant HOP2_CAP = 10_000 * 1e6;
 
     ArmadaCrowdfund public crowdfund;
@@ -32,6 +32,7 @@ contract CrowdfundHandler is Test {
     uint256 public ghost_totalUsdcRefunded; // USDC returned via claimRefund() (normal pro-rata path)
     uint256 public ghost_totalUsdcCancelRefunded; // USDC returned via claimRefund() (canceled/refundMode full refund)
     uint256 public ghost_proceedsPushed;    // USDC pushed to treasury at finalization
+    uint256 public ghost_teamPaid;          // USDC paid to the launch team (admin) at finalization
     uint256 public ghost_unallocArmWithdrawn; // ARM withdrawn via withdrawUnallocatedArm()
     uint256 public ghost_claimCount;        // number of successful claims
     bool public ghost_finalized;
@@ -169,21 +170,23 @@ contract CrowdfundHandler is Test {
     }
 
     /// @dev Finalize the crowdfund (permissionless).
-    ///      Proceeds are pushed to treasury atomically at finalization.
+    ///      The team payment and the treasury's proceeds are pushed atomically at finalization.
     function finalize() external {
         if (ghost_finalized || ghost_canceled) return;
 
         address treasury = address(0xBEEF);
         uint256 usdcBefore = usdc.balanceOf(treasury);
+        uint256 teamBefore = usdc.balanceOf(admin);
 
         try crowdfund.finalize() {
             Phase p = crowdfund.phase();
             if (p == Phase.Finalized) {
                 ghost_finalized = true;
                 ghost_refundMode = crowdfund.refundMode();
-                // Track proceeds pushed at finalization
+                // Track proceeds pushed and the team payment made at finalization
                 uint256 usdcGained = usdc.balanceOf(treasury) - usdcBefore;
                 ghost_proceedsPushed += usdcGained;
+                ghost_teamPaid += usdc.balanceOf(admin) - teamBefore;
             }
         } catch {}
     }
@@ -270,7 +273,7 @@ contract CrowdfundInvariantTest is Test {
     address[] public hop1Addrs;
     address[] public hop2Addrs;
 
-    uint256 constant ARM_FUNDING = 1_500_000 * 1e18;
+    uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
 
     function setUp() public {
         admin = address(this);
@@ -297,12 +300,12 @@ contract CrowdfundInvariantTest is Test {
         crowdfund.loadArm();
 
         // Create actor addresses
-        // 80 seeds: enough to reach MIN_SALE ($250K) and to oversubscribe the $1.5M sale.
-        // 5 hop-1 team inviter wallets (LAUNCH_TEAM_HOP1_BUDGET) and 20 hop-2 invitees.
+        // 80 seeds: enough to reach MIN_SALE ($250K) and to oversubscribe the $1.8M sale.
+        // 1 hop-1 team inviter wallet (LAUNCH_TEAM_HOP1_BUDGET) and 20 hop-2 invitees.
         for (uint256 i = 0; i < 80; i++) {
             seeds.push(address(uint160(0x1000 + i)));
         }
-        for (uint256 i = 0; i < 5; i++) {
+        for (uint256 i = 0; i < 1; i++) {
             hop1Addrs.push(address(uint160(0x2000 + i)));
         }
         for (uint256 i = 0; i < 20; i++) {
@@ -312,14 +315,14 @@ contract CrowdfundInvariantTest is Test {
         // Setup phase: add seeds
         crowdfund.addSeeds(seeds);
 
-        // The launch team places the hop-1 team wallets (seeds cannot invite).
+        // The launch team places the hop-1 team wallet (seeds cannot invite).
         for (uint256 i = 0; i < hop1Addrs.length; i++) {
             crowdfund.launchTeamInvite(hop1Addrs[i], 0);
         }
 
-        // Team wallets invite the hop-2 addresses (4 each)
+        // The team wallet invites the hop-2 addresses
         for (uint256 i = 0; i < hop2Addrs.length; i++) {
-            vm.prank(hop1Addrs[i / 4]);
+            vm.prank(hop1Addrs[0]);
             crowdfund.invite(hop2Addrs[i], 1);
         }
 
@@ -346,14 +349,23 @@ contract CrowdfundInvariantTest is Test {
 
     // ============ Invariants ============
 
-    /// @notice USDC conservation: contract balance = totalCommitted - claimed refunds - proceeds pushed - cancel refunds
+    /// @notice USDC conservation: contract balance = totalCommitted - claimed refunds - proceeds pushed
+    ///         - team payment - cancel refunds
     function invariant_usdcConservation() public view {
         uint256 contractUsdc = usdc.balanceOf(address(crowdfund));
         uint256 expectedUsdc = handler.ghost_totalUsdcIn()
             - handler.ghost_totalUsdcRefunded()
             - handler.ghost_proceedsPushed()
+            - handler.ghost_teamPaid()
             - handler.ghost_totalUsdcCancelRefunded();
         assertEq(contractUsdc, expectedUsdc, "USDC conservation violated");
+    }
+
+    /// @notice WHY: the launch team is paid exactly TEAM_PAYMENT_USDC on a successful finalization
+    ///         and nothing otherwise (before finalization, in refund mode, or after a cancel).
+    function invariant_teamPaymentExactOnSuccessOnly() public view {
+        bool success = handler.ghost_finalized() && !handler.ghost_refundMode();
+        assertEq(handler.ghost_teamPaid(), success ? crowdfund.TEAM_PAYMENT_USDC() : 0, "team payment");
     }
 
     /// @notice ARM conservation: contract balance = initial funding - claimed ARM - unalloc withdrawn

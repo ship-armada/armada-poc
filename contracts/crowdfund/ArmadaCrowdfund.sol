@@ -1,5 +1,5 @@
 // ABOUTME: Word-of-mouth whitelist crowdfund with hop-based allocation.
-// ABOUTME: Implements overlapping ceilings, hop-2 floor, elastic expansion, and pro-rata refunds.
+// ABOUTME: Implements a hop-2 reserve with two-way rollover, a fixed sale size, a launch-team payment, and pro-rata refunds.
 
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
@@ -27,70 +27,66 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
 
     // ============ Constants ============
 
-    uint256 public constant BASE_SALE = 1_500_000 * 1e6;       // $1.5M USDC
-    uint256 public constant MAX_SALE  = 1_500_000 * 1e6;       // $1.5M USDC (equal to BASE_SALE: no expansion)
+    uint256 public constant BASE_SALE = 1_800_000 * 1e6;       // $1.8M USDC
+    uint256 public constant MAX_SALE  = 1_800_000 * 1e6;       // $1.8M USDC (equal to BASE_SALE: no expansion)
     uint256 public constant MIN_SALE  =   250_000 * 1e6;       // $250k USDC
     uint256 public constant ARM_PRICE = 1e6;                    // $1.00 per ARM in USDC
-    // Equal to BASE_SALE and MAX_SALE, so the sale size is $1.5M whatever the demand.
-    uint256 public constant ELASTIC_TRIGGER = 1_500_000 * 1e6;
+    // Equal to BASE_SALE and MAX_SALE, so the sale size is $1.8M whatever the demand.
+    uint256 public constant ELASTIC_TRIGGER = 1_800_000 * 1e6;
     uint8 public constant NUM_HOPS = 3;
 
-    /// @dev WATERFALL DESIGN NOTE. Allocation is computed against `saleSize` (BASE_SALE, or MAX_SALE
-    ///      after expansion; both are $1.5M, so expansion has no effect). Hop-2's guaranteed floor is
-    ///      split across two constants, which differ in HOW they are funded:
-    ///        - HOP2_BASE_FLOOR_BPS: shrinks the pool the hop-0/hop-1 *raw* ceilings apply to.
-    ///          basePool = saleSize * (10000 - HOP2_BASE_FLOOR_BPS) / 10000.
-    ///        - HOP2_EXTRA_FLOOR_BPS: an additional slice reserved for hop-2, funded entirely out of
-    ///          hop-0's ceiling (subtracted from it) so hop-1's ceiling is left untouched.
-    ///      Both floors are 0 and both raw ceilings are 100%, so the waterfall reduces to a strict
-    ///      priority fill (derived in _computeHopAllocations):
-    ///        hop-0 = min(demand, saleSize)
-    ///        hop-1 = min(demand, saleSize - hop-0)          (team inviter wallets, $0 cap: demand 0)
-    ///        hop-2 = min(demand, saleSize - hop-0 - hop-1)  (unconditional rollover of the remainder)
-    ///      A remainingAvailable tracker in _computeHopAllocations guarantees total allocation never
-    ///      exceeds saleSize.
-    uint256 public constant HOP2_BASE_FLOOR_BPS = 0;
-    uint256 public constant HOP2_EXTRA_FLOOR_BPS = 0;
+    /// @dev ALLOCATION DESIGN NOTE. Allocation is computed against `saleSize` (BASE_SALE, or MAX_SALE
+    ///      after expansion; both are $1.8M, so expansion has no effect). Hop-2 (invited contributors)
+    ///      has first priority for HOP2_RESERVE_USDC; hop-0 (known contributors) gets up to the rest of
+    ///      the sale, so its earmark is saleSize - HOP2_RESERVE_USDC ($1.5M) plus any reserve hop-2
+    ///      leaves unused; capacity hop-0 leaves unused rolls back to hop-2 (see _computeHopAllocations):
+    ///        hop-2 reserved = min(demand2, reserve)
+    ///        hop-0          = min(demand0, saleSize - hop-2 reserved)
+    ///        hop-1          = min(demand1, what remains)   (team inviter wallet, $0 cap: demand 0)
+    ///        hop-2          = hop-2 reserved + min(demand2 - hop-2 reserved, what remains)
+    ///      Total allocation is min(capped demand, saleSize). A hop is pro-rated only when total capped
+    ///      demand exceeds saleSize.
+    uint256 public constant HOP2_RESERVE_USDC = 300_000 * 1e6;  // $300k first-priority capacity for hop-2
 
-    /// @notice Per-hop raw ceiling shares (basis points of the base pool). Hop-0 additionally
-    ///         funds hop-2's extra floor from its own ceiling (see WATERFALL DESIGN NOTE above).
-    uint16 public constant HOP0_CEILING_BPS = 10000; // 100%
-    uint16 public constant HOP1_CEILING_BPS = 10000; // 100%
+    /// @notice Paid to the launch team (the `launchTeam` Safe) from the proceeds of a successful sale;
+    ///         the rest goes to the treasury. No payment on a cancelled or refund-mode sale. Must not
+    ///         exceed MIN_SALE, so a minimum sale always covers it.
+    uint256 public constant TEAM_PAYMENT_USDC = 250_000 * 1e6;  // $250k
 
     /// @notice Per-slot effective USDC caps at each hop. Multiplied by `invitesReceived`
     ///         to derive an address's effective slot allowance at that hop.
     ///         Hop-0: known contributors. Hop-1: team-owned inviter wallets only; a $0 cap means
     ///         they never receive an allocation and any commit is refunded in full. Hop-2: invited
     ///         contributors (launch-team placements and team-wallet invite links).
-    uint256 public constant HOP0_CAP_USDC = 150_000 * 1e6;
+    uint256 public constant HOP0_CAP_USDC = 100_000 * 1e6;
     uint256 public constant HOP1_CAP_USDC = 0;
     uint256 public constant HOP2_CAP_USDC = 10_000 * 1e6;
 
     /// @notice Per-hop outgoing-invite stacking caps (per `invitesReceived`). Only hop-1 (the team
-    ///         inviter wallets) can invite, so every participant invite lands at hop-2.
+    ///         inviter wallet) can invite, so every participant invite lands at hop-2.
     uint8 public constant HOP0_MAX_INVITES = 0;
     uint8 public constant HOP1_MAX_INVITES = 100;
     uint8 public constant HOP2_MAX_INVITES = 0;
 
-    /// @notice Per-hop incoming-invite stacking caps (max edges that scale a node). 1 everywhere:
-    ///         no stacking, so every address has one slot per hop.
+    /// @notice Per-hop incoming-invite stacking caps (max edges that scale a node). Hop-0 and hop-1
+    ///         take one slot per address; hop-2 stacks up to 20 slots ($10k each, $200k).
     uint16 public constant HOP0_MAX_INVITES_RECEIVED = 1;
     uint16 public constant HOP1_MAX_INVITES_RECEIVED = 1;
-    uint16 public constant HOP2_MAX_INVITES_RECEIVED = 1;
+    uint16 public constant HOP2_MAX_INVITES_RECEIVED = 20;
 
-    uint256 public constant WINDOW_DURATION = 7 days;
+    uint256 public constant WINDOW_DURATION = 5 days;
     // The launch-team invite window spans the full commitment window. launchTeamInvite/addSeed use a
     // strict `< launchTeamInviteEnd` check, so the launch team is closed out at exactly windowEnd while
     // participant invite/commit (`<= windowEnd`) remain open for that final second.
     uint256 public constant LAUNCH_TEAM_INVITE_PERIOD = WINDOW_DURATION;
     // Hard cap on the total window (windowStart to windowEnd) including any extendWindow calls.
     // Bounds how long participant USDC can stay locked before finalize becomes callable.
-    uint256 public constant MAX_WINDOW_DURATION = 14 days;
+    uint256 public constant MAX_WINDOW_DURATION = 15 days;
     uint256 public constant CLAIM_DEADLINE_DURATION = 1095 days; // 3 years
-    uint256 public constant MIN_COMMIT = 50 * 1e6;               // $50 USDC minimum per commit
-    // Per-hop invite stacking caps are stored in hopConfigs[].maxInvitesReceived (1, 1, 1)
+    uint256 public constant MIN_COMMIT = 100 * 1e6;              // $100 USDC minimum per commit
+    // Per-hop invite stacking caps are stored in hopConfigs[].maxInvitesReceived (1, 1, 20)
     uint16 public constant MAX_SEEDS = 500;                      // max number of seeds (hop-0 participants)
-    uint8 public constant LAUNCH_TEAM_HOP1_BUDGET = 5;           // launch team direct hop-1 placements (team inviter wallets)
+    uint8 public constant LAUNCH_TEAM_HOP1_BUDGET = 1;           // launch team direct hop-1 placements (the team inviter wallet)
     uint16 public constant LAUNCH_TEAM_HOP2_BUDGET = 500;        // launch team direct hop-2 invite slots
     // Hard cap on total participant nodes. finalize() iterates every node in one tx at ~8,200 gas/node
     // (cold); this bound keeps it under the 16,777,216 (2^24, EIP-7825) per-tx gas cap. 1,800 nodes
@@ -144,7 +140,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
     uint256 public saleSize;
     uint256 public totalAllocatedArm;    // ARM (18 dec) — aggregate from hop-level computation
     uint256 public totalAllocatedUsdc;   // USDC (6 dec) — hop-level upper bound
-    uint256[3] public finalCeilings;     // budget-capped hop ceilings (stored at finalization)
+    uint256[3] public finalCeilings;     // each hop's final USDC allocation (stored at finalization)
     uint256[3] public finalDemands;      // hop demands (stored at finalization)
     // Lazy evaluation accumulators (tracked during claims)
     uint256 public totalArmTransferred;  // exact sum of ARM transferred via claim()
@@ -182,6 +178,7 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
         uint256 totalCommitted
     );
     event Cancelled(address indexed caller, uint256 timestamp);
+    event LaunchTeamPaid(address indexed recipient, uint256 amount);
     event WindowExtended(uint256 previousEnd, uint256 newEnd);
     event RefundClaimed(address indexed participant, uint256 usdcAmount);
     event UnallocatedArmWithdrawn(address indexed treasury, uint256 amount);
@@ -225,9 +222,11 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
         launchTeamInviteEnd = _openTimestamp + LAUNCH_TEAM_INVITE_PERIOD;
         // phase defaults to Phase.Active (value 0)
 
-        hopConfigs[0] = HopConfig({ ceilingBps: HOP0_CEILING_BPS, capUsdc: HOP0_CAP_USDC, maxInvites: HOP0_MAX_INVITES, maxInvitesReceived: HOP0_MAX_INVITES_RECEIVED });
-        hopConfigs[1] = HopConfig({ ceilingBps: HOP1_CEILING_BPS, capUsdc: HOP1_CAP_USDC, maxInvites: HOP1_MAX_INVITES, maxInvitesReceived: HOP1_MAX_INVITES_RECEIVED });
-        hopConfigs[2] = HopConfig({ ceilingBps: 0,                capUsdc: HOP2_CAP_USDC, maxInvites: HOP2_MAX_INVITES, maxInvitesReceived: HOP2_MAX_INVITES_RECEIVED });
+        // ceilingBps is not used by the allocation (see ALLOCATION DESIGN NOTE); it stays 0 and is kept
+        // so the hopConfigs() getter keeps its shape for off-chain readers.
+        hopConfigs[0] = HopConfig({ ceilingBps: 0, capUsdc: HOP0_CAP_USDC, maxInvites: HOP0_MAX_INVITES, maxInvitesReceived: HOP0_MAX_INVITES_RECEIVED });
+        hopConfigs[1] = HopConfig({ ceilingBps: 0, capUsdc: HOP1_CAP_USDC, maxInvites: HOP1_MAX_INVITES, maxInvitesReceived: HOP1_MAX_INVITES_RECEIVED });
+        hopConfigs[2] = HopConfig({ ceilingBps: 0, capUsdc: HOP2_CAP_USDC, maxInvites: HOP2_MAX_INVITES, maxInvitesReceived: HOP2_MAX_INVITES_RECEIVED });
     }
 
     // ============ Seed Management ============
@@ -515,25 +514,20 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
         uint256 saleSize_ = capped >= ELASTIC_TRIGGER ? MAX_SALE : BASE_SALE;
         saleSize = saleSize_;
 
-        // Step 2: Per-hop allocation (matches spec pseudocode steps 3–6)
-        //
-        // Hop-2 floor is reserved off the top. Hop-0/hop-1 raw ceilings are BPS of
-        // the base pool, and hop-0 additionally funds the extra hop-2 floor.
-        // A remainingAvailable tracker ensures total allocation never exceeds saleSize.
-        // Hop-2 has no BPS ceiling — its effective ceiling is floor + hop-1 leftover.
-        // Rollover is unconditional: leftover always flows to the next hop.
+        // Step 2: Per-hop allocation (see ALLOCATION DESIGN NOTE): hop-2's reserve first, hop-0
+        // up to the rest of the sale, unused hop-0 capacity rolling back to hop-2.
 
         // _computeHopAllocations sets finalCeilings/finalDemands needed by _computeAllocation
-        // and returns the hop-level USDC estimate for the refundMode pre-check below.
+        // and returns the hop-level USDC total for the refundMode check below, plus whether any
+        // hop is pro-rated (the only case with rounding dust).
         // perHopCapped is passed in to avoid re-SLOADing hopStats[h].cappedCommitted (audit-75).
-        uint256 totalAllocUsdc_ = _computeHopAllocations(saleSize_, perHopCapped);
+        (uint256 totalAllocUsdc_, bool anyProRated) = _computeHopAllocations(saleSize_, perHopCapped);
 
         // Post-allocation minimum raise check: if net proceeds (allocated USDC) fall
         // below MIN_SALE, enter refundMode. Participants get full USDC refunds via
-        // claimRefund(); no ARM is distributed. With no hop-2 floor and 100% raw
-        // ceilings, allocated USDC equals min(capped demand, saleSize), so this cannot
-        // trigger once the capped-demand check above has passed; it remains as a guard
-        // for configurations whose ceilings or floors leave hop-level gaps.
+        // claimRefund(); no ARM is distributed. Allocated USDC equals
+        // min(capped demand, saleSize), so this cannot trigger once the capped-demand
+        // check above has passed; it remains as a guard.
         if (totalAllocUsdc_ < MIN_SALE) {
             refundMode = true;
             phase = Phase.Finalized;
@@ -553,10 +547,11 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
         phase = Phase.Finalized;
         finalizedAt = block.timestamp;
 
-        // Push net proceeds to treasury. Retain a rounding buffer so the contract
-        // never runs short on refund payouts: lazy per-participant floor divisions
-        // can sum to slightly less than totalAllocatedUsdc, making the aggregate
-        // refund slightly larger.
+        // Pay the launch team and push the rest of the net proceeds to the treasury. When a hop is
+        // pro-rated, retain a rounding buffer so the contract never runs short on refund payouts:
+        // lazy per-participant floor divisions can sum to slightly less than totalAllocatedUsdc,
+        // making the aggregate refund slightly larger. Without pro-rating there is no floor
+        // division and no dust, so nothing is held back and a minimum sale splits exactly.
         //
         // Buffer = participantNodes.length (one USDC unit per participantNode entry).
         //
@@ -572,16 +567,22 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
         //   each (address, hop) tuple corresponds to at most one floor-division call.
         //
         // Invariant note: the spec requires netProceeds + sum(refunds) == totalCommitted
-        // as a settlement-completion identity. The rounding buffer means the treasury
-        // receives slightly less than totalAllocatedUsdc, with the difference (at most
-        // participantNodes.length USDC units) stranded in the contract as unrecoverable
-        // dust. The identity still holds at the contract level:
-        // treasuryReceived + contractDust + sum(refunds) == totalCommitted.
-        uint256 roundingBuffer = participantNodes.length;
-        uint256 proceedsPush = totalAllocUsdc_ > roundingBuffer
+        // as a settlement-completion identity. When a hop is pro-rated, the rounding buffer
+        // means the treasury receives slightly less than totalAllocatedUsdc - teamPayment, with
+        // the difference (at most participantNodes.length USDC units) stranded in the contract
+        // as unrecoverable dust. The identity still holds at the contract level:
+        // teamPayment + treasuryReceived + contractDust + sum(refunds) == totalCommitted.
+        uint256 roundingBuffer = anyProRated ? participantNodes.length : 0;
+        uint256 distributable = totalAllocUsdc_ > roundingBuffer
             ? totalAllocUsdc_ - roundingBuffer
             : 0;
-        usdc.safeTransfer(treasury, proceedsPush);
+        // TEAM_PAYMENT_USDC <= MIN_SALE <= totalAllocUsdc_, and a buffer exists only when a hop is
+        // pro-rated (total = saleSize), so distributable always covers the payment; the min() keeps
+        // finalize from reverting even if that ever stopped holding.
+        uint256 teamPayment = distributable < TEAM_PAYMENT_USDC ? distributable : TEAM_PAYMENT_USDC;
+        usdc.safeTransfer(launchTeam, teamPayment);
+        usdc.safeTransfer(treasury, distributable - teamPayment);
+        emit LaunchTeamPaid(launchTeam, teamPayment);
 
         emit Finalized(saleSize_, allocatedArm, totalAllocUsdc_, false, capped, totalCommitted);
     }
@@ -896,49 +897,45 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
     ///      Extracted from finalize() to avoid stack-too-deep. Takes the per-hop
     ///      capped totals as a parameter so it doesn't have to re-SLOAD
     ///      hopStats[h].cappedCommitted that _computeCappedDemand just wrote (audit-75).
-    function _computeHopAllocations(uint256 saleSize_, uint256[3] memory perHopCapped) internal returns (uint256 totalAllocUsdc_) {
-        uint256 hop2Floor = (saleSize_ * (HOP2_BASE_FLOOR_BPS + HOP2_EXTRA_FLOOR_BPS)) / 10000;
-        uint256 available = saleSize_ - hop2Floor;
-        uint256 basePool = (saleSize_ * (10000 - HOP2_BASE_FLOOR_BPS)) / 10000;
+    ///      finalCeilings[h] is the hop's final allocation: _computeAllocation fills a participant
+    ///      in full when demand <= ceiling and pro-rates by ceiling / demand otherwise.
+    ///      Returns the total allocated USDC and whether any hop is pro-rated (demand > allocation).
+    function _computeHopAllocations(uint256 saleSize_, uint256[3] memory perHopCapped)
+        internal
+        returns (uint256 totalAllocUsdc_, bool anyProRated)
+    {
+        // --- Hop-2 reserve: first priority, up to HOP2_RESERVE_USDC (never more than the sale) ---
+        uint256 reserve = HOP2_RESERVE_USDC < saleSize_ ? HOP2_RESERVE_USDC : saleSize_;
+        uint256 demand2 = perHopCapped[2];
+        uint256 alloc2 = demand2 < reserve ? demand2 : reserve;
+        uint256 remaining = saleSize_ - alloc2;
 
-        // Raw BPS terms overlap (60% + 45% of basePool). The extra hop-2 floor is
-        // funded solely from hop-0's raw ceiling, preserving hop-1's raw ceiling.
-        uint256 hop0Ceiling = ((basePool * hopConfigs[0].ceilingBps) / 10000)
-            - ((saleSize_ * HOP2_EXTRA_FLOOR_BPS) / 10000);
-        uint256 hop1Ceiling = (basePool * hopConfigs[1].ceilingBps) / 10000;
-
-        // --- Hop-0: allocate from available pool ---
+        // --- Hop-0: up to the rest of the sale (its earmark plus any unused hop-2 reserve) ---
         // Uses cappedCommitted (set by _computeCappedDemand) — over-cap deposits excluded
         uint256 demand = perHopCapped[0];
-        uint256 alloc = demand <= hop0Ceiling ? demand : hop0Ceiling;
-        uint256 leftover = hop0Ceiling - alloc;
-        uint256 remainingAvailable = available - alloc;
-
-        finalCeilings[0] = hop0Ceiling;
+        uint256 alloc = demand < remaining ? demand : remaining;
+        remaining -= alloc;
+        finalCeilings[0] = alloc;
         finalDemands[0] = demand;
         totalAllocUsdc_ = alloc;
+        anyProRated = demand > alloc;
 
-        // --- Hop-1: allocate from remaining available, ceiling boosted by hop-0 leftover ---
+        // --- Hop-1: from what remains (the team inviter wallet has a $0 cap, so demand is 0) ---
         demand = perHopCapped[1];
-        uint256 hop1EffCeiling = hop1Ceiling + leftover;
-        if (hop1EffCeiling > remainingAvailable) {
-            hop1EffCeiling = remainingAvailable;
-        }
-        alloc = demand <= hop1EffCeiling ? demand : hop1EffCeiling;
-        leftover = hop1EffCeiling - alloc;
-
-        finalCeilings[1] = hop1EffCeiling;
+        alloc = demand < remaining ? demand : remaining;
+        remaining -= alloc;
+        finalCeilings[1] = alloc;
         finalDemands[1] = demand;
         totalAllocUsdc_ += alloc;
+        anyProRated = anyProRated || demand > alloc;
 
-        // --- Hop-2: allocate from floor + hop-1 leftover (no BPS ceiling) ---
-        demand = perHopCapped[2];
-        uint256 hop2EffCeiling = hop2Floor + leftover;
-        alloc = demand <= hop2EffCeiling ? demand : hop2EffCeiling;
-
-        finalCeilings[2] = hop2EffCeiling;
-        finalDemands[2] = demand;
-        totalAllocUsdc_ += alloc;
+        // --- Hop-2: its reserve plus any capacity hop-0 and hop-1 left unused ---
+        uint256 extra2 = demand2 - alloc2;
+        alloc2 += extra2 < remaining ? extra2 : remaining;
+        finalCeilings[2] = alloc2;
+        finalDemands[2] = demand2;
+        totalAllocUsdc_ += alloc2;
+        anyProRated = anyProRated || demand2 > alloc2;
     }
 
     /// @dev Compute allocation for a participant from stored hop-level ceilings/demands.
@@ -972,16 +969,17 @@ contract ArmadaCrowdfund is ReentrancyGuard, EIP712, Multicall {
     ///      DESIGN NOTE: This iterates the full participantNodes array — O(n) where n is total
     ///      participants across all hops. The array is bounded by invite chain limits:
     ///      MAX_SEEDS (500) at hop-0, the launch-team budgets, and HOPx_MAX_INVITES at each hop.
-    ///      With the current constants (hop-0 and hop-2 cannot invite; 5 launch-team hop-1 team
-    ///      wallets x 100 invites; 500 launch-team hop-2 placements) the structural maximum is
-    ///      1,505 nodes. MAX_FINALIZE_NODES remains the hard bound for any configuration.
+    ///      With the current constants (hop-0 and hop-2 cannot invite; 1 launch-team hop-1 team
+    ///      wallet x 100 invites; 500 launch-team hop-2 placements; stacking adds slots, not nodes)
+    ///      the structural maximum is 1,101 nodes. MAX_FINALIZE_NODES remains the hard bound for any
+    ///      configuration.
     ///      Cold-storage cost is ~8,200 gas/node (measured; test-foundry/CrowdfundFinalizeGasCold.t.sol);
     ///      an invited-but-uncommitted node still costs ~4,950 gas (2 cold SLOADs before the skip),
     ///      so cost scales with whitelist count, not commit count. A single Ethereum transaction is
     ///      capped at 16,777,216 gas (2^24, EIP-7825); a node count above ~2,000 would make one-shot
     ///      finalize() unsubmittable. Total node count is therefore capped at MAX_FINALIZE_NODES
     ///      (enforced in _initParticipant): 1,800 nodes ≈ 15.2M gas, ~9% under the cap. The current
-    ///      1,505-node structural maximum is ≈ 12.3M gas.
+    ///      1,101-node structural maximum is well under that (re-measured in CrowdfundFinalizeGasCold).
     ///      NOTE: an earlier profile (test-foundry/CrowdfundFinalizeGas.t.sol) reported ~2,220 gas
     ///      per iteration / ~4.2M at max, but it measured WARM slots and understates a real
     ///      cold-first-touch transaction by ~3.6x; do not rely on it.

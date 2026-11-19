@@ -243,13 +243,21 @@ export async function readExtendTarget(provider: Provider, crowdfundAddress: str
 /** Below this much time to the current deadline, signers are warned to execute promptly. */
 export const EXTEND_URGENT_SECONDS = 24 * 3600;
 
+/**
+ * The operational extension step: +5 days per extension, at most two (5 + 5 + 5 = the 15-day
+ * cap). The contract enforces only the cap (specs/CROWDFUND.md, "Extension steps").
+ */
+export const EXTENSION_STEP_SECONDS = 5 * 24 * 3600;
+
 /** Latest end extendWindow() accepts: windowStart + MAX_WINDOW_DURATION. */
 export const maxWindowEnd = (target: ExtendTarget): number => target.windowStart + target.maxWindowDuration;
 
 /**
  * Check a new end against the contract's extendWindow() rules so the Safe transaction does not
  * revert, as of now. The Safe must still execute before the current windowEnd: after it, an
- * extension is impossible, so a short time remaining is a warning.
+ * extension is impossible, so a short time remaining is a warning. An end that is not exactly
+ * one EXTENSION_STEP_SECONDS past the current end breaks the operational step rule (the
+ * contract allows it), so it is a warning too.
  */
 export function validateExtension(target: ExtendTarget, newEnd: number): { errors: string[]; warnings: string[] } {
   const errors: string[] = [];
@@ -269,6 +277,11 @@ export function validateExtension(target: ExtendTarget, newEnd: number): { error
   const remaining = target.windowEnd - target.now;
   if (errors.length === 0 && remaining < EXTEND_URGENT_SECONDS) {
     warnings.push(`Only ${(remaining / 3600).toFixed(1)}h until ${iso(target.windowEnd)}: the Safe must execute before then, or the window can never be extended`);
+  }
+  const step = newEnd - target.windowEnd;
+  if (errors.length === 0 && step !== EXTENSION_STEP_SECONDS) {
+    const days = Number((step / 86400).toFixed(2));
+    warnings.push(`The new end is ${days} days after the current end; the operational rule is +5 days per extension, at most two (specs/CROWDFUND.md, "Extension steps"). Confirm this is intended and record it in the decision log`);
   }
   return { errors, warnings };
 }

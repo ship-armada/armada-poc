@@ -33,8 +33,8 @@ const USDC = (n: number) => ethers.parseUnits(n.toString(), 6);
 // Amount of ARM the deployer keeps for governance testing after treasury + crowdfund allocations.
 // Eligible supply ≈ DEPLOYER_KEEP + seed-claimed ARM. Quorum = 20% of eligible.
 // Deployer delegates half of DEPLOYER_KEEP. That plus seed claims must exceed quorum.
-// 100 seeds × $12K = $1.2M fills under the $1.5M sale, so every seed is allocated in full
-// (12,000 ARM each) and $300K of ARM stays unallocated for the sweep tests.
+// 100 seeds × $12K = $1.2M fills under the $1.8M sale, so every seed is allocated in full
+// (12,000 ARM each) and $600K of ARM stays unallocated for the sweep tests.
 const DEPLOYER_KEEP = ARM(1_200_000);
 
 describe("Cross-Contract Integration (Phase 6)", function () {
@@ -50,7 +50,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
   let deployer: SignerWithAddress;
   let treasuryAddr: SignerWithAddress;
   let seeds: SignerWithAddress[];
-  let hop1Addrs: SignerWithAddress[];
+  let inviteeAddrs: SignerWithAddress[];
 
   async function warpPastWindow(cf: any) {
     await time.increaseTo((await cf.windowEnd()) + 1n);
@@ -66,7 +66,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     deployer = signers[0];
     treasuryAddr = signers[1];
     seeds = signers.slice(2, 102);      // 100 seeds
-    hop1Addrs = signers.slice(102, 112); // 10 hop-1
+    inviteeAddrs = signers.slice(102, 112); // 10 launch-team invitees (team wallet, hop-2 placements)
 
     // Deploy tokens
     const ArmadaToken = await ethers.getContractFactory("ArmadaToken");
@@ -79,7 +79,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     await usdc.waitForDeployment();
 
     // Deploy crowdfund
-    const CROWDFUND_ARM_FUNDING = ARM(1_500_000);
+    const CROWDFUND_ARM_FUNDING = ARM(1_800_000);
     const ArmadaCrowdfund = await ethers.getContractFactory("ArmadaCrowdfund");
     const openTimestamp = (await time.latest()) + 300;
     crowdfund = await ArmadaCrowdfund.deploy(
@@ -92,7 +92,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     );
     await crowdfund.waitForDeployment();
 
-    // Fund ARM to crowdfund (1.5M for MAX_SALE)
+    // Fund ARM to crowdfund (1.8M for MAX_SALE)
     await armToken.transfer(await crowdfund.getAddress(), CROWDFUND_ARM_FUNDING);
     await crowdfund.loadArm();
 
@@ -167,10 +167,15 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
       await crowdfund.addSeeds(seeds.map(s => s.address));
 
-      // 2. Launch team places hop-1 team inviter wallets (seeds cannot invite)
-      for (let i = 0; i < 3 && i < hop1Addrs.length; i++) {
-        await crowdfund.launchTeamInvite(hop1Addrs[i].address, 0);
+      // 2. Launch team places its one hop-1 team inviter wallet (seeds cannot invite) and two
+      //    direct hop-2 placements
+      await crowdfund.launchTeamInvite(inviteeAddrs[0].address, 0);
+      for (const placement of inviteeAddrs.slice(1, 3)) {
+        await crowdfund.launchTeamInvite(placement.address, 1);
       }
+      const [hop1Left, hop2Left] = await crowdfund.getLaunchTeamBudgetRemaining();
+      expect(hop1Left).to.equal(0);
+      expect(hop2Left).to.equal(500 - 2);
 
       // 3. All seeds commit $12K each = $1.2M (meets MIN_SALE)
       for (const seed of seeds) {
@@ -410,7 +415,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       // Now alice transfers ARM to a non-participant (address with no prior delegation)
       const aliceBalance = await armToken.balanceOf(alice.address);
       await armToken.addToWhitelist(alice.address); // whitelist so alice can transfer
-      const recipient = hop1Addrs[0]; // never delegated before
+      const recipient = inviteeAddrs[0]; // never delegated before
       await armToken.connect(alice).transfer(recipient.address, aliceBalance);
 
       // Recipient delegates (after proposal creation)
@@ -602,7 +607,7 @@ describe("Cross-Contract Integration (Phase 6)", function () {
     // Named constants for this test suite's ARM distribution — derived from supply
     const TOTAL_SUPPLY = ARM(12_000_000);                    // must match ArmadaToken.INITIAL_SUPPLY
     const TREASURY_ALLOCATION = TOTAL_SUPPLY * 65n / 100n;   // 65% to treasury
-    const CROWDFUND_ALLOCATION = ARM(1_500_000);              // MAX_SALE (fixed by crowdfund economics)
+    const CROWDFUND_ALLOCATION = ARM(1_800_000);              // MAX_SALE (fixed by crowdfund economics)
 
     let localArmToken: any;
     let localUsdc: any;
@@ -809,7 +814,10 @@ describe("Cross-Contract Integration (Phase 6)", function () {
       expect(quorumAfter).to.be.gt(quorumBefore);
     });
 
-    it("finalize pushes USDC proceeds to treasury contract", async function () {
+    // WHY: proceeds leave the crowdfund at finalization: the $250K team payment to the launch
+    // team and the rest to the treasury contract. No hop is pro-rated ($1.2M under the $1.8M
+    // sale), so no rounding buffer is held back and the split is exact.
+    it("finalize pays the launch team and pushes the remaining USDC proceeds to treasury contract", async function () {
       // Run crowdfund
       { const ws = Number(await localCrowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
       await localCrowdfund.addSeeds(localSeeds.map(s => s.address));
@@ -831,12 +839,12 @@ describe("Cross-Contract Integration (Phase 6)", function () {
 
       const treasuryAddress = await localTreasury.getAddress();
 
-      // Proceeds are pushed to treasury at finalization (minus small rounding buffer)
-      const treasuryUsdc = await localUsdc.balanceOf(treasuryAddress);
+      // Proceeds are pushed at finalization: $250K to the launch team (localDeployer), the rest
+      // to the treasury.
       const totalAllocUsdc = await localCrowdfund.totalAllocatedUsdc();
-      // Treasury receives proceeds minus rounding buffer (at most ~participantCount units)
-      expect(treasuryUsdc).to.be.gte(totalAllocUsdc - 500n);
-      expect(treasuryUsdc).to.be.lte(totalAllocUsdc);
+      expect(totalAllocUsdc).to.equal(USDC(1_200_000));
+      expect(await localUsdc.balanceOf(localDeployer.address)).to.equal(USDC(250_000));
+      expect(await localUsdc.balanceOf(treasuryAddress)).to.equal(totalAllocUsdc - USDC(250_000));
     });
 
     it("withdrawUnallocatedArm sends ARM to treasury contract", async function () {

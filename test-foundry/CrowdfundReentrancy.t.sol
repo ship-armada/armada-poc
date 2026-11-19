@@ -149,8 +149,8 @@ contract CrowdfundReentrancyTest is Test {
     address public admin;
     address public treasury;
 
-    uint256 constant ARM_FUNDING = 1_500_000 * 1e18;
-    uint256 constant HOP0_CAP = 150_000 * 1e6;
+    uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
+    uint256 constant HOP0_CAP = 100_000 * 1e6;
 
     function setUp() public {
         admin = address(this);
@@ -178,11 +178,11 @@ contract CrowdfundReentrancyTest is Test {
         return abi.decode(payload, (string));
     }
 
-    /// @notice Build the seed array for a successful sale: 2 seeds at the $150K cap
+    /// @notice Build the seed array for a successful sale: 3 seeds at the $100K cap
     ///         ($300K ≥ MIN_SALE). Does NOT add seeds — caller must loadArm() first, then addSeeds().
     function _buildAddresses() internal pure returns (address[] memory seeds) {
-        seeds = new address[](2);
-        for (uint256 i = 0; i < 2; i++) {
+        seeds = new address[](3);
+        for (uint256 i = 0; i < 3; i++) {
             seeds[i] = address(uint160(0xA000 + i));
         }
     }
@@ -317,7 +317,7 @@ contract CrowdfundReentrancyTest is Test {
         armToken.transfer(address(cf), ARM_FUNDING);
         cf.loadArm();
 
-        // 1 seed at $150K < MIN_SALE ($250K) → refundMode
+        // 1 seed at $100K < MIN_SALE ($250K) → refundMode
         address[] memory seeds = new address[](1);
         for (uint256 i = 0; i < 1; i++) {
             seeds[i] = address(uint160(0xC000 + i));

@@ -43,9 +43,9 @@ contract AllocationFuzzTest is Test {
         uint256 effectiveCap
     ) public pure {
         // Bound inputs to realistic ranges
-        committed = bound(committed, 1, 150_000 * 1e6); // max hop-0 cap
-        reserve = bound(reserve, 1, 1_500_000 * 1e6);  // max sale size
-        demand = bound(demand, committed, 85_000_000 * 1e6); // demand >= committed; max = 500 × $150K + 1,000 × $10K
+        committed = bound(committed, 1, 200_000 * 1e6); // max per-hop effective cap (hop-2: 20 stacked invites × $10K)
+        reserve = bound(reserve, 1, 1_800_000 * 1e6);  // max sale size ($1.8M)
+        demand = bound(demand, committed, 85_000_000 * 1e6); // demand >= committed; a loose bound above the structural max (500 × $100K hop-0 + hop-2 slots × $10K)
         effectiveCap = bound(effectiveCap, 1, committed * 3); // variety: sometimes below, sometimes above
 
         (, uint256 allocUsdc, uint256 refundUsdc) = _computeAllocation(committed, reserve, demand, effectiveCap);
@@ -60,8 +60,8 @@ contract AllocationFuzzTest is Test {
         uint256 demand,
         uint256 effectiveCap
     ) public pure {
-        committed = bound(committed, 1, 150_000 * 1e6);
-        reserve = bound(reserve, 1, 1_500_000 * 1e6);
+        committed = bound(committed, 1, 200_000 * 1e6);
+        reserve = bound(reserve, 1, 1_800_000 * 1e6);
         demand = bound(demand, 1, 85_000_000 * 1e6);
         effectiveCap = bound(effectiveCap, 1, committed * 3);
 
@@ -77,8 +77,8 @@ contract AllocationFuzzTest is Test {
         uint256 reserve,
         uint256 demand
     ) public pure {
-        committed = bound(committed, 1, 150_000 * 1e6);
-        reserve = bound(reserve, 1, 1_500_000 * 1e6);
+        committed = bound(committed, 1, 200_000 * 1e6);
+        reserve = bound(reserve, 1, 1_800_000 * 1e6);
         // In the real system, demand >= committed (demand is sum of ALL commitments at a hop)
         demand = bound(demand, committed, 85_000_000 * 1e6);
 
@@ -95,9 +95,9 @@ contract AllocationFuzzTest is Test {
         uint256 reserve,
         uint256 demand
     ) public pure {
-        committed = bound(committed, 1, 150_000 * 1e6);
-        demand = bound(demand, committed, 1_500_000 * 1e6);
-        reserve = bound(reserve, demand, 1_500_000 * 1e6); // under-subscribed: reserve >= demand
+        committed = bound(committed, 1, 200_000 * 1e6);
+        demand = bound(demand, committed, 1_800_000 * 1e6);
+        reserve = bound(reserve, demand, 1_800_000 * 1e6); // under-subscribed: reserve >= demand
 
         // No cap: full allocation expected
         (, uint256 allocUsdc, uint256 refundUsdc) = _computeAllocation(committed, reserve, demand, type(uint256).max);
@@ -112,8 +112,8 @@ contract AllocationFuzzTest is Test {
         uint256 reserve,
         uint256 demand
     ) public pure {
-        committed = bound(committed, 1, 150_000 * 1e6);
-        reserve = bound(reserve, 1, 1_500_000 * 1e6);
+        committed = bound(committed, 1, 200_000 * 1e6);
+        reserve = bound(reserve, 1, 1_800_000 * 1e6);
         demand = bound(demand, committed, 85_000_000 * 1e6);
 
         // No cap for this test — focus on ARM/USDC relationship
@@ -131,7 +131,7 @@ contract AllocationFuzzTest is Test {
         uint8 numParticipants
     ) public pure {
         numParticipants = uint8(bound(numParticipants, 2, 50));
-        uint256 reserve = 1_500_000 * 1e6; // hop-0 ceiling: the whole $1.5M sale
+        uint256 reserve = 1_800_000 * 1e6; // the whole $1.8M sale
 
         // Generate participant commitments
         uint256 totalDemand = 0;
@@ -139,7 +139,7 @@ contract AllocationFuzzTest is Test {
 
         for (uint256 i = 0; i < numParticipants; i++) {
             // Deterministic pseudo-random amounts from seed
-            uint256 amount = (uint256(keccak256(abi.encode(seed, i))) % (150_000 * 1e6)) + 1;
+            uint256 amount = (uint256(keccak256(abi.encode(seed, i))) % (200_000 * 1e6)) + 1;
             commitments[i] = amount;
             totalDemand += amount;
         }
@@ -159,7 +159,7 @@ contract AllocationFuzzTest is Test {
 
     /// @notice Allocation with zero committed returns all zeros
     function testFuzz_zeroCommittedReturnsZero(uint256 reserve, uint256 demand) public pure {
-        reserve = bound(reserve, 1, 1_500_000 * 1e6);
+        reserve = bound(reserve, 1, 1_800_000 * 1e6);
         demand = bound(demand, 1, 85_000_000 * 1e6);
 
         (uint256 allocArm, uint256 allocUsdc, uint256 refundUsdc) = _computeAllocation(0, reserve, demand, type(uint256).max);
@@ -176,9 +176,9 @@ contract AllocationFuzzTest is Test {
         uint256 reserve,
         uint256 demand
     ) public pure {
-        commitA = bound(commitA, 1, 150_000 * 1e6);
+        commitA = bound(commitA, 1, 200_000 * 1e6);
         commitB = bound(commitB, 1, commitA); // B <= A
-        reserve = bound(reserve, 1, 1_500_000 * 1e6);
+        reserve = bound(reserve, 1, 1_800_000 * 1e6);
         demand = bound(demand, commitA, 85_000_000 * 1e6);
 
         (, uint256 allocA, ) = _computeAllocation(commitA, reserve, demand, type(uint256).max);
@@ -194,9 +194,9 @@ contract AllocationFuzzTest is Test {
         uint256 reserve,
         uint256 demand
     ) public pure {
-        committed = bound(committed, 2, 150_000 * 1e6);
+        committed = bound(committed, 2, 200_000 * 1e6);
         effectiveCap = bound(effectiveCap, 1, committed - 1); // committed > cap
-        reserve = bound(reserve, 1, 1_500_000 * 1e6);
+        reserve = bound(reserve, 1, 1_800_000 * 1e6);
         demand = bound(demand, committed, 85_000_000 * 1e6);
 
         (, , uint256 refundUsdc) = _computeAllocation(committed, reserve, demand, effectiveCap);

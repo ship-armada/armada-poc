@@ -17,7 +17,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
     address public admin;
     address public treasury;
 
-    uint256 constant ARM_FUNDING = 1_500_000 * 1e18;
+    uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
     uint256 constant MIN_SALE = 250_000 * 1e6;
     // Seeds that commit in the refund-mode scenario: 16 × $15K = $240K < MIN_SALE.
     uint256 constant BELOW_MIN_SEEDS = 16;
@@ -245,23 +245,23 @@ contract ArmadaCrowdfundRefundModeTest is Test {
 
     /// @notice WHY: refund mode after elastic expansion needs an expanded sale whose hop-0
     ///         ceiling stays below MIN_SALE. BASE_SALE == MAX_SALE, so there is no expansion and
-    ///         $1.5M of hop-0 demand fills the $1.5M sale in full. Pins both properties.
+    ///         $1.8M of hop-0 demand fills the $1.8M sale in full. Pins both properties.
     function test_highHop0Demand_noExpansion_succeedsAtSaleSize() public {
-        // Deploy a fresh crowdfund with 100 seeds to reach ELASTIC_TRIGGER
+        // Deploy a fresh crowdfund with 120 seeds to reach ELASTIC_TRIGGER
         ArmadaCrowdfund cf2 = new ArmadaCrowdfund(
             address(usdc), address(armToken), treasury, admin, admin, block.timestamp
         );
         armToken.transfer(address(cf2), ARM_FUNDING);
         cf2.loadArm();
 
-        address[] memory moreSeeds = new address[](100);
-        for (uint256 i = 0; i < 100; i++) {
+        address[] memory moreSeeds = new address[](120);
+        for (uint256 i = 0; i < 120; i++) {
             moreSeeds[i] = address(uint160(0xF000 + i));
         }
         cf2.addSeeds(moreSeeds);
 
-        // 100 seeds × $15K = $1.5M = ELASTIC_TRIGGER (= BASE_SALE = MAX_SALE)
-        for (uint256 i = 0; i < 100; i++) {
+        // 120 seeds × $15K = $1.8M = ELASTIC_TRIGGER (= BASE_SALE = MAX_SALE)
+        for (uint256 i = 0; i < 120; i++) {
             uint256 amount = 15_000 * 1e6;
             usdc.mint(moreSeeds[i], amount);
             vm.startPrank(moreSeeds[i]);
@@ -269,14 +269,14 @@ contract ArmadaCrowdfundRefundModeTest is Test {
             cf2.commit(0, amount);
             vm.stopPrank();
         }
-        assertEq(cf2.totalCommitted(), 1_500_000 * 1e6);
+        assertEq(cf2.totalCommitted(), 1_800_000 * 1e6);
 
         vm.warp(cf2.windowEnd() + 1);
         cf2.finalize();
 
-        assertEq(cf2.saleSize(), 1_500_000 * 1e6, "no expansion beyond $1.5M");
+        assertEq(cf2.saleSize(), 1_800_000 * 1e6, "no expansion beyond $1.8M");
         assertFalse(cf2.refundMode());
-        assertEq(cf2.totalAllocatedUsdc(), 1_500_000 * 1e6, "filled in full");
+        assertEq(cf2.totalAllocatedUsdc(), 1_800_000 * 1e6, "filled in full");
     }
 
     // ============ Fuzz: claimRefund returns exact committed amount ============
@@ -286,7 +286,7 @@ contract ArmadaCrowdfundRefundModeTest is Test {
     ///         demand is at most $240K < MIN_SALE and refundMode is guaranteed.
     function testFuzz_claimRefund_exactAmount(uint256 seedIdx, uint256 commitAmount) public {
         seedIdx = bound(seedIdx, 0, BELOW_MIN_SEEDS - 1);
-        commitAmount = bound(commitAmount, 50 * 1e6, 15_000 * 1e6);
+        commitAmount = bound(commitAmount, 100 * 1e6, 15_000 * 1e6);
 
         // The other seeds in the scenario commit full $15K
         for (uint256 i = 0; i < BELOW_MIN_SEEDS; i++) {

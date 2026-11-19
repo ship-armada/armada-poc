@@ -41,8 +41,8 @@ contract HalmosAllocationTest is Test, SymTest {
         uint256 effectiveCap
     ) public pure {
         // Bound to realistic ranges to avoid overflow
-        vm.assume(committed > 0 && committed <= 150_000 * 1e6);
-        vm.assume(reserve > 0 && reserve <= 1_500_000 * 1e6);
+        vm.assume(committed > 0 && committed <= 200_000 * 1e6);
+        vm.assume(reserve > 0 && reserve <= 1_800_000 * 1e6);
         vm.assume(demand >= committed && demand <= 85_000_000 * 1e6);
         vm.assume(effectiveCap > 0);
 
@@ -66,8 +66,8 @@ contract HalmosAllocationTest is Test, SymTest {
         uint256 demand,
         uint256 effectiveCap
     ) public pure {
-        vm.assume(committed > 0 && committed <= 150_000 * 1e6);
-        vm.assume(reserve > 0 && reserve <= 1_500_000 * 1e6);
+        vm.assume(committed > 0 && committed <= 200_000 * 1e6);
+        vm.assume(reserve > 0 && reserve <= 1_800_000 * 1e6);
         vm.assume(demand >= committed && demand <= 85_000_000 * 1e6);
         vm.assume(effectiveCap > 0);
         uint256 capped = committed < effectiveCap ? committed : effectiveCap;
@@ -90,8 +90,8 @@ contract HalmosAllocationTest is Test, SymTest {
         uint256 reserve,
         uint256 demand
     ) public pure {
-        vm.assume(committed > 0 && committed <= 150_000 * 1e6);
-        vm.assume(reserve > 0 && reserve <= 1_500_000 * 1e6);
+        vm.assume(committed > 0 && committed <= 200_000 * 1e6);
+        vm.assume(reserve > 0 && reserve <= 1_800_000 * 1e6);
         vm.assume(demand > reserve && demand <= 85_000_000 * 1e6);
         vm.assume(demand >= committed);
         vm.assume(committed <= type(uint256).max / reserve);
@@ -109,9 +109,9 @@ contract HalmosAllocationTest is Test, SymTest {
         uint256 reserve,
         uint256 demand
     ) public pure {
-        vm.assume(committed > 0 && committed <= 150_000 * 1e6);
-        vm.assume(demand >= committed && demand <= 1_500_000 * 1e6);
-        vm.assume(reserve >= demand && reserve <= 1_500_000 * 1e6);
+        vm.assume(committed > 0 && committed <= 200_000 * 1e6);
+        vm.assume(demand >= committed && demand <= 1_800_000 * 1e6);
+        vm.assume(reserve >= demand && reserve <= 1_800_000 * 1e6);
 
         (, uint256 allocUsdc, uint256 refundUsdc) = _computeAllocation(committed, reserve, demand, type(uint256).max);
 
@@ -124,7 +124,7 @@ contract HalmosAllocationTest is Test, SymTest {
         uint256 reserve,
         uint256 demand
     ) public pure {
-        vm.assume(reserve > 0 && reserve <= 1_500_000 * 1e6);
+        vm.assume(reserve > 0 && reserve <= 1_800_000 * 1e6);
         vm.assume(demand > 0 && demand <= 85_000_000 * 1e6);
 
         (uint256 allocArm, uint256 allocUsdc, uint256 refundUsdc) = _computeAllocation(0, reserve, demand, type(uint256).max);
@@ -146,8 +146,8 @@ contract HalmosAllocationTest is Test, SymTest {
         uint256 reserve,
         uint256 demand
     ) public pure {
-        vm.assume(committed > 0 && committed <= 150_000 * 1e6);
-        vm.assume(reserve > 0 && reserve <= 1_500_000 * 1e6);
+        vm.assume(committed > 0 && committed <= 200_000 * 1e6);
+        vm.assume(reserve > 0 && reserve <= 1_800_000 * 1e6);
         vm.assume(demand > reserve && demand <= 85_000_000 * 1e6);
         vm.assume(demand >= committed);
         vm.assume(committed <= type(uint256).max / reserve);
@@ -170,9 +170,9 @@ contract HalmosAllocationTest is Test, SymTest {
         uint256 reserve,
         uint256 demand
     ) public pure {
-        vm.assume(commitA > 0 && commitA <= 150_000 * 1e6);
+        vm.assume(commitA > 0 && commitA <= 200_000 * 1e6);
         vm.assume(commitB > 0 && commitB <= commitA);
-        vm.assume(reserve > 0 && reserve <= 1_500_000 * 1e6);
+        vm.assume(reserve > 0 && reserve <= 1_800_000 * 1e6);
         vm.assume(demand >= commitA && demand <= 85_000_000 * 1e6);
         vm.assume(commitA <= type(uint256).max / reserve);
         if (demand > reserve) {
@@ -195,9 +195,9 @@ contract HalmosAllocationTest is Test, SymTest {
         uint256 reserve,
         uint256 demand
     ) public pure {
-        vm.assume(committed > 1 && committed <= 150_000 * 1e6);
+        vm.assume(committed > 1 && committed <= 200_000 * 1e6);
         vm.assume(effectiveCap > 0 && effectiveCap < committed);
-        vm.assume(reserve > 0 && reserve <= 1_500_000 * 1e6);
+        vm.assume(reserve > 0 && reserve <= 1_800_000 * 1e6);
         vm.assume(demand >= committed && demand <= 85_000_000 * 1e6);
         vm.assume(effectiveCap <= type(uint256).max / reserve);
         if (demand > reserve) {

@@ -5,8 +5,8 @@
  * Repeatable local realization of the "Sepolia dry-run" (#1): the EVM is deterministic, so
  * finalize()'s gasUsed for the real deploy build at the node cap is the same locally as on any
  * chain (same hardfork). This deploys the actual ArmadaCrowdfund (mock USDC/ARM deps), builds the
- * invite tree to its structural maximum (the node budgets cap it at 1,505: 500 seeds + 5 team
- * wallets + 500 team-wallet invites + 500 launch-team hop-2 placements, below MAX_FINALIZE_NODES),
+ * invite tree to its structural maximum (the node budgets cap it at 1,101: 500 seeds + 1 team
+ * wallet + 100 team-wallet invites + 500 launch-team hop-2 placements, below MAX_FINALIZE_NODES),
  * commits the success path, warps past the window, and measures finalize() from a REAL tx receipt
  * (includes the 21k intrinsic) against the 16,777,216 (2^24, EIP-7825) per-tx cap.
  *
@@ -18,7 +18,6 @@ import { ethers, network } from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 import type { Signer } from "ethers";
 
-const USDC = (n: number) => BigInt(n) * 1_000_000n;
 const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
 const TX_GAS_CAP = 16_777_216n; // EIP-7825 per-tx gas cap (2^24)
 
@@ -49,7 +48,7 @@ async function main() {
   const cf = await (await ethers.getContractFactory("ArmadaCrowdfund")).deploy(
     usdc.target, arm.target, treasury.address, deployer.address, deployer.address, open,
   );
-  await (await arm.transfer(cf.target, ARM(1_500_000))).wait();
+  await (await arm.transfer(cf.target, ARM(1_800_000))).wait();
   await (await cf.loadArm()).wait();
   await time.increaseTo(open);
 
@@ -100,7 +99,7 @@ async function main() {
   const count = Number(await cf.getParticipantCount());
   console.log(`Built ${count} nodes (${seedCount} hop-0 / ${hop1.length} hop-1 / ${hop2.length} hop-2). Committing...`);
 
-  // ---- commits: success path — seeds at the $150k cap (500 × $150k oversubscribes the $1.5M sale,
+  // ---- commits: success path — seeds at the $100k cap (500 × $100k oversubscribes the $1.8M sale,
   //      so the pro-rata branch runs); team wallets and hop-2 at MIN_COMMIT (team wallets have a $0
   //      cap, so theirs is refunded in full) so the iteration body runs for every node.
   async function commit(a: string, hop: number, amt: bigint) {
@@ -109,7 +108,8 @@ async function main() {
     await (await usdc.connect(s).approve(cf.target, amt)).wait();
     await (await cf.connect(s).commit(hop, amt)).wait();
   }
-  for (let i = 0; i < seeds.length; i++) await commit(seeds[i], 0, USDC(150_000));
+  const hop0Cap: bigint = await cf.HOP0_CAP_USDC();
+  for (let i = 0; i < seeds.length; i++) await commit(seeds[i], 0, hop0Cap);
   const minCommit: bigint = await cf.MIN_COMMIT();
   for (let i = 0; i < hop1.length; i++) await commit(hop1[i], 1, minCommit);
   for (let i = 0; i < hop2.length; i++) await commit(hop2[i], 2, minCommit);

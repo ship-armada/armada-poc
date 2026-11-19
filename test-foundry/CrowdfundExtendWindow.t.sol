@@ -21,7 +21,7 @@ contract CrowdfundExtendWindowTest is Test {
     address public seed = address(0x5EED);
     address public outsider = address(0xBAD);
 
-    uint256 constant ARM_FUNDING = 1_500_000 * 1e18;
+    uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
 
     event WindowExtended(uint256 previousEnd, uint256 newEnd);
 

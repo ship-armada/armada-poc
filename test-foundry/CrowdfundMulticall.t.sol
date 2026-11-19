@@ -32,10 +32,10 @@ contract CrowdfundMulticallTest is Test {
     // Multi-seed setup (lazy-initialized via _setupForFinalization)
     address[] public manySeeds;
 
-    uint256 constant ARM_FUNDING   = 1_500_000 * 1e18;
-    uint256 constant HOP0_CAP      = 150_000 * 1e6;
+    uint256 constant ARM_FUNDING   = 1_800_000 * 1e18;
+    uint256 constant HOP0_CAP      = 100_000 * 1e6;
     uint256 constant HOP2_CAP      = 10_000 * 1e6;
-    uint256 constant MIN_COMMIT    = 50 * 1e6;
+    uint256 constant MIN_COMMIT    = 100 * 1e6;
 
     function setUp() public {
         usdc = new MockUSDCV2("Mock USDC", "USDC");
@@ -125,10 +125,10 @@ contract CrowdfundMulticallTest is Test {
         usdc.approve(address(crowdfund), amount);
     }
 
-    /// @notice Populate 2 hop-0 seeds at the $150K cap ($300K ≥ MIN_SALE) so
+    /// @notice Populate 3 hop-0 seeds at the $100K cap ($300K ≥ MIN_SALE) so
     ///         finalize() takes the success path.
     function _setupForFinalization() internal {
-        for (uint160 i = 0; i < 2; i++) {
+        for (uint160 i = 0; i < 3; i++) {
             address s = address(uint160(0xC000) + i);
             manySeeds.push(s);
         }
@@ -167,8 +167,8 @@ contract CrowdfundMulticallTest is Test {
     }
 
     /// @notice WHY: the hop-1 self-fill flow, for a team inviter wallet: it can invite itself
-    /// into hop-2 once and commit there in the same bundle. A second self-invite reverts, since
-    /// HOP2_MAX_INVITES_RECEIVED = 1 (no stacking).
+    /// into hop-2 and commit there in the same bundle. Further self-invites stack hop-2 slots up
+    /// to HOP2_MAX_INVITES_RECEIVED (20); the 21st reverts.
     function test_SelfFill_Hop1_Subtree() public {
         _mintAndApprove(teamWallet, HOP2_CAP);
 
@@ -178,6 +178,12 @@ contract CrowdfundMulticallTest is Test {
 
         assertEq(crowdfund.getInvitesReceived(teamWallet, 2), 1, "hop-2 slot");
         assertEq(crowdfund.getCommitment(teamWallet, 2), HOP2_CAP, "hop-2 commit");
+
+        bytes[] memory more = new bytes[](19);
+        for (uint256 i = 0; i < 19; i++) more[i] = _encInvite(teamWallet, 1);
+        vm.prank(teamWallet);
+        crowdfund.multicall(more);
+        assertEq(crowdfund.getInvitesReceived(teamWallet, 2), 20, "stacked to the cap");
 
         bytes[] memory again = new bytes[](1);
         again[0] = _encInvite(teamWallet, 1);
@@ -216,10 +222,10 @@ contract CrowdfundMulticallTest is Test {
     function test_Multicall_CommitExceedingAllowance_Reverts() public {
         usdc.mint(seed0, HOP0_CAP);
         vm.prank(seed0);
-        usdc.approve(address(crowdfund), MIN_COMMIT); // only $50 approved
+        usdc.approve(address(crowdfund), MIN_COMMIT); // only $100 approved
 
         bytes[] memory calls = new bytes[](1);
-        calls[0] = _encCommit(0, HOP0_CAP); // try to commit $150K
+        calls[0] = _encCommit(0, HOP0_CAP); // try to commit $100K
 
         vm.prank(seed0);
         vm.expectRevert(); // ERC20 transfer revert reason
@@ -299,17 +305,16 @@ contract CrowdfundMulticallTest is Test {
     /// bubble-up does not swallow the revert. Verify no calls' state changes
     /// persist after the bundle.
     function test_Multicall_PartialFailure_RollsBackAll() public {
-        // The team wallet has 100 invites. Bundle 3 valid invites to hop-2, then a 4th to an
-        // address it already invited in call[0]: no stacking at hop-2, so call[3] reverts
-        // "max invites received" after calls[0..2] have mutated state.
+        // The team wallet has 100 invites. Bundle 3 valid invites to hop-2, then a 4th to the zero
+        // address, which reverts "zero address" after calls[0..2] have mutated state.
         bytes[] memory calls = new bytes[](4);
         calls[0] = _encInvite(address(0xB101), 1);
         calls[1] = _encInvite(address(0xB102), 1);
         calls[2] = _encInvite(address(0xB103), 1);
-        calls[3] = _encInvite(address(0xB101), 1);
+        calls[3] = _encInvite(address(0), 1);
 
         vm.prank(teamWallet);
-        vm.expectRevert("ArmadaCrowdfund: max invites received");
+        vm.expectRevert("ArmadaCrowdfund: zero address");
         crowdfund.multicall(calls);
 
         // None of the invites must have landed.
@@ -358,13 +363,14 @@ contract CrowdfundMulticallTest is Test {
     /// is preserved through DELEGATECALL and the gate is sender-conditional
     /// rather than always-deny / always-allow.
     function test_Multicall_PreservesMsgSender_LaunchTeamCanInvite() public {
+        // setUp used the single hop-1 placement, so place at hop-2 (fromHop 1).
         bytes[] memory calls = new bytes[](1);
-        calls[0] = _encLaunchTeamInvite(address(0xB202), 0);
+        calls[0] = _encLaunchTeamInvite(address(0xB202), 1);
 
         // admin IS launchTeam in setUp; no prank needed because the
         // test contract is admin.
         crowdfund.multicall(calls);
-        assertTrue(crowdfund.isWhitelisted(address(0xB202), 1), "launchTeam invite landed");
+        assertTrue(crowdfund.isWhitelisted(address(0xB202), 2), "launchTeam invite landed");
     }
 
     // ===================================================================
@@ -571,16 +577,16 @@ contract CrowdfundMulticallTest is Test {
 
     /// @notice WHY: this is the "more than allotted allocation" property
     /// from the invitee side. `_registerOrStackInvite` checks
-    /// `invitesReceived < maxInvitesReceived` (1 at every hop: no stacking).
-    /// The launch team has budget left, so it CAN bundle 2 invites targeting
-    /// the same victim. The 2nd must revert when invitesReceived would exceed
-    /// the per-hop cap. Bundle must roll back so the victim ends up with no slot.
+    /// `invitesReceived < maxInvitesReceived` (20 at hop-2). The launch team has
+    /// hop-2 budget left, so it CAN bundle 21 placements targeting the same victim.
+    /// The 21st must revert when invitesReceived would exceed the per-hop cap.
+    /// Bundle must roll back so the victim ends up with no slot.
     function test_Multicall_InviteeStackingCap_Reverts() public {
         address victim = address(0xB401);
 
-        bytes[] memory calls = new bytes[](2);
-        for (uint256 i = 0; i < 2; i++) {
-            calls[i] = _encLaunchTeamInvite(victim, 0); // hop-1 invitee
+        bytes[] memory calls = new bytes[](21);
+        for (uint256 i = 0; i < 21; i++) {
+            calls[i] = _encLaunchTeamInvite(victim, 1); // hop-2 invitee
         }
 
         // admin == launchTeam in setUp; no prank needed.
@@ -588,8 +594,8 @@ contract CrowdfundMulticallTest is Test {
         crowdfund.multicall(calls);
 
         // Atomic rollback: victim has no stacked invites.
-        assertFalse(crowdfund.isWhitelisted(victim, 1), "no invites landed");
-        assertEq(crowdfund.getInvitesReceived(victim, 1), 0, "stack count rolled back");
+        assertFalse(crowdfund.isWhitelisted(victim, 2), "no invites landed");
+        assertEq(crowdfund.getInvitesReceived(victim, 2), 0, "stack count rolled back");
     }
 
     // ===================================================================

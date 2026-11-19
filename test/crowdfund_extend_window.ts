@@ -64,7 +64,7 @@ describe("Crowdfund Window Extension (integration)", function () {
     await armToken.addToWhitelist(cfAddr);
     await armToken.initAuthorizedDelegators([cfAddr]);
 
-    await armToken.transfer(cfAddr, ARM(1_500_000));
+    await armToken.transfer(cfAddr, ARM(1_800_000));
     await crowdfund.loadArm();
     await time.increaseTo(await crowdfund.windowStart());
   });
@@ -73,15 +73,16 @@ describe("Crowdfund Window Extension (integration)", function () {
   //      a sale that only reaches the minimum because of commits made AFTER the original end,
   //      then checks those commits settle exactly like any other: finalize succeeds (not
   //      refundMode), and an extension-period committer claims ARM with delegation recorded.
-  //      Numbers: 1 known contributor x $150K before the original end ($150K < MIN_SALE);
-  //      10 launch-team hop-2 placements x $10K during the extension. Total $250K = MIN_SALE.
+  //      Numbers: 1 known contributor x $100K (the hop-0 cap) before the original end
+  //      ($100K < MIN_SALE); 15 launch-team hop-2 placements x $10K during the extension.
+  //      Total $250K = MIN_SALE.
   it("commits and placements made during an extension settle through claim", async function () {
     const seed = allSigners[1];
-    const lateBuyers = allSigners.slice(40, 50); // 10 hop-2 contributors placed late
+    const lateBuyers = allSigners.slice(40, 55); // 15 hop-2 contributors placed late
 
     await crowdfund.connect(launchTeam).addSeed(seed.address);
-    await fundAndApprove(seed, USDC(150_000));
-    await crowdfund.connect(seed).commit(0, USDC(150_000));
+    await fundAndApprove(seed, USDC(100_000));
+    await crowdfund.connect(seed).commit(0, USDC(100_000));
 
     const originalEnd: bigint = await crowdfund.windowEnd();
     const extendedEnd = originalEnd + BigInt(3 * ONE_DAY);

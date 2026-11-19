@@ -16,12 +16,13 @@ const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
 const ONE_DAY = 86400;
 const THREE_YEARS = 1095 * ONE_DAY;
 
-// Relaunch sale: BASE_SALE == MAX_SALE == ELASTIC_TRIGGER ($1.5M), so there is no expansion.
-const BASE_SALE = USDC(1_500_000);
-const MAX_SALE = USDC(1_500_000);
+// Relaunch sale: BASE_SALE == MAX_SALE == ELASTIC_TRIGGER ($1.8M), so there is no expansion.
+const BASE_SALE = USDC(1_800_000);
+const MAX_SALE = USDC(1_800_000);
 const MIN_SALE = USDC(250_000);
-const ELASTIC_TRIGGER = USDC(1_500_000);
-const MAX_SALE_ARM = ARM(1_500_000);
+const ELASTIC_TRIGGER = USDC(1_800_000);
+const TEAM_PAYMENT = USDC(250_000);
+const MAX_SALE_ARM = ARM(1_800_000);
 
 // EIP-712 types for invite signatures
 const INVITE_TYPES = {
@@ -82,7 +83,7 @@ describe("Crowdfund Full Lifecycle", function () {
     const cfAddr = await crowdfund.getAddress();
     await armToken.addToWhitelist(cfAddr);
     await armToken.initAuthorizedDelegators([cfAddr]);
-    await armToken.transfer(cfAddr, ARM(1_500_000));
+    await armToken.transfer(cfAddr, ARM(1_800_000));
     await crowdfund.loadArm();
     await time.increaseTo(await crowdfund.windowStart());
     return crowdfund;
@@ -135,11 +136,12 @@ describe("Crowdfund Full Lifecycle", function () {
 
   describe("Path 1: Successful Finalization (base sale)", function () {
     // WHY: one sale that exercises every relaunch feature end to end — launch-team placements
-    // (team wallets at hop-1, a $10K hop-2 placement), team-wallet peer invites and invite links
-    // into hop-2, nonce revocation, an over-cap deposit, a team-wallet commit (excluded at its $0
-    // cap), lazy claims, the ARM sweep, and the conservation invariants. Demand is sized so the
-    // known tier fills in full ($1.461M) and the $10K tier ($112K) is pro-rated into the $39K
-    // left of the $1.5M sale.
+    // (the team wallet at hop-1, a hop-2 placement), team-wallet peer invites and invite links
+    // into hop-2, hop-2 stacking across invite sources, nonce revocation, an over-cap deposit, a
+    // team-wallet commit (excluded at its $0 cap), hop-2 priority, the launch-team payment, lazy
+    // claims, the ARM sweep, and the conservation invariants. Demand is sized so the hop-2 tier
+    // ($122K, inside its $300K reserve) fills in full first and the known tier ($1.825M capped)
+    // is pro-rated into the $1.678M left of the $1.8M sale.
     it("complete lifecycle with all spec features", async function () {
       const crowdfund = await deployCrowdfund();
       const cfAddr = await crowdfund.getAddress();
@@ -160,16 +162,16 @@ describe("Crowdfund Full Lifecycle", function () {
       // deployCrowdfund() already advances to windowStart
 
       // ---- Launch team placements ----
-      // 3 hop-1 team inviter wallets
-      const ltHop1 = allSigners.slice(196, 199); // 3 addresses
-      for (const teamWallet of ltHop1) {
+      // The single hop-1 team inviter wallet (LAUNCH_TEAM_HOP1_BUDGET = 1)
+      const teamWallet = allSigners[198];
+      {
         const tx = await crowdfund.launchTeamInvite(teamWallet.address, 0);
         await expect(tx)
           .to.emit(crowdfund, "LaunchTeamInvited")
           .withArgs(teamWallet.address, 1);
       }
 
-      // 1 direct hop-2 ($10K) placement
+      // 1 direct hop-2 ($10K slot) placement
       const ltHop2 = allSigners.slice(199, 200);
       {
         const tx = await crowdfund.launchTeamInvite(ltHop2[0].address, 1);
@@ -181,24 +183,29 @@ describe("Crowdfund Full Lifecycle", function () {
       // Verify budget tracking
       const [budgetHop1Left, budgetHop2Left] =
         await crowdfund.getLaunchTeamBudgetRemaining();
-      expect(budgetHop1Left).to.equal(5 - 3); // 3 used
+      expect(budgetHop1Left).to.equal(1 - 1); // 1 used
       expect(budgetHop2Left).to.equal(500 - 1); // 1 used
 
-      // ---- Peer invites: team wallet ltHop1[0] invites 10 hop-2 contributors ----
+      // ---- Peer invites: the team wallet invites 10 hop-2 contributors ----
       const hop2Pool = allSigners.slice(105, 115);
       const hop2Invitees: HardhatEthersSigner[] = [];
       for (const invitee of hop2Pool) {
         const tx = await crowdfund
-          .connect(ltHop1[0])
+          .connect(teamWallet)
           .invite(invitee.address, 1);
         await expect(tx)
           .to.emit(crowdfund, "Invited")
-          .withArgs(ltHop1[0].address, invitee.address, 2, 0);
+          .withArgs(teamWallet.address, invitee.address, 2, 0);
         hop2Invitees.push(invitee);
       }
 
-      // ---- EIP-712 invite link: team wallet ltHop1[1] signs a hop-2 link ----
-      const linkInviter = ltHop1[1];
+      // ---- Hop-2 stacking: the team wallet also invites the launch-team placement ----
+      // Invites stack at hop-2 regardless of source: 2 slots → $20K cap.
+      await crowdfund.connect(teamWallet).invite(ltHop2[0].address, 1);
+      expect((await crowdfund.participants(ltHop2[0].address, 2)).invitesReceived).to.equal(2);
+
+      // ---- EIP-712 invite link: the team wallet signs a hop-2 link ----
+      const linkInviter = teamWallet;
       const linkInvitee = allSigners[115];
       const linkNonce = 1;
       const linkDeadline = Number(await crowdfund.windowEnd());
@@ -260,52 +267,55 @@ describe("Crowdfund Full Lifecycle", function () {
           )
       ).to.be.revertedWith("ArmadaCrowdfund: nonce already used");
 
-      // ---- Commitments: seeds[1..69] commit $19K at hop-0 ----
+      // ---- Commitments: seeds[1..69] commit $25K at hop-0 ----
       for (const s of seeds.slice(1)) {
-        await fundAndApprove(s, USDC(19_000), crowdfund);
-        const tx = await crowdfund.connect(s).commit(0, USDC(19_000));
+        await fundAndApprove(s, USDC(25_000), crowdfund);
+        const tx = await crowdfund.connect(s).commit(0, USDC(25_000));
         await expect(tx)
           .to.emit(crowdfund, "Committed")
-          .withArgs(s.address, 0, USDC(19_000));
+          .withArgs(s.address, 0, USDC(25_000));
       }
 
-      // ---- Over-cap deposit: seed[0] commits $150K then another $5K (total $155K > $150K cap) ----
-      await fundAndApprove(seeds[0], USDC(155_000), crowdfund);
-      await crowdfund.connect(seeds[0]).commit(0, USDC(150_000));
+      // ---- Over-cap deposit: seed[0] commits $100K then another $5K (total $105K > $100K cap) ----
+      await fundAndApprove(seeds[0], USDC(105_000), crowdfund);
+      await crowdfund.connect(seeds[0]).commit(0, USDC(100_000));
       await crowdfund.connect(seeds[0]).commit(0, USDC(5_000));
       // Verify raw commitment
       const p0 = await crowdfund.participants(seeds[0].address, 0);
-      expect(p0.committed).to.equal(USDC(155_000));
+      expect(p0.committed).to.equal(USDC(105_000));
 
-      // ---- Hop-2 commits $10K each (team-wallet invitees and the launch-team placement) ----
-      for (const h2 of [...hop2Invitees, ...ltHop2]) {
+      // ---- Hop-2 commits: $10K per team-wallet invitee, $20K for the stacked placement ----
+      for (const h2 of hop2Invitees) {
         await fundAndApprove(h2, USDC(10_000), crowdfund);
         await crowdfund.connect(h2).commit(2, USDC(10_000));
       }
+      await fundAndApprove(ltHop2[0], USDC(20_000), crowdfund);
+      await crowdfund.connect(ltHop2[0]).commit(2, USDC(20_000));
 
       // Also the commitWithInvite invitee: already committed $2K via link
 
-      // ---- A team wallet commits $1K at hop-1: over its $0 cap, so excluded and refunded ----
-      const teamCommitter = ltHop1[2];
+      // ---- The team wallet commits $1K at hop-1: over its $0 cap, so excluded and refunded ----
+      const teamCommitter = teamWallet;
       await fundAndApprove(teamCommitter, USDC(1_000), crowdfund);
       await crowdfund.connect(teamCommitter).commit(1, USDC(1_000));
 
       // ---- Verify aggregate state ----
       // Raw totals
       const rawTotal = await crowdfund.totalCommitted();
-      // 69 seeds × $19K + $155K (seed[0], $5K over cap) + 11 hop-2 × $10K +
-      // 1 link invitee $2K + 1 team-wallet commit $1K
+      // 69 seeds × $25K + $105K (seed[0], $5K over cap) + 10 hop-2 × $10K +
+      // the stacked placement $20K + 1 link invitee $2K + 1 team-wallet commit $1K
       const expectedRaw =
-        USDC(19_000) * 69n +
-        USDC(155_000) +
-        USDC(10_000) * 11n +
+        USDC(25_000) * 69n +
+        USDC(105_000) +
+        USDC(10_000) * 10n +
+        USDC(20_000) +
         USDC(2_000) +
         USDC(1_000);
       expect(rawTotal).to.equal(expectedRaw);
 
       // hopStats checks
       const hop0Stats = await crowdfund.getHopStats(0);
-      expect(hop0Stats[0]).to.equal(USDC(19_000) * 69n + USDC(155_000)); // totalCommitted
+      expect(hop0Stats[0]).to.equal(USDC(25_000) * 69n + USDC(105_000)); // totalCommitted
       expect(hop0Stats[2]).to.equal(70); // uniqueCommitters
 
       // ---- Finalization (permissionless caller) ----
@@ -325,8 +335,8 @@ describe("Crowdfund Full Lifecycle", function () {
       );
       expect(finalizedEvents.length).to.equal(1);
       const fe = finalizedEvents[0];
-      expect(fe.args.saleSize).to.equal(BASE_SALE); // $1.5M (no expansion)
-      // Known tier fills in full ($1.461M); the $10K tier gets the $39K remainder.
+      expect(fe.args.saleSize).to.equal(BASE_SALE); // $1.8M (no expansion)
+      // Hop-2 fills in full ($122K) first; the known tier gets the $1.678M remainder.
       expect(await crowdfund.totalAllocatedUsdc()).to.equal(BASE_SALE);
       expect(fe.args.allocatedArm).to.be.gt(0n);
       expect(fe.args.netProceeds).to.be.gt(0n);
@@ -371,16 +381,29 @@ describe("Crowdfund Full Lifecycle", function () {
           .withArgs(seeds[i].address, expectedArm, expectedRefund, delegate.address);
       }
 
-      // Over-cap seed (seeds[0]): committed $155K, capped at $150K. The known tier is not
-      // pro-rated, so the refund is exactly the $5K excess.
-      const [, seed0Refund] = await crowdfund.computeAllocation(seeds[0].address);
-      expect(seed0Refund).to.equal(USDC(5_000));
+      // The known tier is pro-rated: $1.678M over $1.825M of capped hop-0 demand
+      // (69 × $25K + seed[0]'s $100K cap).
+      const hop0Alloc = USDC(1_678_000);
+      const hop0Demand = USDC(1_825_000);
+      const [seed1Arm, seed1Refund] = await crowdfund.computeAllocation(seeds[1].address);
+      const seed1Accepted = (USDC(25_000) * hop0Alloc) / hop0Demand;
+      expect(seed1Arm).to.equal(seed1Accepted * 10n ** 12n);
+      expect(seed1Refund).to.equal(USDC(25_000) - seed1Accepted);
 
-      // The $10K tier is pro-rated: $39K over $112K of hop-2 demand (11 × $10K + the $2K link commit).
+      // Over-cap seed (seeds[0]): committed $105K, capped at $100K. The refund is the $5K
+      // excess plus the pro-rata cut of the capped $100K.
+      const [, seed0Refund] = await crowdfund.computeAllocation(seeds[0].address);
+      const seed0Accepted = (USDC(100_000) * hop0Alloc) / hop0Demand;
+      expect(seed0Refund).to.equal(USDC(105_000) - seed0Accepted);
+
+      // Hop-2 is within its $300K first-priority reserve, so it is allocated in full,
+      // including the stacked placement's $20K.
       const [h2Arm, h2Refund] = await crowdfund.computeAllocation(hop2Invitees[0].address);
-      const h2Accepted = (USDC(10_000) * USDC(39_000)) / USDC(112_000);
-      expect(h2Arm).to.equal(h2Accepted * 10n ** 12n);
-      expect(h2Refund).to.equal(USDC(10_000) - h2Accepted);
+      expect(h2Arm).to.equal(ARM(10_000));
+      expect(h2Refund).to.equal(0n);
+      const [stackedArm, stackedRefund] = await crowdfund.computeAllocation(ltHop2[0].address);
+      expect(stackedArm).to.equal(ARM(20_000));
+      expect(stackedRefund).to.equal(0n);
 
       // The team wallet's commit earns no ARM and is refunded in full.
       const [teamArm, teamRefund] = await crowdfund.computeAllocation(teamCommitter.address);
@@ -396,9 +419,15 @@ describe("Crowdfund Full Lifecycle", function () {
         crowdfund.connect(seeds[0]).claimRefund()
       ).to.be.revertedWith("ArmadaCrowdfund: refund not available");
 
-      // ---- Treasury USDC: proceeds pushed at finalization ----
+      // ---- Proceeds pushed at finalization: $250K to the launch team, the rest to treasury ----
+      // A hop is pro-rated, so the rounding buffer (one unit per participant node) is held back.
+      await expect(finalizeTx)
+        .to.emit(crowdfund, "LaunchTeamPaid")
+        .withArgs(deployer.address, TEAM_PAYMENT);
+      expect(await usdc.balanceOf(deployer.address)).to.equal(TEAM_PAYMENT);
+      const roundingBuffer = await crowdfund.getParticipantCount();
       const treasuryUsdcBal = await usdc.balanceOf(treasury.address);
-      expect(treasuryUsdcBal).to.be.gt(0n);
+      expect(treasuryUsdcBal).to.equal(BASE_SALE - TEAM_PAYMENT - roundingBuffer);
 
       // ---- ARM sweep: the sale is fully allocated, so there is no unsold ARM ----
       // (A pro-rated tier means the sale filled; the partly-sold sweep is Path 1b.)
@@ -424,7 +453,7 @@ describe("Crowdfund Full Lifecycle", function () {
       // Lazy settlement: the aggregate totalAllocatedUsdc and the sum of per-node
       // (floored) refunds diverge from rawTotal by rounding dust in *either*
       // direction — up to one unit per participant per hop. The aggregate can
-      // exceed the per-node lazy sum (e.g. the $39K hop-2 remainder over $112K of
+      // exceed the per-node lazy sum (e.g. the $1.678M hop-0 remainder over $1.825M of
       // demand does not divide evenly), leaving dust as contract residual rather than paying
       // it out; no value is created. Bound the absolute deviation.
       const totalRefundAndProceeds = netProceeds + sumRefunds;
@@ -484,13 +513,13 @@ describe("Crowdfund Full Lifecycle", function () {
   // ================================================================
 
   describe("Path 1b: Successful Finalization (partly sold)", function () {
-    // WHY: a successful sale below the $1.5M size leaves unsold ARM, which must be sweepable to
+    // WHY: a successful sale below the $1.8M size leaves unsold ARM, which must be sweepable to
     // the treasury straight after finalize while every participant's allocation stays claimable.
     it("sweeps unsold ARM after a partly sold sale and keeps allocations claimable", async function () {
       const crowdfund = await deployCrowdfund();
       const cfAddr = await crowdfund.getAddress();
 
-      // 20 seeds × $15K = $300K ≥ MIN_SALE; $1.2M of the sale is unsold.
+      // 20 seeds × $15K = $300K ≥ MIN_SALE; $1.5M of the sale is unsold.
       const seeds = allSigners.slice(5, 25);
       await crowdfund.addSeeds(seeds.map((s) => s.address));
       for (const s of seeds) {
@@ -507,8 +536,8 @@ describe("Crowdfund Full Lifecycle", function () {
       const sweepTx = await crowdfund.connect(randomCaller).withdrawUnallocatedArm();
       const sweepEvents = parseEvents(crowdfund, await sweepTx.wait(), "UnallocatedArmWithdrawn");
       expect(sweepEvents.length).to.equal(1);
-      expect(sweepEvents[0].args.amount).to.equal(ARM(1_200_000));
-      expect((await armToken.balanceOf(treasury.address)) - treasuryArmBefore).to.equal(ARM(1_200_000));
+      expect(sweepEvents[0].args.amount).to.equal(ARM(1_500_000));
+      expect((await armToken.balanceOf(treasury.address)) - treasuryArmBefore).to.equal(ARM(1_500_000));
 
       // Allocated ARM stays in the contract for claims; a second sweep finds nothing.
       expect(await armToken.balanceOf(cfAddr)).to.equal(ARM(300_000));
@@ -526,26 +555,26 @@ describe("Crowdfund Full Lifecycle", function () {
 
   describe("Path 2: No Elastic Expansion", function () {
     // WHY: demand at ELASTIC_TRIGGER is where elastic expansion to MAX_SALE applies. With
-    // BASE_SALE == MAX_SALE == ELASTIC_TRIGGER the sale size stays $1.5M, and
-    // $1.5M of demand fills it exactly — everyone allocated in full.
-    it("demand at ELASTIC_TRIGGER keeps the $1.5M sale size and fills it", async function () {
+    // BASE_SALE == MAX_SALE == ELASTIC_TRIGGER the sale size stays $1.8M, and
+    // $1.8M of demand fills it exactly — everyone allocated in full.
+    it("demand at ELASTIC_TRIGGER keeps the $1.8M sale size and fills it", async function () {
       const crowdfund = await deployCrowdfund();
 
-      // 100 seeds × $15K = $1.5M capped demand = ELASTIC_TRIGGER
+      // 100 seeds × $18K = $1.8M capped demand = ELASTIC_TRIGGER
       const seeds = allSigners.slice(5, 105); // 100 seeds
       await crowdfund.addSeeds(seeds.map((s) => s.address));
       // deployCrowdfund() already advances to windowStart
 
       for (const s of seeds) {
-        await fundAndApprove(s, USDC(15_000), crowdfund);
-        await crowdfund.connect(s).commit(0, USDC(15_000));
+        await fundAndApprove(s, USDC(18_000), crowdfund);
+        await crowdfund.connect(s).commit(0, USDC(18_000));
       }
 
       await time.increaseTo((await crowdfund.windowEnd()) + 1n);
       const tx = await crowdfund.finalize();
       const receipt = await tx.wait();
 
-      // No expansion beyond $1.5M
+      // No expansion beyond $1.8M
       expect(await crowdfund.saleSize()).to.equal(MAX_SALE);
       expect(await crowdfund.saleSize()).to.equal(BASE_SALE);
       expect(await crowdfund.refundMode()).to.be.false;
@@ -593,7 +622,7 @@ describe("Crowdfund Full Lifecycle", function () {
 
   describe("Path 3: RefundMode", function () {
     // WHY: refund mode after allocation (net proceeds < MIN_SALE although capped demand cleared
-    // it) is unreachable with no hop-2 floor and 100% ceilings: allocation equals capped demand.
+    // it) is unreachable: allocation equals min(capped demand, saleSize).
     // The only refund-mode path is capped demand below MIN_SALE; this pins its boundary, $1
     // short of the minimum (Path 5 covers demand far below it).
     it("refundMode when capped demand is just below MIN_SALE", async function () {
@@ -646,7 +675,7 @@ describe("Crowdfund Full Lifecycle", function () {
       const usdcAfter = await usdc.balanceOf(seeds[0].address);
       expect(usdcAfter - usdcBefore).to.equal(USDC(15_000));
 
-      // withdrawUnallocatedArm() returns all 1.5M ARM
+      // withdrawUnallocatedArm() returns all 1.8M ARM
       const treasuryArmBefore = await armToken.balanceOf(treasury.address);
       await crowdfund.withdrawUnallocatedArm();
       const treasuryArmAfter = await armToken.balanceOf(treasury.address);

@@ -25,14 +25,14 @@ contract CrowdfundFinalizeGasTest is Test {
     address public admin;
     address public treasury;
 
-    uint256 constant ARM_FUNDING = 1_500_000 * 1e18;
-    uint256 constant HOP0_CAP = 150_000 * 1e6;
-    uint256 constant MIN_COMMIT = 50 * 1e6;
+    uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
+    uint256 constant HOP0_CAP = 100_000 * 1e6;
+    uint256 constant MIN_COMMIT = 100 * 1e6;
     uint16  constant MAX_SEEDS = 500;
-    uint256 constant TEAM_WALLETS = 5;          // LAUNCH_TEAM_HOP1_BUDGET
+    uint256 constant TEAM_WALLETS = 1;          // LAUNCH_TEAM_HOP1_BUDGET
     uint256 constant INVITES_PER_WALLET = 100;  // HOP1_MAX_INVITES
     uint256 constant LT_HOP2_BUDGET = 500;      // LAUNCH_TEAM_HOP2_BUDGET
-    uint256 constant STRUCTURAL_MAX = 1505;     // 500 + 5 + 5 * 100 + 500
+    uint256 constant STRUCTURAL_MAX = 1101;     // 500 + 1 + 1 * 100 + 500
 
     function setUp() public {
         admin = address(this);
@@ -51,16 +51,15 @@ contract CrowdfundFinalizeGasTest is Test {
     function test_gas_finalize_500()  public { _profile(500); }
     function test_gas_finalize_800()  public { _profile(800); }
     function test_gas_finalize_1000() public { _profile(1000); }
-    function test_gas_finalize_1500() public { _profile(1500); }
     // The structural maximum under the relaunch budgets.
-    function test_gas_finalize_1505() public { _profile(STRUCTURAL_MAX); }
+    function test_gas_finalize_1101() public { _profile(STRUCTURAL_MAX); }
 
     // ---------- Profile harness ----------
 
     /// @dev Populate the crowdfund with exactly `targetN` participantNodes entries
     ///      (all committed), then warp past windowEnd and measure finalize() gas.
     ///      Layout (the relaunch budgets): seeds fill hop-0 up to MAX_SEEDS, then the
-    ///      launch team places up to 5 hop-1 team wallets, each inviting up to 100 hop-2
+    ///      launch team places the hop-1 team wallet, which invites up to 100 hop-2
     ///      nodes, then up to 500 launch-team hop-2 placements. Stops when
     ///      participantNodes.length == targetN.
     ///
@@ -110,7 +109,7 @@ contract CrowdfundFinalizeGasTest is Test {
         }
         if (cf.getParticipantCount() >= targetN) return;
 
-        // Hop-1 team wallets, each inviting up to 100 hop-2 nodes.
+        // Hop-1 team wallet(s), each inviting up to 100 hop-2 nodes.
         uint256 hop2Count = 0;
         for (uint256 w = 0; w < TEAM_WALLETS; w++) {
             address team = address(uint160(0xE00000 + w));

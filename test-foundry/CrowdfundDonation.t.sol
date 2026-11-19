@@ -17,7 +17,7 @@ contract CrowdfundDonationTest is Test {
     address public admin;
     address public treasury;
 
-    uint256 constant ARM_FUNDING = 1_500_000 * 1e18;
+    uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
 
     address[] public seeds;
 

@@ -1,5 +1,5 @@
 // ABOUTME: Fuzz and boundary tests at ELASTIC_TRIGGER: elastic expansion is inert in this configuration.
-// ABOUTME: Verifies saleSize stays BASE_SALE (= MAX_SALE = $1.5M) below, at, and above the trigger.
+// ABOUTME: Verifies saleSize stays BASE_SALE (= MAX_SALE = $1.8M) below, at, and above the trigger.
 
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
@@ -20,14 +20,14 @@ contract CrowdfundElasticFuzzTest is Test {
     address public admin;
     address public treasury;
 
-    uint256 constant ARM_FUNDING = 1_500_000 * 1e18;
-    uint256 constant BASE_SALE = 1_500_000 * 1e6;
-    uint256 constant MAX_SALE  = 1_500_000 * 1e6;
+    uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
+    uint256 constant BASE_SALE = 1_800_000 * 1e6;
+    uint256 constant MAX_SALE  = 1_800_000 * 1e6;
     uint256 constant MIN_SALE  = 250_000 * 1e6;
-    uint256 constant ELASTIC_TRIGGER = 1_500_000 * 1e6;
-    uint256 constant HOP0_CAP = 150_000 * 1e6;
+    uint256 constant ELASTIC_TRIGGER = 1_800_000 * 1e6;
+    uint256 constant HOP0_CAP = 100_000 * 1e6;
     uint256 constant HOP2_CAP = 10_000 * 1e6;
-    uint256 constant MIN_COMMIT = 50 * 1e6;
+    uint256 constant MIN_COMMIT = 100 * 1e6;
 
     function setUp() public {
         admin = address(this);
@@ -79,13 +79,13 @@ contract CrowdfundElasticFuzzTest is Test {
 
     // ============ Deterministic Boundary Tests ============
 
-    /// @notice Capped demand one unit below the trigger ($1,499,999.999999) → BASE_SALE ($1.5M)
+    /// @notice Capped demand one unit below the trigger ($1,799,999.999999) → BASE_SALE ($1.8M)
     function test_elasticExpansion_justBelow_usesBaseSale() public {
-        (ArmadaCrowdfund cf, address[] memory seeds) = _deployCrowdfund(10);
-        for (uint256 i = 0; i < 9; i++) {
+        (ArmadaCrowdfund cf, address[] memory seeds) = _deployCrowdfund(18);
+        for (uint256 i = 0; i < 17; i++) {
             _commitAs(cf, seeds[i], 0, HOP0_CAP);
         }
-        _commitAs(cf, seeds[9], 0, HOP0_CAP - 1);
+        _commitAs(cf, seeds[17], 0, HOP0_CAP - 1);
 
         vm.warp(cf.windowEnd() + 1);
         cf.finalize();
@@ -93,10 +93,10 @@ contract CrowdfundElasticFuzzTest is Test {
         assertEq(cf.saleSize(), BASE_SALE, "Just below trigger should use BASE_SALE");
     }
 
-    /// @notice 10 seeds × $150K = $1,500,000 = ELASTIC_TRIGGER → MAX_SALE, which is also $1.5M
+    /// @notice 18 seeds × $100K = $1,800,000 = ELASTIC_TRIGGER → MAX_SALE, which is also $1.8M
     function test_elasticExpansion_atExactThreshold_usesMaxSale() public {
-        (ArmadaCrowdfund cf, address[] memory seeds) = _deployCrowdfund(10);
-        for (uint256 i = 0; i < 10; i++) {
+        (ArmadaCrowdfund cf, address[] memory seeds) = _deployCrowdfund(18);
+        for (uint256 i = 0; i < 18; i++) {
             _commitAs(cf, seeds[i], 0, HOP0_CAP);
         }
 
@@ -108,24 +108,24 @@ contract CrowdfundElasticFuzzTest is Test {
     }
 
     /// @notice Over-cap commits are capped in the cappedDemand calculation.
-    ///         9 seeds at $150K + 1 seed at $200K (over-cap): cappedDemand = 10 × $150K = $1.5M,
-    ///         not $1.55M. The sale size stays $1.5M either way.
+    ///         17 seeds at $100K + 1 seed at $200K (over-cap): cappedDemand = 18 × $100K = $1.8M,
+    ///         not $1.9M. The sale size stays $1.8M either way.
     function test_elasticExpansion_overCapCommit_doesNotInflateCappedDemand() public {
-        (ArmadaCrowdfund cf, address[] memory seeds) = _deployCrowdfund(10);
-        for (uint256 i = 0; i < 9; i++) {
+        (ArmadaCrowdfund cf, address[] memory seeds) = _deployCrowdfund(18);
+        for (uint256 i = 0; i < 17; i++) {
             _commitAs(cf, seeds[i], 0, HOP0_CAP);
         }
-        // Last seed commits over cap — $200K exceeds the $150K hop-0 cap
-        _commitAs(cf, seeds[9], 0, 200_000 * 1e6);
+        // Last seed commits over cap — $200K exceeds the $100K hop-0 cap
+        _commitAs(cf, seeds[17], 0, 200_000 * 1e6);
 
         // totalCommitted includes the full $200K
-        assertEq(cf.totalCommitted(), 9 * HOP0_CAP + 200_000 * 1e6);
+        assertEq(cf.totalCommitted(), 17 * HOP0_CAP + 200_000 * 1e6);
 
         vm.warp(cf.windowEnd() + 1);
         cf.finalize();
 
-        // Assert directly on cappedDemand: must be exactly 10 × $150K, not inflated by the $200K
-        assertEq(cf.cappedDemand(), 10 * HOP0_CAP, "Over-cap commit must not inflate cappedDemand");
+        // Assert directly on cappedDemand: must be exactly 18 × $100K, not inflated by the $200K
+        assertEq(cf.cappedDemand(), 18 * HOP0_CAP, "Over-cap commit must not inflate cappedDemand");
         assertEq(cf.saleSize(), MAX_SALE, "Capped demand at exact trigger should use MAX_SALE");
         assertEq(cf.totalAllocatedUsdc(), MAX_SALE, "over-cap excess is not allocated");
     }
@@ -133,7 +133,7 @@ contract CrowdfundElasticFuzzTest is Test {
     // ============ Fuzz Tests ============
 
     /// @notice Fuzz seeds-only: varying number of seeds and commit amounts. Up to 40 seeds
-    ///         ($6M of possible demand) spans well past the trigger; the sale size never moves.
+    ///         ($4M of possible demand) spans well past the trigger; the sale size never moves.
     function testFuzz_elasticExpansion_seedsOnly(uint256 numSeeds, uint256 commitPerSeed) public {
         numSeeds = bound(numSeeds, 1, 40);
         commitPerSeed = bound(commitPerSeed, MIN_COMMIT, HOP0_CAP);
@@ -151,7 +151,7 @@ contract CrowdfundElasticFuzzTest is Test {
         vm.warp(cf.windowEnd() + 1);
         cf.finalize();
 
-        assertEq(cf.saleSize(), BASE_SALE, "sale size is $1.5M on either side of the trigger");
+        assertEq(cf.saleSize(), BASE_SALE, "sale size is $1.8M on either side of the trigger");
         assertEq(cf.totalAllocatedUsdc(), _min(expectedCappedDemand, BASE_SALE), "allocation = min(demand, sale)");
     }
 
@@ -184,7 +184,7 @@ contract CrowdfundElasticFuzzTest is Test {
         vm.warp(cf.windowEnd() + 1);
         cf.finalize();
 
-        assertEq(cf.saleSize(), BASE_SALE, "sale size is $1.5M on either side of the trigger");
+        assertEq(cf.saleSize(), BASE_SALE, "sale size is $1.8M on either side of the trigger");
         assertEq(cf.totalAllocatedUsdc(), _min(expectedCappedDemand, BASE_SALE), "allocation = min(demand, sale)");
     }
 

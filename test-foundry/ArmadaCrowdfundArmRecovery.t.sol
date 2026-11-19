@@ -17,7 +17,7 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
     address public admin;
     address public treasury;
 
-    uint256 constant ARM_FUNDING = 1_500_000 * 1e18;
+    uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
 
     function setUp() public {
         admin = address(this);
@@ -130,7 +130,7 @@ contract ArmadaCrowdfundArmRecoveryTest is Test {
     /// @notice Fuzz: any ARM funding amount (>= MAX_SALE) is fully recoverable after cancellation
     function testFuzz_withdrawUnallocatedArm_canceled_fullRecovery(uint256 funding) public {
         // Bound to range from MAX_SALE to 10M tokens (loadArm requires >= MAX_SALE)
-        funding = bound(funding, 1_500_000 * 1e18, 10_000_000 * 1e18);
+        funding = bound(funding, 1_800_000 * 1e18, 10_000_000 * 1e18);
 
         // Deploy fresh crowdfund with fuzzed funding
         ArmadaCrowdfund fuzzCrowdfund = new ArmadaCrowdfund(

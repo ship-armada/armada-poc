@@ -42,14 +42,14 @@ describe("Crowdfund: Atomic Delegation on Claim", function () {
     await armToken.initAuthorizedDelegators([cfAddr]);
 
     // Fund ARM and verify pre-load
-    await armToken.transfer(cfAddr, ARM(1_500_000));
+    await armToken.transfer(cfAddr, ARM(1_800_000));
     await crowdfund.loadArm();
     await time.increaseTo(await crowdfund.windowStart());
     return crowdfund;
   }
 
   // Minimal scenario: 70 seeds committing $15k each ($1.05M) — clears MIN_SALE ($250K) and
-  // fits the $1.5M sale, so every seed is allocated its full commitment.
+  // fits the $1.8M sale, so every seed is allocated its full commitment.
   async function setupAndFinalize(crowdfund: any) {
     const seeds = allSigners.slice(5, 75); // 70 seeds
     await crowdfund.addSeeds(seeds.map((s: HardhatEthersSigner) => s.address));

@@ -17,7 +17,7 @@ import "../contracts/cctp/MockUSDCV2.sol";
 ///      This handler adds a no-op action so the invariant fuzzer has something to call.
 contract CrowdfundFullHandler is Test {
     // Per-hop caps (relaunch): known contributors, team inviter wallets, invited contributors.
-    uint256 constant HOP0_CAP = 150_000 * 1e6;
+    uint256 constant HOP0_CAP = 100_000 * 1e6;
     uint256 constant HOP2_CAP = 10_000 * 1e6;
 
     ArmadaCrowdfund public crowdfund;
@@ -196,7 +196,7 @@ contract CrowdfundFullInvariantTest is Test {
     address[] public hop1Addrs;
     address[] public hop2Addrs;
 
-    uint256 constant ARM_FUNDING = 1_500_000 * 1e18;
+    uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
 
     function setUp() public {
         admin = address(this);
@@ -223,11 +223,11 @@ contract CrowdfundFullInvariantTest is Test {
         crowdfund.loadArm();
 
         // Create actor addresses: 80 seeds (enough to reach MIN_SALE and oversubscribe the sale),
-        // 5 hop-1 team inviter wallets (LAUNCH_TEAM_HOP1_BUDGET), 20 hop-2 invitees.
+        // 1 hop-1 team inviter wallet (LAUNCH_TEAM_HOP1_BUDGET), 20 hop-2 invitees.
         for (uint256 i = 0; i < 80; i++) {
             seeds.push(address(uint160(0x1000 + i)));
         }
-        for (uint256 i = 0; i < 5; i++) {
+        for (uint256 i = 0; i < 1; i++) {
             hop1Addrs.push(address(uint160(0x2000 + i)));
         }
         for (uint256 i = 0; i < 20; i++) {
@@ -237,13 +237,13 @@ contract CrowdfundFullInvariantTest is Test {
         // Setup phase: add seeds
         crowdfund.addSeeds(seeds);
 
-        // The launch team places the hop-1 team wallets (seeds cannot invite);
-        // team wallets invite the hop-2 addresses (4 each).
+        // The launch team places the hop-1 team wallet (seeds cannot invite);
+        // the team wallet invites the hop-2 addresses.
         for (uint256 i = 0; i < hop1Addrs.length; i++) {
             crowdfund.launchTeamInvite(hop1Addrs[i], 0);
         }
         for (uint256 i = 0; i < hop2Addrs.length; i++) {
-            vm.prank(hop1Addrs[i / 4]);
+            vm.prank(hop1Addrs[0]);
             crowdfund.invite(hop2Addrs[i], 1);
         }
 
@@ -266,17 +266,31 @@ contract CrowdfundFullInvariantTest is Test {
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // INV-C2: Ceiling BPS match the configured priority-fill values
+    // INV-C2: Ceiling BPS are unused (0) — allocation uses the hop-2 reserve instead
     // ══════════════════════════════════════════════════════════════════════
 
-    /// @notice Hop ceiling basis points match spec: 10000/10000/0 (hop-2 uses floor+rollover, not BPS)
+    /// @notice hopConfigs[].ceilingBps is not read by the allocation (HOP2_RESERVE_USDC drives it), so
+    ///         every hop carries 0; a non-zero value would suggest a stale ceiling-based configuration.
     function invariant_ceilingBpsAreValid() public view {
         (uint16 bps0, , , ) = crowdfund.hopConfigs(0);
         (uint16 bps1, , , ) = crowdfund.hopConfigs(1);
         (uint16 bps2, , , ) = crowdfund.hopConfigs(2);
-        assertEq(bps0, 10000, "INV-C2: Hop 0 ceiling should be 10000");
-        assertEq(bps1, 10000, "INV-C2: Hop 1 ceiling should be 10000");
-        assertEq(bps2, 0, "INV-C2: Hop 2 ceiling should be 0 (uses floor+rollover)");
+        assertEq(bps0, 0, "INV-C2: Hop 0 ceilingBps should be 0 (unused)");
+        assertEq(bps1, 0, "INV-C2: Hop 1 ceilingBps should be 0 (unused)");
+        assertEq(bps2, 0, "INV-C2: Hop 2 ceilingBps should be 0 (unused)");
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // INV-C2b: The hop-2 reserve holds after finalization
+    // ══════════════════════════════════════════════════════════════════════
+
+    /// @notice WHY: hop-2 has first priority for HOP2_RESERVE_USDC, so after a successful finalization
+    ///         its allocation is at least min(its capped demand, the reserve), whatever hop-0 demands.
+    function invariant_hop2ReserveHonoured() public view {
+        if (!handler.ghost_finalized() || crowdfund.refundMode()) return;
+        uint256 demand2 = crowdfund.finalDemands(2);
+        uint256 reserve = crowdfund.HOP2_RESERVE_USDC();
+        assertGe(crowdfund.finalCeilings(2), demand2 < reserve ? demand2 : reserve, "INV-C2b: hop-2 below its reserve");
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -375,10 +389,10 @@ contract CrowdfundFullInvariantTest is Test {
         );
     }
 
-    /// @notice INV-C5: aggregate allocated USDC never exceeds the sale size (waterfall conservation).
-    ///         WHY: the July-2026 waterfall draws hop-0+hop-1 from `available` (85%) via the
-    ///         remainingAvailable cap and hop-2 from its 15% floor + rollover; `available + hop2Floor
-    ///         == saleSize` bounds the total. Holds trivially pre-finalize / in refund mode
+    /// @notice INV-C5: aggregate allocated USDC never exceeds the sale size (allocation conservation).
+    ///         WHY: the allocation takes hop-2's reserve first and draws every later step from what
+    ///         remains of saleSize, so the total is min(capped demand, saleSize). Holds trivially
+    ///         pre-finalize / in refund mode
     ///         (totalAllocatedUsdc == 0). This is the aggregate counterpart to INV-C1
     ///         (per-participant alloc + refund == committed).
     function invariant_totalAllocatedWithinSaleSize() public view {

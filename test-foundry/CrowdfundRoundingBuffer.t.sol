@@ -1,5 +1,5 @@
 // ABOUTME: Regression tests for the finalize() rounding-buffer dust bound (audit-71).
-// ABOUTME: Verifies buffer = participantNodes.length is tight and refunds never run short.
+// ABOUTME: Verifies the buffer (participantNodes.length, held only when a hop is pro-rated) bounds dust and refunds never run short.
 
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.17;
@@ -17,7 +17,8 @@ contract CrowdfundRoundingBufferTest is Test {
     address public admin;
     address public treasury;
 
-    uint256 constant ARM_FUNDING = 1_500_000 * 1e18;
+    uint256 constant ARM_FUNDING = 1_800_000 * 1e18;
+    uint256 constant TEAM_PAYMENT = 250_000 * 1e6; // ArmadaCrowdfund.TEAM_PAYMENT_USDC, paid to admin (launch team)
 
     function setUp() public {
         admin = address(this);
@@ -67,13 +68,13 @@ contract CrowdfundRoundingBufferTest is Test {
     // which over-reserves by a factor of NUM_HOPS = 3 because each participant only
     // commits at one hop. With integer-exact allocations (zero actual dust) the entire
     // buffer is stranded, so this pins that the buffer is exactly participantNodes.length.
-    // Scenario: 20 seeds × $150K = $3M of hop-0 demand against the $1.5M sale → each seed is
-    // pro-rated to exactly $75K; 10 launch-team hop-2 placements at $10K are crowded out
-    // (allocated 0, refunded in full). Both are integer-exact.
+    // Scenario: 20 seeds × $100K = $2M of hop-0 demand plus 10 launch-team hop-2 placements at
+    // $10K against the $1.8M sale. Hop-2's $100K fits its $300K reserve (filled in full); hop-0
+    // gets the remaining $1.7M → each seed is pro-rated to exactly $85K. Both are integer-exact.
     function test_buffer_recoversOverReservation_integerExactAllocations() public {
         uint256 SEED_COUNT = 20;
         uint256 HOP2_COUNT = 10;
-        uint256 SEED_COMMIT = 150_000 * 1e6;
+        uint256 SEED_COMMIT = 100_000 * 1e6;
         uint256 HOP2_COMMIT = 10_000 * 1e6;
 
         address[] memory seeds = new address[](SEED_COUNT);
@@ -90,14 +91,15 @@ contract CrowdfundRoundingBufferTest is Test {
         crowdfund.finalize();
         assertFalse(crowdfund.refundMode(), "should be success-path");
 
-        uint256 allocPerSeed = 75_000 * 1e6;
-        uint256 totalAlloc = SEED_COUNT * allocPerSeed;
+        uint256 allocPerSeed = 85_000 * 1e6;
+        uint256 totalAlloc = SEED_COUNT * allocPerSeed + HOP2_COUNT * HOP2_COMMIT;
         uint256 buffer = SEED_COUNT + HOP2_COUNT;  // post-fix: participantNodes.length
 
         assertEq(crowdfund.totalAllocatedUsdc(), totalAlloc, "alloc total");
-        // Treasury receives totalAlloc - buffer.
-        // Pre-fix this was totalAlloc - nodes * NUM_HOPS (3x over-reserved).
-        assertEq(usdc.balanceOf(treasury), totalAlloc - buffer, "treasury proceeds");
+        // The team receives exactly TEAM_PAYMENT; the treasury receives the rest less the buffer.
+        // Pre-fix the buffer was nodes * NUM_HOPS (3x over-reserved).
+        assertEq(usdc.balanceOf(admin), TEAM_PAYMENT, "team payment");
+        assertEq(usdc.balanceOf(treasury), totalAlloc - TEAM_PAYMENT - buffer, "treasury proceeds");
 
         // All claims must succeed (contract never runs short).
         for (uint256 i = 0; i < SEED_COUNT; i++) {
@@ -106,7 +108,7 @@ contract CrowdfundRoundingBufferTest is Test {
         }
         for (uint256 i = 0; i < HOP2_COUNT; i++) {
             vm.prank(_hop2(i));
-            crowdfund.claim(address(0)); // refund only: no ARM, no delegate needed
+            crowdfund.claim(_hop2(i)); // filled in full from the reserve
         }
 
         // After all claims, the contract holds the unused buffer (integer-exact
@@ -121,15 +123,16 @@ contract CrowdfundRoundingBufferTest is Test {
     // non-integer-exact allocations and verifying:
     //   1. Actual dust < participantNodes.length (bound holds)
     //   2. All refunds succeed (contract does not run short)
-    //   3. Settlement identity: treasuryReceived + contractDust + sumRefunds == totalCommitted
+    //   3. Settlement identity: teamPayment + treasuryReceived + contractDust + sumRefunds == totalCommitted
     function test_buffer_refundsSucceed_underWorstCaseDust() public {
-        // 11 seeds at the $150K cap = $1.65M against the $1.5M sale. Each seed's allocation is
-        // floor(150000 * 1500000 / 1650000) = 136363.636... USDC, leaving 7 raw USDC units of
-        // dust across the 11 seed claims. 39 launch-team hop-2 placements at $10K are crowded
-        // out (exact: 0 allocated, full refund). The bound under test is dust < nodes.
-        uint256 SEED_COUNT = 11;
+        // 19 seeds at the $100K cap = $1.9M and 39 launch-team hop-2 placements at $10K = $390K
+        // against the $1.8M sale. Hop-2 gets its $300K reserve, hop-0 the remaining $1.5M; both are
+        // pro-rated. Each seed's allocation is floor(100000 * 1500000 / 1900000) = 78947.368421 USDC
+        // (1 raw unit of dust across the 19); each hop-2 allocation is floor(10000 * 300000 / 390000)
+        // = 7692.307692 USDC (12 units across the 39). 13 units in total; the bound is dust < nodes.
+        uint256 SEED_COUNT = 19;
         uint256 HOP2_COUNT = 39;
-        uint256 SEED_COMMIT = 150_000 * 1e6;
+        uint256 SEED_COMMIT = 100_000 * 1e6;
         uint256 HOP2_COMMIT = 10_000 * 1e6;
         address[] memory seeds = new address[](SEED_COUNT);
         for (uint256 i = 0; i < SEED_COUNT; i++) seeds[i] = _seed(i);
@@ -157,13 +160,15 @@ contract CrowdfundRoundingBufferTest is Test {
         // sales the saturating ternary in finalize() floors at zero, but here the
         // alloc is large so we expect the simple subtraction.
         uint256 participantCount = SEED_COUNT + HOP2_COUNT;
-        assertEq(treasuryReceived, totalAlloc - participantCount, "treasury = totalAlloc - buffer");
+        uint256 teamReceived = usdc.balanceOf(admin);
+        assertEq(teamReceived, TEAM_PAYMENT, "team paid exactly");
+        assertEq(treasuryReceived, totalAlloc - TEAM_PAYMENT - participantCount, "treasury = totalAlloc - team - buffer");
 
-        // Settlement identity sanity (pre-claims): contract holds totalCommitted - treasury.
+        // Settlement identity sanity (pre-claims): contract holds totalCommitted - team - treasury.
         assertEq(
             usdc.balanceOf(address(crowdfund)),
-            totalCommitted - treasuryReceived,
-            "contract balance = totalCommitted - treasury (pre-claims)"
+            totalCommitted - teamReceived - treasuryReceived,
+            "contract balance = totalCommitted - team - treasury (pre-claims)"
         );
 
         // All claims must succeed; sum the actually-distributed refunds.
@@ -178,14 +183,14 @@ contract CrowdfundRoundingBufferTest is Test {
             address hop2 = _hop2(i);
             uint256 refundBefore = usdc.balanceOf(hop2);
             vm.prank(hop2);
-            crowdfund.claim(address(0));
+            crowdfund.claim(hop2);
             sumRefunds += usdc.balanceOf(hop2) - refundBefore;
         }
 
-        // Settlement identity holds: treasuryReceived + contractDust + sumRefunds == totalCommitted
+        // Settlement identity holds: teamPayment + treasuryReceived + contractDust + sumRefunds == totalCommitted
         uint256 contractDust = usdc.balanceOf(address(crowdfund));
         assertEq(
-            treasuryReceived + contractDust + sumRefunds,
+            teamReceived + treasuryReceived + contractDust + sumRefunds,
             totalCommitted,
             "settlement identity"
         );
@@ -194,6 +199,6 @@ contract CrowdfundRoundingBufferTest is Test {
         // contractDust = buffer - actual_dust, and actual_dust < N strictly, so ≥ 1 remains.
         assertLe(contractDust, participantCount, "contract dust within buffer bound");
         assertGt(contractDust, 0, "buffer never fully consumed (dust < N strictly)");
-        assertEq(contractDust, participantCount - 7, "7 units of rounding dust paid out of the buffer");
+        assertEq(contractDust, participantCount - 13, "13 units of rounding dust paid out of the buffer");
     }
 }

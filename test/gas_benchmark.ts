@@ -2,7 +2,7 @@
  * Gas Profiling Under Load — Phase 4
  *
  * Benchmarks:
- * 1. Crowdfund finalize() gas at varying participant counts (50, 100, 150)
+ * 1. Crowdfund finalize() gas at varying participant counts (70, 100, 180)
  * 2. Crowdfund addSeeds() batch gas
  * 3. Crowdfund claim() gas (should be constant)
  * 4. ERC20Votes getPastVotes() gas with varying checkpoint counts (binary search depth)
@@ -44,7 +44,7 @@ describe("Gas Benchmarks", function () {
   // ============================================================
 
   describe("Crowdfund finalize() gas scaling", function () {
-    const participantCounts = [70, 100, 180]; // all hop-0 seeds; any count >= 2 at $15K clears MIN_SALE ($250K needs 17)
+    const participantCounts = [70, 100, 180]; // all hop-0 seeds; >= 17 at $15K clears MIN_SALE ($250K); 180 ($2.7M) oversubscribes the $1.8M sale
     const results: { count: number; gas: bigint; perParticipant: bigint }[] = [];
 
     for (const count of participantCounts) {
@@ -71,7 +71,7 @@ describe("Gas Benchmarks", function () {
         await armToken.addToWhitelist(await crowdfund.getAddress());
 
         // Fund ARM for MAX_SALE
-        await armToken.transfer(await crowdfund.getAddress(), ARM(1_500_000));
+        await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
         await crowdfund.loadArm();
 
         // Add seeds — all participants are hop-0 for simplicity
@@ -79,7 +79,7 @@ describe("Gas Benchmarks", function () {
         { const ws = Number(await crowdfund.windowStart()); if ((await time.latest()) < ws) await time.increaseTo(ws); }
         await crowdfund.addSeeds(seeds.map(s => s.address));
 
-        // Each seed commits $15K (well under the $150K hop-0 cap)
+        // Each seed commits $15K (well under the $100K hop-0 cap)
         // Total: count * $15K. Need >= $250K (MIN_SALE) for a success-path finalize().
         // At $15K/participant, need >= 17 participants. All test counts are >= 70.
 
@@ -189,7 +189,7 @@ describe("Gas Benchmarks", function () {
         );
         await armToken.addToWhitelist(await crowdfund.getAddress());
         const ARM = (n: number) => ethers.parseUnits(n.toString(), 18);
-        await armToken.transfer(await crowdfund.getAddress(), ARM(1_500_000));
+        await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
         await crowdfund.loadArm();
         await time.increaseTo(await crowdfund.windowStart());
 
@@ -236,7 +236,7 @@ describe("Gas Benchmarks", function () {
       const cfAddr = await crowdfund.getAddress();
       await armToken.addToWhitelist(cfAddr);
       await armToken.initAuthorizedDelegators([cfAddr]);
-      await armToken.transfer(cfAddr, ARM(1_500_000));
+      await armToken.transfer(cfAddr, ARM(1_800_000));
       await crowdfund.loadArm();
 
       const count = 100;
@@ -245,12 +245,12 @@ describe("Gas Benchmarks", function () {
       await crowdfund.addSeeds(seeds.map(s => s.address));
 
       for (const s of seeds) {
-        await usdc.mint(s.address, USDC(15_000));
-        await usdc.connect(s).approve(await crowdfund.getAddress(), USDC(15_000));
-        await crowdfund.connect(s).commit(0, USDC(15_000));
+        await usdc.mint(s.address, USDC(18_000));
+        await usdc.connect(s).approve(await crowdfund.getAddress(), USDC(18_000));
+        await crowdfund.connect(s).commit(0, USDC(18_000));
       }
 
-      // 100 seeds × $15K = $1.5M capped: fills the $1.5M sale exactly, so finalize()
+      // 100 seeds × $18K = $1.8M capped: fills the $1.8M sale exactly, so finalize()
       // takes the success path and every claim() below transfers ARM.
 
       await time.increaseTo((await crowdfund.windowEnd()) + 1n);
@@ -493,7 +493,7 @@ describe("Gas Benchmarks", function () {
       );
 
       await armToken.addToWhitelist(await crowdfund.getAddress());
-      await armToken.transfer(await crowdfund.getAddress(), ARM(1_500_000));
+      await armToken.transfer(await crowdfund.getAddress(), ARM(1_800_000));
       await crowdfund.loadArm();
 
       const seeds = allSigners.slice(1, 4);

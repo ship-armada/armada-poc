@@ -250,8 +250,8 @@ async function main() {
       governor: governorAddress,
     },
     config: {
-      baseSale: "1500000",
-      maxSale: "1500000",
+      baseSale: "1800000",
+      maxSale: "1800000",
       minSale: "250000",
       armPrice: "1.00",
       armFunded: config.armDistribution.crowdfund,

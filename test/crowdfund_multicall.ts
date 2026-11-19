@@ -56,7 +56,7 @@ describe("Crowdfund Multicall", function () {
     await armToken.addToWhitelist(cfAddr);
     await armToken.initAuthorizedDelegators([cfAddr]);
 
-    await armToken.transfer(cfAddr, ARM(1_500_000));
+    await armToken.transfer(cfAddr, ARM(1_800_000));
     await crowdfund.loadArm();
 
     // launchTeamInvite requires block.timestamp >= windowStart, so warp first.

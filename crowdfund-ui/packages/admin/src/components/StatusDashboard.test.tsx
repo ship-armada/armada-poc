@@ -59,7 +59,7 @@ describe('StatusDashboard', () => {
 
   it('renders timeline rows', () => {
     render(<StatusDashboard state={makeState()} role="observer" />)
-    expect(screen.getByText('Days 1-14 (Seeds + LT Invites)')).toBeInTheDocument()
+    expect(screen.getByText('Launch-Team Window (Seeds + LT Invites)')).toBeInTheDocument()
     expect(screen.getByText('Commitment Window')).toBeInTheDocument()
     expect(screen.getByText('Claim Period')).toBeInTheDocument()
   })

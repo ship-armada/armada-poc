@@ -32,6 +32,10 @@ const ANVIL_SEED_ADDRESSES = [
   '0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199',
 ]
 
+/** Most seeds per addSeeds transaction: well under the 2^24 per-tx gas cap (all 500 relaunch seeds in
+ *  one call exceed it). Matches the Safe launch tooling's batch ceiling (tasks/crowdfund-safe.ts). */
+const MAX_SEEDS_PER_TX = 180
+
 export interface SeedManagerProps {
   signer: Signer | null
   crowdfundAddress: string
@@ -65,9 +69,10 @@ export function SeedManager({ signer, crowdfundAddress, seedCount }: SeedManager
 
   const remaining = CROWDFUND_CONSTANTS.MAX_SEEDS - seedCount
   const wouldExceed = parsed.valid.length > remaining
+  const overBatchLimit = parsed.valid.length > MAX_SEEDS_PER_TX
 
   const handleAddSeeds = async () => {
-    if (parsed.valid.length === 0 || wouldExceed) return
+    if (parsed.valid.length === 0 || wouldExceed || overBatchLimit) return
 
     const success = await tx.execute(async (s) => {
       const crowdfund = new Contract(crowdfundAddress, CROWDFUND_ABI_FRAGMENTS, s)
@@ -109,10 +114,13 @@ export function SeedManager({ signer, crowdfundAddress, seedCount }: SeedManager
         {wouldExceed && (
           <span className="text-destructive">Exceeds remaining slots ({remaining})</span>
         )}
+        {!wouldExceed && overBatchLimit && (
+          <span className="text-destructive">At most {MAX_SEEDS_PER_TX} seeds per transaction</span>
+        )}
       </div>
       <button
         className="w-full rounded bg-primary px-3 py-1.5 text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        disabled={parsed.valid.length === 0 || wouldExceed || tx.state.status === 'pending' || tx.state.status === 'submitted'}
+        disabled={parsed.valid.length === 0 || wouldExceed || overBatchLimit || tx.state.status === 'pending' || tx.state.status === 'submitted'}
         onClick={handleAddSeeds}
       >
         Add {parsed.valid.length} Seed{parsed.valid.length !== 1 ? 's' : ''}

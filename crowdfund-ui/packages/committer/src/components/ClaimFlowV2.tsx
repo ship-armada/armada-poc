@@ -27,7 +27,9 @@ import {
   isValidEnsName,
   truncateAddress,
   ADDRESS_INPUT_MAX_LENGTH,
+  isPriorityFill,
 } from '@armada/crowdfund-shared'
+import { belowMinimumMessage } from '@/lib/claimGateCopy'
 import { Button as ArmadaButton, Tooltip } from '@armada/ui'
 import { sendAndWaitTx } from '@/lib/sendAndWaitTx'
 import { savePendingTx, removePendingTx } from '@/lib/pendingTx'
@@ -783,9 +785,7 @@ function ClaimFlowScreens(props: ClaimFlowV2Props) {
       return (
         <GateShell title="Sale ended below minimum">
           <p className={styles.gateBody}>
-            {props.totalCommitted > 0n
-              ? `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum fund after per-hop allocation limits. Once it's finalized, you'll be able to claim a refund of your committed ${formatUsdc(props.totalCommitted)} from here.`
-              : `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum fund after per-hop allocation limits. Once it's finalized, all committed USDC will be refundable to the addresses that participated.`}
+            {belowMinimumMessage(isPriorityFill(), CROWDFUND_CONSTANTS.MIN_SALE, props.totalCommitted)}
           </p>
           <p className={styles.gateBodyFootnote}>
             Finalization is permissionless — anyone can trigger it. Refresh this page once

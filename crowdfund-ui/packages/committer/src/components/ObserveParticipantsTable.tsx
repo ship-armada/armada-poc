@@ -10,10 +10,16 @@ import {
   hopLabel,
   heroListHopColor,
   useENS,
+  CROWDFUND_FEATURES,
   type CrowdfundEvent,
 } from '@armada/crowdfund-shared'
 import { useParticipants, type ParticipantRow } from '@/hooks/useParticipants'
 import styles from './ObserveParticipantsTable.module.css'
+
+/** Shown where the invite graph is listed on profiles that hide team inviter wallets: the wallets
+ *  are visible on-chain, so say why the app attributes their invitees to Armada. */
+export const TEAM_WALLET_DISCLOSURE =
+  'Armada issues invite links through team-operated wallets. Those wallets are not listed here; the people they invite appear as invited by Armada.'
 
 type ViewMode = 'per-hop' | 'per-address'
 type NameFn = (addr: string) => string
@@ -243,6 +249,9 @@ export function ObserveParticipantsTable({ events, phase, provider }: ObservePar
         <span className={styles.title}>Participants</span>
         <span className={styles.count}>{dataCount} entries</span>
       </div>
+      {CROWDFUND_FEATURES.hideTeamWallets && (
+        <p className={styles.note}>{TEAM_WALLET_DISCLOSURE}</p>
+      )}
 
       <div className={styles.controls}>
         <div className={styles.viewToggle} role="group" aria-label="View mode">

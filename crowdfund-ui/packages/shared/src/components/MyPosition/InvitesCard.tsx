@@ -50,6 +50,7 @@ import {
   type InviteListKind,
 } from './inviteModel'
 import styles from './InvitesCard.module.css'
+import { hopTagLabel } from '../../lib/format'
 
 function prefersReducedMotion(): boolean {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -961,7 +962,7 @@ function InviteListRow({
   const kind = inviteListKind(invite)
   const hop = invite.inviteeHop === 2 ? 2 : 1
   const hopColor = hopPillDotColor(hopVariantForInvitee(hop))
-  const hopTag = hop === 1 ? 'HOP-1' : 'HOP-2'
+  const hopTag = hopTagLabel(hop)
 
   const updateRevokePopoverPosition = () => {
     const anchor = moreBtnRef.current

@@ -43,6 +43,9 @@ export interface CrowdfundFeatures {
   readonly directInvites: boolean
   /** The self-fill ("max out") flow: self-invites plus per-hop commits in one multicall. */
   readonly selfFill: boolean
+  /** Hide hop-1 team inviter wallets from participant-facing views and show their invitees as
+   *  invited by the Armada root (see lib/publicEvents.ts). */
+  readonly hideTeamWallets: boolean
 }
 
 /** Per-hop configuration matching the contract's hopConfigs[3] */
@@ -142,10 +145,10 @@ export const TIER_LABELS_BY_PROFILE: Record<CrowdfundProfile, readonly [string, 
 }
 
 export const FEATURES_BY_PROFILE: Record<CrowdfundProfile, CrowdfundFeatures> = {
-  mainnet: { directInvites: true, selfFill: true },
-  medi: { directInvites: true, selfFill: true },
-  // Outside contributors join only through team-wallet invite links.
-  relaunch: { directInvites: false, selfFill: false },
+  mainnet: { directInvites: true, selfFill: true, hideTeamWallets: false },
+  medi: { directInvites: true, selfFill: true, hideTeamWallets: false },
+  // Outside contributors join only through team-wallet invite links, shown as launch-team invites.
+  relaunch: { directInvites: false, selfFill: false, hideTeamWallets: true },
 }
 
 /** Map a raw profile name to a profile. Unset and unknown values fall back to

@@ -96,6 +96,20 @@ export function estimateAllocation(
 }
 
 /**
+ * True when the waterfall is a pure priority fill: no hop-2 floor and 100% ceilings for hops 0 and
+ * 1. Allocation then equals min(capped demand, sale size): a sale that clears the minimum on demand
+ * also clears it on allocation, and a tier can be crowded out without itself being oversubscribed.
+ */
+export function isPriorityFill(config: AllocationConfig = ACTIVE_CONFIG): boolean {
+  const { constants, hopConfigs } = config
+  return (
+    constants.HOP2_BASE_FLOOR_BPS + constants.HOP2_EXTRA_FLOOR_BPS === 0 &&
+    hopConfigs[0].ceilingBps >= 10_000 &&
+    hopConfigs[1].ceilingBps >= 10_000
+  )
+}
+
+/**
  * Whether finalize() would enter refund mode for the given capped demand.
  * The contract refunds when the post-waterfall allocation is below MIN_SALE.
  * Under profiles whose hop ceilings can hold allocation below demand, capped

@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest'
 import {
   estimateAllocation,
   estimateUserArmAllocation,
+  isPriorityFill,
   projectsRefundMode,
   type UserHopPosition,
 } from './allocation.js'
@@ -334,5 +335,14 @@ describe('estimateAllocation — relaunch profile cross-language differential ve
     stats[2].cappedCommitted = 10n * K
     const invited: UserHopPosition[] = [{ hop: 2, committed: 10n * K, effectiveCap: 10n * K }]
     expect(estimateUserArmAllocation(invited, stats, 1_510n * K, 0n, relaunch)).toBe(0n)
+  })
+})
+
+describe('isPriorityFill', () => {
+  // WHY: with no hop-2 floor and 100% ceilings allocation equals min(capped demand, sale size), so
+  // copy about per-hop limits and refunds "after allocation" is false; the UI keys that copy off this.
+  it('is true for the relaunch (no floors, full ceilings) and false for Launch 1', () => {
+    expect(isPriorityFill({ constants: CONSTANTS_BY_PROFILE.relaunch, hopConfigs: HOP_CONFIGS_BY_PROFILE.relaunch })).toBe(true)
+    expect(isPriorityFill({ constants: CONSTANTS_BY_PROFILE.mainnet, hopConfigs: HOP_CONFIGS_BY_PROFILE.mainnet })).toBe(false)
   })
 })

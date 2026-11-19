@@ -4,13 +4,14 @@
 import type { CSSProperties } from 'react'
 import { hopPillDotColor } from '../../lib/graphHopColors.js'
 import styles from './HopPill.module.css'
+import { hopTagLabel } from '../../lib/format'
 
 export type HopVariant = 'seed' | 'hop-1' | 'hop-2' | 'multi-hop'
 
 const VARIANT_LABEL: Record<HopVariant, string> = {
-  seed: 'HOP-0',
-  'hop-1': 'HOP-1',
-  'hop-2': 'HOP-2',
+  seed: hopTagLabel(0),
+  'hop-1': hopTagLabel(1),
+  'hop-2': hopTagLabel(2),
   'multi-hop': 'MULTI-HOP',
 }
 

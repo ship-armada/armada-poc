@@ -35,6 +35,8 @@ export {
   formatOpensAtDetail,
   formatUtcDateTime,
   hopLabel,
+  hopTagLabel,
+  formatUsdcShort,
   phaseName,
   phaseColor,
 } from './lib/format.js'
@@ -59,7 +61,8 @@ export {
   isValidEnsName,
 } from './lib/addressInput.js'
 
-export { estimateAllocation, estimateUserArmAllocation, projectsRefundMode } from './lib/allocation.js'
+export { estimateAllocation, estimateUserArmAllocation, isPriorityFill, projectsRefundMode } from './lib/allocation.js'
+export { toPublicEvents } from './lib/publicEvents.js'
 export type { AllocationConfig, AllocationEstimate, HopAllocationStats, UserHopPosition } from './lib/allocation.js'
 
 export {
@@ -167,7 +170,13 @@ export {
 export type { UseContractEventsConfig, UseContractEventsResult } from './hooks/useContractEvents.js'
 export type { ReceiptLogLike } from './hooks/useContractEvents.js'
 
-export { crowdfundGraphAtom, useGraphState } from './hooks/useGraphState.js'
+export {
+  crowdfundGraphAtom,
+  publicCrowdfundEventsAtom,
+  publicCrowdfundGraphAtom,
+  useGraphState,
+  usePublicGraphState,
+} from './hooks/useGraphState.js'
 export type { UseGraphStateResult } from './hooks/useGraphState.js'
 
 export {

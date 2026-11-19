@@ -9,6 +9,15 @@ export function formatUsdc(amount: bigint): string {
   return `$${dollars.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
 }
 
+/** Short dollar form for headline amounts: "$1.5M", "$250K"; below $1,000 the full formatUsdc form. */
+export function formatUsdcShort(amount: bigint): string {
+  const dollars = Number(amount) / 1e6
+  const trim = (n: number) => n.toFixed(2).replace(/\.?0+$/, '')
+  if (dollars >= 1_000_000) return `$${trim(dollars / 1_000_000)}M`
+  if (dollars >= 1_000) return `$${trim(dollars / 1_000)}K`
+  return formatUsdc(amount)
+}
+
 /** USDC (6 decimals) as a dollar number, cents kept — for display math; round at the label. */
 export function usdcToDollars(amount: bigint): number {
   return Number(amount) / 1e6
@@ -219,4 +228,9 @@ export function phaseColor(phase: number): string {
 /** Get hop label for display: the active profile's tier name (e.g. "Hop-1", or "Team" on the relaunch). */
 export function hopLabel(hop: number): string {
   return TIER_LABELS[hop] ?? `Hop-${hop}`
+}
+
+/** Upper-case tag form of hopLabel, for chips and pills (e.g. "HOP-1", or "TEAM" on the relaunch). */
+export function hopTagLabel(hop: number): string {
+  return hopLabel(hop).toUpperCase()
 }

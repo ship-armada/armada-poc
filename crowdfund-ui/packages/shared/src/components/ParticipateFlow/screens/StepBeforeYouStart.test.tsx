@@ -4,7 +4,7 @@
 
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import StepBeforeYouStart from './StepBeforeYouStart.js'
+import StepBeforeYouStart, { allocationBullet } from './StepBeforeYouStart.js'
 
 const CROWDFUND = '0x' + 'c'.repeat(40)
 
@@ -73,5 +73,22 @@ describe('StepBeforeYouStart refund threshold', () => {
     const { default: MediStep } = await import('./StepBeforeYouStart.js')
     render(<MediStep onBack={vi.fn()} onContinue={vi.fn()} />)
     expect(screen.getByText(/If the raise ends under \$800, everyone gets a full refund\./)).toBeTruthy()
+  })
+})
+
+describe('allocationBullet', () => {
+  // WHY: under priority fill (the relaunch) a tier can be refunded in full even when it is not itself
+  // oversubscribed, so the "if your hop is oversubscribed" wording is wrong there; the decided copy
+  // says the allocation may be reduced or none.
+  it('uses the reduced-or-none wording with the sale size under priority fill', () => {
+    expect(allocationBullet(true, 1_500_000_000_000n)).toBe(
+      'Allocation isn’t guaranteed. If total demand exceeds the $1.5M sale, you may receive a reduced allocation or none, and the rest comes back to you.',
+    )
+  })
+
+  it('keeps the per-hop pro-rata wording otherwise', () => {
+    expect(allocationBullet(false, 1_200_000_000_000n)).toBe(
+      'Allocation isn’t guaranteed. If your hop is oversubscribed you get a pro-rata share and the rest comes back to you.',
+    )
   })
 })

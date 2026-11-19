@@ -7,6 +7,8 @@ import { Button } from '@armada/ui'
 import { useCrowdfundListAnimation } from '../CrowdfundLeftColumn/index.js'
 import { heroListHopColor } from '../../lib/graphHopColors.js'
 import styles from './HeroParticipantsPanel.module.css'
+import { hopLabel, hopTagLabel } from '../../lib/format.js'
+import { CROWDFUND_FEATURES } from '../../lib/constants.js'
 
 export type HeroHopFilter = 'all' | 'seed' | 'hop1' | 'hop2' | 'multi'
 
@@ -34,11 +36,19 @@ export type HeroParticipant = {
 
 const FILTERS: Array<{ id: HeroHopFilter; label: string }> = [
   { id: 'all', label: 'All' },
-  { id: 'seed', label: 'Hop-0' },
-  { id: 'hop1', label: 'Hop 1' },
-  { id: 'hop2', label: 'Hop 2' },
+  { id: 'seed', label: hopLabel(0) },
+  // Hop 1 holds only team inviter wallets on profiles that hide them, so its filter would be empty.
+  ...(CROWDFUND_FEATURES.hideTeamWallets ? [] : [{ id: 'hop1' as const, label: hopLabel(1) }]),
+  { id: 'hop2', label: hopLabel(2) },
   { id: 'multi', label: 'Multi' },
 ]
+
+/** Display tag for a participant row's hop key ('HOP-0'…), in the active profile's tier names. */
+const HOP_KEY_DISPLAY: Record<string, string> = {
+  'HOP-0': hopTagLabel(0),
+  'HOP-1': hopTagLabel(1),
+  'HOP-2': hopTagLabel(2),
+}
 
 function formatUsd(n: number) {
   return `$${Math.round(n).toLocaleString()}`
@@ -203,7 +213,7 @@ export function HeroParticipantList({
                     <span className={styles.addr}>{p.displayName ?? p.address}</span>
                     <span className={styles.hop}>
                       <span className={styles.dot} style={{ ['--dot' as string]: hopColor(p) }} aria-hidden />
-                      {p.hop}
+                      {HOP_KEY_DISPLAY[p.hop] ?? p.hop}
                     </span>
                     <span className={styles.amount}>{formatUsd(p.amountUsd)}</span>
                   </button>
@@ -346,7 +356,7 @@ export function HeroParticipantsMobileStack({
                   <span className={styles.addr}>{p.displayName ?? p.address}</span>
                   <span className={styles.hop}>
                     <span className={styles.dot} style={{ ['--dot' as string]: hopColor(p) }} aria-hidden />
-                    {p.hop}
+                    {HOP_KEY_DISPLAY[p.hop] ?? p.hop}
                   </span>
                   <span className={styles.amount}>{formatUsd(p.amountUsd)}</span>
                 </button>

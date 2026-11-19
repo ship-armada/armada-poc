@@ -49,11 +49,12 @@ describe('relaunch profile', () => {
   })
 
   // WHY: the relaunch admits outside contributors only through team-wallet invite links, so the
-  // address-invite and self-fill flows must be off; the other profiles keep them.
-  it('turns off direct invites and self-fill only for the relaunch', () => {
-    expect(FEATURES_BY_PROFILE.relaunch).toEqual({ directInvites: false, selfFill: false })
-    expect(FEATURES_BY_PROFILE.mainnet).toEqual({ directInvites: true, selfFill: true })
-    expect(FEATURES_BY_PROFILE.medi).toEqual({ directInvites: true, selfFill: true })
+  // address-invite and self-fill flows must be off, and the team wallets are hidden from public
+  // views; the other profiles keep the real hop structure.
+  it('sets link-only, no self-fill and hidden team wallets only for the relaunch', () => {
+    expect(FEATURES_BY_PROFILE.relaunch).toEqual({ directInvites: false, selfFill: false, hideTeamWallets: true })
+    expect(FEATURES_BY_PROFILE.mainnet).toEqual({ directInvites: true, selfFill: true, hideTeamWallets: false })
+    expect(FEATURES_BY_PROFILE.medi).toEqual({ directInvites: true, selfFill: true, hideTeamWallets: false })
   })
 })
 

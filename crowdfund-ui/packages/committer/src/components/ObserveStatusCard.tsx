@@ -7,6 +7,7 @@ import {
   hopLabel,
   heroListHopColor,
   CROWDFUND_CONSTANTS,
+  CROWDFUND_FEATURES,
   HOP_CONFIGS,
   estimateAllocation,
   type ContractState,
@@ -28,14 +29,21 @@ function phaseDot(phase: number): TagDot {
 }
 
 export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
-  const { MAX_SALE, MIN_SALE } = CROWDFUND_CONSTANTS
-  const estimate = estimateAllocation(state.hopStats, state.cappedDemand, state.saleSize)
+  const { MAX_SALE, MIN_SALE, BASE_SALE, HOP2_BASE_FLOOR_BPS, HOP2_EXTRA_FLOOR_BPS } = CROWDFUND_CONSTANTS
+  const estimate = estimateAllocation(state.hopStats, state.cappedDemand, state.saleSize, {
+    constants: CROWDFUND_CONSTANTS,
+    hopConfigs: HOP_CONFIGS,
+  })
+  // Hop 2 has a reserved floor only when the profile sets one; otherwise it gets the rollover.
+  const hop2HasFloor = HOP2_BASE_FLOOR_BPS + HOP2_EXTRA_FLOOR_BPS > 0
+  // The sale-size badge only means something when the sale can expand.
+  const canExpand = MAX_SALE !== BASE_SALE
 
   // `state.saleSize` is 0 until finalize(); show the projected size (BASE/MAX by
   // demand) pre-finalization so the header isn't "$0" the whole active window.
   const projectedSaleSize = estimate.effectiveSaleSize
   const saleIsProjected = state.saleSize === 0n
-  const saleLabel = projectedSaleSize > CROWDFUND_CONSTANTS.BASE_SALE ? 'EXPANDED' : 'BASE'
+  const saleLabel = projectedSaleSize > BASE_SALE ? 'EXPANDED' : 'BASE'
 
   // Sale progress bar — same math as the hero Progress card: a gradient fill up
   // to the min-fund threshold, an animated "over min" fill beyond it.
@@ -54,8 +62,8 @@ export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
       <div className={styles.header}>
         <Tag label={phaseName(state.phase)} dot={phaseDot(state.phase)} />
         <span className={styles.saleSize}>
-          {saleIsProjected ? 'Projected size' : 'Sale size'} {formatUsdc(projectedSaleSize)} ·{' '}
-          {saleLabel}
+          {saleIsProjected ? 'Projected size' : 'Sale size'} {formatUsdc(projectedSaleSize)}
+          {canExpand && <> · {saleLabel}</>}
         </span>
       </div>
 
@@ -118,11 +126,15 @@ export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
             </thead>
             <tbody>
               {state.hopStats.map((stats, hop) => {
+                // Team inviter wallets (hop 1) are hidden from public views on profiles that hide them.
+                if (hop === 1 && CROWDFUND_FEATURES.hideTeamWallets) return null
                 const cfg = hop < HOP_CONFIGS.length ? HOP_CONFIGS[hop] : null
-                const isFloor = hop === 2
-                // Hops 0/1 have a ceiling; hop-2 is the floor hop (no ceiling — it
-                // absorbs leftover allocation from the other hops), so "fill vs
-                // ceiling" doesn't apply and the Fill cell shows "Floor" instead.
+                const isFloor = hop === 2 && hop2HasFloor
+                const isRollover = hop === 2 && !hop2HasFloor
+                // Hops 0/1 have a ceiling; hop-2 has none — it absorbs leftover allocation
+                // from the other hops. With a hop-2 floor configured, "fill vs ceiling"
+                // doesn't apply and the Fill cell shows "Floor"; without one (the relaunch)
+                // its effective ceiling is the rollover, and fill is measured against that.
                 // The ceiling is the waterfall's effective ceiling (incl. rollover),
                 // computed off the *projected* sale size (BASE/MAX until finalized) so
                 // the % is meaningful pre-finalization, since `state.saleSize` is 0
@@ -141,7 +153,7 @@ export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
                         {hopLabel(hop)}
                       </span>
                     </td>
-                    <td>{isFloor ? 'Floor' : `${(cfg?.ceilingBps ?? 0) / 100}%`}</td>
+                    <td>{isFloor ? 'Floor' : isRollover ? 'Rollover' : `${(cfg?.ceilingBps ?? 0) / 100}%`}</td>
                     <td>{cfg ? formatUsdc(cfg.capUsdc) : '—'}</td>
                     <td>
                       {hop === 0
@@ -153,7 +165,11 @@ export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
                     <td>{formatUsdc(stats.cappedCommitted)}</td>
                     <td>{formatUsdc(estimate.perHopAlloc[hop])}</td>
                     <td className={isFloor ? styles.fillFloor : fillClass}>
-                      {isFloor ? 'Floor' : `${fillPct.toFixed(0)}%`}
+                      {isFloor
+                        ? 'Floor'
+                        : effCeiling === 0n && stats.cappedCommitted > 0n
+                          ? '—' // no capacity left for this hop (e.g. crowded out by earlier hops)
+                          : `${fillPct.toFixed(0)}%`}
                     </td>
                   </tr>
                 )

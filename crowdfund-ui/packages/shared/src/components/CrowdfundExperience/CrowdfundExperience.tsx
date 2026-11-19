@@ -60,6 +60,7 @@ import fleetMp4 from '../../assets/fleet.mp4'
 import heroStyles from './Hero.module.css'
 import mpStyles from '../MyPosition/MyPositionHero.module.css'
 import shellStyles from './CrowdfundExperience.module.css'
+import { hopTagLabel } from '../../lib/format'
 
 export type CrowdfundView = 'crowdfund' | 'myposition'
 
@@ -258,7 +259,7 @@ export type CrowdfundExperienceMyPositionData =
       cancelled?: boolean
     }
 
-const HOP_TAG_LABELS = ['HOP-0', 'HOP-1', 'HOP-2'] as const
+const HOP_TAG_LABELS = [hopTagLabel(0), hopTagLabel(1), hopTagLabel(2)] as const
 
 function usdcBigintToUsdNumber(value: bigint): number {
   return Number(value / 1_000_000n)

@@ -11,6 +11,7 @@ import {
   CROWDFUND_CONSTANTS,
   HOP_CONFIGS,
   estimateAllocation,
+  hopCeilingLabel,
 } from '@armada/crowdfund-shared'
 import type { AdminState } from '@/hooks/useAdminState'
 import type { AdminRole } from '@/hooks/useRole'
@@ -70,15 +71,11 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
     return () => clearInterval(id)
   }, [])
 
-  const { MAX_SALE, MIN_SALE, ELASTIC_TRIGGER, BASE_SALE, HOP2_BASE_FLOOR_BPS, HOP2_EXTRA_FLOOR_BPS } = CROWDFUND_CONSTANTS
-  const estimate = estimateAllocation(state.hopStats, state.cappedDemand, state.saleSize, {
-    constants: CROWDFUND_CONSTANTS,
-    hopConfigs: HOP_CONFIGS,
-  })
+  const { MAX_SALE, MIN_SALE, ELASTIC_TRIGGER, BASE_SALE } = CROWDFUND_CONSTANTS
+  const allocationConfig = { constants: CROWDFUND_CONSTANTS, hopConfigs: HOP_CONFIGS }
+  const estimate = estimateAllocation(state.hopStats, state.cappedDemand, state.saleSize, allocationConfig)
   // The sale-size badge and elastic marker only mean something when the sale can expand.
   const canExpand = MAX_SALE !== BASE_SALE
-  // Hop 2 has a reserved floor only when the profile sets one; otherwise it gets the rollover.
-  const hop2HasFloor = HOP2_BASE_FLOOR_BPS + HOP2_EXTRA_FLOOR_BPS > 0
   // A hop-1 placement with a $0 cap is a team inviter wallet (the relaunch), not a contributor.
   const hop1BudgetLabel = HOP_CONFIGS[1].capUsdc === 0n ? 'Team wallets' : hopLabel(1)
   const progressPct = MAX_SALE > 0n ? Number((state.totalCommitted * 100n) / MAX_SALE) : 0
@@ -224,10 +221,9 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
           <tbody>
             {state.hopStats.map((stats, hop) => {
               const hopConfig = hop < HOP_CONFIGS.length ? HOP_CONFIGS[hop] : null
-              const isFloorHop = hop === 2 && hop2HasFloor
-              const isRolloverHop = hop === 2 && !hop2HasFloor
-              // Effective ceiling from the waterfall (projected sale size until finalized),
-              // matching the contract's finalCeilings — including hop-2's floor + rollover.
+              // Effective ceiling (projected sale size until finalized): the most the hop can
+              // absorb given the other hops' demand. Matches the contract's finalCeilings
+              // whenever the sale is filled, the only case in which a hop is pro-rated.
               const effectiveCeiling = estimate.perHopCeiling[hop] ?? 0n
               const overUnderPct = effectiveCeiling > 0n
                 ? Number(stats.cappedCommitted * 10000n / effectiveCeiling) / 100
@@ -240,7 +236,7 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
                 <tr key={hop} className="border-b border-border/50">
                   <td className="py-1 pr-4">{hopLabel(hop)}</td>
                   <td className="py-1 pr-4">
-                    {isFloorHop ? 'Floor' : isRolloverHop ? 'Rollover' : `${(hopConfig?.ceilingBps ?? 0) / 100}%`}
+                    {hopCeilingLabel(hop, allocationConfig)}
                   </td>
                   <td className="py-1 pr-4">{hopConfig ? formatUsdc(hopConfig.capUsdc) : '-'}</td>
                   <td className="py-1 pr-4">

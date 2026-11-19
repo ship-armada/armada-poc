@@ -56,6 +56,27 @@ describe('SettlementSummary', () => {
     expect(armTexts.length).toBeGreaterThanOrEqual(2)
   })
 
+  // WHY: Finalized.netProceeds is the full allocation; where the contract paid the launch team
+  // (LaunchTeamPaid), the summary must show that payment and the treasury's smaller share.
+  it('shows the launch-team payment and treasury proceeds when the team was paid', () => {
+    const events = [
+      { type: 'LaunchTeamPaid', blockNumber: 1, transactionHash: '0x1', logIndex: 0, args: { recipient: '0xteam', amount: 250_000n * 10n ** 6n } },
+      { type: 'Finalized', blockNumber: 1, transactionHash: '0x1', logIndex: 1, args: { netProceeds: 1_000_000n * 10n ** 6n } },
+    ] as CrowdfundEvent[]
+    render(<SettlementSummary state={makeState()} events={events} />)
+    expect(screen.getByText('Launch team paid:').parentElement?.textContent).toContain('$250,000')
+    expect(screen.getByText('Treasury proceeds:').parentElement?.textContent).toContain('$750,000')
+  })
+
+  it('omits the launch-team lines when no payment was made', () => {
+    const events = [
+      { type: 'Finalized', blockNumber: 1, transactionHash: '0x1', logIndex: 0, args: { netProceeds: 1_000_000n * 10n ** 6n } },
+    ] as CrowdfundEvent[]
+    render(<SettlementSummary state={makeState()} events={events} />)
+    expect(screen.queryByText('Launch team paid:')).toBeNull()
+    expect(screen.queryByText('Treasury proceeds:')).toBeNull()
+  })
+
   it('shows governance quiet period countdown when still active', () => {
     // finalizedAt=150_000, quiet period=10d=864000, so quietEnd=1_014_000
     // blockTimestamp=160_000 → 854_000 seconds remaining

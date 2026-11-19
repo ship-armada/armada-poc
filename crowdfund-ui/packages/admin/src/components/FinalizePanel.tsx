@@ -1,5 +1,5 @@
 // ABOUTME: Pre-finalization summary with outcome preview and finalize button.
-// ABOUTME: Shows capped demand, projected post-waterfall allocation, expected outcome, and refunds.
+// ABOUTME: Shows capped demand, projected allocation, expected outcome (incl. the launch-team payment), and refunds.
 
 import { Contract } from 'ethers'
 import type { Signer } from 'ethers'
@@ -7,6 +7,7 @@ import {
   CROWDFUND_ABI_FRAGMENTS,
   CROWDFUND_CONSTANTS,
   estimateAllocation,
+  projectedLaunchTeamPayment,
   projectsRefundMode,
   formatUsdc,
   formatArm,
@@ -45,6 +46,9 @@ export function FinalizePanel({ signer, crowdfundAddress, totalCommitted, capped
   // ARM distributed at 1:1 with USDC (ARM_PRICE = 1 USDC per ARM)
   const armToDistribute = projectedAllocUsdc * 10n ** 12n // Convert from 6 decimals (USDC) to 18 decimals (ARM)
   const refundEstimate = totalCommitted > projectedAllocUsdc ? totalCommitted - projectedAllocUsdc : 0n
+  // Profiles whose contract pays the launch team at finalize show the proceeds split.
+  const teamPayment = projectedLaunchTeamPayment(projectedAllocUsdc, config)
+  const paysLaunchTeam = CROWDFUND_CONSTANTS.TEAM_PAYMENT_USDC > 0n
 
   const handleFinalize = async () => {
     await tx.execute(async (s) => {
@@ -89,6 +93,12 @@ export function FinalizePanel({ signer, crowdfundAddress, totalCommitted, capped
           </div>
           <div>ARM to distribute: <span className="">~{formatArm(armToDistribute)}</span></div>
           <div>Net proceeds: <span className="">~{formatUsdc(projectedAllocUsdc)}</span></div>
+          {paysLaunchTeam && (
+            <>
+              <div><span>Launch team payment:</span> <span className="">~{formatUsdc(teamPayment)}</span></div>
+              <div><span>Treasury:</span> <span className="">~{formatUsdc(projectedAllocUsdc - teamPayment)}</span></div>
+            </>
+          )}
           {refundEstimate > 0n && (
             <div>Refunds: <span className="text-amber-500">~{formatUsdc(refundEstimate)}</span> (oversubscription)</div>
           )}

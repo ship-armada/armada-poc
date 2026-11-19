@@ -1,9 +1,9 @@
-// ABOUTME: Tests for ObserveStatusCard under the relaunch profile: no Team row, no floor/expansion labels,
-// ABOUTME: and hop-2 fill measured against its rollover ceiling. Mocks the shared profile values.
+// ABOUTME: Tests for ObserveStatusCard under the relaunch profile: no Team row, reserve/remainder labels,
+// ABOUTME: no expansion badge, and fill measured against each tier's capacity. Mocks the shared profile values.
 
 import { render, screen, within } from '@testing-library/react'
 import { describe, it, expect, vi } from 'vitest'
-import type { ContractState } from '@armada/crowdfund-shared'
+import { formatUsdc, type ContractState } from '@armada/crowdfund-shared'
 
 vi.mock('@armada/crowdfund-shared', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@armada/crowdfund-shared')>()
@@ -52,21 +52,29 @@ describe('ObserveStatusCard on the relaunch profile', () => {
     expect(tiers).toEqual(['Known', 'Invited'])
   })
 
-  // WHY: there is no hop-2 floor and no expansion on the relaunch; "Floor" and "BASE"/"EXPANDED"
-  // would describe mechanics the sale does not have.
-  it('labels hop 2 as rollover and drops the sale-size badge', () => {
+  // WHY: the relaunch has no bps ceilings, hop-2 floor or expansion: the Invited tier has a $300K
+  // reserve and Known takes the remainder. Fill is demand against the most a tier could absorb (its
+  // allocation plus the $1.45M still unallocated), so an undersubscribed tier reads well below 100%.
+  it('labels the reserve and remainder, measures fill against capacity, and drops the sale-size badge', () => {
     render(<ObserveStatusCard state={makeState([300_000, 0, 50_000])} />)
     const invited = rowCells('Invited')
-    expect(invited[1]).toBe('Rollover')
-    expect(invited[invited.length - 1]).toBe('4%') // $50k of the $1.2M left after Known
+    expect(invited[1]).toBe('$300K reserve')
+    expect(invited[invited.length - 1]).toBe('3%') // $50k of $50k + $1.45M
+    const known = rowCells('Known')
+    expect(known[1]).toBe('Remainder')
+    expect(known[known.length - 1]).toBe('17%') // $300k of $300k + $1.45M
     expect(screen.queryByText(/BASE|EXPANDED/)).toBeNull()
   })
 
-  // WHY: when Known demand fills the sale the Invited tier's rollover ceiling is $0; a fill
-  // percentage is meaningless there, so the cell shows a dash rather than a misleading 0%.
-  it('shows a dash for Invited fill when the tier is crowded out', () => {
-    render(<ObserveStatusCard state={makeState([1_500_000, 0, 10_000])} />)
+  // WHY: the reserve means Known demand that fills the sale cannot crowd the Invited tier out: its
+  // $10K is allocated in full (fill 100%), and Known is pro-rated into the rest.
+  it('keeps the Invited tier inside its reserve when Known demand fills the sale', () => {
+    render(<ObserveStatusCard state={makeState([1_800_000, 0, 10_000])} />)
     const invited = rowCells('Invited')
-    expect(invited[invited.length - 1]).toBe('—')
+    expect(invited[7]).toBe(formatUsdc(USDC(10_000))) // Est. alloc
+    expect(invited[invited.length - 1]).toBe('100%')
+    const known = rowCells('Known')
+    expect(known[7]).toBe(formatUsdc(USDC(1_790_000)))
+    expect(known[known.length - 1]).toBe('101%') // $1.8M of $1.79M: pro-rated
   })
 })

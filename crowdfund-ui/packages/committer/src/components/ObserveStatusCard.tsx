@@ -10,6 +10,8 @@ import {
   CROWDFUND_FEATURES,
   HOP_CONFIGS,
   estimateAllocation,
+  hop2HasFloor,
+  hopCeilingLabel,
   type ContractState,
 } from '@armada/crowdfund-shared'
 import { Tag, BarTrackTicks } from '@armada/ui'
@@ -29,13 +31,11 @@ function phaseDot(phase: number): TagDot {
 }
 
 export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
-  const { MAX_SALE, MIN_SALE, BASE_SALE, HOP2_BASE_FLOOR_BPS, HOP2_EXTRA_FLOOR_BPS } = CROWDFUND_CONSTANTS
-  const estimate = estimateAllocation(state.hopStats, state.cappedDemand, state.saleSize, {
-    constants: CROWDFUND_CONSTANTS,
-    hopConfigs: HOP_CONFIGS,
-  })
-  // Hop 2 has a reserved floor only when the profile sets one; otherwise it gets the rollover.
-  const hop2HasFloor = HOP2_BASE_FLOOR_BPS + HOP2_EXTRA_FLOOR_BPS > 0
+  const { MAX_SALE, MIN_SALE, BASE_SALE } = CROWDFUND_CONSTANTS
+  const allocationConfig = { constants: CROWDFUND_CONSTANTS, hopConfigs: HOP_CONFIGS }
+  const estimate = estimateAllocation(state.hopStats, state.cappedDemand, state.saleSize, allocationConfig)
+  // Waterfall profiles with a hop-2 floor show "Floor" instead of a fill % for hop 2.
+  const hasFloor = hop2HasFloor(allocationConfig)
   // The sale-size badge only means something when the sale can expand.
   const canExpand = MAX_SALE !== BASE_SALE
 
@@ -129,16 +129,15 @@ export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
                 // Team inviter wallets (hop 1) are hidden from public views on profiles that hide them.
                 if (hop === 1 && CROWDFUND_FEATURES.hideTeamWallets) return null
                 const cfg = hop < HOP_CONFIGS.length ? HOP_CONFIGS[hop] : null
-                const isFloor = hop === 2 && hop2HasFloor
-                const isRollover = hop === 2 && !hop2HasFloor
-                // Hops 0/1 have a ceiling; hop-2 has none — it absorbs leftover allocation
-                // from the other hops. With a hop-2 floor configured, "fill vs ceiling"
-                // doesn't apply and the Fill cell shows "Floor"; without one (the relaunch)
-                // its effective ceiling is the rollover, and fill is measured against that.
-                // The ceiling is the waterfall's effective ceiling (incl. rollover),
-                // computed off the *projected* sale size (BASE/MAX until finalized) so
-                // the % is meaningful pre-finalization, since `state.saleSize` is 0
-                // until finalize() (matches Est. alloc).
+                const isFloor = hop === 2 && hasFloor
+                // Fill is capped demand against the hop's effective ceiling: the most it can
+                // absorb given the other hops' demand (under the waterfall, its bps ceiling or
+                // hop 2's rollover; under the hop-2 reserve model, its allocation plus any
+                // unallocated capacity). With a hop-2 floor configured, "fill vs ceiling"
+                // doesn't apply and the Fill cell shows "Floor". The ceiling is computed off
+                // the *projected* sale size (BASE/MAX until finalized) so the % is meaningful
+                // pre-finalization, since `state.saleSize` is 0 until finalize() (matches
+                // Est. alloc).
                 const effCeiling = estimate.perHopCeiling[hop] ?? 0n
                 const fillPct =
                   effCeiling > 0n ? Number((stats.cappedCommitted * 10_000n) / effCeiling) / 100 : 0
@@ -153,7 +152,7 @@ export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
                         {hopLabel(hop)}
                       </span>
                     </td>
-                    <td>{isFloor ? 'Floor' : isRollover ? 'Rollover' : `${(cfg?.ceilingBps ?? 0) / 100}%`}</td>
+                    <td>{hopCeilingLabel(hop, allocationConfig)}</td>
                     <td>{cfg ? formatUsdc(cfg.capUsdc) : '—'}</td>
                     <td>
                       {hop === 0

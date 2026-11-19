@@ -40,6 +40,7 @@ const EVENT_CATEGORY: Record<CrowdfundEventType, EventCategory> = {
   InviteNonceRevoked: 'warning',
   UnallocatedArmWithdrawn: 'warning',
   WindowExtended: 'warning',
+  LaunchTeamPaid: 'success',
 }
 
 const CATEGORY_CLASS: Record<EventCategory, string> = {
@@ -79,6 +80,8 @@ function formatEventData(event: CrowdfundEvent, name: (addr: string) => string):
       return `${name(args.treasury as string)} · ${formatArm(args.amount as bigint)}`
     case 'WindowExtended':
       return `deadline → ${formatUtcDateTime(Number(args.newEnd))}`
+    case 'LaunchTeamPaid':
+      return `launch team · ${formatUsdc(args.amount as bigint)}`
     default:
       return ''
   }

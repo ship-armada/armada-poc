@@ -621,6 +621,7 @@ Every irreversible action must be logged here before it is executed. This is the
 | Security Council reachability confirmed | ☐ | Ops |
 | Initial steward elected + USDC steward budget verified (`verify_deployment` Launch Values) | ☐ | Deployer |
 | Reserve distributor funded at the configured cap with the intended allocator Safe (`verify_deployment` Revenue Reserve) | ☐ | Deployer |
+| Governor deployer cleared and the crowdfund registered, so the quiet period and veto bootstrap apply (`verify_deployment` Governance Wiring) | ☐ | Deployer |
 | Steward proposal alert active (MONITORING.md §12e); no steward proposals before the quiet period ends | ☐ | Ops |
 | Initial hop-0 list finalized | ☐ | ROOT |
 | Announcement drafted and ready | ☐ | Ops |

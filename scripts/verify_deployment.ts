@@ -22,6 +22,7 @@
 import { ethers } from "hardhat";
 import { loadDeployment } from "./deploy-utils";
 import { timelockBootstrapChecks, timelockUnexpectedRoleHolders } from "./verify-timelock";
+import { governorBootstrapChecks } from "./verify-governor";
 import { initialStewardChecks } from "./initial-steward";
 import { LAUNCH2_GROUPS, resolveVerifyScope, verificationVerdict } from "./verify-scope";
 import {
@@ -304,7 +305,7 @@ async function checkPrivacyPoolWiring(
 // Check Group 4: Governance Wiring
 // ============================================================================
 
-async function checkGovernanceWiring(govManifest: any) {
+async function checkGovernanceWiring(govManifest: any, crowdfundAddress: string | null) {
   const GROUP = "Governance Wiring";
   const timelockAddr = govManifest.contracts.timelockController;
   const governorAddr = govManifest.contracts.governor;
@@ -353,19 +354,15 @@ async function checkGovernanceWiring(govManifest: any) {
     }
   }
 
-  // Deployer cleared
+  // Deployer cleared (FAIL when hardened) and crowdfund registered (quiet period + veto bootstrap)
   let deployerCleared = false;
   try {
-    const currentDeployer = await governor.deployer();
-    if (currentDeployer === ethers.ZeroAddress) {
-      pass(GROUP, "Governor deployer cleared");
-      deployerCleared = true;
-    } else {
-      warn(GROUP, "Governor deployer cleared",
-        `deployer() = ${currentDeployer} (expected if crowdfund not yet deployed)`);
+    for (const check of await governorBootstrapChecks(governorAddr, crowdfundAddress, config.hardenTimelock)) {
+      results.push({ group: GROUP, ...check });
+      if (check.check === "Governor deployer cleared") deployerCleared = check.status === "PASS";
     }
   } catch {
-    fail(GROUP, "Governor deployer cleared", "Error reading deployer");
+    fail(GROUP, "Governor bootstrap state", "Error reading deployer / crowdfundAddress");
   }
 
   // Security council bootstrap. After clearDeployer, the SC must be set — otherwise
@@ -925,7 +922,7 @@ async function main() {
   }
 
   if (govManifest) {
-    await checkGovernanceWiring(govManifest);
+    await checkGovernanceWiring(govManifest, crowdfundManifest?.contracts?.crowdfund ?? null);
     if (config.hardenTimelock && crowdfundManifest) {
       try {
         const unexpected = await timelockUnexpectedRoleHolders(govManifest.contracts.timelockController,

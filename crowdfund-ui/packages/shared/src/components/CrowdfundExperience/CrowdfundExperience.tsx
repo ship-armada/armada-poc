@@ -567,6 +567,12 @@ export function CrowdfundExperience({
         myPositionReady.positions.reduce((sum, p) => sum + p.cap, 0n),
       )
     : CAP
+  // A position set with no commit capacity at all (every cap $0, e.g. a relaunch team inviter
+  // wallet): the wallet can only issue invites, so commit CTAs are hidden for it.
+  const myPositionInviteOnly =
+    myPositionReady !== null &&
+    myPositionReady.positions.length > 0 &&
+    myPositionReady.positions.every((p) => p.cap === 0n)
   const myPositionFillPct = myPositionReady
     ? computeFillPct(
         myPositionReady.positions.reduce((sum, p) => sum + p.committed, 0n),
@@ -819,12 +825,13 @@ export function CrowdfundExperience({
   // same card instance serves both views, so in-progress invite state survives
   // a view switch. Keyed on the slot allowance rather than slots left, so the
   // card can't unmount mid-confirmation when the last slot is used. Live data
-  // only; the showcase keeps the mockup's Participate card.
+  // only; the showcase keeps the mockup's Participate card. An invite-only
+  // wallet never commits, so it gets the invite card without committing first.
   const invitesOnCrowdfund =
     participationEnabled &&
     !myPositionCancelled &&
     myPositionReady !== null &&
-    myPositionCommittedUsd > 0 &&
+    (myPositionCommittedUsd > 0 || myPositionInviteOnly) &&
     liveAllowance !== null &&
     liveAllowance.hop1 + liveAllowance.hop2 > 0
   const invitesPanelVisible = invitesOnCrowdfund || myPositionPanelVisible
@@ -1250,7 +1257,7 @@ export function CrowdfundExperience({
             <div className={mpStyles.cardHeader}>
               <div className={mpStyles.titleRow}>
                 <h1 className={mpStyles.pageTitle}>Your Position</h1>
-                {participationEnabled && onParticipate && (
+                {participationEnabled && onParticipate && !myPositionInviteOnly && (
                   <Button
                     className={mpStyles.headerCta}
                     variant="gradient"
@@ -1387,7 +1394,7 @@ export function CrowdfundExperience({
                 </div>
               </div>
 
-              {participationEnabled && onParticipate ? (
+              {participationEnabled && onParticipate && !myPositionInviteOnly ? (
                 <Button
                   className={mpStyles.footerCta}
                   variant="gradient"

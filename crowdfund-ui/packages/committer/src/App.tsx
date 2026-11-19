@@ -832,7 +832,8 @@ export function App() {
     <div className="flex items-center gap-3">
       <LastTxChip override={lastTxChip} />
       <HeaderWalletButton usdcBalance={allowance.balance} />
-      {!claimReady && windowOpen && (
+      {/* An invite-only wallet (every cap $0) has nothing to commit. */}
+      {!claimReady && windowOpen && !eligibility.inviteOnly && (
         <ArmadaButton
           variant="gradient"
           size="md"
@@ -855,7 +856,8 @@ export function App() {
       onParticipate={openParticipate}
       claimAvailable={claimReady}
       myPositionEnabled={!preOpen}
-      participationEnabled={windowOpen}
+      // An invite-only wallet (every cap $0) has nothing to commit.
+      participationEnabled={windowOpen && !eligibility.inviteOnly}
       usdcBalance={allowance.balance}
     />
   )
@@ -894,7 +896,7 @@ export function App() {
           walletAddress={wallet.address}
           signer={wallet.signer}
           provider={provider}
-          positions={eligibility.positions}
+          positions={eligibility.commitPositions}
           balance={allowance.balance}
           needsApproval={allowance.needsApproval}
           refreshAllowance={allowance.refresh}

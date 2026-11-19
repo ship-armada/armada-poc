@@ -3,7 +3,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { renderHook } from '@testing-library/react'
-import { useEligibility } from './useEligibility'
+import { useEligibility, splitCommitPositions, type HopPosition } from './useEligibility'
 import type { GraphNode } from '@armada/crowdfund-shared'
 
 function makeNode(overrides: Partial<GraphNode> & { address: string; hop: number }): GraphNode {
@@ -125,5 +125,38 @@ describe('useEligibility', () => {
     const { result } = renderHook(() => useEligibility('0xabc', nodes))
     expect(result.current.positions[0].invitesUsed).toBe(2)
     expect(result.current.positions[0].invitesAvailable).toBe(1)
+  })
+})
+
+function position(hop: number, effectiveCap: bigint, committed = 0n): HopPosition {
+  return {
+    hop, invitesReceived: 1, committed, effectiveCap,
+    remaining: effectiveCap > committed ? effectiveCap - committed : 0n,
+    invitesUsed: 0, invitesAvailable: 0, invitedBy: [],
+  }
+}
+
+describe('splitCommitPositions', () => {
+  // WHY: a relaunch team inviter wallet sits at hop 1 with a $0 cap. It must not be offered a commit
+  // box (max 0 USDC); it exists only to issue invite links, so it is "invite-only".
+  it('treats a wallet whose only position has a $0 cap as invite-only with nothing to commit', () => {
+    const split = splitCommitPositions([position(1, 0n)])
+    expect(split.commitPositions).toEqual([])
+    expect(split.canCommit).toBe(false)
+    expect(split.inviteOnly).toBe(true)
+  })
+
+  // WHY: a wallet with any position it can commit to keeps the commit flow for that position, and the
+  // $0-cap position is dropped from it.
+  it('keeps only the positions with commit capacity', () => {
+    const split = splitCommitPositions([position(1, 0n), position(2, 10_000n * 10n ** 6n)])
+    expect(split.commitPositions.map((p) => p.hop)).toEqual([2])
+    expect(split.canCommit).toBe(true)
+    expect(split.inviteOnly).toBe(false)
+  })
+
+  // WHY: a wallet with no positions is neither — it sees the normal (not-invited) Participate flow.
+  it('reports neither commit capacity nor invite-only for a wallet with no positions', () => {
+    expect(splitCommitPositions([])).toEqual({ commitPositions: [], canCommit: false, inviteOnly: false })
   })
 })

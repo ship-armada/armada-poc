@@ -32,6 +32,7 @@ import {
   sectionForInviteeHop,
 } from '../MyPosition/inviteSectionsToCard'
 import { useIsMobileLayout } from '../../hooks/useIsMobileLayout'
+import { DIRECT_INVITES_ENABLED } from '../../lib/inviteUx'
 import inviteStyles from '../InviteFlow/screens/InviteSlots.module.css'
 import styles from './ParticipateFlowInviteSlots.module.css'
 
@@ -52,6 +53,11 @@ export interface ParticipateFlowInviteSlotsProps {
   onDiscardCreated?: (inviteId: number) => void
 }
 
+/** How a friend can be brought in: links only on a link-only profile (e.g. the relaunch). */
+export const INVITE_HOW = DIRECT_INVITES_ENABLED
+  ? 'Share a link (no gas) or whitelist an address onchain'
+  : 'Share a link (no gas)'
+
 function whitelistSubtitle(
   sections: ReadonlyArray<CrowdfundInviteSlotSection>,
 ): string {
@@ -71,9 +77,9 @@ function whitelistSubtitle(
   const countLabel = total === 1 ? '1 invite left' : `${total} invites left`
   if (availableHops.length === 1) {
     const hop = availableHops[0]
-    return `You have ${countLabel} for ${formatInviteeHop(hop!)}. Share a link (no gas) or whitelist an address onchain so a friend can join.`
+    return `You have ${countLabel} for ${formatInviteeHop(hop!)}. ${INVITE_HOW} so a friend can join.`
   }
-  return `You have ${countLabel}. Share a link (no gas) or whitelist an address onchain so a friend can join the fleet.`
+  return `You have ${countLabel}. ${INVITE_HOW} so a friend can join the fleet.`
 }
 
 export function ParticipateFlowInviteSlots({

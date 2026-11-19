@@ -8,6 +8,7 @@ import {
   fetchSelfFillState,
   estimateUserArmAllocation,
   formatUsdcPlain,
+  CROWDFUND_FEATURES,
   HOP_CONFIGS,
   type SelfFillPlan,
   type SelfFillState,
@@ -50,6 +51,18 @@ function positionsToSelfFillState(positions: HopPosition[]): SelfFillState {
     }
   }
   return [mk(0), mk(1), mk(2)]
+}
+
+/** Whether to offer self-fill ("max out"): the window is open, a provider is connected, the plan
+ *  adds at least one commit, and the active profile allows self-fill (the relaunch does not). */
+export function shouldShowMaxOut(c: {
+  windowOpen: boolean
+  hasProvider: boolean
+  planEligible: boolean
+  newCommitUsdc: bigint
+  selfFillEnabled: boolean
+}): boolean {
+  return c.selfFillEnabled && c.windowOpen && c.hasProvider && c.planEligible && c.newCommitUsdc > 0n
 }
 
 export interface UseSelfFillParams {
@@ -129,8 +142,13 @@ export function useSelfFill(params: UseSelfFillParams): UseSelfFillResult {
     () => computeSelfFillPlan(positionsToSelfFillState(positions), { balance }),
     [positions, balance],
   )
-  const showMaxOut =
-    windowOpen && !!provider && previewPlan.eligible && previewPlan.newCommitUsdc > 0n
+  const showMaxOut = shouldShowMaxOut({
+    windowOpen,
+    hasProvider: !!provider,
+    planEligible: previewPlan.eligible,
+    newCommitUsdc: previewPlan.newCommitUsdc,
+    selfFillEnabled: CROWDFUND_FEATURES.selfFill,
+  })
 
   const activateMaxOut = async () => {
     if (!crowdfundAddress || !walletAddress || !provider) {

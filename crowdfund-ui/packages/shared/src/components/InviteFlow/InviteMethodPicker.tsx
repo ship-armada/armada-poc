@@ -3,7 +3,7 @@
 
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { InviteMethod } from '../../lib/inviteUx'
+import { DIRECT_INVITES_ENABLED, type InviteMethod } from '../../lib/inviteUx'
 import {
   useIsMobileLayout,
   visualViewportBottomInset,
@@ -165,7 +165,7 @@ export function InviteMethodPicker({
 
   if (!mounted || typeof document === 'undefined') return null
 
-  const optionButtons = OPTIONS.map((opt) => (
+  const optionButtons = OPTIONS.filter((opt) => DIRECT_INVITES_ENABLED || opt.method !== 'onchain').map((opt) => (
     <li key={opt.method} role="none">
       <button
         type="button"

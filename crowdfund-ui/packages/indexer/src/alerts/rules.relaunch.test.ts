@@ -8,7 +8,7 @@ import type { CrowdfundEvent } from '../../../shared/src/lib/events.js'
 import type { CrowdfundGraph, GraphNode } from '../../../shared/src/lib/graph.js'
 
 const USDC = 10n ** 6n
-const KNOWN_CAP = 150_000n * USDC
+const KNOWN_CAP = 100_000n * USDC
 const INVITED_CAP = 10_000n * USDC
 
 type RulesModule = typeof import('./rules.js')
@@ -82,8 +82,8 @@ function run(rule: (m: RulesModule) => AlertRule, ctx: AlertContext) {
 
 describe('graph under the relaunch profile', () => {
   // WHY: the graph caps each node's committed amount at its hop cap. Under the Launch 1 caps a
-  // $150k Known deposit was clamped to $15k, corrupting snapshots, demand alerts and reconciliation.
-  it('caps a Known deposit at $150k and an Invited deposit at $10k', () => {
+  // $100k Known deposit was clamped to $15k, corrupting snapshots, demand alerts and reconciliation.
+  it('caps a Known deposit at $100k and an Invited deposit at $10k', () => {
     const graph = graphLib.buildGraph([
       makeEvent('SeedAdded', { seed: '0xaaa' }, 1),
       makeEvent('Committed', { participant: '0xaaa', hop: 0, amount: 200_000n * USDC }, 2),
@@ -98,7 +98,7 @@ describe('graph under the relaunch profile', () => {
 })
 
 describe('A4/A5 budgets under the relaunch profile', () => {
-  // WHY: the relaunch budgets are 500 seeds, 5 team wallets and 500 Invited placements; the alerts
+  // WHY: the relaunch budgets are 500 seeds, 1 team wallet and 500 Invited placements; the alerts
   // must measure against those, not Launch 1's 180/100/120.
   it('A4 fires at 80% of the 500-seed budget', () => {
     const events = Array.from({ length: 400 }, (_, i) => makeEvent('SeedAdded', { seed: `0x${i}` }, i + 1))
@@ -107,31 +107,32 @@ describe('A4/A5 budgets under the relaunch profile', () => {
     expect(out[0].title).toContain('400/500')
   })
 
-  it('A5 measures team wallets against 5 and Invited placements against 500, naming the tiers', () => {
+  it('A5 measures the team wallet against 1 and Invited placements against 500, naming the tiers', () => {
     const events = [
-      ...Array.from({ length: 5 }, (_, i) => makeEvent('LaunchTeamInvited', { invitee: `0xa${i}`, hop: 1 }, i + 1)),
+      makeEvent('LaunchTeamInvited', { invitee: '0xa0', hop: 1 }, 1),
       ...Array.from({ length: 400 }, (_, i) => makeEvent('LaunchTeamInvited', { invitee: `0xb${i}`, hop: 2 }, i + 100)),
     ]
     const out = run((m) => m.ruleA5, context(graphOf([]), events))
     const team = out.find((e) => e.dedupeKey === 'A5:hop1:100')
     const invited = out.find((e) => e.dedupeKey === 'A5:hop2:80')
     expect(team?.title).toContain('Team')
-    expect(team?.body).toContain('5/5')
+    expect(team?.body).toContain('1/1')
     expect(invited?.title).toContain('Invited')
     expect(invited?.body).toContain('400/500')
   })
 })
 
-describe('A6 under the relaunch profile (stacking disabled)', () => {
-  // WHY: maxInvitesReceived is 1 at every hop, so the contract rejects a second slot. Any node with
-  // more than one slot means the deployed constants differ from the profile: report it at once,
-  // whatever the ratio (MONITORING.md A6 / §9.1).
-  it('fires on a single duplicate node, below the ratio threshold', () => {
-    const nodes = Array.from({ length: 100 }, (_, i) => makeNode(`0xa${i}`, 2, INVITED_CAP, i === 0 ? 2 : 1))
-    const out = run((m) => m.ruleA6, context(graphOf(nodes)))
+describe('A6 under the relaunch profile (hop-2 stacking up to 20)', () => {
+  // WHY: Invited contributors may stack up to 20 invites, so a stacked node is intended, not a
+  // configuration error. A6 stays an awareness alert: silent for a few stacked nodes, firing once
+  // the stacked share reaches the threshold (MONITORING.md A6 / §9.1).
+  it('stays silent for a single stacked node and fires at the ratio threshold', () => {
+    const one = Array.from({ length: 100 }, (_, i) => makeNode(`0xa${i}`, 2, INVITED_CAP, i === 0 ? 2 : 1))
+    expect(run((m) => m.ruleA6, context(graphOf(one)))).toEqual([])
+    const ten = Array.from({ length: 100 }, (_, i) => makeNode(`0xa${i}`, 2, INVITED_CAP, i < 10 ? 20 : 1))
+    const out = run((m) => m.ruleA6, context(graphOf(ten)))
     expect(out).toHaveLength(1)
-    expect(out[0]).toMatchObject({ id: 'A6', dedupeKey: 'A6:config' })
-    expect(out[0].body).toContain('stacking is disabled')
+    expect(out[0]).toMatchObject({ id: 'A6', dedupeKey: 'A6:10' })
   })
 
   it('does not fire when every node holds one slot', () => {
@@ -142,12 +143,50 @@ describe('A6 under the relaunch profile (stacking disabled)', () => {
 
 describe('A7 under the relaunch profile (no expansion)', () => {
   // WHY: BASE_SALE == MAX_SALE, so crossing the trigger expands nothing; the alert still marks how
-  // close the $1.5M sale is to fully subscribed and must not talk about expansion.
-  it('reports subscription of the $1.5M sale without expansion wording', () => {
-    const nodes = Array.from({ length: 8 }, (_, i) => makeNode(`0xa${i}`, 0, KNOWN_CAP)) // $1.2M = 80%
+  // close the $1.8M sale is to fully subscribed and must not talk about expansion or crowd-out.
+  it('reports subscription of the $1.8M sale without expansion wording', () => {
+    const nodes = Array.from({ length: 15 }, (_, i) => makeNode(`0xa${i}`, 0, KNOWN_CAP)) // $1.5M = 83%
     const out = run((m) => m.ruleA7, context(graphOf(nodes)))
     expect(out[0]).toMatchObject({ id: 'A7', dedupeKey: 'A7:80' })
     expect(out[0].title).toContain('80% of the sale size')
-    expect(`${out[0].title} ${out[0].body}`).not.toMatch(/expan|ELASTIC_TRIGGER/i)
+    expect(`${out[0].title} ${out[0].body}`).not.toMatch(/expan|ELASTIC_TRIGGER|crowded/i)
+  })
+})
+
+describe('A13 launch-team payment checks under the relaunch profile', () => {
+  // A finalized sale of $1M net proceeds with 10 participant nodes (rounding buffer ≤ 10 units).
+  const nodes = Array.from({ length: 10 }, (_, i) => makeNode(`0xa${i}`, 0, KNOWN_CAP))
+  const finalized = makeEvent('Finalized', { refundMode: false, netProceeds: 1_000_000n * USDC }, 100)
+  function a13(events: CrowdfundEvent[], treasuryUsdcBalance: bigint) {
+    return run((m) => m.ruleA13, { ...context(graphOf(nodes), events), treasuryUsdcBalance })
+  }
+
+  // WHY: the relaunch contract always pays the launch team at a successful finalize; a missing
+  // LaunchTeamPaid means the deployed contract or the indexer's event set differs (MONITORING.md A13).
+  it('fires when LaunchTeamPaid is missing', () => {
+    const out = a13([finalized], 750_000n * USDC)
+    expect(out[0]).toMatchObject({ id: 'A13', severity: 'P0' })
+    expect(out[0].body).toContain('LaunchTeamPaid')
+  })
+
+  // WHY: the payment is exactly TEAM_PAYMENT_USDC ($250K) unless the proceeds are smaller.
+  it('fires when the payment is not $250K though the proceeds cover it', () => {
+    const paid = makeEvent('LaunchTeamPaid', { recipient: '0xteam', amount: 200_000n * USDC }, 100)
+    const out = a13([paid, finalized], 800_000n * USDC)
+    expect(out[0]).toMatchObject({ id: 'A13', severity: 'P0' })
+    expect(out[0].body).toContain('launch-team payment')
+  })
+
+  it('stays silent for the exact $250K payment and matching treasury proceeds', () => {
+    const paid = makeEvent('LaunchTeamPaid', { recipient: '0xteam', amount: 250_000n * USDC }, 100)
+    expect(a13([paid, finalized], 750_000n * USDC - 7n)).toEqual([])
+  })
+
+  // WHY: at the minimum raise the whole distributable amount (proceeds less the buffer) goes to
+  // the team, so a payment just below $250K is correct there.
+  it('accepts a payment below $250K when it is the whole distributable amount', () => {
+    const small = makeEvent('Finalized', { refundMode: false, netProceeds: 250_000n * USDC }, 100)
+    const paid = makeEvent('LaunchTeamPaid', { recipient: '0xteam', amount: 250_000n * USDC - 10n }, 100)
+    expect(a13([paid, small], 0n)).toEqual([])
   })
 })

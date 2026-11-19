@@ -270,10 +270,10 @@ Step 4 is load-bearing: cohort ARM is held in escrow against future revenue and 
 | Token whitelist initialized with RevenueLock and reserve distributor | ☐ |
 | Token delegators initialized with RevenueLock; reserve is not an authorized delegator or in `noDelegation` | ☐ |
 | Reserve bound; token initialization complete; quorum exclusions and wind-down wiring verified; pre-funding gate passes | ☐ |
-| Distribution transaction executed: 2.4M ARM to RevenueLock, 1.5M ARM to Crowdfund, 8.1M ARM to Treasury | ☐ |
+| Distribution transaction executed: 2.4M ARM to RevenueLock, 1.8M ARM to Crowdfund, 7.8M ARM to Treasury | ☐ |
 | Post-distribution: `RevenueLock` balance == 2,400,000 ARM exactly | ☐ |
-| Post-distribution: `Crowdfund` balance == 1,500,000 ARM exactly | ☐ |
-| Post-distribution: `Treasury` balance == 8,100,000 ARM exactly | ☐ |
+| Post-distribution: `Crowdfund` balance == 1,800,000 ARM exactly | ☐ |
+| Post-distribution: `Treasury` balance == 7,800,000 ARM exactly | ☐ |
 | Post-distribution: bootstrap holder balance == 0 ARM exactly | ☐ |
 | Post-distribution: bootstrap holder has no remaining ARM allowances in any protocol contract | ☐ |
 | Post-distribution: bootstrap holder removed from the whitelist using its one-time removal function | ☐ |

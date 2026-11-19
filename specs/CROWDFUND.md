@@ -10,10 +10,11 @@ Armada bootstraps governance through a word-of-mouth whitelist crowdfund. The al
 |---|---|
 | Purpose | Governance bootstrapping |
 | Minimum fund | 250,000 USDC ($250k), checked against capped demand |
-| Sale size | 1,500,000 ARM ($1.5M); `BASE_SALE == MAX_SALE`, so there is no elastic expansion |
-| Expansion trigger | 1,500,000 USDC (equal to the sale size, so it has no effect) |
-| Percent of supply | Up to 12.5% (1.5M of 12M ARM) |
+| Sale size | 1,800,000 ARM ($1.8M); `BASE_SALE == MAX_SALE`, so there is no elastic expansion |
+| Expansion trigger | 1,800,000 USDC (equal to the sale size, so it has no effect) |
+| Percent of supply | Up to 15% (1.8M of 12M ARM) |
 | Price | 1.00 USDC ($1.00) per ARM |
+| Launch team payment | 250,000 USDC ($250k) from the proceeds of a successful sale; the rest goes to the treasury |
 | Timing | Testnet product |
 
 ---
@@ -24,9 +25,9 @@ Armada bootstraps governance through a word-of-mouth whitelist crowdfund. The al
 
 | Allocation | ARM | % | Unlock | Voting Power |
 |---|---|---|---|---|
-| Crowdfund | 250,000 - 1,500,000 sold | 2-12.5% | Governance proposal | Active once claimed and delegated |
+| Crowdfund | 250,000 - 1,800,000 sold | 2-15% | Governance proposal | Active once claimed and delegated |
 | Early network | 2,400,000 | 20% | Revenue milestones | Revenue-gated |
-| Treasury | 8,100,000 - 9,350,000 (including swept unsold crowdfund ARM) | 67.5-78% | Governance-controlled | None |
+| Treasury | 7,800,000 - 9,350,000 (including swept unsold crowdfund ARM) | 65-78% | Governance-controlled | None |
 
 ### Pre-Crowdfund Distribution
 
@@ -76,11 +77,11 @@ Governance power follows economic commitment. Until the protocol generates reven
 
 This is a trusted-network crowdfund, not viral growth. Participation requires a placement by the launch team or an invite link from a team-owned wallet. There are two contribution tiers and one operational tier:
 
-- **Known contributors (hop 0):** added by the launch team, $150,000 cap each.
-- **Team inviter wallets (hop 1):** up to five team-owned wallets placed by the launch team. Their cap is $0 (they do not contribute); each holds 100 invite slots for bringing contributors into hop 2.
-- **Invited contributors (hop 2):** placed directly by the launch team, or admitted by redeeming a team wallet's invite link. $10,000 cap each.
+- **Known contributors (hop 0):** added by the launch team, $100,000 cap each.
+- **Team inviter wallet (hop 1):** one team-owned wallet placed by the launch team. Its cap is $0 (it does not contribute); it holds 100 invite slots for bringing contributors into hop 2.
+- **Invited contributors (hop 2):** placed directly by the launch team, or admitted by redeeming the team wallet's invite link. $10,000 cap per invite received; an address can receive up to 20 hop-2 invites, for up to $200,000.
 
-Allocation is a priority fill: the known tier fills first and can take the whole sale; hop 2 receives whatever the known tier leaves. There are no reserved floors (`HOP2_*_FLOOR_BPS = 0`) and both raw ceilings are 100%, so **hop-2 allocations are not guaranteed**. If known-tier demand reaches the $1.5M sale (ten known contributors at their full cap), hop 2 is crowded out entirely. Within a tier, oversubscription is resolved pro-rata. The launch team's placement budget, team-wallet invites and commitments all stay open for the whole 7-day window (extendable to 14 days).
+Allocation gives hop 2 first priority for a $300,000 reserve (`HOP2_RESERVE_USDC`): hop 2 receives `min(hop-2 demand, $300k)` before anyone else. The known tier then fills up to the rest of the $1.8M sale ($1.5M, plus any part of the reserve hop 2 leaves unused). Any capacity the known tier leaves unused rolls back to hop 2 above its reserve. Within a tier, oversubscription is resolved pro-rata, and only when total capped demand exceeds the sale. The launch team's placement budget, team-wallet invites and commitments all stay open for the whole 5-day window (extendable to at most 15 days from open).
 
 ### Initial Network
 
@@ -88,60 +89,63 @@ The people creating Armada are inviting their network of allies to help form the
 
 Hop-0 selection criteria are determined by the launch team based on demonstrated alignment, contribution, and long-term interest in privacy infrastructure.
 
-**Maximum hop-0 count: 500.** The total number of hop-0 participants is capped at 500 (`MAX_SEEDS`, a `uint16`). This bounds the structural network size at 1,505 participant nodes: 500 hop-0 + 5 team wallets + 500 team-wallet invites (5 × 100) + 500 launch-team hop-2 placements. That is below the 1,800-node `MAX_FINALIZE_NODES` cap, so the budgets, not the node cap, bound `finalize()` gas (see the gas note below). Because the same address may occupy multiple hop levels, the number of distinct individuals may be lower.
+**Maximum hop-0 count: 500.** The total number of hop-0 participants is capped at 500 (`MAX_SEEDS`, a `uint16`). This bounds the structural network size at 1,101 participant nodes: 500 hop-0 + 1 team wallet + 100 team-wallet invites + 500 launch-team hop-2 placements (hop-2 invite stacking adds slots to an existing node, not new nodes). That is below the 1,800-node `MAX_FINALIZE_NODES` cap, so the budgets, not the node cap, bound `finalize()` gas (see the gas note below). Because the same address may occupy multiple hop levels, the number of distinct individuals may be lower.
 
 **Hop-0 additions.** The launch team may add new hop-0 participants at any time during the commitment window, up to the 500-participant cap. Participants added later naturally have less of the window remaining. Hop-0 participants cannot invite (`HOP0_MAX_INVITES = 0`).
 
-**Launch team hop-1 budget: team inviter wallets.** The launch team holds a predeclared budget of 5 hop-1 placements (`LAUNCH_TEAM_HOP1_BUDGET`). These are team-owned wallets, not contributors: the hop-1 cap is $0, so any USDC a team wallet commits is refunded in full at settlement. Each team wallet holds 100 invite slots (`HOP1_MAX_INVITES`), used through the committer app to sign invite links for outside contributors, who join at hop 2. Team wallets must sit at hop 1 because an invite link places the redeemer one hop below the signer. A team wallet can also use one of its slots on itself, taking a single $10,000 hop-2 position; this is visible in the graph like any other self-invite.
+**Launch team hop-1 budget: the team inviter wallet.** The launch team holds a predeclared budget of 1 hop-1 placement (`LAUNCH_TEAM_HOP1_BUDGET`). It is a team-owned wallet, not a contributor: the hop-1 cap is $0, so any USDC the team wallet commits is refunded in full at settlement. The team wallet holds 100 invite slots (`HOP1_MAX_INVITES`), used through the committer app to sign invite links for outside contributors, who join at hop 2. The team wallet must sit at hop 1 because an invite link places the redeemer one hop below the signer. The team wallet can also use its slots on itself, taking $10,000 hop-2 positions (up to the 20-invite stacking cap); this is visible in the graph like any other self-invite.
 
-Team wallets appear in the invite graph with the launch team address as inviter. In the `(address, hop)` node model, launch-team-issued invites originate from a designated `(launch_team_address, ROOT)` sentinel node — a fixed address with no hop level and no cap, whose sole role is to issue the predeclared launch team budget. This node is not a participant and makes no commitment.
+The team wallet appears in the invite graph with the launch team address as inviter. In the `(address, hop)` node model, launch-team-issued invites originate from a designated `(launch_team_address, ROOT)` sentinel node — a fixed address with no hop level and no cap, whose sole role is to issue the predeclared launch team budget. This node is not a participant and makes no commitment.
 
-**Launch team hop-2 invite budget.** The launch team also holds a predeclared budget of 500 direct hop-2 placements (`LAUNCH_TEAM_HOP2_BUDGET`, a `uint16`), each at the $10,000 cap. These participants receive no invite rights (consistent with all hop-2 participants). Budget is fixed for the duration of the crowdfund.
+**Launch team hop-2 invite budget.** The launch team also holds a predeclared budget of 500 direct hop-2 placements (`LAUNCH_TEAM_HOP2_BUDGET`, a `uint16`), each adding one $10,000 slot. Placing the same address more than once stacks slots (up to 20 per address) and consumes one budget unit per placement. These participants receive no invite rights (consistent with all hop-2 participants). Budget is fixed for the duration of the crowdfund.
 
 **No financial incentive to invite.** Participants receive no allocation benefit from others' commitments. There is no referral bonus, no token reward, and no increase in a participant's own allocation from someone else's commitment. Invitations are an act of community-building, not a financial strategy. This keeps the invite graph honest: people invite those they genuinely want in the community, not those most likely to maximize their own return.
 
 ### Hop Structure
 
-| Hop | Description | Raw ceiling | Floor | Cap | Invites | Placements received |
-|---|---|---|---|---|---|---|
-| 0 | Known contributors (max 500, launch team) | 100% | — | $150,000 | 0 | 1 |
-| 1 | Team inviter wallets (max 5, launch team) | 100% | — | $0 | 100 | 1 |
-| 2 | Invited contributors (team-wallet links + up to 500 launch-team placements) | — ¹ | 0% | $10,000 | 0 | 1 |
+| Hop | Description | Priority | Cap per slot | Invites | Slots per address |
+|---|---|---|---|---|---|
+| 0 | Known contributors (max 500, launch team) | Second: up to the sale less hop-2's reserved fill | $100,000 | 0 | 1 |
+| 1 | Team inviter wallet (max 1, launch team) | Third (demand is always $0) | $0 | 100 | 1 |
+| 2 | Invited contributors (team-wallet links + up to 500 launch-team placements) | First for the $300,000 reserve; last for anything above it | $10,000 | 0 | Up to 20 |
 
-¹ Hop-2 has no enforced ceiling. Its effective ceiling is whatever hop-0 and hop-1 leave of the sale (`hop2_floor + hop1_leftover` with a zero floor). `HOP_CEILING_BPS` contains no entry for hop-2.
+The launch team's placement budgets (1 hop-1, 500 hop-2) are separate from hop-0 and from the team wallet's invite slots. Launch team placements may be issued at any time during the commitment window.
 
-The launch team's placement budgets (5 hop-1, 500 hop-2) are separate from hop-0 and from the team wallets' invite slots. Launch team placements may be issued at any time during the commitment window.
+The allocation, with `S` the sale size, `d_h` each hop's capped demand and `a_h` its allocation:
 
-The waterfall machinery (a hop-2 floor reserved first, raw hop ceilings computed from a base pool, the extra hop-2 floor funded from hop-0's ceiling) is unchanged in the contract, but with both floor constants at 0 and both raw ceilings at 100% it reduces to a priority fill: hop 0 takes `min(d0, S)`, hop 1 takes `min(d1, S − a0)`, hop 2 takes `min(d2, S − a0 − a1)`, and total allocation equals `min(capped demand, S)`. No hop is guaranteed any allocation. Earlier hops fill first; anything unused rolls forward.
+1. `a2_reserved = min(d2, HOP2_RESERVE_USDC)`: hop 2 is served first, up to $300,000.
+2. `a0 = min(d0, S − a2_reserved)`: hop 0 takes up to the rest of the sale. Its earmark is `S − $300k` ($1.5M), plus whatever part of the reserve hop 2 leaves unused.
+3. `a1 = min(d1, S − a2_reserved − a0)`: hop 1 takes from what remains (always 0, since its cap is $0).
+4. `a2 = a2_reserved + min(d2 − a2_reserved, S − a2_reserved − a0 − a1)`: hop 2 takes any capacity hop 0 and hop 1 left unused, above its reserve.
 
-### Ceiling Amounts
+Unused reserve rolls to hop 0, and unused hop-0 capacity rolls back to hop 2. Total allocation equals `min(capped demand, S)`. A hop is pro-rated only when total capped demand exceeds `S`. The final per-hop allocations are stored in `finalCeilings[h]`. The `hopConfigs[h].ceilingBps` field is kept for the getter's shape but is 0 for every hop and unused.
 
-`base_pool = sale_size × (100% − 0%)`, `hop2_floor = 0`, and `available = sale_size`. Hop-0's raw ceiling is `100% × base_pool − 0 = sale_size`; hop-1's raw ceiling is `100% × base_pool`.
+### Allocation Amounts
 
-**Sale size ($1.5M; there is no expanded size):**
+**Sale size ($1.8M; there is no expanded size):**
 
-| Hop | Floor reservation | Available pool | Ceiling (enforced) | Max ceiling (with rollover) |
-|---|---|---|---|---|
-| 2 | $0 | — | No enforced ceiling | Whatever hop-0 and hop-1 leave |
-| 0 | — | $1,500,000 | $1,500,000 | $1,500,000 |
-| 1 | — | $1,500,000 | $1,500,000, bounded by what hop-0 leaves | $1,500,000 if hop-0 is empty |
+| Hop | Guaranteed capacity | Maximum allocation |
+|---|---|---|
+| 2 | `min(d2, $300,000)`, served first | $1,800,000 if hop 0 has no demand |
+| 0 | `min(d0, $1,500,000)` (the sale less hop 2's reserved fill, which is at most $300,000) | $1,500,000 when hop 2 fills its reserve; up to $1,800,000 if hop 2 has no demand |
+| 1 | None | $0 (its cap is $0, so its demand, and therefore its allocation, is always zero in practice) |
 
-Hop 1's cap is $0, so its demand, and therefore its allocation, is always zero in practice.
+Fifteen known contributors at their full $100,000 cap fill hop 0's $1.5M earmark. When hop-2 demand is below $300,000, the known tier can take the unused part of the reserve; when known-tier demand is below its earmark, hop 2 can take the rest.
 
 ### Invitation Limits
 
 Invitation limits are hop-specific and predeclared:
 
 - Hop-0 → may not invite
-- Hop-1 (team wallets) → may invite up to 100 addresses to hop-2
+- Hop-1 (the team wallet) → may issue up to 100 invites to hop-2
 - Hop-2 → may not invite
 
 Invitations are signed on-chain (inviter → invitee, with hop level). The invite graph is defined over `(address, hop)` nodes, not bare addresses. This means:
 
 - The same address may appear at multiple hop levels as a distinct node at each
 - An invite edge connects `(inviter_address, inviter_hop)` → `(invitee_address, invitee_hop)`
-- A team wallet inviting its own address to hop-2 creates a self-loop edge, visible as such in the graph
-- Invite slot consumption is per `(address, hop)` node: a hop-1 node has 100 outgoing invite slots; hop-0 and hop-2 nodes have none. **Each invite to a given hop creates a participation slot, up to a per-hop stacking cap (`maxInvitesReceived`), which is 1 at every hop.** A second invite to an already-invited `(address, hop)` node reverts, so no address can hold more than one slot (one cap) at a hop. The address's effective cap at that hop equals `participation_slots[(address, hop)] × HOP_CAP[hop]`, which is at most `HOP_CAP[hop]`. For entity-level capture analysis, see the Self-Filling section.
+- The team wallet inviting its own address to hop-2 creates a self-loop edge, visible as such in the graph
+- Invite slot consumption is per `(address, hop)` node: a hop-1 node has 100 outgoing invite slots; hop-0 and hop-2 nodes have none. **Each invite to a given hop creates a participation slot, up to a per-hop stacking cap (`maxInvitesReceived`): 1 at hop 0 and hop 1, 20 at hop 2.** A further invite to an already-invited hop-2 node adds a slot (up to 20); a second invite to a hop-0 or hop-1 node reverts. The address's effective cap at that hop equals `participation_slots[(address, hop)] × HOP_CAP[hop]`: at most $100,000 at hop 0 and $200,000 (20 × $10,000) at hop 2. For entity-level capture analysis, see the Self-Filling section.
 - For allocation, each `(address, hop)` node participates independently — an address at hop-0 and hop-1 receives ARM from both hop buckets, accumulated into a single address balance
 
 This model makes entity-level participation unambiguously legible without wallet correlation. Separate-wallet self-fill is also permitted and visible in graph shape, but same-entity control across wallets is not provable on-chain.
@@ -205,9 +209,14 @@ Both paths produce the same graph edge — `(inviter, fromHop) → (invitee, fro
 
 #### Duplicate Invites
 
-The per-hop stacking cap (`maxInvitesReceived`) is 1 at every hop. Once an address holds a slot at a hop, any further invite to that `(address, hop)` node — from the same inviter, a different inviter, a link redemption, or a launch-team placement — reverts with `max invites received`, and no invite slot is consumed. The same address may still be invited at a *different* hop (for example a known contributor also placed at hop 2), which is a separate node.
+The per-hop stacking cap (`maxInvitesReceived`) is 1 at hop 0 and hop 1, and 20 at hop 2.
 
-`invitedBy` records the inviter for each `(address, hop)` node. Because stacking is capped at 1, it is the only inviter.
+- **Hop 2 (stacking).** Each further invite to an existing hop-2 node — from the same inviter, a different inviter, a link redemption, or a launch-team placement — adds one $10,000 slot and consumes the inviter's slot (or one unit of the launch team's hop-2 budget). It does not create a new node. Once the node holds 20 slots, a further invite reverts with `max invites received` and consumes nothing.
+- **Hop 0 and hop 1.** Once an address holds a slot, any further invite to that node reverts with `max invites received`, and no invite slot is consumed.
+
+The same address may still be invited at a *different* hop (for example a known contributor also placed at hop 2), which is a separate node.
+
+`invitedBy` records the first inviter for each `(address, hop)` node. Later stacked invites appear as further `Invited` events in the graph.
 
 #### Invite Revocation
 
@@ -219,23 +228,23 @@ Invite links (Path A) can be revoked before redemption by calling `revokeInviteN
 
 A participant may commit at multiple hop levels using a single address, and receives ARM allocation from each hop they participate in, subject to that hop's per-slot cap and pro-rata rules.
 
-With stacking capped at 1 per hop, the maximum any single address can hold is one slot at each hop:
+With stacking capped at 1 at hop 0 and hop 1 and at 20 at hop 2, the maximum any single address can hold is:
 
 | Hop | Per-slot cap | Max slots per address | Max USDC (single address) |
 |-----|-------------|---------------------|--------------------------|
-| Hop-0 | $150,000 | 1 (added by the launch team) | $150,000 |
-| Hop-1 | $0 | 1 (team wallets only) | $0 |
-| Hop-2 | $10,000 | 1 (launch-team placement, or a team-wallet invite) | $10,000 |
-| **Total** | | | **$160,000** |
+| Hop-0 | $100,000 | 1 (added by the launch team) | $100,000 |
+| Hop-1 | $0 | 1 (the team wallet only) | $0 |
+| Hop-2 | $10,000 | 20 (launch-team placements and/or team-wallet invites) | $200,000 |
+| **Total** | | | **$300,000** |
 
-Hop-0 participants cannot invite, so there is no self-fill path for known contributors: a known contributor reaches hop 2 only if the launch team or a team wallet places them there. A team wallet can self-invite into hop 2 once (its $0 hop-1 cap means it contributes nothing at hop 1). $160,000 out of the $1.5M sale is 10.7%.
+Hop-0 participants cannot invite, so there is no self-fill path for known contributors: a known contributor reaches hop 2 only if the launch team or the team wallet places them there. Every hop-2 slot is issued by the launch team, either directly or through the team wallet's invite links, so an address reaches $200,000 at hop 2 only by receiving 20 team-issued invites (for example, by redeeming 20 team-wallet links). The team wallet can self-invite into hop 2 (its $0 hop-1 cap means it contributes nothing at hop 1). $300,000 out of the $1.8M sale is 16.7%.
 
 Participating across hops or holding several known-tier positions using separate wallets is also permitted. Graph edges are visible, but same-entity control across separate wallets cannot be proven on-chain.
 
 The actual deterrents to governance concentration remain:
 
 1. **Real capital required at every slot.** Oversubscription scales everyone back pro-rata.
-2. **Launch-team selection.** Every known contributor and every team wallet is placed by the launch team; outside contributors enter only through team-issued links.
+2. **Launch-team selection.** Every known contributor and the team wallet are placed by the launch team; outside contributors enter only through team-issued links.
 3. **Graph visibility.** The full invite graph is public in real time. Multi-hop participation by a single address is fully legible.
 4. **Governance concentration has low ROI pre-revenue.** Accumulating votes in a protocol with a testnet product is not obviously valuable.
 
@@ -249,33 +258,33 @@ Residual risk — a known contributor, or several wallets controlled by one enti
 
 | Phase | Duration |
 |---|---|
-| Launch team invite window | Days 1–7 (closes at the commitment deadline) |
-| Team-wallet (hop-1) invite window | Days 1–7 |
-| Commitment window | Days 1–7 (7 days, extendable to at most 14 days from open) |
+| Launch team invite window | Days 1–5 (closes at the commitment deadline) |
+| Team-wallet (hop-1) invite window | Days 1–5 |
+| Commitment window | Days 1–5 (5 days, extendable to at most 15 days from open) |
 
-The launch team's invite budget (hop-0 additions, hop-1 team wallets, hop-2 placements) may be issued at any point during the commitment window. Team wallets may likewise issue invitations, and invite links may be redeemed, right up to the commitment deadline. Keeping launch-team discretion open for the whole sale lets the team respond to live subscription data until the deadline, at the cost of participants having no final period in which launch-team actions are frozen. Every launch-team action is public on-chain and recorded in the decision log (OPERATIONS.md §10). A placement made late in the window leaves the invitee little time to commit, and still consumes a `MAX_FINALIZE_NODES` slot whether or not they commit. The launch-team window closes at the commitment deadline (`launchTeamInviteEnd == windowEnd`); because the launch-team check is strict (`< launchTeamInviteEnd`), the launch team is closed out at that final second while participant invites and commits (`<= windowEnd`) remain open.
+The launch team's invite budget (hop-0 additions, the hop-1 team wallet, hop-2 placements) may be issued at any point during the commitment window. The team wallet may likewise issue invitations, and invite links may be redeemed, right up to the commitment deadline. Keeping launch-team discretion open for the whole sale lets the team respond to live subscription data until the deadline, at the cost of participants having no final period in which launch-team actions are frozen. Every launch-team action is public on-chain and recorded in the decision log (OPERATIONS.md §10). A placement made late in the window leaves the invitee little time to commit, and still consumes a `MAX_FINALIZE_NODES` slot whether or not they commit. The launch-team window closes at the commitment deadline (`launchTeamInviteEnd == windowEnd`); because the launch-team check is strict (`< launchTeamInviteEnd`), the launch team is closed out at that final second while participant invites and commits (`<= windowEnd`) remain open.
 
-**Window extension.** While the window is still open (`block.timestamp <= windowEnd`), the launch team may call `extendWindow(newEnd)` to move the commitment deadline later. Both `windowEnd` and `launchTeamInviteEnd` move together, so commits, participant invites, and launch-team whitelisting all stay open until the new deadline. The window can be extended repeatedly, but only ever later, and never beyond `windowStart + MAX_WINDOW_DURATION`. It cannot be shortened or closed early. Once `windowEnd` has passed, no extension is possible: anyone may finalize at that point, and an extension would reopen a closed sale. Each extension emits `WindowExtended(previousEnd, newEnd)`. `MAX_WINDOW_DURATION` is 14 days. The days 1–7 figures above describe the base window; an extension lengthens every row of the timeline table by the same amount.
+**Window extension.** While the window is still open (`block.timestamp <= windowEnd`), the launch team may call `extendWindow(newEnd)` to move the commitment deadline later. Both `windowEnd` and `launchTeamInviteEnd` move together, so commits, participant invites, and launch-team whitelisting all stay open until the new deadline. The window can be extended repeatedly, but only ever later, and never beyond `windowStart + MAX_WINDOW_DURATION`. It cannot be shortened or closed early. Once `windowEnd` has passed, no extension is possible: anyone may finalize at that point, and an extension would reopen a closed sale. Each extension emits `WindowExtended(previousEnd, newEnd)`. `MAX_WINDOW_DURATION` is 15 days. Operationally, the launch team extends in steps of 5 days, at most twice (5 + 5 + 5 = 15 days); the contract enforces only the 15-day cap. The step rule is deliberately operational rather than contract logic (see the decisions table, "Extension steps"). The days 1–5 figures above describe the base window; an extension lengthens every row of the timeline table by the same amount.
 
 ### Commitment
 
 - **Currency:** USDC
 - **Method:** Commit to escrow contract
 - **Multi-hop commits from the same address are permitted.** An address may commit at multiple hop levels and receives ARM allocation from each hop it participates in. This makes entity-level participation unambiguously legible on-chain: a known contributor who is also placed at hop 2 is visibly doing so, and receives the ARM from both pools.
-- **Multiple commitments:** A participant may commit multiple times to any hop. Commitments from the same address at the same hop are aggregated into a single running balance, capped at `participation_slots[(address, hop)] × HOP_CAP[hop]` for allocation purposes (at most one slot per hop).
+- **Multiple commitments:** A participant may commit multiple times to any hop. Commitments from the same address at the same hop are aggregated into a single running balance, capped at `participation_slots[(address, hop)] × HOP_CAP[hop]` for allocation purposes (one slot at hop 0 and hop 1, up to 20 at hop 2).
 - **Visibility:** Address, amount, hop, and invite edges are all public in real time
-- **No withdrawals:** Commitments are final once submitted. Participants cannot withdraw USDC before the deadline. The commitment window is 7 days and can be extended by the launch team up to a maximum of `MAX_WINDOW_DURATION` (14 days) from the open timestamp (see §Timeline, Window extension); participants should only commit amounts they are prepared to lock for that maximum period.
+- **No withdrawals:** Commitments are final once submitted. Participants cannot withdraw USDC before the deadline. The commitment window is 5 days and can be extended by the launch team up to a maximum of `MAX_WINDOW_DURATION` (15 days) from the open timestamp (see §Timeline, Window extension); participants should only commit amounts they are prepared to lock for that maximum period.
 
 Real-time aggregate statistics show current commitment levels per hop throughout the window, allowing participants to observe oversubscription before committing. **Per-hop totals are the canonical display** — each hop shows the effective demand committed to that hop, regardless of whether any addresses also participate at other hops. An address committed at hop-0 and hop-1 contributes to both hop totals independently. This means the sum of all displayed per-hop totals may exceed the sale size, which is expected and correct — it reflects genuine multi-hop demand that will be allocated and scaled per hop.
 
 ### ARM Pre-Load Requirement
 
-**1,500,000 ARM (MAX_SALE) must be present in the crowdfund contract before the commitment window opens.** The crowdfund contract enforces this with a deployment-time flag — the commitment function reverts until ARM is loaded and verified. This ensures participant claim records written at finalization are always backed by sufficient ARM.
+**1,800,000 ARM (MAX_SALE) must be present in the crowdfund contract before the commitment window opens.** The crowdfund contract enforces this with a deployment-time flag — the commitment function reverts until ARM is loaded and verified. This ensures participant claim records written at finalization are always backed by sufficient ARM.
 
 Deployment sequence:
 1. Deploy ARM token — constructor mints the entire 12M supply to the deployer (`initialHolder`).
-2. Deploy `ArmadaCrowdfund` with the ARM token address (already known from step 1), treasury address, security-council address, and timing parameters.
-3. Deployer calls `armToken.transfer(crowdfundContract, 1_500_000e18)` (at least MAX_SALE) to seed the crowdfund's ARM balance.
+2. Deploy `ArmadaCrowdfund` with the ARM token address (already known from step 1), treasury address, launch-team address (which also receives the team payment), security-council address, and timing parameters.
+3. Deployer calls `armToken.transfer(crowdfundContract, 1_800_000e18)` (at least MAX_SALE) to seed the crowdfund's ARM balance.
 4. Call `loadArm()` on the crowdfund to verify balance and set the flag.
 
 No CREATE2 is used — the crowdfund address is resolved at conventional deploy time and passed back to subsequent transfer calls.
@@ -288,7 +297,7 @@ No CREATE2 is used — the crowdfund address is resolved at conventional deploy 
 
 After the commitment window closes, finalization is permissionless — anyone may call `finalize()` once the commitment deadline has passed. There is no minimum raise precondition on `finalize()` itself — the contract always runs the allocation math and determines the outcome:
 
-- If `totalAllocatedUsdc >= MINIMUM_RAISE`: success path (ARM allocated, proceeds to treasury)
+- If `totalAllocatedUsdc >= MINIMUM_RAISE`: success path (ARM allocated, $250,000 team payment to the launch team, the rest of the proceeds to treasury)
 - If `totalAllocatedUsdc < MINIMUM_RAISE`: sets `refundMode = true` (full refunds, no ARM allocated)
 
 This means every post-deadline outcome flows through `finalize()`. There is no separate "deadline fallback" path where refunds become available without finalization. A participant may withdraw their full deposited USDC via `claimRefund()` if and only if **any** of these conditions hold:
@@ -302,13 +311,13 @@ When `finalize()` is called:
 
 > `finalize()` writes only aggregate state — zero per-participant storage writes. Individual allocations are computed on-the-fly at `claim()` time using aggregate parameters stored by `finalize()` plus the participant's own commitment records (already on-chain from `commit()`). This is the lazy settlement architecture.
 
-1. **Pre-allocation minimum check:** if capped demand is below `MINIMUM_RAISE` ($250,000 USDC), `finalize()` sets `refundMode = true` and stops. Otherwise the crowdfund size is determined (base or expanded, based on total capped demand; both are $1.5M, so the size is always $1.5M)
-2. **Per-hop effective ceilings are calculated via the waterfall pass:** hop-2 floor reserved first, hop-0 ceiling applied against the available pool, hop-0 leftover increases hop-1's effective ceiling, hop-1 leftover increases hop-2's effective ceiling. The stored `ceilings[hop]` values are the **final effective ceilings after the waterfall** — not the raw BPS ceilings from the hop table. These are the numbers `computeAllocation()` uses directly.
+1. **Pre-allocation minimum check:** if capped demand is below `MINIMUM_RAISE` ($250,000 USDC), `finalize()` sets `refundMode = true` and stops. Otherwise the crowdfund size is determined (base or expanded, based on total capped demand; both are $1.8M, so the size is always $1.8M)
+2. **Per-hop allocations are calculated via the reserve-and-rollover pass:** hop-2's reserved fill (`min(d2, $300k)`) first, then hop 0 up to the rest of the sale, then hop 1 from what remains, then hop 2's demand above its reserve from whatever is left (see §Hop Structure). The stored `ceilings[hop]` values (`finalCeilings` in the contract) are **each hop's final allocation** — not a configured percentage. These are the numbers `computeAllocation()` uses directly.
 3. **Per-hop aggregate demand is computed:** `finalize()` iterates all participants once to compute `hopDemand[hop]` — the sum of `effectiveUsdc(p, hop)` for all participants at that hop, where `effectiveUsdc(p, hop) = min(committed[p][hop], slotCount[p][hop] * HOP_CAP[hop])`. **Multiple slots per hop per address is a hard requirement** — the entire cap model, self-fill analysis, and `computeAllocation()` logic depend on `slotCount[p][hop]` being a counter that increments with each invite received. If the contract models caps as a single boolean "has access to this hop" rather than a slot count, this spec is incorrect and the allocation math must be redesigned.
 4. **Aggregate allocation is computed:** `totalAllocatedUsdc = sum(min(hopDemand[hop], ceilings[hop]))` across all hops. `totalAllocatedArm = totalAllocatedUsdc * ARM_PER_USDC_RATE`.
-5. **Post-allocation minimum raise check:** if `totalAllocatedUsdc < MINIMUM_RAISE ($250,000 USDC)`, the contract sets **both `finalized = true` and `refundMode = true`** and stops — no treasury transfer, no aggregate recording beyond the flags. Setting `finalized = true` permanently disables further calls to `finalize()` and `cancel()`. **In this branch, every participant may call `claimRefund()` to withdraw their full deposited USDC** — not a pro-rata refund, but the complete raw amount they deposited. **`claim()` reverts when `refundMode == true`.** With no floors and 100% ceilings, total allocation equals `min(capped demand, sale size)`, so once capped demand clears the minimum, allocation does too: this post-allocation branch is unreachable under the current constants, and refund mode in practice means capped demand below $250,000. The check is kept as a guard; finalization must not revert in either branch.
+5. **Post-allocation minimum raise check:** if `totalAllocatedUsdc < MINIMUM_RAISE ($250,000 USDC)`, the contract sets **both `finalized = true` and `refundMode = true`** and stops — no treasury transfer, no aggregate recording beyond the flags. Setting `finalized = true` permanently disables further calls to `finalize()` and `cancel()`. **In this branch, every participant may call `claimRefund()` to withdraw their full deposited USDC** — not a pro-rata refund, but the complete raw amount they deposited. **`claim()` reverts when `refundMode == true`.** Total allocation equals `min(capped demand, sale size)`, so once capped demand clears the minimum, allocation does too: this post-allocation branch is unreachable under the current constants, and refund mode in practice means capped demand below $250,000. The check is kept as a guard; finalization must not revert in either branch.
 6. **Aggregate state is written:** `finalized = true`, `finalizationTimestamp`, `saleSize`, `ceilings[]`, `hopDemand[]`, `totalAllocatedArm`, `totalArmTransferred = 0` (counter incremented by `claim()` when ARM is actually sent)
-7. **Net USDC proceeds transfer immediately to treasury** — `netProceeds = totalAllocatedUsdc` (USDC domain — computed directly from accepted USDC, not from `totalAllocatedArm * PRICE` which can diverge by rounding dust), transferred in the same transaction
+7. **Net USDC proceeds are paid out immediately** — `netProceeds = totalAllocatedUsdc` (USDC domain — computed directly from accepted USDC, not from `totalAllocatedArm * PRICE` which can diverge by rounding dust). When any hop is pro-rated, a rounding buffer of `participantNodes.length` USDC units is held back (it covers floor-division dust in per-participant refunds); without pro-rating nothing is held back. From the remaining `distributable` amount, `TEAM_PAYMENT_USDC` ($250,000, bounded by `distributable`) is transferred to the immutable `launchTeam` address, emitting `LaunchTeamPaid(recipient, amount)`, and the rest goes to the treasury, in the same transaction. At exactly the $250,000 minimum the launch team receives $250,000 and the treasury nothing. The team payment is a direct transfer from the crowdfund contract, so it does not count toward the treasury's outflow limits.
 
 No per-participant allocation or refund amounts are written to storage. The only per-participant storage write in the entire settlement flow is `claimed[msg.sender] = true` inside `claim()`.
 
@@ -349,31 +358,33 @@ Three explicit domains — no ambiguity between USDC and ARM:
 
 `computeAllocation()` always returns the **theoretical entitlement** regardless of timing or claim status. It is **pure deterministic math over finalized state**: no claim-order dependence, no mutable per-user inputs beyond the participant's own committed balances and slot counts, no dependence on current contract balances or other participants' claim status. This property makes auditing straightforward and eliminates interpretation ambiguity.
 
-**Implementer note:** The `ceilings[hop]` and `hopDemand[hop]` values used in `computeAllocation()` are stored by `finalize()` after the waterfall pass (see appendix pseudocode steps 3-6). They are the effective post-waterfall ceilings, not the raw BPS values from the hop table. Do not recompute the waterfall inside the view function.
+**Implementer note:** The `ceilings[hop]` and `hopDemand[hop]` values used in `computeAllocation()` are stored by `finalize()` after the allocation pass (see appendix pseudocode steps 3-6). They are each hop's final allocation, not configured values from the hop table (`hopConfigs[h].ceilingBps` is 0 and unused). Do not recompute the allocation pass inside the view function.
 
 ### Rounding
 
 - **`acceptedUsdc`**: floor division at participant level, per hop, then summed. A hop ceiling may not be fully allocated (floor of each participant's share leaves residual capacity). This is intentional — the dust is not distributed.
 - **`refundUsdc = committedUsdc - acceptedUsdc`**: because `acceptedUsdc` floors, refund effectively rounds up. Participant is never under-refunded.
 - **`armAmount = totalAcceptedUsdc * ARM_PER_USDC_RATE`**: floor. Participant never over-receives ARM.
-- **Dust sink:** treasury. Residual ARM (from rounding across all participants) becomes part of the unsold/sweepable pool.
+- **Dust sink:** treasury for ARM: residual ARM (from rounding across all participants) becomes part of the unsold/sweepable pool. USDC rounding dust (only when a hop is pro-rated) stays in the crowdfund contract, bounded by the `participantNodes.length` rounding buffer held back from the treasury transfer.
 
 ### Conservation invariants
 
 **Settlement-completion accounting identities** (hold once all participants have claimed — not standing invariants at arbitrary intermediate times):
 
 ```
-sum(armTransferred[p] for all claimed p) + sweepableArm == preloaded ARM (≥ 1,500,000)
+sum(armTransferred[p] for all claimed p) + sweepableArm == preloaded ARM (≥ 1,800,000)
   where sweepableArm = preloaded ARM - totalArmTransferred
 
-sum(refundUsdc[p] for all claimed p) + netProceeds == totalCommitted
+sum(refundUsdc[p] for all claimed p) + teamPayment + treasuryProceeds + contractDust == totalCommitted
+  where teamPayment + treasuryProceeds == netProceeds - roundingBuffer
+  and contractDust <= roundingBuffer (participantNodes.length USDC units if any hop is pro-rated, else 0)
 ```
 
 **Standing invariants** (hold at all times after finalization):
 
 ```
-totalArmTransferred <= totalAllocatedArm <= 1,500,000 ARM
-USDC balance in contract == totalCommitted - netProceeds - sum(refunds paid out)
+totalArmTransferred <= totalAllocatedArm <= 1,800,000 ARM
+USDC balance in contract == totalCommitted - teamPayment - treasuryProceeds - sum(refunds paid out)
 ```
 
 ### Order-independence
@@ -391,15 +402,17 @@ All participant entitlements are fixed at `finalize()` time. Claims may occur in
 - **`nonReentrant`** modifier required — `claim()` makes external token transfers and a `delegateOnBehalf` call.
 - **Events:** `Allocated` emits `armTransferred` (actual ARM sent in this call, not theoretical entitlement), `refundUsdc` (actual USDC refund sent), and `delegate` (delegation target, or `address(0)` if no ARM transferred). `AllocatedHop` emits per-hop `acceptedUsdc` (theoretical, USDC domain — not affected by ARM expiry, since expiry affects transfer timing, not sale participation). Settlement invariant: `sum(AllocatedHop.acceptedUsdc) * ARM_PER_USDC_RATE >= Allocated.armTransferred` (equality holds within 3-year window; after expiry, `armTransferred` is 0 while per-hop acceptance is unchanged).
 
-`claimRefund()` remains exclusively for refundMode / cancel / pre-finalization paths. Success-path refunds go through `claim()`. **There is no separate refund-only function for the success case** — a participant who wants their USDC refund must call `claim()`, which also handles the ARM portion. A participant whose allocation is zero ARM (for example a hop-2 contributor crowded out by the known tier, or a team wallet whose commit is refunded under its $0 cap) calls `claim(address(0))`: the delegate is only required when ARM is transferred (transferring it within the 3-year window, or forfeiting it after expiry). This is a deliberate tradeoff: bundling refunds into `claim()` avoids a separate per-participant refund storage write in `finalize()` and keeps the lazy settlement architecture clean, at the cost of requiring every participant — even those with small oversubscription refunds — to engage the full claim path.
+`claimRefund()` remains exclusively for refundMode / cancel / pre-finalization paths. Success-path refunds go through `claim()`. **There is no separate refund-only function for the success case** — a participant who wants their USDC refund must call `claim()`, which also handles the ARM portion. A participant whose allocation is zero ARM (for example the team wallet, whose commit is refunded under its $0 cap) calls `claim(address(0))`: the delegate is only required when ARM is transferred (transferring it within the 3-year window, or forfeiting it after expiry). This is a deliberate tradeoff: bundling refunds into `claim()` avoids a separate per-participant refund storage write in `finalize()` and keeps the lazy settlement architecture clean, at the cost of requiring every participant — even those with small oversubscription refunds — to engage the full claim path.
 
 Refunds are pull-based — participants call `claimRefund()` once eligible (see the three-condition eligibility rule above). This avoids gas grief from iterating over all participants in a single transaction. Refunds via `claimRefund()` do not expire.
 
-ARM claim remains a separate participant-initiated step (one transaction per claimant). USDC net proceeds flow to treasury at finalization regardless of whether participants have claimed their ARM or refunds.
+ARM claim remains a separate participant-initiated step (one transaction per claimant). USDC net proceeds flow to the launch team (team payment) and the treasury at finalization regardless of whether participants have claimed their ARM or refunds.
 
 Crowdfund tokens are not revenue-gated, but voting power only becomes active once ARM is claimed and delegated. Allocated-but-unclaimed ARM is vote-inert regardless of any governance unlock proposal that passes.
 
 **Governance quiet period: 10 days after finalization.** No governance proposals may be submitted until day 11 post-finalization. This gives the community time to claim, delegate, and orient before governance begins. Any emergency during this window is handled by the Security Council (veto, coordinated response) — it does not require a governance vote. The quiet period is a one-time bootstrapping measure — a compile-time governor constant that applies once and has no effect after expiry.
+
+**Veto bootstrap: 70 days after finalization.** Until 70 days after finalization (quiet period included), a Security Council veto is final: the vetoed proposal is cancelled and no ratification vote is created. Before finalization and after the 70 days, every veto triggers the normal ratification vote. See GOVERNANCE.md §Veto mechanism.
 
 **Early-claim governance risk.** Voting power uses Compound-style point-in-time checkpointing — there is no time-weighted average. An address that claims and delegates immediately after finalization has its full balance active with no averaging period. Quorum at proposal creation is measured against circulating ARM at that block — which, immediately after finalization, is essentially only the ARM that has been claimed, since unclaimed ARM in the crowdfund contract and unreleased ARM in the revenue-lock contract are excluded from the denominator (see GOVERNANCE.md §Quorum denominator). If very few participants have claimed, a single early claimer with 5,000+ ARM could meet proposal threshold and create a vote where quorum is a fraction of the full crowdfund supply. The 48-hour proposal delay and 10-day quiet period are the only buffers. Participants are strongly encouraged to claim and delegate promptly after finalization. **This is an accepted design choice, not an unsolved problem** — additional mechanical buffers (e.g., time-weighted voting, minimum claimed supply before governance activates) would add complexity to the ARM token or governor that contradicts the "~50 lines of custom code on OZ primitives" constraint. The Security Council provides emergency response during this window if needed.
 
@@ -418,42 +431,42 @@ Post-finalization, all privileged functions are permanently inactive. `withdrawU
 
 ### Allocation
 
-The allocation algorithm proceeds in four sequential steps, each with a separately bounded budget:
+The allocation algorithm proceeds in four sequential steps against the sale size `S`:
 
-1. **Hop-2 floor reserved first.** `(HOP2_BASE_FLOOR_BPS + HOP2_EXTRA_FLOOR_BPS) × sale_size` is set aside for hop-2 before hop-0 or hop-1 are allocated. Both constants are 0, so nothing is reserved and `available` is the whole sale.
+1. **Hop-2 reserve first.** Hop 2 receives `a2_reserved = min(d2, HOP2_RESERVE_USDC)`, up to $300,000, before hop 0 or hop 1 are allocated (the reserve is bounded by `S`).
 
-2. **Hop-0 allocated from `available`.** Demand is served up to `hop0_ceiling`. Any unused hop-0 capacity increases hop-1's effective ceiling.
+2. **Hop-0 from the rest of the sale.** Hop 0 receives `min(d0, S − a2_reserved)`. When hop 2 fills its reserve this is up to $1.5M; any part of the reserve hop 2 leaves unused is available to hop 0.
 
-3. **Hop-1 allocated from remaining available.** Hop-1's effective ceiling = `min(hop1_ceiling + hop0_leftover, remaining_available)`. Bounded by what remains after hop-0.
+3. **Hop-1 from what remains.** Hop 1 receives `min(d1, S − a2_reserved − a0)`. Its $0 cap keeps its demand, and therefore its allocation, at zero in practice.
 
-4. **Hop-2 allocated from floor + hop-1 leftover.** Hop-2's effective ceiling = `hop2_floor + hop1_leftover`, which with a zero floor is whatever hop-0 and hop-1 leave. Any capacity hop-2 doesn't absorb becomes unsold ARM, recoverable via `withdrawUnallocatedArm()`.
+4. **Hop-2 extra from what remains.** Hop 2 additionally receives `min(d2 − a2_reserved, S − a2_reserved − a0 − a1)`: capacity hop 0 and hop 1 left unused rolls back to hop 2 above its reserve. Any capacity no hop absorbs becomes unsold ARM, recoverable via `withdrawUnallocatedArm()`.
 
-Oversubscription at any hop is resolved pro-rata within that hop's effective ceiling, bounded by per-address per-hop caps (where the cap equals `participation_slots[(address, hop)] × HOP_CAP[hop]`). An address committed at multiple hops receives ARM allocation from each hop independently. See appendix for full pseudocode.
+Each hop's final allocation is stored as its ceiling (`finalCeilings[h]`). Oversubscription at any hop is resolved pro-rata within that allocation, which happens only when total capped demand exceeds `S`, bounded by per-address per-hop caps (where the cap equals `participation_slots[(address, hop)] × HOP_CAP[hop]`). An address committed at multiple hops receives ARM allocation from each hop independently. See appendix for full pseudocode.
 
-`capped_demand` — the sum of all aggregated per-address per-hop balances after caps — is the canonical demand variable used for the expansion trigger and per-hop statistics. The minimum raise is checked against post-waterfall `totalAllocatedUsdc`. An address committed at multiple hops contributes to `capped_demand` at each hop independently.
+`capped_demand` — the sum of all aggregated per-address per-hop balances after caps — is the canonical demand variable used for the expansion trigger and per-hop statistics. The minimum raise is checked against capped demand and then against the allocated `totalAllocatedUsdc`. An address committed at multiple hops contributes to `capped_demand` at each hop independently.
 
 ### Rollover
 
 Rollover is integrated into the allocation steps rather than a separate pass:
 
-- Hop-0 leftover increases hop-1's effective ceiling (bounded by what remains after hop-0)
-- Hop-1 leftover increases hop-2's effective ceiling (stacks on top of the floor, which is 0)
-- Hop-2 leftover becomes unsold ARM, recoverable via `withdrawUnallocatedArm()`
+- Reserve hop 2 leaves unused is available to hop 0 (hop 0's limit is `S` less hop 2's reserved fill, not a fixed $1.5M)
+- Hop-0 and hop-1 leftover is available to hop 2's demand above its reserve
+- Capacity no hop absorbs (total capped demand below `S`) becomes unsold ARM, recoverable via `withdrawUnallocatedArm()`
 
-Leftover never rolls back to earlier hops.
+Total allocation is therefore always `min(capped demand, S)`: no capacity goes unsold while any hop has unmet capped demand.
 
 ### Elastic Expansion
 
 The crowdfund expands if `capped_demand` reaches or exceeds the expansion trigger.
 
 ```python
-if capped_demand >= EXPANSION_TRIGGER:  # $1.5M USDC capped demand
-    sale_size = MAX_SALE  # 1,500,000 ARM
+if capped_demand >= EXPANSION_TRIGGER:  # $1.8M USDC capped demand
+    sale_size = MAX_SALE  # 1,800,000 ARM
 else:
-    sale_size = BASE_SALE  # 1,500,000 ARM
+    sale_size = BASE_SALE  # 1,800,000 ARM
 ```
 
-`BASE_SALE == MAX_SALE`, so the branch selects the same $1.5M either way and elastic expansion has no effect. The mechanism is kept in the contract unchanged. Oversubscribed hops are allocated pro-rata up to their effective ceiling; the difference between a participant's commitment and their allocation is refunded.
+`BASE_SALE == MAX_SALE`, so the branch selects the same $1.8M either way and elastic expansion has no effect. The mechanism is kept in the contract unchanged. Oversubscribed hops are allocated pro-rata up to their final allocation; the difference between a participant's commitment and their allocation is refunded.
 
 ### Refunds
 
@@ -502,7 +515,7 @@ Crowdfund tokens become transferable via governance proposal (Extended). There a
 
 Early network tokens cannot be unlocked by governance. They unlock only via revenue milestones.
 
-Treasury tokens (67.5–78%, including unsold crowdfund ARM swept after finalization) are controlled by governance but do not vote.
+Treasury tokens (65–78%, including unsold crowdfund ARM swept after finalization) are controlled by governance but do not vote.
 
 See GOVERNANCE.md for full specification: voting mechanics, delegation, quorum, proposal lifecycle, Treasury Steward, Security Council, and wind-down.
 
@@ -551,16 +564,17 @@ Those who paid have priority over those who received tokens at zero cost basis. 
 
 ## Risk Acknowledgments
 
-- **Launch-team selection quality is the critical dependency.** The allocation mechanism is algorithmic, but the network's governance quality depends entirely on who the launch team places at hop 0, which team wallets it places at hop 1, and who receives their links. This selection is the primary defence against governance concentration and Sybil attacks — the contract mechanism does not substitute for it. Maximum single-address capture is $160k (10.7% of the sale). See Self-Filling section.
-- **The $10k tier is not guaranteed.** The known tier fills first and can take the whole $1.5M sale. If known-tier demand reaches $1.5M (ten known contributors at their full $150k), every hop-2 contributor, including every outside contributor sent a link, is refunded in full. Published terms and the wording shown to link recipients should say this plainly.
-- **The known tier alone can meet the minimum raise.** Two known contributors at their full cap ($300k) clear the $250,000 minimum. There is no tier-mix requirement for success.
+- **Launch-team selection quality is the critical dependency.** The allocation mechanism is algorithmic, but the network's governance quality depends entirely on who the launch team places at hop 0, which team wallet it places at hop 1, and who receives its links. This selection is the primary defence against governance concentration and Sybil attacks — the contract mechanism does not substitute for it. Maximum single-address capture is $300k (16.7% of the sale: $100k at hop 0 plus 20 stacked $10k hop-2 slots). See Self-Filling section.
+- **The $10k tier is guaranteed only its $300k reserve in aggregate.** Hop 2 is served first up to $300,000, but the known tier can take the remaining $1.5M. If hop-2 demand exceeds $300,000 while known-tier demand reaches $1.5M (fifteen known contributors at their full $100k), every hop-2 contributor, including every outside contributor sent a link, is pro-rated down to a share of the $300,000 and refunded the rest. Published terms and the wording shown to link recipients should say this plainly.
+- **A single tier can meet the minimum raise.** Three known contributors at their full cap ($300k), or 25 hop-2 slots at $10k, clear the $250,000 minimum. There is no tier-mix requirement for success.
+- **The launch team is paid first.** A successful sale pays $250,000 to the launch team before the treasury receives anything; at the $250,000 minimum the treasury receives no USDC from the sale. The payment is fixed in the contract and visible on-chain (`LaunchTeamPaid`).
 - **Early governance proposals may pass on thin quorum.** Voting power activates immediately upon claim and delegation with no averaging period. The first proposals after the 10-day quiet period may be created when only a small fraction of participants have claimed. Participants are strongly encouraged to claim and delegate promptly after finalization.
 - **Governance capture is possible.** Whitelist is the mitigation, not a guarantee.
 - **Propagation may fail.** Unused supply flows to treasury.
 - **This is a trusted-network crowdfund.** Not designed for viral distribution.
 - **Tokens are non-transferable at launch by design.** Transferability prioritizes governance participation during the formative phase. Token transfers can be unlocked by governance proposal.
 - **Automatic wind-down is a real risk.** If the protocol does not reach $10k revenue by the wind-down deadline (initially December 31, 2027; governable), wind-down becomes permissionlessly triggerable. Revenue is zero until the shielded pool launches.
-- **Slot counting is an implementation dependency.** The allocation math — cap scaling, `hopDemand`, `computeAllocation()` — reads `slotCount[address][hop]` (`invitesReceived`), a counter that increments with each invite received. With the stacking cap at 1 the counter is always 0 or 1, but the math still depends on it being read as a count.
+- **Slot counting is an implementation dependency.** The allocation math — cap scaling, `hopDemand`, `computeAllocation()` — reads `slotCount[address][hop]` (`invitesReceived`), a counter that increments with each invite received. It reaches up to 20 at hop 2 (the hop-2 stacking cap) and is always 0 or 1 at hop 0 and hop 1.
 - **Wind-down / ARM token integration is an audit hotspot.** Wind-down assumes it can call `setTransferable(true)`, sweep non-ARM assets, exclude four hardcoded addresses from the redemption denominator, and end governance permanently. These hooks between the wind-down contract, ARM token, governor, and redemption contract are load-bearing — if any are slightly off, the wind-down integration story weakens. Priority audit target.
 
 ---
@@ -574,23 +588,25 @@ Those who paid have priority over those who received tokens at zero cost basis. 
 | Steward voting eligibility | Voting-eligible ARM only | Treasury decisions by economic stakeholders |
 | Invite graph | Fully public throughout the crowdfund | No post-finalization reveal step. Participants are joining a trust network — its shape should be legible from the start. Simplifies implementation; reinforces governance bootstrapping framing over token allocation framing |
 | Enactment delay | 3 days standard; 7 days extended | Short delay is honest — without locking, market prices outcomes during voting anyway. Extended delay gives Security Council a meaningful veto window on high-impact proposals. |
-| Elastic expansion | None: `BASE_SALE == MAX_SALE == ELASTIC_TRIGGER` = 1.5M ARM | A single fixed sale size; the expansion branch remains in the contract but selects the same size |
+| Elastic expansion | None: `BASE_SALE == MAX_SALE == ELASTIC_TRIGGER` = 1.8M ARM | A single fixed sale size; the expansion branch remains in the contract but selects the same size |
 | Early network allocation control | Shared RevenueLock with immutable initial entries and a capped reserve distributor; fixed 2-of-3 Safe assigns irrevocable reserve grants | Recipients govern independently; sponsored reserve payouts preserve delegation and may increase future quorum without changing existing proposals. Unassigned wind-down entitlement belongs to the allocator. |
 | Pre-crowdfund distribution | Early network allocation distributed before the crowdfund opens | Full transparency for funders |
 | Recurring payments | Not supported in v1 | Steward submits monthly batches instead |
-| Hop allocation model | Priority fill: 100% raw ceilings, no floors | The known tier fills first and can take the whole sale; nothing goes unsold because of a reserve. Hop-2 allocations are not guaranteed |
-| Hop-2 floor | None (`HOP2_BASE_FLOOR_BPS = HOP2_EXTRA_FLOOR_BPS = 0`) | A floor would cap the known tier below the sale size even when hop 2 does not use its share |
-| Multi-hop commits from single address | Permitted; receives ARM allocation at each hop independently | At most one slot per hop (stacking cap 1), so $160k per address (10.7% of the sale). Concentration through multiple wallets is legible in the graph, not preventable. |
-| Stacking | `maxInvitesReceived = 1` at every hop | One cap per `(address, hop)`; a second invite to the same node reverts |
-| Invite window | Launch team and team wallets: the whole commitment window | Launch-team discretion stays open for the full sale, so the team can respond to live subscription data until the commitment deadline; there is no final period in which launch-team actions are frozen. All launch-team actions are public on-chain. |
+| Hop allocation model | Hop-2 reserve first, then hop 0 up to the rest of the sale, with rollover both ways | Invited contributors get first claim on $300k; the known tier can take everything else. Unused reserve goes to the known tier and unused known-tier capacity goes back to hop 2, so nothing goes unsold while any hop has unmet demand |
+| Hop-2 reserve | $300,000 (`HOP2_RESERVE_USDC`), first priority | Guarantees invited contributors a meaningful aggregate share without capping the known tier when hop 2 does not use it |
+| Launch team payment | $250,000 (`TEAM_PAYMENT_USDC`) to the immutable `launchTeam` address on a successful finalize; the rest of the proceeds to treasury | Fixed in the contract and no larger than the minimum raise, so every successful sale covers it. No payment on refund mode or cancel |
+| Multi-hop commits from single address | Permitted; receives ARM allocation at each hop independently | One slot at hop 0 and up to 20 at hop 2, so $300k per address (16.7% of the sale). Concentration through multiple wallets is legible in the graph, not preventable. |
+| Stacking | `maxInvitesReceived` = 1 at hop 0 and hop 1, 20 at hop 2 | Each hop-2 invite to the same address adds a $10k slot (up to $200k); hop-0 and hop-1 nodes hold one cap and a second invite reverts |
+| Invite window | Launch team and the team wallet: the whole commitment window | Launch-team discretion stays open for the full sale, so the team can respond to live subscription data until the commitment deadline; there is no final period in which launch-team actions are frozen. All launch-team actions are public on-chain. |
 | Rolling hop-0 additions | Launch team may add hop-0 participants during the window, up to the 500-participant cap | Participants added late have little of the window left to commit. Hop-0 participants cannot invite. |
-| Hop-0 cap | 500 hop-0 participants maximum (`uint16`) | With the launch-team and invite budgets, bounds the network to 1,505 nodes, below the 1,800-node `MAX_FINALIZE_NODES` cap; distinct individuals may be fewer under single-address multi-hop. |
-| Launch team invite budgets | 5 hop-1 team wallets (100 invite slots each) + 500 hop-2 placements, predeclared, during the window only | Team wallets bring outside contributors in through invite links; direct hop-2 placements cover contributors the team already knows. |
-| Rollover | Unconditional — leftover always rolls forward | Rollover thresholds dropped as weak sybil protection; hop-0 selection is the real defence. Simpler contract. |
+| Hop-0 cap | 500 hop-0 participants maximum (`uint16`) | With the launch-team and invite budgets, bounds the network to 1,101 nodes, below the 1,800-node `MAX_FINALIZE_NODES` cap; distinct individuals may be fewer under single-address multi-hop. |
+| Launch team invite budgets | 1 hop-1 team wallet (100 invite slots) + 500 hop-2 placements, predeclared, during the window only | The team wallet brings outside contributors in through invite links; direct hop-2 placements cover contributors the team already knows. |
+| Rollover | Unconditional — unused reserve rolls to hop 0, unused hop-0/hop-1 capacity rolls to hop 2 | Rollover thresholds dropped as weak sybil protection; hop-0 selection is the real defence. Simpler contract. |
 | No commitment withdrawals | Commitments are final once submitted | Eliminates gaming risk and simplifies contract; the maximum lock period (`MAX_WINDOW_DURATION`, including any launch-team extension) is known upfront |
 | Bounded window extension | Launch team may extend the deadline while the window is open, only later, up to `MAX_WINDOW_DURATION` from open | Lets an undersubscribed sale keep filling instead of cancelling and redeploying. The hard cap bounds participants' lock-up; extensions are public on-chain (`WindowExtended`) and impossible once the deadline has passed |
-| ARM pre-load requirement | 1,500,000 ARM (MAX_SALE) loaded before window opens | Ensures claim records written at finalization are always backed by sufficient ARM; enforced by contract flag |
-| Settlement model | Lazy settlement: aggregate finalization + per-user computation at claim time | `finalize()` writes only aggregate state (sale size, ceilings, hopDemand, totalAllocatedArm) — zero per-participant storage writes. `claim()` computes each participant's allocation on-the-fly from aggregate parameters + their own commitment records. Net proceeds push to treasury at finalization. ARM and refunds pull at claim time. |
+| Extension steps | +5 days per extension, at most two (15 days total): an operational rule; the contract enforces only the `MAX_WINDOW_DURATION` cap | The guarantee participants rely on is the maximum lock-up of their USDC, and the 15-day cap enforces it on-chain; the step size and count do not change that worst case. Enforcing the steps on-chain would add an extension counter and step checks to `extendWindow` (more code and state in the sale contract) for no extra participant protection. Every extension is public (`WindowExtended`) and recorded in the decision log, so a departure from the rule is visible. Trade-off: participants trust the launch-team Safe to follow the step rule (a single +10-day extension, say, is possible), but never beyond the 15-day cap |
+| ARM pre-load requirement | 1,800,000 ARM (MAX_SALE) loaded before window opens | Ensures claim records written at finalization are always backed by sufficient ARM; enforced by contract flag |
+| Settlement model | Lazy settlement: aggregate finalization + per-user computation at claim time | `finalize()` writes only aggregate state (sale size, ceilings, hopDemand, totalAllocatedArm) — zero per-participant storage writes. `claim()` computes each participant's allocation on-the-fly from aggregate parameters + their own commitment records. Net proceeds push to the launch team (team payment) and treasury at finalization. ARM and refunds pull at claim time. |
 | Crowdfund finalization | Permissionless — callable by anyone after deadline | All post-deadline outcomes flow through `finalize()`. Sub-minimum demand results in `refundMode = true`. No separate deadline fallback path. Someone must call `finalize()` even in obvious failure cases (permissionless, low-cost). |
 | Crowdfund emergency cancel | Security Council (2-of-3 multisig), immediate effect, pre-finalization only | Speed serves participants in a genuine emergency. Abuse protection from Security Council composition, automatic unconditional refunds, and pre-finalization-only restriction — not a delay. |
 | Post-finalization | No privileged roles | All privileged functions permanently inactive after finalization. `withdrawUnallocatedArm` is permissionless — anyone calls it, ARM goes to immutable treasury address. |
@@ -608,13 +624,13 @@ Those who paid have priority over those who received tokens at zero cost basis. 
 |---|---|---|---|---|
 | `loadArm()` | Anyone (once) | — | Contract holds ≥ MAX_SALE ARM; not already called | Sets ARM-loaded flag; arms the sale (commitment window opens at configured `openTimestamp`, not at the moment `loadArm()` is called); emits `ArmLoaded` |
 | `addSeed(address)` | Launch team | Hop-0 address | ARM loaded; during the launch-team window (strictly before `launchTeamInviteEnd`); hop-0 count < 500; address not already hop-0; not cancelled; not finalized | Adds address as hop-0 node with `invitedBy = address(0)` (the canonical ROOT marker); emits `SeedAdded(seed)`; decrements hop-0 budget. The inviter is implicit — `addSeed` is callable only by the launch team sentinel, so off-chain reconstruction tools should treat every `SeedAdded` event as a ROOT edge. |
-| `launchTeamInvite(invitee, fromHop)` | Launch team | Target address, inviter's hop (0 or 1; invitee joins at `fromHop + 1`) | ARM loaded; during the launch-team window (strictly before `launchTeamInviteEnd`); budget remaining for target hop (5 hop-1, 500 hop-2); invitee not already placed at that hop; not cancelled; not finalized | Records invite edge from ROOT to invitee at `fromHop + 1`; emits `Invited(ROOT, invitee, fromHop + 1, 0)`; decrements launch team budget |
+| `launchTeamInvite(invitee, fromHop)` | Launch team | Target address, inviter's hop (0 or 1; invitee joins at `fromHop + 1`) | ARM loaded; during the launch-team window (strictly before `launchTeamInviteEnd`); budget remaining for target hop (1 hop-1, 500 hop-2); invitee below that hop's stacking cap (1 at hop 1, 20 at hop 2); not cancelled; not finalized | Records invite edge from ROOT to invitee at `fromHop + 1` (a new node, or one more slot on an existing hop-2 node); emits `Invited(ROOT, invitee, fromHop + 1, 0)`; decrements launch team budget |
 | `extendWindow(newEnd)` | Launch team | New deadline timestamp | Not cancelled; not finalized; `block.timestamp <= windowEnd`; `newEnd > windowEnd`; `newEnd <= windowStart + MAX_WINDOW_DURATION` | Sets `windowEnd` and `launchTeamInviteEnd` to `newEnd`; emits `WindowExtended(previousEnd, newEnd)` |
-| `commit(hop, amount)` | Participant | Hop level, USDC amount | ARM loaded; pre-deadline; not cancelled; not finalized; `amount >= MIN_COMMIT` (50 USDC); address holds at least one participation slot at this hop (hop-0 slots from `SeedAdded`; hop-1/hop-2 slots from `Invited`) | Records commitment; transfers USDC to escrow; emits `Committed` |
-| `invite(invitee, fromHop)` | Inviter | Target address, inviter's hop | ARM loaded; pre-deadline; not cancelled; not finalized; caller has available slots at `fromHop` | Records invite edge; creates a participation slot for invitee at `fromHop + 1` (reverts if the invitee already holds one there); emits `Invited(caller, invitee, fromHop + 1, 0)`; decrements inviter's slot count at `fromHop` |
-| `commitWithInvite(inviter, fromHop, nonce, deadline, signature, amount)` | Invitee | Inviter address, inviter's hop, nonce, deadline, EIP-712 signature, USDC amount | Valid EIP-712 + EIP-1271 signature; `nonce > 0`; `amount >= MIN_COMMIT` (50 USDC); `block.timestamp ≤ deadline`; nonce not used/revoked; inviter has available slots at `fromHop`; ARM loaded; pre-deadline; not cancelled; not finalized; USDC approved | Records invite edge + commitment atomically; creates a new participation slot for invitee at `fromHop + 1`; transfers USDC to escrow; emits `Invited(inviter, caller, fromHop + 1, nonce)` + `Committed(caller, fromHop + 1, amount)`; consumes nonce; decrements inviter's slot count |
+| `commit(hop, amount)` | Participant | Hop level, USDC amount | ARM loaded; pre-deadline; not cancelled; not finalized; `amount >= MIN_COMMIT` (100 USDC); address holds at least one participation slot at this hop (hop-0 slots from `SeedAdded`; hop-1/hop-2 slots from `Invited`) | Records commitment; transfers USDC to escrow; emits `Committed` |
+| `invite(invitee, fromHop)` | Inviter | Target address, inviter's hop | ARM loaded; pre-deadline; not cancelled; not finalized; caller has available slots at `fromHop` | Records invite edge; creates a participation slot for invitee at `fromHop + 1` (stacking onto an existing node up to that hop's `maxInvitesReceived`, and reverting at the cap); emits `Invited(caller, invitee, fromHop + 1, 0)`; decrements inviter's slot count at `fromHop` |
+| `commitWithInvite(inviter, fromHop, nonce, deadline, signature, amount)` | Invitee | Inviter address, inviter's hop, nonce, deadline, EIP-712 signature, USDC amount | Valid EIP-712 + EIP-1271 signature; `nonce > 0`; `amount >= MIN_COMMIT` (100 USDC); `block.timestamp ≤ deadline`; nonce not used/revoked; inviter has available slots at `fromHop`; ARM loaded; pre-deadline; not cancelled; not finalized; USDC approved | Records invite edge + commitment atomically; creates a participation slot for invitee at `fromHop + 1` (stacking onto an existing node up to the cap); transfers USDC to escrow; emits `Invited(inviter, caller, fromHop + 1, nonce)` + `Committed(caller, fromHop + 1, amount)`; consumes nonce; decrements inviter's slot count |
 | `revokeInviteNonce(nonce)` | Inviter | Nonce to revoke | `nonce > 0`; nonce not already consumed or revoked | Marks nonce permanently revoked; emits `InviteNonceRevoked` |
-| `finalize()` | Anyone | — | Post-deadline; not finalized; not cancelled | Iterates all participants once to compute `hopDemand[]`. Writes aggregate state only: `finalized`, `finalizationTimestamp`, `saleSize`, `ceilings[]`, `hopDemand[]`, `totalAllocatedArm`, `totalArmTransferred = 0`. If `totalAllocatedUsdc >= MINIMUM_RAISE`: transfers net proceeds to treasury, emits `Finalized(refundMode=false)`. If `totalAllocatedUsdc < MINIMUM_RAISE`: sets `refundMode = true`, no treasury transfer, emits `Finalized(refundMode=true)`. Zero per-participant storage writes. |
+| `finalize()` | Anyone | — | Post-deadline; not finalized; not cancelled | Iterates all participants once to compute `hopDemand[]`. Writes aggregate state only: `finalized`, `finalizationTimestamp`, `saleSize`, `ceilings[]`, `hopDemand[]`, `totalAllocatedArm`, `totalArmTransferred = 0`. If `totalAllocatedUsdc >= MINIMUM_RAISE`: holds back the rounding buffer (only if a hop is pro-rated), transfers `min(TEAM_PAYMENT_USDC, distributable)` to `launchTeam` and the rest to treasury, emits `LaunchTeamPaid` and `Finalized(refundMode=false)`. If `totalAllocatedUsdc < MINIMUM_RAISE`: sets `refundMode = true`, no team payment or treasury transfer, emits `Finalized(refundMode=true)`. Zero per-participant storage writes. |
 | `claimRefund()` | Participant | — | `refundMode == true` OR `cancelled == true`; refund not already claimed | Transfers refund USDC to caller; emits `RefundClaimed` |
 | `claim(delegate)` | Participant | Delegate address | `finalized == true`; `refundMode == false`; not already claimed | Computes allocation on-the-fly via `computeAllocation(msg.sender)`. Sets `claimed[msg.sender] = true`. If within 3-year window: transfers ARM, calls `delegateOnBehalf`, increments `totalArmTransferred`. Always transfers refund USDC if any. Emits `Allocated(participant, armTransferred, refundUsdc, delegate)` + `AllocatedHop` per hop. `nonReentrant`. |
 | `computeAllocation(address)` | Anyone (view) | Participant address | `finalized == true`; `refundMode == false` | Pure view function — returns `(armAmount, refundUsdc)` for the given address. Canonical computation: same logic as `claim()` minus side effects. Required for UI display of allocations before claiming. |
@@ -634,7 +650,8 @@ Those who paid have priority over those who received tokens at zero cost basis. 
 | `Invited` | `invite()`, `commitWithInvite()`, `launchTeamInvite()` | `address inviter, address invitee, uint8 hop, uint256 nonce` | New invite edge. `hop` is the invitee's hop level. `nonce` is 0 for direct invites, `> 0` for link-based invites — enables UI to track link consumption from events alone. |
 | `Committed` | `commit()`, `commitWithInvite()` | `address participant, uint8 hop, uint256 amount` | USDC committed at specific hop; amount is raw deposit (may exceed cap) |
 | `InviteNonceRevoked` | `revokeInviteNonce()` | `address inviter, uint256 nonce` | Invite link nonce permanently invalidated |
-| `Finalized` | `finalize()` | `uint256 saleSize, uint256 totalAllocatedArm, uint256 netProceeds, bool refundMode` | Settlement aggregates computed; `refundMode` flag distinguishes success from refundMode finalization without reading contract storage |
+| `Finalized` | `finalize()` | `uint256 saleSize, uint256 totalAllocatedArm, uint256 netProceeds, bool refundMode` | Settlement aggregates computed; `refundMode` flag distinguishes success from refundMode finalization without reading contract storage. `netProceeds` is the total allocated USDC, before the team payment and rounding buffer |
+| `LaunchTeamPaid` | `finalize()` (success path only) | `address indexed recipient, uint256 amount` | Team payment sent to the immutable `launchTeam` address: `TEAM_PAYMENT_USDC` ($250,000), bounded by the distributable proceeds. The treasury receives the rest |
 | `Allocated` | `claim()` | `address indexed participant, uint256 armTransferred, uint256 refundUsdc, address delegate` | Per-address settlement. Emitted at claim time, one event per claiming address. `armTransferred` is actual ARM sent (0 if claimed after 3-year expiry). `refundUsdc` is actual USDC refund sent. `delegate` is the delegation target (address(0) if no ARM transferred). Success path only (not refundMode). |
 | `AllocatedHop` | `claim()` | `address indexed participant, uint8 indexed hop, uint256 acceptedUsdc` | Per-hop accepted USDC (theoretical, USDC domain — not affected by ARM expiry, since expiry affects transfer timing, not sale participation). One event per (address, hop) with `acceptedUsdc > 0`. Success path only. |
 | `RefundClaimed` | `claimRefund()` | `address participant, uint256 usdcAmount` | Refund USDC transferred (refundMode / cancel / pre-finalization paths only) |
@@ -655,10 +672,10 @@ Those who paid have priority over those who received tokens at zero cost basis. 
 
 **`finalize()` gas profile (cold-storage, measured):**
 - Iterates every whitelisted node once to compute `hopDemand[]`. On-chain `finalize()` is its own transaction, so every node's storage is cold on first touch — **~8,200 gas/node** (2–3 cold SLOADs each). Invited-but-uncommitted nodes still cost ~4,950 gas each (2 cold SLOADs before the skip), so gas scales with **whitelist** count, not commit count.
-- **A single transaction is capped at 16,777,216 gas (2^24, EIP-7825).** The node budgets bound the tree at 1,505 nodes (500 hop-0 + 5 team wallets + 500 team-wallet invites + 500 launch-team hop-2). One-shot `finalize()` at that maximum on the success path measures **~11.5M gas from a real receipt** (`scripts/crowdfund_gas_dryrun.ts`) and ~12.7M in the Foundry cold-storage estimate (`test-foundry/CrowdfundFinalizeGasCold.t.sol`), both under the cap. The separate 1,800-node `MAX_FINALIZE_NODES` cap is a backstop that the budgets never reach; the block gas limit (~30M+) is not the binding constraint — the per-tx cap is.
+- **A single transaction is capped at 16,777,216 gas (2^24, EIP-7825).** The node budgets bound the tree at 1,101 nodes (500 hop-0 + 1 team wallet + 100 team-wallet invites + 500 launch-team hop-2; hop-2 stacking adds slots, not nodes). One-shot cold `finalize()` at that maximum on the success path measures **~9.41M gas**, under the cap (guarded by `test-foundry/CrowdfundFinalizeGasCold.t.sol` and the real-receipt dry run `scripts/crowdfund_gas_dryrun.ts`). The separate 1,800-node `MAX_FINALIZE_NODES` cap is a backstop that the budgets never reach; the block gas limit (~30M+) is not the binding constraint — the per-tx cap is.
 - **`addSeeds` batches.** All 500 hop-0 additions in a single `addSeeds` call exceed the per-tx cap; the Safe launch tooling batches at most 180 per transaction (see docs/safe-launch-batches.md).
 - Aggregate SSTOREs (hopDemand, ceilings, saleSize, finalized, timestamp, totalAllocatedArm, totalArmTransferred): ~10 SSTOREs = ~200k gas
-- USDC transfer to treasury: ~65k gas
+- USDC transfers to the launch team (team payment) and treasury: ~65k gas each
 - Event + overhead: ~200k gas
 - **Must be benchmarked against actual storage layout and realistic hop distribution before finalizing implementation.** Cold-read vs warm-read costs depend on storage packing.
 
@@ -695,11 +712,11 @@ Nonces are per-inviter, any unique `uint256 > 0` — nonce 0 is reserved as the 
 
 The following pseudocode is the **specification-intent** description of the allocation algorithm. It uses simplified arithmetic for readability. The contract implementation must use **integer math throughout**: percentages as basis points (BPS), token amounts in their smallest denomination (USDC: 6 decimals, ARM: 18 decimals), floor rounding on all pro-rata splits (participants may receive fractionally less than their exact share; dust accumulates as unallocated ARM), and no floating-point operations.
 
-**Lazy settlement note:** This pseudocode describes the allocation *algorithm* — the math that determines who gets what. Under lazy settlement, this computation is split across two contract functions: `finalize()` executes the waterfall pass (steps 1-3 below) and stores the resulting aggregate parameters (`saleSize`, effective `ceilings[]`, `hopDemand[]`, `totalAllocatedArm`). `computeAllocation(address)` executes the per-participant allocation (step 4 equivalent) at claim time, using the stored aggregates plus the participant's own commitment records. The pseudocode below shows both passes as a single function for clarity.
+**Lazy settlement note:** This pseudocode describes the allocation *algorithm* — the math that determines who gets what. Under lazy settlement, this computation is split across two contract functions: `finalize()` executes the hop-level allocation pass (steps 1-6 below, without the per-participant loops) and stores the resulting aggregate parameters (`saleSize`, final per-hop `ceilings[]`, `hopDemand[]`, `totalAllocatedArm`). `computeAllocation(address)` executes the per-participant allocation (step 4 equivalent) at claim time, using the stored aggregates plus the participant's own commitment records. The pseudocode below shows both passes as a single function for clarity.
 
 **Two clean asset invariants the implementation must satisfy** (see also §Conservation invariants for the lazy settlement formulation):
-- **USDC:** `netProceeds + sum(refundUsdc[p] for all p) == totalCommitted` — all deposited USDC is either sent to treasury or returned to participants; none is stranded. This is a settlement-completion identity that holds once all participants have claimed.
-- **ARM:** `totalArmTransferred + sweepableArm == preloaded ARM` — all pre-loaded ARM is either delivered to participants or sweepable to treasury. Standing invariant: `totalArmTransferred <= totalAllocatedArm <= 1,500,000` at all times after finalization.
+- **USDC:** `teamPayment + treasuryProceeds + contractDust + sum(refundUsdc[p] for all p) == totalCommitted` — all deposited USDC is either paid to the launch team, sent to treasury, returned to participants, or (only when a hop is pro-rated) left in the contract as rounding dust bounded by the `participantNodes.length` buffer. This is a settlement-completion identity that holds once all participants have claimed.
+- **ARM:** `totalArmTransferred + sweepableArm == preloaded ARM` — all pre-loaded ARM is either delivered to participants or sweepable to treasury. Standing invariant: `totalArmTransferred <= totalAllocatedArm <= 1,800,000` at all times after finalization.
 
 **Contract preconditions (enforced before `finalize()` is called):**
 - An address may commit at multiple hop levels and receives ARM allocation from each independently.
@@ -711,26 +728,24 @@ The following pseudocode is the **specification-intent** description of the allo
 ```python
 # Constants
 TOTAL_SUPPLY      = 12_000_000
-BASE_SALE         = 1_500_000       # ARM (= USDC at $1/ARM)
-MAX_SALE          = 1_500_000       # ARM (equal to BASE_SALE: no expansion)
+BASE_SALE         = 1_800_000       # ARM (= USDC at $1/ARM)
+MAX_SALE          = 1_800_000       # ARM (equal to BASE_SALE: no expansion)
 MINIMUM_RAISE     =   250_000       # USDC — checked against capped demand, then totalAllocatedUsdc
-EXPANSION_TRIGGER = 1_500_000       # USDC capped demand threshold
+EXPANSION_TRIGGER = 1_800_000       # USDC capped demand threshold
+HOP2_RESERVE      =   300_000       # USDC — hop-2's first-priority capacity
+TEAM_PAYMENT      =   250_000       # USDC — paid to launchTeam on a successful finalize (<= MINIMUM_RAISE)
 PRICE             = 1               # Specification uses whole-unit amounts for clarity.
 # Integer implementation: 1 whole ARM = 1e18 ARM units; 1 USDC = 1e6 USDC units.
 # Price ratio: 1e6 USDC units per 1e18 ARM units (i.e. 1e-12 USDC units per ARM unit).
 # All token amounts in the contract must use smallest units; this pseudocode uses
 # whole units throughout for readability. Do not read PRICE = 1 as a unit conversion.
 
-HOP_CEILING_BPS       = {0: 10000, 1: 10000}  # raw BPS of base_pool
-HOP2_BASE_FLOOR_BPS   = 0
-HOP2_EXTRA_FLOOR_BPS  = 0
-HOP_CAP         = {0: 150_000, 1: 0, 2: 10_000}  # USDC per slot per hop
-# With zero floors and 100% ceilings the waterfall below reduces to a priority fill.
+HOP_CAP         = {0: 100_000, 1: 0, 2: 10_000}  # USDC per slot per hop
 # Per-address cap at a given hop = participation_slots[(address, hop)] × HOP_CAP[hop]
 # Slot sources by hop:
 #   hop-0: count of SeedAdded events where seed=address (always 0 or 1)
 #   hop-1/hop-2: count of Invited events where invitee=address and invitee_hop=hop
-#   (maxInvitesReceived = 1 at every hop, so every count is 0 or 1)
+#   (maxInvitesReceived = 1 at hop 0 and hop 1, 20 at hop 2)
 
 
 def allocate(commitments, participation_slots):
@@ -760,90 +775,56 @@ def allocate(commitments, participation_slots):
     capped_demand = sum(aggregated.values())  # USDC
     sale_size = MAX_SALE if capped_demand >= EXPANSION_TRIGGER else BASE_SALE
 
-    # Step 3: Reserve hop-2 floor upfront. The extra floor comes only from hop-0.
-    hop2_floor = (HOP2_BASE_FLOOR_BPS + HOP2_EXTRA_FLOOR_BPS) * sale_size // 10_000
-    base_pool  = sale_size * (10_000 - HOP2_BASE_FLOOR_BPS) // 10_000
-    available  = sale_size - hop2_floor
-
-    hop0_ceiling = max(0, (
-        HOP_CEILING_BPS[0] * base_pool // 10_000
-        - HOP2_EXTRA_FLOOR_BPS * sale_size // 10_000
-    ))
-    hop1_ceiling = HOP_CEILING_BPS[1] * base_pool // 10_000
-
     def participants(hop):
         # All addresses committed at this hop, regardless of other hops they joined.
         return {addr: amt for (addr, h), amt in aggregated.items() if h == hop}
 
+    p0, p1, p2 = participants(0), participants(1), participants(2)
+    d0, d1, d2 = sum(p0.values()), sum(p1.values()), sum(p2.values())
+
+    # Step 3: Hop-2 reserve first (never more than the sale).
+    reserve     = min(HOP2_RESERVE, sale_size)
+    a2_reserved = min(d2, reserve)
+    remaining   = sale_size - a2_reserved
+
+    # Step 4: Hop-0 from the rest of the sale (its earmark plus any unused reserve).
+    a0 = min(d0, remaining)
+    remaining -= a0
+
+    # Step 5: Hop-1 from what remains (its $0 cap keeps d1 at 0 in practice).
+    a1 = min(d1, remaining)
+    remaining -= a1
+
+    # Step 6: Hop-2 extra from what hop-0 and hop-1 left unused.
+    a2 = a2_reserved + min(d2 - a2_reserved, remaining)
+
+    # ceilings[h] = final per-hop allocation (finalCeilings in the contract); hopDemand[h] = d_h.
+    # A hop is pro-rated only if its demand exceeds its allocation, which requires
+    # total capped demand > sale_size.
+    ceilings = {0: a0, 1: a1, 2: a2}
+    demands  = {0: d0, 1: d1, 2: d2}
+
     allocations = {}      # address -> total ARM allocated (accumulated across all hops)
     hop_allocations = {}  # (address, hop) -> ARM allocated at this specific hop (for AllocatedHop events)
 
-    # Step 4: Allocate hop-0 from available pool.
-    p0 = participants(0)
-    d0 = sum(p0.values())
-    if d0 <= hop0_ceiling:
-        for addr, amt in p0.items():
-            arm = amt // PRICE
+    for hop, members in ((0, p0), (1, p1), (2, p2)):
+        for addr, amt in members.items():
+            if demands[hop] <= ceilings[hop]:
+                arm = amt // PRICE
+            else:
+                arm = amt * ceilings[hop] // demands[hop] // PRICE  # floor round
             allocations[addr] = allocations.get(addr, 0) + arm
-            hop_allocations[(addr, 0)] = arm
-        hop0_leftover = hop0_ceiling - d0
-        eff0 = d0
-    else:
-        for addr, amt in p0.items():
-            arm = amt * hop0_ceiling // d0 // PRICE  # floor round
-            allocations[addr] = allocations.get(addr, 0) + arm
-            hop_allocations[(addr, 0)] = arm
-        hop0_leftover = 0
-        eff0 = hop0_ceiling
-
-    remaining_available = available - eff0
-
-    # Step 5: Allocate hop-1 from remaining available pool.
-    # Hop-0 leftover increases hop-1's effective ceiling,
-    # but hop-1 can never absorb more than remaining_available.
-    hop1_eff_ceiling = min(hop1_ceiling + hop0_leftover, remaining_available)
-    p1 = participants(1)
-    d1 = sum(p1.values())
-    if d1 <= hop1_eff_ceiling:
-        for addr, amt in p1.items():
-            arm = amt // PRICE
-            allocations[addr] = allocations.get(addr, 0) + arm
-            hop_allocations[(addr, 1)] = arm
-        hop1_leftover = hop1_eff_ceiling - d1
-        eff1 = d1
-    else:
-        for addr, amt in p1.items():
-            arm = amt * hop1_eff_ceiling // d1 // PRICE  # floor round
-            allocations[addr] = allocations.get(addr, 0) + arm
-            hop_allocations[(addr, 1)] = arm
-        hop1_leftover = 0
-        eff1 = hop1_eff_ceiling
-
-    # Step 6: Allocate hop-2 from floor + any hop-1 leftover.
-    # Floor capacity is always available (reserved in Step 3).
-    hop2_eff_ceiling = hop2_floor + hop1_leftover
-    p2 = participants(2)
-    d2 = sum(p2.values())
-    if d2 <= hop2_eff_ceiling:
-        for addr, amt in p2.items():
-            arm = amt // PRICE
-            allocations[addr] = allocations.get(addr, 0) + arm
-            hop_allocations[(addr, 2)] = arm
-        eff2 = d2
-    else:
-        for addr, amt in p2.items():
-            arm = amt * hop2_eff_ceiling // d2 // PRICE  # floor round
-            allocations[addr] = allocations.get(addr, 0) + arm
-            hop_allocations[(addr, 2)] = arm
-        eff2 = hop2_eff_ceiling
+            hop_allocations[(addr, hop)] = arm
 
     # Step 7: Compute USDC and ARM accounting.
     #
     # USDC accounting:
-    #   net_proceeds  = USDC actually sold = ARM allocated × PRICE (NOT eff0+eff1+eff2,
+    #   net_proceeds  = USDC actually sold = ARM allocated × PRICE (NOT a0+a1+a2,
     #                   which overcounts dust from floor rounding)
-    #   refunds       = deposited USDC not allocated → claimable via claimRefund()
-    #   invariant:    net_proceeds + sum(refunds) == sum(total_deposited)
+    #   team_payment  = min(TEAM_PAYMENT, net_proceeds) → pushed to launchTeam at finalization
+    #   treasury_proceeds = net_proceeds - team_payment → pushed to treasury at finalization
+    #   refunds       = deposited USDC not allocated → claimable via claim()
+    #   invariant:    team_payment + treasury_proceeds + sum(refunds) == sum(total_deposited)
     #
     # ARM accounting:
     #   allocated_arm = ARM owed to participants → claimable via claim() (= totalAllocatedArm in lazy settlement)
@@ -871,6 +852,12 @@ def allocate(commitments, participation_slots):
         # No Allocated or AllocatedHop events emitted in refundMode.
         return None, None, full_refunds, MAX_SALE, 0
 
+    # Payout split (success path only). The contract computes this from totalAllocatedUsdc,
+    # first holding back a rounding buffer of len(participantNodes) USDC units when any hop is
+    # pro-rated (none otherwise), then paying the team from what remains.
+    team_payment      = min(TEAM_PAYMENT, net_proceeds)
+    treasury_proceeds = net_proceeds - team_payment
+
     total_deposited = {}
     for c in commitments:
         total_deposited[c.address] = total_deposited.get(c.address, 0) + c.usdc_committed
@@ -882,10 +869,11 @@ def allocate(commitments, participation_slots):
 
     # Verify invariants (implementation must enforce these):
     # Under lazy settlement, these are verified as:
-    #   USDC: netProceeds + sum(refundUsdc[p]) == totalCommitted (settlement-completion identity)
+    #   USDC: teamPayment + treasuryProceeds + contractDust + sum(refundUsdc[p]) == totalCommitted
+    #         (settlement-completion identity; contractDust <= the rounding buffer)
     #   ARM:  totalArmTransferred + sweepableArm == preloaded ARM (standing invariant)
     # The pseudocode below shows the algorithmic equivalents.
-    assert net_proceeds + sum(refunds.values()) == sum(total_deposited.values())  # USDC
+    assert team_payment + treasury_proceeds + sum(refunds.values()) == sum(total_deposited.values())  # USDC
     assert allocated_arm + unsold_arm == MAX_SALE                                  # ARM
     # Settlement invariant: per-hop accepted USDC converts to aggregate ARM for each address.
     # Under lazy settlement, this is verified by computeAllocation() — the canonical view function.
@@ -906,8 +894,9 @@ def allocate(commitments, participation_slots):
 
 | Property | Guarantee |
 |---|---|
-| Hop-2 reserved capacity | Hop-2 has first claim on `(HOP2_BASE_FLOOR_BPS + HOP2_EXTRA_FLOOR_BPS) × sale_size`, which is 0: hop-2 receives only what hop-0 and hop-1 leave |
-| USDC conservation | `net_proceeds + sum(refunds) == sum(total_deposited)` (settlement-completion identity — holds once all participants have claimed) |
+| Hop-2 reserved capacity | Hop-2 has first claim on `min(d2, HOP2_RESERVE_USDC)` ($300,000); unused reserve is available to hop-0, and capacity hop-0 and hop-1 leave unused is available to hop-2's remaining demand |
+| Team payment | On the success path, `min(TEAM_PAYMENT_USDC, distributable)` goes to `launchTeam` and the rest of the distributable proceeds to treasury; no payment in refund mode or after cancel |
+| USDC conservation | `teamPayment + treasuryProceeds + contractDust + sum(refunds) == sum(total_deposited)` (settlement-completion identity — holds once all participants have claimed; `contractDust` is bounded by the rounding buffer and is 0 when no hop is pro-rated) |
 | ARM conservation | `totalArmTransferred + sweepableArm == preloaded ARM` (sweepableArm = preloaded - totalArmTransferred) |
 | Minimum raise | If `totalAllocatedUsdc < MINIMUM_RAISE` after aggregate computation, contract sets `refundMode = true` (no revert — state must be preserved for `claimRefund()` to work) |
 | Integer rounding | All pro-rata splits floor-rounded per participant per hop; refunds round up (participant never under-refunded); dust accumulates in sweepable pool |
@@ -917,7 +906,8 @@ def allocate(commitments, participation_slots):
 
 | Asset | When | Mechanism |
 |---|---|---|
-| Net USDC proceeds | At finalization | Push to immutable treasury address |
+| Team payment ($250,000 USDC) | At finalization (success path) | Push to immutable `launchTeam` address |
+| Remaining net USDC proceeds | At finalization (success path) | Push to immutable treasury address (less the rounding buffer when a hop is pro-rated) |
 | Allocated ARM (within 3yr) | After finalization, within 3-year window | Pull: participant calls `claim(delegate)` |
 | Success-path USDC refunds | After finalization, no expiry | Pull: participant calls `claim(delegate)` — refund portion always payable |
 | RefundMode/cancel USDC refunds | After finalization or cancel, no expiry | Pull: participant calls `claimRefund()` |

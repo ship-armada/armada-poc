@@ -53,18 +53,19 @@ Other options: `--allow-stack`, `--max-seeds` (default 100 per batch), `--max-in
 Before writing anything, the task checks every row against the live contract:
 
 - the sale is active, ARM is loaded, and the launch-team window has not closed;
-- seeds left (500 cap), launch-team budget left (5 hop-1 team wallets, 500 hop-2);
+- seeds left (500 cap), launch-team budget left (1 hop-1 team wallet, 500 hop-2);
 - no seed repeated or already added; the launch-team address is not a row;
-- invites stay within each address's invites-received cap (1 at every hop).
+- invites stay within each address's invites-received cap (1 at hop 1, 20 at hop 2).
 
 Any problem stops the run and no files are written. Before the sale opens it only **warns**,
 so batches can be prepared and signed ahead of time.
 
-**Stacking.** The invites-received cap is 1 at every hop, so inviting an address that is already
-invited at that hop (on chain, or earlier in the same file) would revert on chain. The task
-refuses such a row with an error, with or without `--allow-stack`. (Under a contract with a higher
-cap, a repeat would raise that person's commitment cap and invite budget; the task then accepts it
-only with `--allow-stack` and marks the row `stacked` in the summary.)
+**Stacking.** The invites-received cap is 1 at hop 1 and 20 at hop 2. Inviting an address that is
+already invited at that hop (on chain, or earlier in the same file) adds a slot at hop 2: each repeat
+raises that person's commitment cap by $10,000 (up to $200,000) and uses one more unit of the hop-2
+budget. The task accepts such a row only with `--allow-stack` and marks it `stacked` in the summary.
+A row that would take an address past the cap (a second hop-1 placement, or a 21st hop-2 invite)
+would revert on chain, so the task refuses it with an error, with or without `--allow-stack`.
 
 ## Output
 
@@ -99,7 +100,10 @@ Rules:
 `summary.md` with the current, new and maximum end. `--end` must be canonical UTC with an explicit
 `Z`, like `2026-12-01T16:00:00Z`. Before writing, the task checks that the sale is active, the window
 has not ended, the new end is later than the current one, and it is no later than
-`windowStart + MAX_WINDOW_DURATION`. With less than 24 hours left it warns.
+`windowStart + MAX_WINDOW_DURATION` (15 days). With less than 24 hours left it warns. Operationally,
+each extension adds 5 days and there are at most two (the contract enforces only the 15-day cap; why:
+`specs/CROWDFUND.md`, "Extension steps"). If the new end is not exactly 5 days after the current end,
+the task warns in the console and in `summary.md`, but still writes the file.
 
 The Safe must **execute before the current deadline**. After it, `extendWindow()` reverts and anyone
 can finalize, so start signing well ahead. An extension cannot be undone or shortened. Procedure and

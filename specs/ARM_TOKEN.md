@@ -35,13 +35,13 @@ ARM is minted to an initial bootstrap holder (the deployer address — a single 
 
 | Allocation | Amount | Recipient | Notes |
 |---|---|---|---|
-| Crowdfund contract | 1,500,000 (MAX_SALE) | Crowdfund contract address | Exactly MAX_SALE (there is no elastic expansion). Verified by `loadArm()`. |
-| Treasury | 8,100,000 | Treasury address (governance-controlled) | |
+| Crowdfund contract | 1,800,000 (MAX_SALE) | Crowdfund contract address | Exactly MAX_SALE (there is no elastic expansion). Verified by `loadArm()`. |
+| Treasury | 7,800,000 | Treasury address (governance-controlled) | |
 | Early network | 2,400,000 | Shared revenue-lock contract | See Revenue-lock architecture below. |
 
 The protocol is not considered live until deployment verification confirms all four conditions:
 
-1. **Exact recipient balances.** RevenueLock holds 2,400,000 ARM, Crowdfund holds 1,500,000 ARM, Treasury holds 8,100,000 ARM.
+1. **Exact recipient balances.** RevenueLock holds 2,400,000 ARM, Crowdfund holds 1,800,000 ARM, Treasury holds 7,800,000 ARM.
 2. **Supply conservation.** `ARM.totalSupply()` = 12,000,000 × 10^18. The sum of the three recipient balances equals `totalSupply()`.
 3. **Zero residual bootstrap-holder balance.** The bootstrap holder must end with exactly zero ARM after distribution completes. Any residual balance is a deployment failure.
 4. **No residual bootstrap-holder allowances.** The bootstrap holder must have no remaining ERC-20 allowances in any protocol contract after distribution. The whitelist is **add-only with one narrow exception**: `removeDeployerFromWhitelist()` is a deployer-only, one-shot function that removes solely the deployer's own entry, intended to be called after distribution completes to eliminate the deployer as a transfer-capable address. No other removal path exists for any other whitelist entry. If the deployer skips this cleanup step, the residual entry is *inert while the balance is zero*: a zero-balance whitelisted address cannot transfer tokens it doesn't hold. Do not send ARM to the bootstrap holder address after distribution completes.
@@ -77,7 +77,7 @@ A single shared revenue-lock contract holds all early network ARM (2,400,000 tot
 - **Token permissions:** RevenueLock and the reserve distributor are whitelisted by one-time initialization. RevenueLock is an authorized delegator; the distributor is not and must remain able to undelegate itself. No per-recipient whitelisting is needed. The allocator is neither quorum-excluded nor in `noDelegation`.
 - **Airdrop:** the separate Merkle-distribution path is not replaced with individual lock entries. Its funding, release/delegation, and wind-down integration require a separately reviewed entry in the final launch schedule. See REVENUE_RESERVE_DISTRIBUTOR.md.
 
-**Post-finalization treasury growth:** The crowdfund contract receives 1,500,000 ARM at deployment. Any ARM not sold (the sale succeeds anywhere from $250,000 to $1,500,000) becomes sweepable to treasury via `withdrawUnallocatedArm()` after finalization. The treasury's total ARM holding post-finalization is therefore 8,100,000 + unsold amount (at most 9,350,000).
+**Post-finalization treasury growth:** The crowdfund contract receives 1,800,000 ARM at deployment. Any ARM not sold (the sale succeeds anywhere from $250,000 to $1,800,000) becomes sweepable to treasury via `withdrawUnallocatedArm()` after finalization. The treasury's total ARM holding post-finalization is therefore 7,800,000 + unsold amount (at most 9,350,000).
 
 ---
 

@@ -7,6 +7,7 @@ import {
   CROWDFUND_PROFILES,
   FEATURES_BY_PROFILE,
   HOP_CONFIGS_BY_PROFILE,
+  TIER_LABELS_BY_PROFILE,
   isCrowdfundProfile,
   parseCrowdfundProfile,
 } from './constants.js'
@@ -53,6 +54,16 @@ describe('relaunch profile', () => {
     expect(FEATURES_BY_PROFILE.relaunch).toEqual({ directInvites: false, selfFill: false })
     expect(FEATURES_BY_PROFILE.mainnet).toEqual({ directInvites: true, selfFill: true })
     expect(FEATURES_BY_PROFILE.medi).toEqual({ directInvites: true, selfFill: true })
+  })
+})
+
+describe('tier labels', () => {
+  // WHY: the relaunch presents its hops as named tiers; the Launch 1 and testnet profiles keep the
+  // hop numbering their users and operators already know.
+  it('names the relaunch tiers and keeps hop numbers elsewhere', () => {
+    expect(TIER_LABELS_BY_PROFILE.relaunch).toEqual(['Known', 'Team', 'Invited'])
+    expect(TIER_LABELS_BY_PROFILE.mainnet).toEqual(['Hop-0', 'Hop-1', 'Hop-2'])
+    expect(TIER_LABELS_BY_PROFILE.medi).toEqual(['Hop-0', 'Hop-1', 'Hop-2'])
   })
 })
 

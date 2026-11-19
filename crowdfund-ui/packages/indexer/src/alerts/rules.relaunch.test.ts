@@ -1,0 +1,153 @@
+// ABOUTME: Alert-rule and graph tests under the relaunch profile (CROWDFUND_PROFILE=relaunch).
+// ABOUTME: Loads the rules with that profile via a module reset, since the shared constants resolve at import.
+
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { ALERT_THRESHOLD_DEFAULTS } from './thresholds.js'
+import type { AlertContext, AlertRule } from './types.js'
+import type { CrowdfundEvent } from '../../../shared/src/lib/events.js'
+import type { CrowdfundGraph, GraphNode } from '../../../shared/src/lib/graph.js'
+
+const USDC = 10n ** 6n
+const KNOWN_CAP = 150_000n * USDC
+const INVITED_CAP = 10_000n * USDC
+
+type RulesModule = typeof import('./rules.js')
+type GraphModule = typeof import('../../../shared/src/lib/graph.js')
+let rules: RulesModule
+let graphLib: GraphModule
+
+beforeAll(async () => {
+  vi.stubEnv('CROWDFUND_PROFILE', 'relaunch')
+  vi.resetModules()
+  const constants = await import('../../../shared/src/lib/constants.js')
+  // Guard: if the profile did not take effect, every assertion below would test mainnet values.
+  expect(constants.CROWDFUND_PROFILE).toBe('relaunch')
+  rules = await import('./rules.js')
+  graphLib = await import('../../../shared/src/lib/graph.js')
+})
+
+afterAll(() => {
+  vi.unstubAllEnvs()
+  vi.resetModules()
+})
+
+function makeNode(address: string, hop: number, committed: bigint, invitesReceived = 1): GraphNode {
+  return {
+    address, hop, invitesReceived, committed, rawDeposited: committed, invitedBy: [],
+    invitesUsed: 0, invitesAvailable: 0, allocatedArm: null, acceptedUsdc: null,
+  }
+}
+
+function graphOf(nodes: GraphNode[]): CrowdfundGraph {
+  return {
+    nodes: new Map(nodes.map((n) => [`${n.address}-${n.hop}`, n])),
+    edges: [], summaries: new Map(), events: [],
+  }
+}
+
+function makeEvent(type: CrowdfundEvent['type'], args: Record<string, unknown>, blockNumber: number): CrowdfundEvent {
+  return { type, blockNumber, transactionHash: `0xtx${blockNumber}`, logIndex: 0, args }
+}
+
+function context(graph: CrowdfundGraph, events: CrowdfundEvent[] = []): AlertContext {
+  return {
+    now: 0,
+    params: {
+      chainId: 1, contractAddress: '0xcccc', treasuryAddress: '0xt',
+      openTimestamp: 1, week1Deadline: 2, commitmentDeadline: 3,
+    },
+    snapshot: {
+      metadata: {
+        schemaVersion: 1, chainId: 1, contractAddress: '0xcccc', deployBlock: 0, verifiedBlock: 100,
+        verifiedBlockHash: '0xb', snapshotHash: '0xs', generatedAt: new Date(0).toISOString(),
+        reconciliation: { status: 'pending', checkedBlock: null, provider: null, checkedAt: null, mismatches: [] },
+      },
+      events,
+      graph,
+    },
+    health: {
+      status: 'healthy', chainHead: 0, confirmedHead: 0, ingestedCursor: 0, verifiedCursor: 0, lagBlocks: 0,
+      lastIngestedAt: null, lastVerifiedAt: null, lastReconciledAt: null, hasGaps: false, gapRanges: [],
+      gapsRequiringIntervention: [], lastError: null, latestSnapshotHash: null, latestStaticSnapshotUrl: null,
+    },
+    thresholds: ALERT_THRESHOLD_DEFAULTS,
+    treasuryUsdcBalance: null,
+    finalizedAt: null,
+  } as AlertContext
+}
+
+function run(rule: (m: RulesModule) => AlertRule, ctx: AlertContext) {
+  return rule(rules)(ctx)
+}
+
+describe('graph under the relaunch profile', () => {
+  // WHY: the graph caps each node's committed amount at its hop cap. Under the Launch 1 caps a
+  // $150k Known deposit was clamped to $15k, corrupting snapshots, demand alerts and reconciliation.
+  it('caps a Known deposit at $150k and an Invited deposit at $10k', () => {
+    const graph = graphLib.buildGraph([
+      makeEvent('SeedAdded', { seed: '0xaaa' }, 1),
+      makeEvent('Committed', { participant: '0xaaa', hop: 0, amount: 200_000n * USDC }, 2),
+      makeEvent('LaunchTeamInvited', { invitee: '0xbbb', hop: 2 }, 3),
+      makeEvent('Invited', { inviter: '0x0000000000000000000000000000000000000000', invitee: '0xbbb', hop: 2, nonce: 0n }, 3),
+      makeEvent('Committed', { participant: '0xbbb', hop: 2, amount: 12_000n * USDC }, 4),
+    ])
+    const committed = [...graph.nodes.values()].map((n) => [n.address.toLowerCase(), n.hop, n.committed])
+    expect(committed).toContainEqual(['0xaaa', 0, KNOWN_CAP])
+    expect(committed).toContainEqual(['0xbbb', 2, INVITED_CAP])
+  })
+})
+
+describe('A4/A5 budgets under the relaunch profile', () => {
+  // WHY: the relaunch budgets are 500 seeds, 5 team wallets and 500 Invited placements; the alerts
+  // must measure against those, not Launch 1's 180/100/120.
+  it('A4 fires at 80% of the 500-seed budget', () => {
+    const events = Array.from({ length: 400 }, (_, i) => makeEvent('SeedAdded', { seed: `0x${i}` }, i + 1))
+    const out = run((m) => m.ruleA4, context(graphOf([]), events))
+    expect(out[0]).toMatchObject({ id: 'A4', dedupeKey: 'A4:80' })
+    expect(out[0].title).toContain('400/500')
+  })
+
+  it('A5 measures team wallets against 5 and Invited placements against 500, naming the tiers', () => {
+    const events = [
+      ...Array.from({ length: 5 }, (_, i) => makeEvent('LaunchTeamInvited', { invitee: `0xa${i}`, hop: 1 }, i + 1)),
+      ...Array.from({ length: 400 }, (_, i) => makeEvent('LaunchTeamInvited', { invitee: `0xb${i}`, hop: 2 }, i + 100)),
+    ]
+    const out = run((m) => m.ruleA5, context(graphOf([]), events))
+    const team = out.find((e) => e.dedupeKey === 'A5:hop1:100')
+    const invited = out.find((e) => e.dedupeKey === 'A5:hop2:80')
+    expect(team?.title).toContain('Team')
+    expect(team?.body).toContain('5/5')
+    expect(invited?.title).toContain('Invited')
+    expect(invited?.body).toContain('400/500')
+  })
+})
+
+describe('A6 under the relaunch profile (stacking disabled)', () => {
+  // WHY: maxInvitesReceived is 1 at every hop, so the contract rejects a second slot. Any node with
+  // more than one slot means the deployed constants differ from the profile: report it at once,
+  // whatever the ratio (MONITORING.md A6 / §9.1).
+  it('fires on a single duplicate node, below the ratio threshold', () => {
+    const nodes = Array.from({ length: 100 }, (_, i) => makeNode(`0xa${i}`, 2, INVITED_CAP, i === 0 ? 2 : 1))
+    const out = run((m) => m.ruleA6, context(graphOf(nodes)))
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({ id: 'A6', dedupeKey: 'A6:config' })
+    expect(out[0].body).toContain('stacking is disabled')
+  })
+
+  it('does not fire when every node holds one slot', () => {
+    const nodes = Array.from({ length: 10 }, (_, i) => makeNode(`0xa${i}`, 2, INVITED_CAP))
+    expect(run((m) => m.ruleA6, context(graphOf(nodes)))).toEqual([])
+  })
+})
+
+describe('A7 under the relaunch profile (no expansion)', () => {
+  // WHY: BASE_SALE == MAX_SALE, so crossing the trigger expands nothing; the alert still marks how
+  // close the $1.5M sale is to fully subscribed and must not talk about expansion.
+  it('reports subscription of the $1.5M sale without expansion wording', () => {
+    const nodes = Array.from({ length: 8 }, (_, i) => makeNode(`0xa${i}`, 0, KNOWN_CAP)) // $1.2M = 80%
+    const out = run((m) => m.ruleA7, context(graphOf(nodes)))
+    expect(out[0]).toMatchObject({ id: 'A7', dedupeKey: 'A7:80' })
+    expect(out[0].title).toContain('80% of the sale size')
+    expect(`${out[0].title} ${out[0].body}`).not.toMatch(/expan|ELASTIC_TRIGGER/i)
+  })
+})

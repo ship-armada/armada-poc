@@ -134,6 +134,13 @@ export const HOP_CONFIGS_BY_PROFILE: Record<
   ],
 }
 
+/** Display names for hops 0/1/2. The relaunch names its tiers; other profiles number them. */
+export const TIER_LABELS_BY_PROFILE: Record<CrowdfundProfile, readonly [string, string, string]> = {
+  mainnet: ['Hop-0', 'Hop-1', 'Hop-2'],
+  medi: ['Hop-0', 'Hop-1', 'Hop-2'],
+  relaunch: ['Known', 'Team', 'Invited'],
+}
+
 export const FEATURES_BY_PROFILE: Record<CrowdfundProfile, CrowdfundFeatures> = {
   mainnet: { directInvites: true, selfFill: true },
   medi: { directInvites: true, selfFill: true },
@@ -170,6 +177,8 @@ export const HOP_CONFIGS: readonly [HopConfig, HopConfig, HopConfig] =
   HOP_CONFIGS_BY_PROFILE[CROWDFUND_PROFILE]
 
 export const CROWDFUND_FEATURES: CrowdfundFeatures = FEATURES_BY_PROFILE[CROWDFUND_PROFILE]
+
+export const TIER_LABELS: readonly [string, string, string] = TIER_LABELS_BY_PROFILE[CROWDFUND_PROFILE]
 
 /** ABI fragments for event parsing and contract reads.
  *  Must match the indexed flags + param shape of the on-chain events exactly

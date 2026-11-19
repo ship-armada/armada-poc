@@ -2,13 +2,21 @@
 // ABOUTME: Each rule returns 0..n AlertEvent occurrences given the current context.
 
 import { estimateAllocation, projectsRefundMode, type HopAllocationStats } from '../../../shared/src/lib/allocation.js'
-import { CROWDFUND_CONSTANTS } from '../../../shared/src/lib/constants.js'
+import { CROWDFUND_CONSTANTS, HOP_CONFIGS } from '../../../shared/src/lib/constants.js'
+import { hopLabel } from '../../../shared/src/lib/format.js'
 import type { CrowdfundEvent } from '../../../shared/src/lib/events.js'
 import type { CrowdfundGraph } from '../../../shared/src/lib/graph.js'
 import type { AlertContext, AlertEvent, AlertRule } from './types.js'
 
 const TIER_LEVELS = [80, 90, 100] as const
 const EXPANSION_TIERS = [80, 90, 95, 100] as const
+
+/** True when no hop accepts more than one slot per address (maxInvitesReceived = 1 everywhere),
+ *  so a node with several slots can only mean the deployed constants differ from the profile. */
+const STACKING_DISABLED = HOP_CONFIGS.every((c) => c.maxInvitesReceived <= 1)
+
+/** True when BASE_SALE == MAX_SALE: crossing ELASTIC_TRIGGER changes nothing. */
+const NO_EXPANSION = CROWDFUND_CONSTANTS.BASE_SALE === CROWDFUND_CONSTANTS.MAX_SALE
 
 // ============ Generic helpers ============
 
@@ -156,7 +164,7 @@ export const ruleA4: AlertRule = (ctx) => {
     dedupeKey: `A4:${crossed}`,
     title: `Seed budget at ${crossed}% (${seedCount}/${CROWDFUND_CONSTANTS.MAX_SEEDS})`,
     body: `Hop-0 SeedAdded count reached ${crossed}% of the configured MAX_SEEDS (${CROWDFUND_CONSTANTS.MAX_SEEDS}).`,
-    runbook: 'OPERATIONS.md §4 Day-14 launch-team checkpoint; §10 decision log',
+    runbook: 'OPERATIONS.md §4 launch-team checkpoint; §10 decision log',
     context: { seedCount, crossedTier: crossed },
   }]
 }
@@ -173,8 +181,8 @@ export const ruleA5: AlertRule = (ctx) => {
       id: 'A5',
       severity: severityForBudget(crossed1),
       dedupeKey: `A5:hop1:${crossed1}`,
-      title: `Launch-team hop-1 placements at ${crossed1}%`,
-      body: `Hop-1 placements: ${hop1}/${CROWDFUND_CONSTANTS.LAUNCH_TEAM_HOP1_BUDGET}.`,
+      title: `Launch-team placements (${hopLabel(1)}) at ${crossed1}%`,
+      body: `${hopLabel(1)} placements: ${hop1}/${CROWDFUND_CONSTANTS.LAUNCH_TEAM_HOP1_BUDGET}.`,
       runbook: 'OPERATIONS.md §4 Launch-team operating cadence; §10 decision log',
       context: { hop: 1, count: hop1, crossedTier: crossed1 },
     })
@@ -185,8 +193,8 @@ export const ruleA5: AlertRule = (ctx) => {
       id: 'A5',
       severity: severityForBudget(crossed2),
       dedupeKey: `A5:hop2:${crossed2}`,
-      title: `Launch-team hop-2 placements at ${crossed2}%`,
-      body: `Hop-2 placements: ${hop2}/${CROWDFUND_CONSTANTS.LAUNCH_TEAM_HOP2_BUDGET}.`,
+      title: `Launch-team placements (${hopLabel(2)}) at ${crossed2}%`,
+      body: `${hopLabel(2)} placements: ${hop2}/${CROWDFUND_CONSTANTS.LAUNCH_TEAM_HOP2_BUDGET}.`,
       runbook: 'OPERATIONS.md §4 Launch-team operating cadence; §10 decision log',
       context: { hop: 2, count: hop2, crossedTier: crossed2 },
     })
@@ -194,11 +202,24 @@ export const ruleA5: AlertRule = (ctx) => {
   return out
 }
 
-// A6 — Duplicate same-hop slot growth (P2, awareness only)
+// A6 — Duplicate same-hop slot growth (P2). An awareness alert where stacking is allowed; a
+// configuration check where it is disabled (any duplicate means the constants differ).
 export const ruleA6: AlertRule = (ctx) => {
   const occupied = occupiedHop12Count(ctx.snapshot.graph)
   if (occupied === 0) return []
   const duplicates = duplicateSlotNodeCount(ctx.snapshot.graph)
+  if (STACKING_DISABLED) {
+    if (duplicates === 0) return []
+    return [{
+      id: 'A6',
+      severity: 'P2',
+      dedupeKey: 'A6:config',
+      title: `${duplicates} node(s) hold multiple same-hop slots`,
+      body: `${duplicates}/${occupied} hop-1+hop-2 nodes have multiple slots, but stacking is disabled in this profile (maxInvitesReceived = 1). The deployed constants differ from the UI profile (see MONITORING.md §9.1).`,
+      runbook: 'OPERATIONS.md §4/§5 monitoring; verify the deployed hopConfigs against PARAMETER_MANIFEST.md',
+      context: { duplicates, occupied },
+    }]
+  }
   const ratio = duplicates / occupied
   if (ratio < ctx.thresholds.duplicateSlotFraction) return []
   // Bucket the ratio into 10-point bands so a fluctuating ratio fires once per band
@@ -223,6 +244,17 @@ export const ruleA7: AlertRule = (ctx) => {
   let crossed: number | null = null
   for (const t of EXPANSION_TIERS) if (ratioPct >= t) crossed = t
   if (crossed === null) return []
+  if (NO_EXPANSION) {
+    return [{
+      id: 'A7',
+      severity: 'P2',
+      dedupeKey: `A7:${crossed}`,
+      title: `cappedDemand at ${crossed}% of the sale size`,
+      body: `cappedDemand=${capped.toString()} (${ratioPct}% of the ${CROWDFUND_CONSTANTS.MAX_SALE.toString()} sale). Past 100%, tiers are pro-rated and later tiers can be crowded out.`,
+      runbook: 'OPERATIONS.md §5 pre-finalization checkpoint',
+      context: { cappedDemand: capped.toString(), crossedTier: crossed },
+    }]
+  }
   return [{
     id: 'A7',
     severity: 'P2',

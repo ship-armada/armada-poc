@@ -66,6 +66,7 @@ Core Sepolia config:
 export CROWDFUND_CHAIN_ID=11155111
 export CROWDFUND_CONTRACT_ADDRESS=<sepolia-crowdfund-address>
 export CROWDFUND_DEPLOY_BLOCK=<deployment-block>
+export CROWDFUND_PROFILE=<mainnet|medi|relaunch>
 export CROWDFUND_PRIMARY_RPC_URL=<primary-rpc-url>
 export CROWDFUND_AUDIT_RPC_URL=<optional-independent-rpc-url>
 ```
@@ -112,6 +113,7 @@ Core deployment variables:
 | `CROWDFUND_CHAIN_ID` | required | Chain ID stamped into indexed raw logs and snapshot metadata. The server (when polling/backfilling) and every RPC-using CLI command first check `eth_chainId` on the primary and audit RPCs and refuse to start on a mismatch or an unreachable RPC (`primary RPC is chain X, CROWDFUND_CHAIN_ID is Y`). |
 | `CROWDFUND_CONTRACT_ADDRESS` | required | Crowdfund contract address to scan and serve. API/CLI fail fast when missing. |
 | `CROWDFUND_DEPLOY_BLOCK` | required (except local Anvil) | Initial cursor: the crowdfund manifest's `deployBlock`. Defaults to `0` only on chain 31337; elsewhere unset/0 is refused because it would backfill from genesis. |
+| `CROWDFUND_PROFILE` | required (except local Anvil) | Which sale constants (hop caps, budgets, sale sizes) the graph, snapshots and alerts apply: `mainnet` (Launch 1), `medi` (medi Sepolia instances) or `relaunch`. Must match the deployed contract. Defaults to `mainnet` only on chain 31337; elsewhere unset is refused, and an unknown value is refused everywhere. The API and every CLI command (including `evaluate-alerts`) also check that the shared constants resolved the same profile. |
 | `CROWDFUND_PRIMARY_RPC_URL` | required for backfill/poll | Primary RPC used for head reads, range ingestion, and reconciliation. |
 | `CROWDFUND_AUDIT_RPC_URL` | unset | Optional independent RPC used to verify range digests. If unset, primary RPC is used for audit too. |
 
@@ -384,7 +386,7 @@ npm run crowdfund:indexer:cli -- evaluate-alerts
 
 The command is a single pass — it reads the indexer store, optionally consults the chain for `finalizedAt` and treasury USDC balance, runs every rule, posts new alerts to the configured webhooks, persists which dedupe keys it has already delivered, and exits. Schedule it as a recurring job (cron, systemd timer, or external scheduler) at whatever cadence matches your runbook — once per minute is fine; the cost is dominated by RPC reads.
 
-Required env: `CROWDFUND_CHAIN_ID`, `CROWDFUND_CONTRACT_ADDRESS`, `CROWDFUND_PRIMARY_RPC_URL`, and at least one webhook URL. The sale window timestamps and the treasury/USDC addresses are read from the contract on every run, so they cannot be mistyped or left at 0. Alerts whose severity has no configured webhook are logged to stderr and skipped. In the Docker stack, a failed run is logged as `evaluate-alerts FAILED (exit N)` and the `alerts` container turns unhealthy after 3 intervals without a successful run.
+Required env: `CROWDFUND_CHAIN_ID`, `CROWDFUND_CONTRACT_ADDRESS`, `CROWDFUND_PROFILE` (outside local Anvil), `CROWDFUND_PRIMARY_RPC_URL`, and at least one webhook URL. The sale window timestamps and the treasury/USDC addresses are read from the contract on every run, so they cannot be mistyped or left at 0. Alerts whose severity has no configured webhook are logged to stderr and skipped. In the Docker stack, a failed run is logged as `evaluate-alerts FAILED (exit N)` and the `alerts` container turns unhealthy after 3 intervals without a successful run.
 
 Example systemd timer (drop into `/etc/systemd/system/crowdfund-alerts.timer`):
 

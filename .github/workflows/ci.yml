@@ -2,7 +2,8 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    # feature/** covers stacked PRs, which target another feature branch instead of main.
+    branches: [main, "feature/**"]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -233,3 +234,6 @@ jobs:
         with:
           slither-config: slither.config.json
           fail-on: none
+          # The action installs its own Node and defaults to the latest release; pin it to match
+          # setup-node. npm 12+ refuses git dependencies (EALLOWGIT), which breaks @armada/sdk.
+          node-version: "20"

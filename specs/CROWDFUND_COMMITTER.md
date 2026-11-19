@@ -8,6 +8,28 @@ Built as a standalone React app with wallet connection. The observer component i
 
 ---
 
+## Deployment Profiles
+
+The UI is built for one deployment at a time, selected by `VITE_CROWDFUND_PROFILE` (`crowdfund-ui/packages/shared/src/lib/constants.ts`). The profile supplies the sale constants, hop configs, tier labels and feature flags; production builds refuse an unknown name, and mainnet builds accept only `mainnet` or `relaunch`.
+
+| Profile | Deployment | Notes |
+|---|---|---|
+| `mainnet` (default) | Launch 1 crowdfund | Hop-0/1/2 with stacking, per-hop ceilings and a hop-2 floor. **The examples in this spec use these values** ($15k/$4k/$1k caps, $1M minimum). |
+| `medi` | medi Sepolia instances | Scaled-down Launch 1 shape. |
+| `relaunch` | Relaunch crowdfund | See below. |
+
+**Relaunch profile differences** (see CROWDFUND.md for the sale itself):
+
+- **Tiers, not hops.** Hop 0 is labelled "Known" ($150k cap), hop 2 "Invited" ($10k cap). Hop 1 holds up to five team inviter wallets ($0 cap), labelled "Team" where shown at all.
+- **Team wallets are invite-only.** A wallet whose every position has a $0 cap gets no commit flow and no Participate buttons; its invite card takes the Participate card's place. Its invite list is the compact "Invite to Invited · N invites left" row plus the links it has issued.
+- **Link-only invites.** Direct invite by address (Path B), the self-invite shortcut and the self-fill ("max out") flow are not offered; the Invite button opens the link screen directly.
+- **Team wallets hidden from public views.** The participants list, graph and Details modal (participants table, event log, per-tier stats) are built from `toPublicEvents()` (`shared/src/lib/publicEvents.ts`): team wallets are dropped and their invitees shown as invited by Armada, exactly like direct launch-team placements. A disclosure under the Details participants table explains this; the wallets remain visible on-chain. The connected wallet's own position, eligibility and invite slots use the real graph.
+- **No stacking.** A repeat invite to an already-invited address at the same hop reverts on-chain.
+- **Priority fill copy.** With no floors and 100% ceilings (`isPriorityFill()`), the allocation caveat reads "If total demand exceeds the $1.5M sale, you may receive a reduced allocation or none, and the rest comes back to you", the "refund after allocation" FAQ item is hidden, and the below-minimum claim gate does not mention per-hop limits.
+- **Zero-ARM refund claim.** A participant allocated 0 ARM with a refund (e.g. Invited crowded out by the Known tier) sees a single "Claim your refund" screen that calls `claim(address(0))`, with no delegate step. This applies on every profile.
+
+---
+
 ## Architecture
 
 The app has two halves:
@@ -421,6 +443,8 @@ If a participant suspects their invite link has been leaked or compromised, the 
 
 ### Path B: Direct Invite Flow
 
+Not offered under the `relaunch` profile, where invites are link-only (see §Deployment Profiles).
+
 For inviters who already know the recipient's address:
 
 ```
@@ -447,6 +471,8 @@ For inviters who already know the recipient's address:
 
 ### Self-Invite Shortcut
 
+Not offered under the `relaunch` profile (see §Deployment Profiles).
+
 If the connected address has unused invite slots, offer a one-click self-invite option:
 
 ```
@@ -463,7 +489,7 @@ This uses the direct invite path (inviter pays gas, immediate on-chain recording
 
 Multiple inviters can invite the same address to the same hop. Each invite creates a new participation slot — the invitee's effective cap at that hop equals `invites_received × HOP_CAP[hop]`, and outgoing invite slots scale proportionally. The same inviter can also invite the same address more than once (e.g., via two separate links). All edges are recorded and visible in the graph.
 
-The UI does not block duplicate invites but shows a notice: "This address already has N slots at Hop-1. Your invite will add another slot, increasing their cap by $4,000."
+The UI does not block duplicate invites but shows a notice: "This address already has N slots at Hop-1. Your invite will add another slot, increasing their cap by $4,000." Once the address holds the hop's maximum slots (`maxInvitesReceived`; 1 at every hop on the relaunch) the admin app warns that the invite will revert instead.
 
 ---
 

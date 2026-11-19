@@ -87,7 +87,7 @@ Complete every item before calling the deploy script. Sign off with initials and
 |---|---|
 | Observer URL is live and loading events | ☐ |
 | Committer URL is live and wallet connection works | ☐ |
-| Committer `DEPLOYMENT_REF` (commit SHA) and `VITE_EXPECTED_CROWDFUND_ADDRESS` set on the mainnet Netlify site (see §3 Step 8) | ☐ |
+| Committer `DEPLOYMENT_REF` (commit SHA), `VITE_EXPECTED_CROWDFUND_ADDRESS` and `VITE_CROWDFUND_PROFILE=relaunch` set on the mainnet Netlify site (see §3 Step 8); admin built with the same profile; indexer `.env` has `CROWDFUND_PROFILE=relaunch` | ☐ |
 | If the committer URL went live early in pre-launch mode: its `VITE_PRELAUNCH_OPENS_AT` is identical to `CROWDFUND_OPEN_TIME` in `config/mainnet.env` | ☐ |
 | RPC fallback providers configured and tested | ☐ |
 | Monitoring alerts configured (see §8) | ☐ |
@@ -192,7 +192,7 @@ opening passes.
 | | |
 |---|---|
 | **Actor** | Deployer / ops |
-| **Action** | 1. Capture the deployed `crowdfund` address from the Step 1 deploy output. 2. Publish the full mainnet manifest set (governance, crowdfund and hub CCTP `hub-mainnet-v3.json`, see Step 1) to `armada-deployments` and record the resulting **commit SHA**. 3. In the mainnet committer Netlify site env (Site settings → Environment variables), set `DEPLOYMENT_REF=<that commit SHA>` (a full SHA, not a branch) and `VITE_EXPECTED_CROWDFUND_ADDRESS=<deployed crowdfund address>`. 4. Trigger a committer redeploy. |
+| **Action** | 1. Capture the deployed `crowdfund` address from the Step 1 deploy output. 2. Publish the full mainnet manifest set (governance, crowdfund and hub CCTP `hub-mainnet-v3.json`, see Step 1) to `armada-deployments` and record the resulting **commit SHA**. 3. In the mainnet committer Netlify site env (Site settings → Environment variables), set `DEPLOYMENT_REF=<that commit SHA>` (a full SHA, not a branch), `VITE_EXPECTED_CROWDFUND_ADDRESS=<deployed crowdfund address>` and `VITE_CROWDFUND_PROFILE=relaunch` (the relaunch sale constants; unset falls back to the Launch 1 `mainnet` profile). Set the same profile on the admin build and `CROWDFUND_PROFILE=relaunch` in the indexer's `.env`. 4. Trigger a committer redeploy. |
 | **Preconditions** | Step 1 complete (crowdfund address known); manifest published to `armada-deployments` |
 | **On-chain confirmation** | Build log prints `crowdfund address verified against VITE_EXPECTED_CROWDFUND_ADDRESS`; the app loads without an address-integrity error |
 | **Fallback** | If the build fails with `FATAL: fetched crowdfund … != expected …`, the pinned manifest's crowdfund address does not match the trusted value — do NOT override the check; confirm the correct manifest/SHA and the correct expected address before redeploying. A mainnet build also hard-fails `validateEnv` if `VITE_EXPECTED_CROWDFUND_ADDRESS` is unset. |

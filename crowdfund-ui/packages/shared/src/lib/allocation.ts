@@ -1,7 +1,16 @@
 // ABOUTME: Client-side estimation of hop-level allocations mirroring the contract's _computeHopAllocations.
 // ABOUTME: Drives pre-finalization allocation estimates and the refund-mode projection (UIs + indexer alerts).
 
-import { CROWDFUND_CONSTANTS, HOP_CONFIGS } from './constants.js'
+import { CROWDFUND_CONSTANTS, HOP_CONFIGS, type CrowdfundConstants, type HopConfig } from './constants.js'
+
+/** The sale constants and hop configs the waterfall reads. Defaults to the active
+ *  profile; tests pass another profile's values to check it without a rebuild. */
+export interface AllocationConfig {
+  constants: CrowdfundConstants
+  hopConfigs: readonly [HopConfig, HopConfig, HopConfig]
+}
+
+const ACTIVE_CONFIG: AllocationConfig = { constants: CROWDFUND_CONSTANTS, hopConfigs: HOP_CONFIGS }
 
 /** The per-hop aggregate the waterfall needs: on-chain capped demand at that hop.
  *  `HopStatsData` satisfies it; the indexer builds it from graph nodes. */
@@ -31,34 +40,40 @@ export interface AllocationEstimate {
  * Pre-finalization, saleSize is 0 — use BASE_SALE or MAX_SALE based on
  * whether capped demand meets the elastic trigger.
  */
-export function estimateAllocation(hopStats: readonly HopAllocationStats[], cappedDemand: bigint, saleSize: bigint): AllocationEstimate {
+export function estimateAllocation(
+  hopStats: readonly HopAllocationStats[],
+  cappedDemand: bigint,
+  saleSize: bigint,
+  config: AllocationConfig = ACTIVE_CONFIG,
+): AllocationEstimate {
+  const { constants, hopConfigs } = config
   // Determine effective sale size
   let effectiveSaleSize: bigint
   if (saleSize > 0n) {
     effectiveSaleSize = saleSize
-  } else if (cappedDemand >= CROWDFUND_CONSTANTS.ELASTIC_TRIGGER) {
-    effectiveSaleSize = CROWDFUND_CONSTANTS.MAX_SALE
+  } else if (cappedDemand >= constants.ELASTIC_TRIGGER) {
+    effectiveSaleSize = constants.MAX_SALE
   } else {
-    effectiveSaleSize = CROWDFUND_CONSTANTS.BASE_SALE
+    effectiveSaleSize = constants.BASE_SALE
   }
 
   const hop2Floor = (effectiveSaleSize * BigInt(
-    CROWDFUND_CONSTANTS.HOP2_BASE_FLOOR_BPS + CROWDFUND_CONSTANTS.HOP2_EXTRA_FLOOR_BPS,
+    constants.HOP2_BASE_FLOOR_BPS + constants.HOP2_EXTRA_FLOOR_BPS,
   )) / 10_000n
   const available = effectiveSaleSize - hop2Floor
-  const basePool = (effectiveSaleSize * BigInt(10_000 - CROWDFUND_CONSTANTS.HOP2_BASE_FLOOR_BPS)) / 10_000n
+  const basePool = (effectiveSaleSize * BigInt(10_000 - constants.HOP2_BASE_FLOOR_BPS)) / 10_000n
 
   // Hop-0
   const hop0Ceiling =
-    (basePool * BigInt(HOP_CONFIGS[0].ceilingBps)) / 10_000n -
-    (effectiveSaleSize * BigInt(CROWDFUND_CONSTANTS.HOP2_EXTRA_FLOOR_BPS)) / 10_000n
+    (basePool * BigInt(hopConfigs[0].ceilingBps)) / 10_000n -
+    (effectiveSaleSize * BigInt(constants.HOP2_EXTRA_FLOOR_BPS)) / 10_000n
   const hop0Demand = hopStats[0]?.cappedCommitted ?? 0n
   const hop0Alloc = hop0Demand <= hop0Ceiling ? hop0Demand : hop0Ceiling
   const hop0Leftover = hop0Ceiling - hop0Alloc
   const remainingAvailable = available - hop0Alloc
 
   // Hop-1
-  const hop1BaseCeiling = (basePool * BigInt(HOP_CONFIGS[1].ceilingBps)) / 10_000n
+  const hop1BaseCeiling = (basePool * BigInt(hopConfigs[1].ceilingBps)) / 10_000n
   let hop1EffCeiling = hop1BaseCeiling + hop0Leftover
   if (hop1EffCeiling > remainingAvailable) {
     hop1EffCeiling = remainingAvailable
@@ -82,16 +97,23 @@ export function estimateAllocation(hopStats: readonly HopAllocationStats[], capp
 
 /**
  * Whether finalize() would enter refund mode for the given capped demand.
- * The contract refunds when the post-waterfall allocation is below MIN_SALE —
- * capped demand alone is not enough, because hop-0's ceiling sits below
- * MIN_SALE at both sale sizes, so hop-0-heavy demand can clear MIN_SALE yet
- * allocate below it. Allocation never exceeds capped demand, so this also
- * covers the contract's earlier `cappedDemand < MIN_SALE` branch.
+ * The contract refunds when the post-waterfall allocation is below MIN_SALE.
+ * Under profiles whose hop ceilings can hold allocation below demand, capped
+ * demand alone is not enough: in Launch 1 (mainnet profile) hop-0's ceiling sits
+ * below MIN_SALE at both sale sizes, so hop-0-heavy demand can clear MIN_SALE yet
+ * allocate below it. (Under the relaunch profile allocation equals
+ * min(capped demand, sale size), so the two checks agree.) Allocation never
+ * exceeds capped demand, so this also covers the contract's earlier
+ * `cappedDemand < MIN_SALE` branch.
  * Pre-finalize only; afterwards the contract's `refundMode` flag is authoritative.
  */
-export function projectsRefundMode(hopStats: readonly HopAllocationStats[], cappedDemand: bigint): boolean {
-  const { totalAllocUsdc } = estimateAllocation(hopStats, cappedDemand, 0n)
-  return totalAllocUsdc < CROWDFUND_CONSTANTS.MIN_SALE
+export function projectsRefundMode(
+  hopStats: readonly HopAllocationStats[],
+  cappedDemand: bigint,
+  config: AllocationConfig = ACTIVE_CONFIG,
+): boolean {
+  const { totalAllocUsdc } = estimateAllocation(hopStats, cappedDemand, 0n, config)
+  return totalAllocUsdc < config.constants.MIN_SALE
 }
 
 export interface UserHopPosition {
@@ -113,9 +135,10 @@ export function estimateUserArmAllocation(
   hopStats: readonly HopAllocationStats[],
   cappedDemand: bigint,
   saleSize: bigint,
+  config: AllocationConfig = ACTIVE_CONFIG,
 ): bigint {
   if (positions.length === 0) return 0n
-  const { perHopCeiling } = estimateAllocation(hopStats, cappedDemand, saleSize)
+  const { perHopCeiling } = estimateAllocation(hopStats, cappedDemand, saleSize, config)
   let acceptedTotal = 0n
   for (const pos of positions) {
     const stats = hopStats[pos.hop]

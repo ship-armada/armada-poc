@@ -4,11 +4,18 @@
 export {
   CROWDFUND_CONSTANTS,
   CROWDFUND_PROFILE,
+  CROWDFUND_PROFILES,
+  CROWDFUND_FEATURES,
   HOP_CONFIGS,
+  CONSTANTS_BY_PROFILE,
+  HOP_CONFIGS_BY_PROFILE,
+  FEATURES_BY_PROFILE,
+  isCrowdfundProfile,
+  parseCrowdfundProfile,
   CROWDFUND_ABI_FRAGMENTS,
   ERC20_ABI_FRAGMENTS,
 } from './lib/constants.js'
-export type { HopConfig, CrowdfundConstants, CrowdfundProfile } from './lib/constants.js'
+export type { HopConfig, CrowdfundConstants, CrowdfundFeatures, CrowdfundProfile } from './lib/constants.js'
 
 export type { CrowdfundEvent, CrowdfundEventType, RawLog } from './lib/events.js'
 export { parseCrowdfundEvent, parseCrowdfundEvents } from './lib/events.js'
@@ -51,7 +58,7 @@ export {
 } from './lib/addressInput.js'
 
 export { estimateAllocation, estimateUserArmAllocation, projectsRefundMode } from './lib/allocation.js'
-export type { AllocationEstimate, HopAllocationStats, UserHopPosition } from './lib/allocation.js'
+export type { AllocationConfig, AllocationEstimate, HopAllocationStats, UserHopPosition } from './lib/allocation.js'
 
 export {
   computeSelfFillPlan,

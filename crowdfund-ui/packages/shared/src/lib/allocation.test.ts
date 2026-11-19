@@ -8,7 +8,12 @@ import {
   projectsRefundMode,
   type UserHopPosition,
 } from './allocation.js'
-import { CROWDFUND_CONSTANTS, HOP_CONFIGS } from './constants.js'
+import {
+  CONSTANTS_BY_PROFILE,
+  CROWDFUND_CONSTANTS,
+  HOP_CONFIGS,
+  HOP_CONFIGS_BY_PROFILE,
+} from './constants.js'
 import type { HopStatsData } from '../components/StatsBar.js'
 
 const ARM_FROM_USDC = 10n ** 12n // 1 USDC (6 dec) → 1 ARM (18 dec)
@@ -92,11 +97,11 @@ describe('estimateAllocation', () => {
   })
 })
 
-describe('estimateAllocation — cross-language differential vectors', () => {
-  // WHY: this is the off-chain mirror of the contract's _computeHopAllocations, which drives the
-  // committer/admin/indexer refund projection. This SAME (saleSize, demand) → total table is
-  // asserted against the Solidity source of truth in test-foundry/CrowdfundWaterfallMath.t.sol.
-  // Any drift between the two implementations fails one side. Keep the two tables in lockstep.
+describe('estimateAllocation — Launch 1 (mainnet profile) waterfall vectors', () => {
+  // WHY: the mainnet profile still serves the deployed Launch 1 crowdfund, whose contract used
+  // 60/45 ceilings and a 15% hop-2 floor. These pin the off-chain mirror to that deployed
+  // waterfall. (The current Solidity source carries the relaunch constants; its differential table
+  // is mirrored by the relaunch block below.)
   const K = 1_000n * USDC
   const B = CROWDFUND_CONSTANTS.BASE_SALE
   const M = CROWDFUND_CONSTANTS.MAX_SALE
@@ -265,5 +270,69 @@ describe('estimateUserArmAllocation', () => {
       { hop: 0, committed: 0n, effectiveCap: HOP_CONFIGS[0].capUsdc },
     ]
     expect(estimateUserArmAllocation(positions, hopStats, 0n, 0n)).toBe(0n)
+  })
+})
+
+describe('estimateAllocation — relaunch profile cross-language differential vectors', () => {
+  // WHY: this is the off-chain mirror of the relaunch contract's _computeHopAllocations, which
+  // drives the committer/admin/indexer refund projection. This SAME (saleSize, demand) → total table
+  // is asserted against the Solidity source of truth in
+  // test-foundry/CrowdfundWaterfallMath.t.sol::test_differentialVectors. Any drift between the two
+  // implementations fails one side. Keep the two tables in lockstep.
+  const relaunch = { constants: CONSTANTS_BY_PROFILE.relaunch, hopConfigs: HOP_CONFIGS_BY_PROFILE.relaunch }
+  const K = 1_000n * USDC
+  const S = CONSTANTS_BY_PROFILE.relaunch.BASE_SALE
+  const cases: Array<[bigint, bigint, bigint, bigint, bigint]> = [
+    // saleSize, d0, d1, d2, expectedTotal
+    [S, 2_000n * K, 0n, 0n, 1_500n * K], // hop-0 oversub → takes the whole sale
+    [S, 2_000n * K, 2_000n * K, 2_000n * K, 1_500n * K], // saturated → full sale
+    [S, 564n * K, 0n, 2_000n * K, 1_500n * K], // hop-0 leftover → hop-2 rollover
+    [S, 0n, 2_000n * K, 0n, 1_500n * K], // hop-0 empty → hop-1 gets the whole sale
+    [S, 1_400n * K, 0n, 300n * K, 1_500n * K], // hop-2 gets the $100K remainder
+    [S, 1_050n * K, 436n * K, 0n, 1_486n * K], // under the sale → everyone filled
+    [S, 200n * K, 0n, 50n * K, 250n * K], // exactly MIN_SALE
+    [S, 200n * K, 0n, 49n * K, 249n * K], // $1K less → below MIN_SALE
+    [S, 0n, 0n, 0n, 0n], // no demand
+  ]
+  it.each(cases)('saleSize=%s d=(%s,%s,%s) → %s', (saleSize, d0, d1, d2, expected) => {
+    const stats = emptyHopStats()
+    stats[0].cappedCommitted = d0
+    stats[1].cappedCommitted = d1
+    stats[2].cappedCommitted = d2
+    expect(estimateAllocation(stats, d0 + d1 + d2, saleSize, relaunch).totalAllocUsdc).toBe(expected)
+  })
+
+  // WHY: pre-finalization the projection passes saleSize = 0 and picks the sale size from capped
+  // demand. With BASE_SALE == MAX_SALE that is $1.5M on both sides of the trigger.
+  it('uses the $1.5M sale size on both sides of the elastic trigger', () => {
+    const below = emptyHopStats()
+    below[0].cappedCommitted = 1_000n * K
+    expect(estimateAllocation(below, 1_000n * K, 0n, relaunch).effectiveSaleSize).toBe(S)
+    const above = emptyHopStats()
+    above[0].cappedCommitted = 2_000n * K
+    expect(estimateAllocation(above, 2_000n * K, 0n, relaunch).effectiveSaleSize).toBe(S)
+  })
+
+  // WHY: the relaunch refunds only when capped demand is below the $250K minimum (allocation equals
+  // min(capped demand, sale size)); the projection must flip at exactly that boundary.
+  it('projects refund mode exactly below the $250K minimum', () => {
+    const at = emptyHopStats()
+    at[0].cappedCommitted = 200n * K
+    at[2].cappedCommitted = 50n * K
+    expect(projectsRefundMode(at, 250n * K, relaunch)).toBe(false)
+    const under = emptyHopStats()
+    under[0].cappedCommitted = 200n * K
+    under[2].cappedCommitted = 49n * K
+    expect(projectsRefundMode(under, 249n * K, relaunch)).toBe(true)
+  })
+
+  // WHY: with no hop-2 floor, Known demand that fills the sale crowds the Invited tier out entirely;
+  // an Invited contributor's projected ARM must be zero (their deposit comes back as a refund).
+  it('projects zero ARM for an Invited contributor when Known demand fills the sale', () => {
+    const stats = emptyHopStats()
+    stats[0].cappedCommitted = 1_500n * K
+    stats[2].cappedCommitted = 10n * K
+    const invited: UserHopPosition[] = [{ hop: 2, committed: 10n * K, effectiveCap: 10n * K }]
+    expect(estimateUserArmAllocation(invited, stats, 1_510n * K, 0n, relaunch)).toBe(0n)
   })
 })

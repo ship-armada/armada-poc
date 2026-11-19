@@ -1,6 +1,11 @@
 // ABOUTME: Startup environment validation for the admin app.
 // ABOUTME: Hard-fails production builds that are missing critical VITE_* config.
 
+import { CROWDFUND_PROFILES, isCrowdfundProfile, type CrowdfundProfile } from '@armada/crowdfund-shared'
+
+/** Profiles whose constants describe a mainnet sale. */
+const MAINNET_PROFILES: readonly CrowdfundProfile[] = ['mainnet', 'relaunch']
+
 /** The subset of the Vite env we validate. All fields optional so the pure
  *  function can be exercised with plain records in tests. */
 export interface EnvRecord {
@@ -48,17 +53,27 @@ export function validateEnv(env: EnvRecord): EnvValidationResult {
         'the UI would apply mainnet sale constants to the deployed instance.',
     )
   }
-  // A non-mainnet profile (e.g. the medi/Sepolia profile) on a mainnet build would
-  // render $1k-scale sale numbers over the real $1.2M sale. Unset is allowed — it
-  // defaults to the mainnet profile.
+  // An unknown profile name silently falls back to the mainnet (Launch 1) constants,
+  // so a typo would render the wrong sale. Refuse it on any production build.
+  const profile = env.VITE_CROWDFUND_PROFILE?.trim()
+  if (!missing(profile) && !isCrowdfundProfile(profile!)) {
+    errors.push(
+      `VITE_CROWDFUND_PROFILE "${profile}" is not a known profile ` +
+        `(expected one of: ${CROWDFUND_PROFILES.join(', ')}).`,
+    )
+  }
+  // A testnet profile (e.g. medi/Sepolia) on a mainnet build would render $1k-scale
+  // sale numbers over a real mainnet sale. Mainnet builds use the Launch 1 profile
+  // ("mainnet") or the relaunch profile. Unset is allowed — it defaults to mainnet.
   if (
     network === 'mainnet' &&
-    !missing(env.VITE_CROWDFUND_PROFILE) &&
-    env.VITE_CROWDFUND_PROFILE!.trim() !== 'mainnet'
+    !missing(profile) &&
+    isCrowdfundProfile(profile!) &&
+    !MAINNET_PROFILES.includes(profile!)
   ) {
     errors.push(
-      `VITE_CROWDFUND_PROFILE is "${env.VITE_CROWDFUND_PROFILE!.trim()}" on a mainnet build — ` +
-        'mainnet must use the "mainnet" profile (or leave it unset, which defaults to mainnet).',
+      `VITE_CROWDFUND_PROFILE is "${profile}" on a mainnet build — ` +
+        'mainnet must use the "mainnet" or "relaunch" profile (or leave it unset, which defaults to mainnet).',
     )
   }
 

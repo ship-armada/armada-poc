@@ -70,7 +70,22 @@ describe('validateEnv (admin)', () => {
     const result = validateEnv({ PROD: true, VITE_NETWORK: 'mainnet', VITE_CROWDFUND_PROFILE: 'medi' })
     expect(result.ok).toBe(false)
     if (!result.ok) {
-      expect(result.errors.some((e) => e.includes('mainnet must use the "mainnet" profile'))).toBe(true)
+      expect(result.errors.some((e) => e.includes('mainnet must use the "mainnet" or "relaunch" profile'))).toBe(true)
+    }
+  })
+
+  // WHY: the relaunch crowdfund is on mainnet with its own constants; the admin app must build for it.
+  it('passes a mainnet build on the relaunch profile', () => {
+    expect(validateEnv({ PROD: true, VITE_NETWORK: 'mainnet', VITE_CROWDFUND_PROFILE: 'relaunch' })).toEqual({ ok: true })
+  })
+
+  // WHY: an unknown profile name silently falls back to the mainnet (Launch 1) constants, so a typo
+  // like "relaunh" would show the wrong budgets and caps. Production builds must refuse it.
+  it('rejects an unknown profile name on a production build', () => {
+    const result = validateEnv({ PROD: true, VITE_NETWORK: 'sepolia', VITE_CROWDFUND_PROFILE: 'relaunh' })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.includes('"relaunh" is not a known profile'))).toBe(true)
     }
   })
 

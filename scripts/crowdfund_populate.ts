@@ -5,30 +5,31 @@
  *
  * Loads the existing deployment from deployments/crowdfund-hub.json and runs
  * through the full lifecycle: add seeds → start window → invite + commit
- * (concurrent) → advance past window.
+ * (concurrent) → advance past window. Per-hop caps and the minimum sale are read
+ * from the deployed contract.
+ *
+ * Tiers: Known contributors (hop 0, added as seeds) commit their full cap. With
+ * HOPS, the launch team also places team inviter wallets (hop 1, $0 cap, never
+ * commit) and those wallets invite Invited contributors (hop 2), who commit their
+ * full cap. Known contributors cannot invite.
  *
  * Leaves the contract ready for admin to finalize via the UI or CLI.
  *
  * Environment variables:
- *   TARGET  - Target total in whole USDC (default: 1050000 = just above $1M MIN_SALE)
- *   HOPS    - If "true", also populate hop-1 and hop-2 participants (default: false)
+ *   TARGET  - Target total in whole USDC (default: 500000, above the $250K MIN_SALE)
+ *   HOPS    - If "true", also place team wallets and Invited contributors (default: false)
+ *   INVITED - Invited contributors to add when HOPS is set (default: 12)
  *
  * Usage:
  *   npx hardhat run scripts/crowdfund_populate.ts --network hub
  *   TARGET=1200000 npx hardhat run scripts/crowdfund_populate.ts --network hub
- *   TARGET=1800000 HOPS=true npx hardhat run scripts/crowdfund_populate.ts --network hub
+ *   TARGET=1500000 HOPS=true INVITED=30 npx hardhat run scripts/crowdfund_populate.ts --network hub
  */
 
 import { ethers, network } from "hardhat";
 import * as fs from "fs";
 import * as path from "path";
 import { getCrowdfundDeploymentFile } from "../config/networks";
-
-const THREE_WEEKS = 21 * 86400;
-
-const SEED_CAP = 15_000;  // $15,000 per seed
-const HOP1_CAP = 4_000;   // $4,000 per hop-1
-const HOP2_CAP = 1_000;   // $1,000 per hop-2
 
 const BATCH_SIZE = 20;
 const SEED_BATCH_SIZE = 50; // for addSeeds() calls
@@ -66,8 +67,9 @@ function loadDeployment(): Deployment {
 }
 
 async function main() {
-  const targetUsdc = parseInt(process.env.TARGET || "1050000", 10);
+  const targetUsdc = parseInt(process.env.TARGET || "500000", 10);
   const includeHops = process.env.HOPS === "true";
+  const invitedTarget = includeHops ? parseInt(process.env.INVITED || "12", 10) : 0;
 
   console.log("=".repeat(70));
   console.log("  CROWDFUND POPULATE");
@@ -103,77 +105,61 @@ async function main() {
   }
   log("PHASE", `Current phase: ${PhaseNames[phase]}`);
 
+  // Caps come from the deployed contract (whole USDC), so the plan matches its constants.
+  const capOf = async (hop: number) => Number((await crowdfund.hopConfigs(hop)).capUsdc / 1_000_000n);
+  const SEED_CAP = await capOf(0);      // Known contributor cap
+  const INVITED_CAP = await capOf(2);   // Invited contributor cap
+  const TEAM_WALLET_INVITES = Number((await crowdfund.hopConfigs(1)).maxInvites);
+  const TEAM_WALLET_BUDGET = Number(await crowdfund.LAUNCH_TEAM_HOP1_BUDGET());
+  const minSale = await crowdfund.MIN_SALE();
+
   // Get signers — Hardhat provides 200 by default
   const signers = await ethers.getSigners();
   const deployer = signers[0];
 
   // Signer allocation mirrors the UI's dropdown (crowdfund-ui/packages/committer):
-  //   signers[0]   = Admin / Deployer
-  //   signers[1-3] = Seed A/B/C (hop-0)   — UI accounts
-  //   signers[4-6] = Hop-1 A/B/C          — UI accounts
-  //   signers[7-9] = Hop-2 A/B/C          — UI accounts
-  //   signers[11+] = generated participants (bulk seeds, extra hop-1/hop-2)
+  //   signers[0]   = Admin / Deployer (launch team)
+  //   signers[1-3] = Seed A/B/C (hop-0, Known)        — UI accounts
+  //   signers[4-6] = Hop-1 A/B/C (hop-1, team wallets) — UI accounts
+  //   signers[7-9] = Hop-2 A/B/C (hop-2, Invited)      — UI accounts
+  //   signers[11+] = generated participants (bulk Known seeds, extra Invited)
   const availableSigners = signers.slice(11);
 
   // UI accounts — these match the predefined addresses in the UI dropdown
   const uiSeeds = signers.slice(1, 4);     // Seed A/B/C
-  const uiHop1  = signers.slice(4, 7);     // Hop-1 A/B/C
-  const uiHop2  = signers.slice(7, 10);    // Hop-2 A/B/C
+  const uiHop1  = signers.slice(4, 7);     // Hop-1 A/B/C: team inviter wallets
+  const uiHop2  = signers.slice(7, 10);    // Hop-2 A/B/C: first Invited contributors
 
-  // Calculate participant counts
-  let seedCount: number;
-  let hop1Count = 0;
-  let hop2Count = 0;
+  // Plan: team wallets (if HOPS) are the UI hop-1 accounts, within the launch-team budget.
+  // Invited contributors are the UI hop-2 accounts plus generated signers, spread across the team
+  // wallets' invite slots. Known seeds (UI seeds + generated) cover the rest of the target.
+  const teamWallets = includeHops ? uiHop1.slice(0, Math.min(uiHop1.length, TEAM_WALLET_BUDGET)) : [];
+  const invitedCount = Math.min(invitedTarget, teamWallets.length * TEAM_WALLET_INVITES);
+  const generatedInvited = Math.max(0, invitedCount - uiHop2.length);
+  const invitedTotal = invitedCount * INVITED_CAP;
+  const remainingTarget = Math.max(0, targetUsdc - uiSeeds.length * SEED_CAP - invitedTotal);
+  const seedCount = Math.ceil(remainingTarget / SEED_CAP); // generated Known seeds
 
-  if (includeHops) {
-    // With hops: allocate enough hop-1/hop-2 so that total allocation
-    // (after hop ceilings) exceeds MIN_SALE. The hop-0 ceiling at BASE_SALE
-    // is $564K, so hop-1/hop-2 must contribute at least $436K to clear $1M.
-    // Each seed can invite 3 hop-1, each hop-1 can invite 2 hop-2.
-    // Kept modest to stay within Hardhat's 200 signer limit.
-    const inviteSeeds = 37; // 37 seeds × 3 invites = 111 hop-1
-    hop1Count = inviteSeeds * 3; // 111 hop-1 × $4K = $444K
-    hop2Count = 0;
-
-    const hop1Total = hop1Count * HOP1_CAP;
-    const hop2Total = hop2Count * HOP2_CAP;
-    const remainingTarget = Math.max(0, targetUsdc - hop1Total - hop2Total);
-    seedCount = Math.max(inviteSeeds, Math.ceil(remainingTarget / SEED_CAP));
-  } else {
-    seedCount = Math.ceil(targetUsdc / SEED_CAP);
-  }
-
-  // Build participant arrays: UI accounts first, then generated signers for the rest.
-  // This ensures the UI dropdown addresses are real participants in the crowdfund.
   const seedSigners = availableSigners.slice(0, seedCount);
-
-  let hop1Signers: typeof seedSigners = [];
-  let hop2Signers: typeof seedSigners = [];
-  if (includeHops) {
-    // UI hop-1 accounts (3) + generated hop-1 for the remainder
-    const generatedHop1 = availableSigners.slice(seedCount, seedCount + hop1Count - uiHop1.length);
-    hop1Signers = [...uiHop1, ...generatedHop1];
-
-    // UI hop-2 accounts (3) + generated hop-2 for the remainder
-    const genHop2Start = seedCount + hop1Count - uiHop1.length;
-    const generatedHop2 = availableSigners.slice(genHop2Start, genHop2Start + hop2Count - uiHop2.length);
-    hop2Signers = [...uiHop2, ...generatedHop2];
-  }
+  const invitedSigners = includeHops
+    ? [...uiHop2.slice(0, invitedCount), ...availableSigners.slice(seedCount, seedCount + generatedInvited)]
+    : [];
 
   // Ensure we have enough signers
-  const totalParticipants = seedCount + Math.max(0, hop1Count - uiHop1.length) + Math.max(0, hop2Count - uiHop2.length);
+  const totalParticipants = seedCount + generatedInvited;
   if (totalParticipants > availableSigners.length) {
     throw new Error(
       `Need ${totalParticipants} signers but only ${availableSigners.length} available.\n` +
-      `Reduce TARGET or increase hardhat accounts count.`
+      `Reduce TARGET or INVITED, or increase hardhat accounts count.`
     );
   }
 
-  const expectedTotal = (seedCount * SEED_CAP) + (hop1Count * HOP1_CAP) + (hop2Count * HOP2_CAP);
-  log("PLAN", `Seeds: ${seedCount} × $${SEED_CAP.toLocaleString()} = $${(seedCount * SEED_CAP).toLocaleString()}`);
+  const knownCount = uiSeeds.length + seedCount;
+  const expectedTotal = knownCount * SEED_CAP + invitedTotal;
+  log("PLAN", `Known: ${knownCount} × $${SEED_CAP.toLocaleString()} = $${(knownCount * SEED_CAP).toLocaleString()}`);
   if (includeHops) {
-    log("PLAN", `Hop-1: ${hop1Count} × $${HOP1_CAP.toLocaleString()} = $${(hop1Count * HOP1_CAP).toLocaleString()}`);
-    log("PLAN", `Hop-2: ${hop2Count} × $${HOP2_CAP.toLocaleString()} = $${(hop2Count * HOP2_CAP).toLocaleString()}`);
+    log("PLAN", `Team wallets: ${teamWallets.length} (no commits)`);
+    log("PLAN", `Invited: ${invitedCount} × $${INVITED_CAP.toLocaleString()} = $${invitedTotal.toLocaleString()}`);
   }
   log("PLAN", `Expected total: $${expectedTotal.toLocaleString()}`);
   console.log("");
@@ -184,7 +170,7 @@ async function main() {
   console.log("-".repeat(70));
   log("FUND", "Sending ETH to participant signers for gas...");
   const ethPerParticipant = ethers.parseEther("1");
-  const allParticipants = [...uiSeeds, ...seedSigners, ...hop1Signers, ...hop2Signers];
+  const allParticipants = [...uiSeeds, ...seedSigners, ...teamWallets, ...invitedSigners];
   for (let i = 0; i < allParticipants.length; i += BATCH_SIZE) {
     const batch = allParticipants.slice(i, i + BATCH_SIZE);
     for (const p of batch) {
@@ -238,34 +224,23 @@ async function main() {
   }
   log("PHASE", "Crowdfund window is open (invites + commits concurrent)");
 
-  // ============ INVITATIONS (if hops enabled) ============
+  // ============ TEAM WALLETS + INVITED (if hops enabled) ============
   if (includeHops) {
     console.log("-".repeat(70));
-    log("INVITE", "Sending invitations...");
-
-    // UI seeds (signers[1-3]) invite first, then generated seeds.
-    // Each seed can invite up to 3 hop-1 addresses.
-    const inviterSeeds = [...uiSeeds, ...seedSigners];
-    let h1idx = 0;
-    for (let i = 0; i < inviterSeeds.length && h1idx < hop1Signers.length; i++) {
-      for (let j = 0; j < 3 && h1idx < hop1Signers.length; j++) {
-        const tx = await crowdfund.connect(inviterSeeds[i]).invite(hop1Signers[h1idx].address, 0);
-        await tx.wait();
-        h1idx++;
-      }
+    log("INVITE", "Placing team inviter wallets (launch team)...");
+    for (const w of teamWallets) {
+      const tx = await crowdfund.launchTeamInvite(w.address, 0); // deployer == launch team
+      await tx.wait();
     }
-    log("INVITE", `${h1idx} hop-1 addresses invited (by ${Math.min(Math.ceil(h1idx / 3), inviterSeeds.length)} seeds)`);
+    log("INVITE", `${teamWallets.length} team wallets placed at hop 1`);
 
-    // Each hop-1 invites 2 hop-2 addresses
-    let h2idx = 0;
-    for (let i = 0; i < hop1Signers.length; i++) {
-      for (let j = 0; j < 2 && h2idx < hop2Signers.length; j++) {
-        const tx = await crowdfund.connect(hop1Signers[i]).invite(hop2Signers[h2idx].address, 1);
-        await tx.wait();
-        h2idx++;
-      }
+    // Team wallets invite Invited contributors round-robin (an invite link does the same on-chain).
+    for (let i = 0; i < invitedSigners.length; i++) {
+      const inviter = teamWallets[i % teamWallets.length];
+      const tx = await crowdfund.connect(inviter).invite(invitedSigners[i].address, 1);
+      await tx.wait();
     }
-    log("INVITE", `${h2idx} hop-2 addresses invited`);
+    log("INVITE", `${invitedSigners.length} Invited contributors invited at hop 2`);
   }
 
   // ============ MINT + APPROVE + COMMIT ============
@@ -319,8 +294,8 @@ async function main() {
 
   await commitBatch(seedSigners, SEED_CAP, 0, "Seeds");
   if (includeHops) {
-    await commitBatch(hop1Signers, HOP1_CAP, 1, "Hop-1");
-    await commitBatch(hop2Signers, HOP2_CAP, 2, "Hop-2");
+    // Team wallets have a $0 cap and never commit.
+    await commitBatch(invitedSigners, INVITED_CAP, 2, "Invited");
   }
 
   // ============ ADVANCE PAST WINDOW ============
@@ -355,14 +330,13 @@ async function main() {
     }
   }
 
-  const minSale = BigInt("1000000000000"); // $1M in USDC units
   if (totalCommitted >= minSale) {
     console.log("");
     log("READY", "Above MIN_SALE — admin can finalize via UI or CLI");
     log("READY", "  npx hardhat cf-finalize --network hub");
   } else {
     console.log("");
-    log("WARN", `Below MIN_SALE ($1M) — finalize will cancel the sale`);
+    log("WARN", `Below MIN_SALE (${fmtUsdc(minSale)}) — finalize will enter refund mode`);
   }
 
   console.log("");

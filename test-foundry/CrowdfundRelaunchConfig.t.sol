@@ -224,6 +224,44 @@ contract CrowdfundRelaunchConfigTest is Test {
         assertEq(usdc.balanceOf(address(cf)), 0, "nothing stranded: no refunds owed");
     }
 
+    // WHY: the brief's lower boundary: $249,999.999999 accepted is one unit below the minimum, so the
+    //      sale must refund everyone and pay neither the team nor the treasury.
+    function test_one_unit_below_minimum_enters_refund_mode() public {
+        _addKnown(1);
+        _placeSmall(15);
+        _commitKnown(1, KNOWN_CAP);
+        _commitSmall(14, SMALL_CAP);
+        _commit(_smallAddr(14), 2, SMALL_CAP - 1); // $249,999.999999 in total
+        assertEq(cf.totalCommitted(), 250_000 * USDC - 1);
+        _finalize();
+
+        assertTrue(cf.refundMode(), "one unit below the minimum refunds");
+        assertEq(usdc.balanceOf(launchTeam), 0, "no team payment");
+        assertEq(usdc.balanceOf(treasury), 0, "no proceeds");
+        vm.prank(_smallAddr(14));
+        cf.claimRefund();
+        assertEq(usdc.balanceOf(_smallAddr(14)), SMALL_CAP - 1, "full refund");
+    }
+
+    // WHY: the brief's upper boundary: $250,000.000001 accepted succeeds with everyone filled in full;
+    //      the team receives exactly $250k and the treasury exactly the one extra unit. No tier is
+    //      pro-rated, so no rounding buffer is held back and nothing is stranded.
+    function test_one_unit_over_minimum_pays_team_exactly_and_treasury_one_unit() public {
+        _addKnown(2);
+        _placeSmall(10);
+        _commit(_knownAddr(0), 0, KNOWN_CAP);
+        _commit(_knownAddr(1), 0, 50_000 * USDC + 1);
+        _commitSmall(10, SMALL_CAP); // $100k + $50,000.000001 + $100k = $250,000.000001
+        _finalize();
+
+        assertFalse(cf.refundMode());
+        assertEq(cf.totalAllocatedUsdc(), 250_000 * USDC + 1);
+        assertEq(_refundOf(_knownAddr(1)), 0, "filled in full");
+        assertEq(usdc.balanceOf(launchTeam), TEAM_PAYMENT, "team paid exactly $250k");
+        assertEq(usdc.balanceOf(treasury), 1, "treasury receives the one extra unit");
+        assertEq(usdc.balanceOf(address(cf)), 0, "nothing stranded: no refunds owed");
+    }
+
     // WHY: any tier mix that commits $250k must succeed. Three known contributors alone clear it.
     function test_known_tier_alone_clears_minimum() public {
         _addKnown(3);

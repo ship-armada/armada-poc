@@ -308,7 +308,8 @@ async function main() {
   saveDeployment(govFilename, govDeployment);
   console.log(`   ArmadaRedemption: ${redemptionAddress}`);
 
-  // 9. Deploy ArmadaWindDown (requires redemption address)
+  // 9. Deploy ArmadaWindDown (requires redemption address). The launch team is its guardian: it
+  // can trigger wind-down at any time as a last resort, until it renounces the power.
   console.log("9. Deploying ArmadaWindDown...");
   const windDownDeadline = Math.floor(new Date(config.windDownDeadline).getTime() / 1000);
   const revenueThreshold = ethers.parseUnits(config.windDownRevenueThreshold, 18);
@@ -316,13 +317,13 @@ async function main() {
   const windDownContract = await ArmadaWindDown.deploy(
     armTokenAddress, treasuryAddress, governorAddress, redemptionAddress,
     shieldPauseAddress, revenueCounterAddress, revenueLockAddress, timelockAddress,
-    revenueThreshold, windDownDeadline, nm.override()
+    launchTeamAddress, revenueThreshold, windDownDeadline, nm.override()
   );
   await windDownContract.deploymentTransaction()!.wait();
   const windDownAddress = await windDownContract.getAddress();
   govDeployment.contracts.windDown = windDownAddress;
   saveDeployment(govFilename, govDeployment);
-  console.log(`   ArmadaWindDown: ${windDownAddress}`);
+  console.log(`   ArmadaWindDown: ${windDownAddress} (guardian: launch team ${launchTeamAddress})`);
 
   // 10. Wire wind-down to ARM token (deployer-gated one-time setter — direct call)
   console.log("10. Wiring wind-down to ARM token...");

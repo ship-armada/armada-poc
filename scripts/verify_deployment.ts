@@ -787,6 +787,9 @@ async function checkLaunchValues(govManifest: any, crowdfundManifest: any,
   await expectOnChain(GROUP, "Crowdfund treasury", () => crowdfund.treasury(), c.treasury);
   await expectOnChain(GROUP, "Crowdfund launchTeam",
     () => crowdfund.launchTeam(), config.launchTeamAddress || govManifest.deployer);
+  // The launch team is the wind-down guardian until it renounces (then guardian() is zero).
+  await expectOnChain(GROUP, "WindDown guardian = crowdfund launchTeam",
+    () => windDown.guardian(), await crowdfund.launchTeam());
   await expectOnChain(GROUP, "Crowdfund securityCouncil = governor securityCouncil",
     () => crowdfund.securityCouncil(), await governor.securityCouncil());
   if (config.securityCouncilAddress) {

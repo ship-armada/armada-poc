@@ -56,6 +56,7 @@ describe("Wind-Down & Redemption Integration", function () {
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
   let carol: SignerWithAddress; // security council
+  let guardian: SignerWithAddress; // launch-team wind-down guardian
   let revenueLockAddr: SignerWithAddress; // stand-in for revenue-lock contract
   let crowdfundAddr: SignerWithAddress;   // stand-in for crowdfund contract
 
@@ -87,6 +88,7 @@ describe("Wind-Down & Redemption Integration", function () {
 
   beforeEach(async function () {
     [deployer, alice, bob, carol] = await ethers.getSigners();
+    guardian = (await ethers.getSigners())[5];
     // Mock contract instances — ArmadaRedemption queries lockedAtWindDown() and
     // armStillOwed() on these for the circulatingSupply denominator. ArmadaWindDown
     // also calls freezeAtWindDown() on the RevenueLock mock at trigger.
@@ -169,6 +171,7 @@ describe("Wind-Down & Redemption Integration", function () {
       await revenueCounter.getAddress(),
       revenueLockAddr.address,
       timelockAddr,
+      guardian.address,
       REVENUE_THRESHOLD,
       windDownDeadline,
     );
@@ -564,6 +567,61 @@ describe("Wind-Down & Redemption Integration", function () {
     });
   });
 
+  describe("Guardian wind-down (last resort against a captured governance)", function () {
+    const ProposalType = { Standard: 0 };
+    const ProposalState = { Queued: 4 };
+    const Vote = { For: 1 };
+
+    // WHY: the launch-team guardian exists to stop a capture proposal that governance failed to
+    // defeat. Here a treasury-distribute proposal has passed and is queued with its delay
+    // elapsed, well before the wind-down deadline. The guardian triggers wind-down: execute()
+    // must then revert, the treasury USDC must be sweepable, and every holder must redeem their
+    // full pro-rata share, so the proposal can no longer take anyone's share.
+    it("blocks a queued proposal before the deadline and lets holders redeem pro-rata", async function () {
+      const targets = [await treasuryContract.getAddress()];
+      const calldatas = [treasuryContract.interface.encodeFunctionData("distribute", [
+        await armToken.getAddress(), carol.address, ethers.parseUnits("1000", ARM_DECIMALS),
+      ])];
+      await governor.connect(alice).propose(ProposalType.Standard, targets, [0n], calldatas, "capture");
+      await time.increase(TWO_DAYS + 1);
+      await governor.connect(alice).castVote(1, Vote.For);
+      await governor.connect(bob).castVote(1, Vote.For);
+      await time.increase(7 * ONE_DAY + 1);
+      await governor.queue(1);
+      expect(await governor.state(1)).to.equal(ProposalState.Queued);
+      await time.increase(2 * ONE_DAY + 1);
+
+      expect(await time.latest()).to.be.lessThan(windDownDeadline);
+      await expect(windDown.connect(guardian).guardianTriggerWindDown())
+        .to.emit(windDown, "WindDownTriggered");
+      await expect(governor.execute(1)).to.be.revertedWithCustomError(governor, "Gov_GovernanceEnded");
+      expect(await armToken.balanceOf(await treasuryContract.getAddress())).to.equal(TREASURY_AMOUNT);
+
+      await windDown.sweepToken(await usdc.getAddress());
+      await advancePastRedemptionDelay();
+      await armToken.connect(alice).approve(await redemption.getAddress(), ethers.MaxUint256);
+      await redemption.connect(alice).redeem(ALICE_AMOUNT, [await usdc.getAddress()], alice.address);
+      // Alice holds 600K of the 1.2M circulating ARM: 50% of the treasury's $500K.
+      expect(await usdc.balanceOf(alice.address)).to.equal(ethers.parseUnits("250000", 6));
+    });
+
+    // WHY: the timelock (a captured governance) must not be able to use or disarm the guardian.
+    it("refuses the timelock as guardian and lets only the guardian renounce", async function () {
+      const timelockSigner = await ethers.getImpersonatedSigner(await timelockController.getAddress());
+      await ethers.provider.send("hardhat_setBalance", [timelockSigner.address, "0x56BC75E2D63100000"]);
+      await expect(windDown.connect(timelockSigner).guardianTriggerWindDown())
+        .to.be.revertedWith("ArmadaWindDown: not guardian");
+      await expect(windDown.connect(timelockSigner).renounceGuardian())
+        .to.be.revertedWith("ArmadaWindDown: not guardian");
+
+      await expect(windDown.connect(guardian).renounceGuardian())
+        .to.emit(windDown, "GuardianRenounced").withArgs(guardian.address);
+      expect(await windDown.guardian()).to.equal(ethers.ZeroAddress);
+      await expect(windDown.connect(guardian).guardianTriggerWindDown())
+        .to.be.revertedWith("ArmadaWindDown: not guardian");
+    });
+  });
+
   // ============================================================
   // ArmadaWindDown — Sweep
   // ============================================================
@@ -620,6 +678,7 @@ describe("Wind-Down & Redemption Integration", function () {
         await revenueCounter.getAddress(),
         revenueLockAddr.address,
         deployer.address, // use deployer as fake timelock
+        guardian.address,
         REVENUE_THRESHOLD,
         freshDeadline,
       );
@@ -1050,6 +1109,7 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
   let alice: SignerWithAddress;
   let bob: SignerWithAddress;
   let carol: SignerWithAddress; // security council
+  let guardian: SignerWithAddress; // launch-team wind-down guardian
   let revenueLockAddr: SignerWithAddress;
   let crowdfundAddr: SignerWithAddress;
 
@@ -1173,6 +1233,7 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
 
   before(async function () {
     [deployer, alice, bob, carol] = await ethers.getSigners();
+    guardian = (await ethers.getSigners())[5];
     aliceAddress = await alice.getAddress();
     // Mock contracts (see top describe block for the same pattern).
     const MockRL = await ethers.getContractFactory("MockRevenueLockRedemption");
@@ -1245,6 +1306,7 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
       await revenueCounter.getAddress(),
       revenueLockAddr.address,
       timelockAddr,
+      guardian.address,
       REVENUE_THRESHOLD,
       windDownDeadline,
     );

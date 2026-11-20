@@ -75,7 +75,9 @@ contract OnlyDelegatecallTest is Test {
             chainID: 0,
             adaptContract: address(0),
             adaptParams: bytes32(0),
-            commitmentCiphertext: ciphertext
+            commitmentCiphertext: ciphertext,
+            ownerField: bytes32(0),
+            publicOutputs: new CommitmentPreimage[](0)
         });
 
         SnarkProof memory proof = SnarkProof({
@@ -100,7 +102,9 @@ contract OnlyDelegatecallTest is Test {
             nullifiers: nullifiers,
             commitments: commitments,
             boundParams: boundParams,
-            unshieldPreimage: unshieldPreimage
+            unshieldPreimage: unshieldPreimage,
+            ownedNpk: new bytes32[](0),
+            ownedTranscriptHash: bytes32(0)
         });
 
         vm.expectRevert(bytes(EXPECTED_REVERT));
@@ -150,7 +154,9 @@ contract OnlyDelegatecallTest is Test {
             chainID: 0,
             adaptContract: address(0),
             adaptParams: bytes32(0),
-            commitmentCiphertext: ciphertext
+            commitmentCiphertext: ciphertext,
+            ownerField: bytes32(0),
+            publicOutputs: new CommitmentPreimage[](0)
         });
 
         SnarkProof memory proof = SnarkProof({
@@ -175,7 +181,9 @@ contract OnlyDelegatecallTest is Test {
             nullifiers: nullifiers,
             commitments: commitments,
             boundParams: boundParams,
-            unshieldPreimage: unshieldPreimage
+            unshieldPreimage: unshieldPreimage,
+            ownedNpk: new bytes32[](0),
+            ownedTranscriptHash: bytes32(0)
         });
 
         vm.expectRevert(bytes(EXPECTED_REVERT));

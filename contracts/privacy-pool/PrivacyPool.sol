@@ -148,6 +148,15 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     }
 
     /**
+     * @notice Execute contract-owned transactions (P2a): a contract spends and re-mints
+     *         its own notes with no EdDSA signature, authorized by msg.sender.
+     * @param _transactions Array of contract-owned transactions to process
+     */
+    function transactOwned(Transaction[] calldata _transactions) external nonReentrant {
+        _delegatecall(transactModule, abi.encodeCall(ITransactModule.transactOwned, (_transactions)));
+    }
+
+    /**
      * @notice Atomic cross-chain unshield to a client chain
      * @param _transaction Transaction with unshield proof
      * @param destinationDomain Target client chain's CCTP domain
@@ -394,6 +403,21 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
     }
 
     /**
+     * @notice Set a verification key for an owned circuit shape (P2a)
+     * @dev Owner-gated. Kept disjoint from setVerificationKey so owned and plain
+     *      keys never collide.
+     * @param _nullifiers Number of nullifiers
+     * @param _commitments Number of commitments
+     * @param _key The verification key
+     */
+    function setVerificationKeyOwned(uint256 _nullifiers, uint256 _commitments, VerifyingKey calldata _key) external {
+        require(msg.sender == owner, "PrivacyPool: Only owner");
+        _delegatecall(
+            verifierModule, abi.encodeCall(IVerifierModule.setVerificationKeyOwned, (_nullifiers, _commitments, _key))
+        );
+    }
+
+    /**
      * @notice Set the flat shield fee in basis points
      * @dev Only while no fee module is wired (#155): the flat fee applies only then, so setting it
      *      while a fee module is active would do nothing and leave `shieldFee()` disagreeing with
@@ -528,7 +552,7 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         inputs[0] = uint256(_transaction.merkleRoot);
 
         // Input 1: Hash of bound parameters
-        inputs[1] = uint256(keccak256(abi.encode(_transaction.boundParams))) % SNARK_SCALAR_FIELD;
+        inputs[1] = _boundParamsHash(_transaction.boundParams);
 
         // Inputs 2 to 2+nullifiersLength-1: Nullifiers
         for (uint256 i = 0; i < nullifiersLength; i++) {
@@ -539,6 +563,61 @@ contract PrivacyPool is PrivacyPoolStorage, IPrivacyPool {
         for (uint256 i = 0; i < commitmentsLength; i++) {
             inputs[2 + nullifiersLength + i] = uint256(_transaction.commitments[i]);
         }
+
+        // Verify the SNARK proof
+        return Snark.verify(verifyingKey, _transaction.proof, inputs);
+    }
+
+    /**
+     * @notice Verify a contract-owned transaction's SNARK proof.
+     * @dev Uses the owned verifying-key set. The owned circuit
+     *      (armada-circuits src/operations/TransactOwned.circom) declares `npk[N]` and
+     *      `transcriptHash` as public OUTPUTS, which circom places before the declared
+     *      public INPUTS in the Groth16 public-signals array (witness layout
+     *      `[1, output[0..nOutputs), pubInput[0..nPubInputs)]`). `_transaction.ownedNpk`
+     *      and `_transaction.ownedTranscriptHash` carry those output values from the
+     *      prover through calldata; this function only places them at the right slot —
+     *      a wrong value fails the pairing check below, not a Solidity require. Called
+     *      by TransactModule during delegatecall via staticcall to this router, exactly
+     *      as `verify` is. There is no bypass of any kind (#633). `virtual` only so the
+     *      test-only PrivacyPoolProofBypass (contracts/test/) can override it;
+     *      production deploys never use that contract.
+     * @param _transaction The transaction to verify
+     * @return True if proof is valid
+     */
+    function verifyOwned(Transaction calldata _transaction) public view virtual returns (bool) {
+        uint256 nullifiersLength = _transaction.nullifiers.length;
+        uint256 commitmentsLength = _transaction.commitments.length;
+
+        require(_transaction.ownedNpk.length == nullifiersLength, "PrivacyPool: Invalid owned npk length");
+
+        // Retrieve the OWNED verification key for this circuit configuration
+        VerifyingKey memory verifyingKey = ownedVerificationKeys[nullifiersLength][commitmentsLength];
+
+        // Check if verifying key is set (alpha1.x == 0 means not set)
+        require(verifyingKey.alpha1.x != 0, "PrivacyPool: Owned verification key not set");
+
+        // Public signals, in circom witness order: outputs first (npk[N], transcriptHash),
+        // then the declared public inputs (merkleRoot, boundParamsHash, nullifiers,
+        // commitmentsOut, ownerField).
+        uint256[] memory inputs = new uint256[](2 * nullifiersLength + commitmentsLength + 4);
+
+        for (uint256 i = 0; i < nullifiersLength; i++) {
+            inputs[i] = uint256(_transaction.ownedNpk[i]);
+        }
+        inputs[nullifiersLength] = uint256(_transaction.ownedTranscriptHash);
+
+        uint256 inputsOffset = nullifiersLength + 1;
+        inputs[inputsOffset] = uint256(_transaction.merkleRoot);
+        inputs[inputsOffset + 1] = _boundParamsHash(_transaction.boundParams);
+        for (uint256 i = 0; i < nullifiersLength; i++) {
+            inputs[inputsOffset + 2 + i] = uint256(_transaction.nullifiers[i]);
+        }
+        for (uint256 i = 0; i < commitmentsLength; i++) {
+            inputs[inputsOffset + 2 + nullifiersLength + i] = uint256(_transaction.commitments[i]);
+        }
+        // Final input: the circuit's public owner field
+        inputs[inputsOffset + 2 + nullifiersLength + commitmentsLength] = uint256(_transaction.boundParams.ownerField);
 
         // Verify the SNARK proof
         return Snark.verify(verifyingKey, _transaction.proof, inputs);

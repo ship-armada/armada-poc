@@ -248,12 +248,16 @@ describe("Privacy Pool Adversarial", function () {
         adaptContract: ethers.ZeroAddress,
         adaptParams: opts.adaptParams ?? ethers.ZeroHash,
         commitmentCiphertext: ciphertext,
+        ownerField: ethers.ZeroHash,
+        publicOutputs: [],
       },
       unshieldPreimage: opts.unshieldPreimage ?? {
         npk: ethers.ZeroHash,
         token: { tokenType: 0, tokenAddress: ethers.ZeroAddress, tokenSubID: 0 },
         value: 0,
       },
+      ownedNpk: [],
+      ownedTranscriptHash: ethers.ZeroHash,
     };
   }
 
@@ -1131,12 +1135,16 @@ describe("Privacy Pool Adversarial", function () {
             annotationData: "0x",
             memo: "0x",
           }],
+          ownerField: ethers.ZeroHash,
+          publicOutputs: [],
         },
         unshieldPreimage: {
           npk: ethers.ZeroHash,
           token: { tokenType: 0, tokenAddress: ethers.ZeroAddress, tokenSubID: 0 },
           value: 0,
         },
+        ownedNpk: [],
+        ownedTranscriptHash: ethers.ZeroHash,
       };
 
       await expect(privacyPool.transact([tx])).to.be.revertedWith(

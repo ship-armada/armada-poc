@@ -271,4 +271,21 @@ contract PrivacyPoolVerifyRealProofTest is Test, PoseidonLinker {
         vm.expectRevert("PrivacyPool: Verification key not set");
         pool.verify(t);
     }
+
+    /// @dev WHY: the owned path added `ownerField` to BoundParams, but the circuit's
+    ///      boundParamsHash public input is computed over the original seven fields only.
+    ///      The transcoded fixture transaction (ownerField=0) must hash to
+    ///      publicInputs[1], the base boundParamsHash the prover used. This pins the
+    ///      "seven fields only" rule: hashing an eighth field would change the value and
+    ///      the real proof would no longer verify.
+    function test_boundParamsHashCoversSevenCoreFieldsOnly() public {
+        string memory json = vm.readFile("test-foundry/fixtures/snark/armada-transfer-1x2.json");
+        uint256 baseHash = vm.parseJsonUint(json, ".publicInputs[1]");
+        VerifierModule verifier = new VerifierModule();
+        assertEq(
+            verifier.hashBoundParams(_tx().boundParams),
+            baseHash,
+            "boundParamsHash must cover only the seven original fields"
+        );
+    }
 }

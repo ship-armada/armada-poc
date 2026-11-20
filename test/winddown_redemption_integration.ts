@@ -1121,12 +1121,16 @@ describe("Wind-Down Pool Withdraw-Only Mode", function () {
         adaptContract: ethers.ZeroAddress,
         adaptParams: ethers.ZeroHash,
         commitmentCiphertext: ciphertext,
+        ownerField: ethers.ZeroHash,
+        publicOutputs: [],
       },
       unshieldPreimage: opts.unshieldPreimage ?? {
         npk: ethers.ZeroHash,
         token: { tokenType: 0, tokenAddress: ethers.ZeroAddress, tokenSubID: 0 },
         value: 0,
       },
+      ownedNpk: [],
+      ownedTranscriptHash: ethers.ZeroHash,
     };
   }
 

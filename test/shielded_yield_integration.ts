@@ -274,6 +274,8 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
         adaptContract: opts.adaptContract,
         adaptParams: opts.adaptParams,
         commitmentCiphertext: [],
+        ownerField: ethers.ZeroHash,
+        publicOutputs: [],
       },
       unshieldPreimage: {
         npk: opts.unshieldPreimage.npk,
@@ -284,6 +286,8 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
         },
         value: opts.unshieldPreimage.value,
       },
+      ownedNpk: [],
+      ownedTranscriptHash: ethers.ZeroHash,
     };
   }
 
@@ -541,6 +545,8 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
           adaptContract: adapterAddress,
           adaptParams: redeemAdaptParams,
           commitmentCiphertext: [],
+          ownerField: ethers.ZeroHash,
+          publicOutputs: [],
         },
         unshieldPreimage: {
           npk: ethers.zeroPadValue(adapterAddress, 32),
@@ -551,6 +557,8 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
           },
           value: shares,
         },
+        ownedNpk: [],
+        ownedTranscriptHash: ethers.ZeroHash,
       };
 
       const poolUsdcBefore = await hubUsdc.balanceOf(privacyPoolAddress);
@@ -658,12 +666,16 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
           adaptContract: adapterAddress,
           adaptParams: redeemAdaptParams,
           commitmentCiphertext: [],
+          ownerField: ethers.ZeroHash,
+          publicOutputs: [],
         },
         unshieldPreimage: {
           npk: ethers.zeroPadValue(adapterAddress, 32),
           token: { tokenType: 0, tokenAddress: vaultAddress, tokenSubID: 0 },
           value: shares,
         },
+        ownedNpk: [],
+        ownedTranscriptHash: ethers.ZeroHash,
       };
 
       const relayerEvmBefore = await hubUsdc.balanceOf(await relayer.getAddress());
@@ -784,12 +796,16 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
           adaptContract: adapterAddress,
           adaptParams: redeemAdaptParams,
           commitmentCiphertext: [],
+          ownerField: ethers.ZeroHash,
+          publicOutputs: [],
         },
         unshieldPreimage: {
           npk: ethers.zeroPadValue(adapterAddress, 32),
           token: { tokenType: 0, tokenAddress: vaultAddress, tokenSubID: 0 },
           value: shares,
         },
+        ownedNpk: [],
+        ownedTranscriptHash: ethers.ZeroHash,
       };
 
       // Submitter tries to skim double the committed fee.
@@ -867,12 +883,16 @@ describe("Shielded Yield (lendAndShield / redeemAndShield)", function () {
           adaptContract: adapterAddress,
           adaptParams: redeemAdaptParams,
           commitmentCiphertext: [],
+          ownerField: ethers.ZeroHash,
+          publicOutputs: [],
         },
         unshieldPreimage: {
           npk: ethers.zeroPadValue(adapterAddress, 32),
           token: { tokenType: 0, tokenAddress: vaultAddress, tokenSubID: 0 },
           value: shares,
         },
+        ownedNpk: [],
+        ownedTranscriptHash: ethers.ZeroHash,
       };
       return { redeemTx, npk, encryptedBundle, shieldKey, feeBundle, feeShieldKey };
     }

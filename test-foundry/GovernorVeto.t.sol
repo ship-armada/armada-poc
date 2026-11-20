@@ -1047,4 +1047,72 @@ contract GovernorVetoTest is Test, GovernorDeployHelper {
         governor.veto(late, keccak256("late"));
         assertEq(governor.ratificationOf(governor.proposalCount()), late, "late veto is challengeable");
     }
+
+    /// @dev The timelock operation id of a proposal created by _createAndQueueProposal.
+    function _queuedOpId(uint256 proposalId) internal view returns (bytes32) {
+        address[] memory targets = new address[](1);
+        targets[0] = address(governor);
+        uint256[] memory values = new uint256[](1);
+        bytes[] memory calldatas = new bytes[](1);
+        calldatas[0] = abi.encodeWithSignature("proposalCount()");
+        return timelock.hashOperationBatch(targets, values, calldatas, 0, bytes32(proposalId));
+    }
+
+    /// @dev WHY: a bootstrap veto is final. No call path may revive the proposal: there is no
+    ///      ratification to resolve (resolveRatification of 0 or of the proposal id is refused), it
+    ///      cannot be queued, executed or voted on, and its timelock operation stays cancelled,
+    ///      both inside the bootstrap and after it ends.
+    function test_bootstrap_vetoedProposalCannotBeRevived() public {
+        MockFinalizedCrowdfund cf = _registerCrowdfundFinalizedAgo(QUIET_PERIOD + 1);
+        uint256 proposalId = _createAndQueueProposal(alice);
+        vm.prank(sc);
+        governor.veto(proposalId, keccak256("final"));
+
+        for (uint256 pass = 0; pass < 2; pass++) {
+            if (pass == 1) vm.warp(cf.finalizedAt() + VETO_BOOTSTRAP + 30 days);
+            vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotARatificationProposal.selector));
+            governor.resolveRatification(0);
+            vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotARatificationProposal.selector));
+            governor.resolveRatification(proposalId);
+            vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotSucceeded.selector));
+            governor.queue(proposalId);
+            vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_NotQueued.selector));
+            governor.execute(proposalId);
+            vm.prank(bob);
+            vm.expectRevert(abi.encodeWithSelector(ArmadaGovernor.Gov_ProposalCanceled.selector));
+            governor.castVote(proposalId, 0);
+            assertEq(uint256(governor.state(proposalId)), uint256(ProposalState.Canceled));
+            assertFalse(timelock.isOperation(_queuedOpId(proposalId)), "timelock op stays cancelled");
+        }
+    }
+
+    /// @dev WHY: overturning a later veto restores only that veto's proposal. An earlier bootstrap
+    ///      veto must stay final even when a post-bootstrap ratification goes AGAINST the council,
+    ///      re-queues its own proposal and ejects the council.
+    function test_bootstrap_laterOverturnedRatificationLeavesEarlierVetoAlone() public {
+        MockFinalizedCrowdfund cf = _registerCrowdfundFinalizedAgo(QUIET_PERIOD + 1);
+        uint256 early = _createAndQueueProposal(alice);
+        vm.prank(sc);
+        governor.veto(early, keccak256("early, final"));
+
+        vm.warp(cf.finalizedAt() + VETO_BOOTSTRAP);
+        uint256 late = _createAndQueueProposal(alice);
+        vm.prank(sc);
+        governor.veto(late, keccak256("late, challengeable"));
+        uint256 ratId = governor.vetoRatificationId(late);
+        assertGt(ratId, 0, "late veto opened a ratification");
+
+        vm.prank(alice);
+        governor.castVote(ratId, 0); // AGAINST the veto
+        vm.prank(bob);
+        governor.castVote(ratId, 0);
+        vm.warp(block.timestamp + RATIFICATION_PERIOD + 1);
+        governor.resolveRatification(ratId);
+
+        assertEq(governor.securityCouncil(), address(0), "vetoing council ejected");
+        assertEq(uint256(governor.state(late)), uint256(ProposalState.Queued), "late proposal restored");
+        assertEq(uint256(governor.state(early)), uint256(ProposalState.Canceled), "early veto still final");
+        assertEq(governor.vetoRatificationId(early), 0);
+        assertFalse(timelock.isOperation(_queuedOpId(early)), "early timelock op not rescheduled");
+    }
 }

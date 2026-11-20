@@ -548,7 +548,7 @@ If cumulative protocol revenue does not reach the threshold by the deadline, win
 
 ### Wind-down sequence
 
-1. Wind-down triggers (automatic or governance vote). `triggerWindDown()` is permissionless — anyone can call it when conditions are met.
+1. Wind-down triggers (automatic, governance vote, or the launch-team guardian; GOVERNANCE.md §Wind-Down). `triggerWindDown()` is permissionless — anyone can call it when conditions are met.
 2. ARM transfers are automatically enabled (`setTransferable(true)` called as part of the wind-down transaction)
 3. Shielded pool enters withdraw-only mode (immediate — `shield()` and shielded `transfer()` disabled; `unshield()` always available indefinitely with no deadline)
 4. Governance ends permanently — no new proposals, no steward proposals, no parameter changes

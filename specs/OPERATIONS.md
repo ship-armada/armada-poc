@@ -19,7 +19,7 @@ Complete this table before deployment. Every address must be confirmed before an
 |---|---|---|---|---|
 | Deployer | Deploys the contract | `[TBD]` | EOA, preferably a Ledger (`DEPLOYER_LEDGER_ADDRESS`, see `docs/ledger-deploy.md`); otherwise a fresh single-use key. The pipeline signs as one account; it holds no role or ARM after the run | — |
 | Treasury | Receives net USDC proceeds (after the $250,000 team payment to the launch team) + unsold/unclaimed ARM | `[TBD]` (from the governance manifest) | Contract: `ArmadaTreasuryGov`, deployed by the launch and controlled by governance through the timelock; not a wallet | — |
-| ROOT / Launch team | `addSeed()`, `launchTeamInvite()`, `extendWindow()` | `[TBD]` | Safe multisig, every signer on a hardware wallet | 1-of-3 |
+| ROOT / Launch team | `addSeed()`, `launchTeamInvite()`, `extendWindow()`; wind-down guardian (`ArmadaWindDown.guardianTriggerWindDown()`, permanent until `renounceGuardian()`) | `[TBD]` | Safe multisig, every signer on a hardware wallet | 1-of-3 during the sale; 2-of-3 before finalization (guardian power) |
 | Security Council | `cancel()` authority | `[TBD]` | Safe multisig | 2-of-3 |
 | Treasury Steward | Elected at deploy with the USDC steward budget; `proposeStewardSpend()` (GOVERNANCE.md §Treasury Steward) | `[TBD]` | Safe multisig | 2-of-3 |
 | ARM token contract | Source of preloaded ARM | `[TBD]` | — | — |
@@ -622,6 +622,7 @@ Every irreversible action must be logged here before it is executed. This is the
 | Initial steward elected + USDC steward budget verified (`verify_deployment` Launch Values) | ☐ | Deployer |
 | Reserve distributor funded at the configured cap with the intended allocator Safe (`verify_deployment` Revenue Reserve) | ☐ | Deployer |
 | Governor deployer cleared and the crowdfund registered, so the quiet period and veto bootstrap apply (`verify_deployment` Governance Wiring) | ☐ | Deployer |
+| Wind-down guardian = launch-team Safe (`verify_deployment` Launch Values) | ☐ | Deployer |
 | Steward proposal alert active (MONITORING.md §12e); no steward proposals before the quiet period ends | ☐ | Ops |
 | Initial hop-0 list finalized | ☐ | ROOT |
 | Announcement drafted and ready | ☐ | Ops |

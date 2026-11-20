@@ -59,7 +59,7 @@ The SC can veto queued governance proposals. During the veto bootstrap (the 70 d
 
 ### Governance Wind-Down
 
-An irreversible protocol shutdown mechanism, activated via governance proposal:
+An irreversible protocol shutdown mechanism. Three triggers: an Extended governance proposal; permissionless, once the wind-down deadline has passed with recognized revenue below the threshold; and the launch-team guardian, at any time, as a last resort against a captured governance (GOVERNANCE.md §Wind-Down). The guardian power is permanent until the launch team renounces it. On trigger:
 
 - Disables all new proposals — governance ends permanently
 - Pool enters **withdraw-only mode** — only unshields permitted

@@ -195,7 +195,7 @@ loosens constraints, or increases risk exposure:
 * Bond decreases
 * Quorum floor decreases
 * Steward budget increases (add token, increase per-token limit, extend window)
-* Governance-initiated wind-down trigger (irreversible terminal state transition; the conditional, permissionless trigger path is governance-bypass and not in scope for this classification)
+* Governance-initiated wind-down trigger (irreversible terminal state transition; the conditional, permissionless trigger path and the launch-team guardian trigger are governance-bypass and not in scope for this classification)
 
 A proposal is **standard** if it revokes authority, tightens
 constraints, or reduces risk exposure:
@@ -244,7 +244,7 @@ principle to the full proposal classification system.
 | Contract upgrade | Always extended | — |
 | SC replacement | Always extended | — |
 | Revenue definition expansion | Always extended | — |
-| Wind-down trigger (governance-initiated) | Always extended | — (permissionless conditional trigger is non-governance) |
+| Wind-down trigger (governance-initiated) | Always extended | — (the permissionless conditional trigger and the guardian trigger are non-governance) |
 
 Classification is determined mechanically by calldata and, where
 direction matters, comparison of proposed values against current
@@ -676,11 +676,16 @@ Large treasury proposals (especially those approaching outflow limits) should be
 
 ### Trigger
 
-**Two trigger paths:**
+**Three trigger paths:**
 
 1. **Automatic (permissionless):** Anyone can call `triggerWindDown()`. The contract checks: `block.timestamp > windDownDeadline && cumulativeRevenue < revenueThreshold`. If both conditions are true, wind-down activates. If either is false, the call reverts. No privileged caller needed — the conditions are deterministic.
 
 2. **Governance vote:** Governance can trigger wind-down at any time via extended proposal, regardless of revenue or deadline. Wind-down is an irreversible terminal state transition (governance ends, shielded pool enters withdraw-only mode, treasury is committed to redemption); it warrants the higher consensus bar (30% quorum / 14d voting / 7d execution delay) of an extended proposal even though the conditional, permissionless `triggerWindDown()` path remains available without governance involvement.
+
+3. **Launch-team guardian (last resort):** the launch-team Safe (the crowdfund's `launchTeam`) can call `guardianTriggerWindDown()` at any time, regardless of revenue or deadline, outside governance and the Security Council veto. It exists so that a capture proposal governance failed to defeat cannot execute: wind-down freezes the proposal lifecycle, and every holder then redeems their pro-rata share of the treasury instead of losing it.
+   - **Mandate.** A last resort, not a veto: the guardian lets the normal defences run first (the vote, the Security Council veto and, after the veto bootstrap, the ratification vote) and triggers only once those have failed and a capture proposal is queued, inside its timelock delay before it can execute. Triggering on a proposal governance could still defeat, or to settle a policy disagreement, is outside the mandate.
+   - **Permanent unless surrendered.** The power has no expiry. Only the guardian can change it, and only by calling `renounceGuardian()`, which sets the guardian to `address(0)` irreversibly. Governance cannot remove or transfer it, so a captured governance cannot disarm it.
+   - **Trust and conflicts.** Whoever controls the launch-team Safe can end the protocol alone (irreversible: governance ends, treasury ARM stays locked, RevenueLock unlocks freeze). The deploy accepts a 1-of-3 Safe for sale administration; the launch team plans to raise it to 2-of-3 before finalization. The launch team also receives the $250,000 team payment (untouched by wind-down) and its members are RevenueLock beneficiaries, whose locked ARM freezes at wind-down.
 
 | Parameter | Default | Governable |
 |-----------|---------|------------|
@@ -689,7 +694,7 @@ Large treasury proposals (especially those approaching outflow limits) should be
 
 ### Sequence
 
-1. Wind-down triggers (automatic or governance vote)
+1. Wind-down triggers (automatic, governance vote, or the launch-team guardian)
 2. **ARM transfers are enabled (or confirmed already enabled)** — wind-down ensures `transferable == true` on the ARM token as a post-condition. If governance previously enabled transfers via a separate proposal (the spec-expected post-crowdfund unlock), wind-down skips the redundant `setTransferable(true)` call; otherwise wind-down flips it during the trigger transaction. Either way, holders must be able to move ARM to redeem their treasury share.
 3. **Revenue counter and revenue-lock ratchet are frozen.** The wind-down contract calls `freeze()` on the `RevenueCounter` (rejecting further `attestRevenue` and `syncStablecoinRevenue` calls) and `freezeAtWindDown()` on the `RevenueLock` (locking `maxObservedRevenue` after one final ratchet update against the just-frozen counter). The unlock-percentage milestone state at trigger time becomes the permanent fixed point. This stabilizes the redemption denominator: subsequent `release()` calls do not change `lockedAtWindDown()`, so claim/release timing cannot shift the ratio between sequential redemptions.
 4. Shielded pool enters withdraw-only mode immediately — `shield()` and shielded `transfer()` disabled; `unshield()` always available **indefinitely with no deadline**. There is no exit window — users can withdraw at any time, forever.

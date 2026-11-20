@@ -615,7 +615,7 @@ Each alert must include:
 
 **Severity:** P1.
 
-**Response:** Confirm the call against a published rationale and expected parameters. If it is not recognized or would remove veto protection without an agreed reason, the Security Council calls `veto(proposalId, rationaleHash)` before the timelock delay elapses. During the 70-day veto bootstrap the veto is final; afterwards it opens a ratification vote (GOVERNANCE.md §Veto mechanism).
+**Response:** Confirm the call against a published rationale and expected parameters. If it is not recognized or would remove veto protection without an agreed reason, the Security Council calls `veto(proposalId, rationaleHash)` before the timelock delay elapses. During the 70-day veto bootstrap the veto is final; afterwards it opens a ratification vote (GOVERNANCE.md §Veto mechanism). If a ratification vote then fails and a capture proposal is re-queued, the launch-team guardian calls `ArmadaWindDown.guardianTriggerWindDown()` inside its timelock delay, before it can execute (the last-resort mandate, GOVERNANCE.md §Wind-Down). Also alert on `GuardianRenounced` and on any `WindDownTriggered` (P0).
 
 ---
 

@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest'
 import { createStore } from 'jotai'
 import { crowdfundEventsAtom } from './useContractEvents.js'
-import { crowdfundGraphAtom } from './useGraphState.js'
+import { crowdfundGraphAtom, publicCrowdfundEventsAtom, publicCrowdfundGraphAtom } from './useGraphState.js'
 import type { CrowdfundEvent } from '../lib/events.js'
 
 const ADDR = {
@@ -101,5 +101,17 @@ describe('crowdfundGraphAtom', () => {
     expect(summary.allocatedArm).toBe(5_000n * 10n ** 18n)
     expect(summary.armClaimed).toBe(true)
     expect(summary.delegate).toBe(delegate)
+  })
+})
+
+describe('publicCrowdfundGraphAtom', () => {
+  // WHY: profiles that keep the real hop structure (here the mainnet profile the tests run on) must
+  // not pay for a second graph build: the public graph is the raw graph itself.
+  it('reuses the raw graph and events when the profile does not hide team wallets', () => {
+    const store = createStore()
+    const events = [mkEvent('SeedAdded', { seed: ADDR.seed1 }, 1)]
+    store.set(crowdfundEventsAtom, events)
+    expect(store.get(publicCrowdfundEventsAtom)).toBe(events)
+    expect(store.get(publicCrowdfundGraphAtom)).toBe(store.get(crowdfundGraphAtom))
   })
 })

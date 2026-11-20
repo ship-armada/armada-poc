@@ -527,6 +527,8 @@ The full invite graph is public throughout the crowdfund — inviter, invitee, a
 
 Participants are joining a trust network, and that network's shape should be legible to everyone in it. Full visibility during the crowdfund also reinforces the governance bootstrapping framing: you can see who you're building the network with before committing.
 
+**App presentation.** The committer app shows a simplified graph: the hop-1 team inviter wallets are an implementation detail of issuing invite links (a link places the redeemer one hop below the signer), so the app omits them and shows the contributors they invite as invited by Armada, the same as direct launch-team placements. A disclosure in the app's Details view says so. The full graph, including the team wallets, is on-chain and visible on any block explorer; the admin app shows it too.
+
 ---
 
 ## Wind-Down

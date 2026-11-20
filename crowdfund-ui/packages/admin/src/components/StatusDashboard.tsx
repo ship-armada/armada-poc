@@ -11,6 +11,7 @@ import {
   CROWDFUND_CONSTANTS,
   HOP_CONFIGS,
   estimateAllocation,
+  hopCeilingLabel,
 } from '@armada/crowdfund-shared'
 import type { AdminState } from '@/hooks/useAdminState'
 import type { AdminRole } from '@/hooks/useRole'
@@ -70,13 +71,18 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
     return () => clearInterval(id)
   }, [])
 
-  const { MAX_SALE, MIN_SALE, ELASTIC_TRIGGER } = CROWDFUND_CONSTANTS
-  const estimate = estimateAllocation(state.hopStats, state.cappedDemand, state.saleSize)
+  const { MAX_SALE, MIN_SALE, ELASTIC_TRIGGER, BASE_SALE } = CROWDFUND_CONSTANTS
+  const allocationConfig = { constants: CROWDFUND_CONSTANTS, hopConfigs: HOP_CONFIGS }
+  const estimate = estimateAllocation(state.hopStats, state.cappedDemand, state.saleSize, allocationConfig)
+  // The sale-size badge and elastic marker only mean something when the sale can expand.
+  const canExpand = MAX_SALE !== BASE_SALE
+  // A hop-1 placement with a $0 cap is a team inviter wallet (the relaunch), not a contributor.
+  const hop1BudgetLabel = HOP_CONFIGS[1].capUsdc === 0n ? 'Team wallets' : hopLabel(1)
   const progressPct = MAX_SALE > 0n ? Number((state.totalCommitted * 100n) / MAX_SALE) : 0
   const minPct = MAX_SALE > 0n ? Number((MIN_SALE * 100n) / MAX_SALE) : 0
   const elasticPct = MAX_SALE > 0n ? Number((ELASTIC_TRIGGER * 100n) / MAX_SALE) : 0
 
-  const saleLabel = state.saleSize > CROWDFUND_CONSTANTS.BASE_SALE ? 'EXPANDED' : 'BASE'
+  const saleLabel = state.saleSize > BASE_SALE ? 'EXPANDED' : 'BASE'
 
   return (
     <div className="rounded-lg border border-border bg-card p-4 space-y-4">
@@ -86,7 +92,7 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
           {phaseName(state.phase)}
         </span>
         <span className="text-muted-foreground">
-          Sale: {formatUsdc(state.saleSize)} ({saleLabel})
+          Sale: {formatUsdc(state.saleSize)}{canExpand && ` (${saleLabel})`}
         </span>
         {state.armLoaded ? (
           <span className="text-success">ARM Loaded</span>
@@ -98,7 +104,7 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
       {/* Timeline */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <TimelineRow
-          label="Days 1-14 (Seeds + LT Invites)"
+          label="Launch-Team Window (Seeds + LT Invites)"
           isOpen={state.phase === 0 && localTimestamp >= state.windowStart && localTimestamp < state.launchTeamInviteEnd}
           isPending={state.phase === 0 && localTimestamp < state.windowStart}
           endTimestamp={state.launchTeamInviteEnd}
@@ -137,19 +143,23 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
             title={`Min: ${formatUsdc(MIN_SALE)}`}
           />
           {/* ELASTIC_TRIGGER marker */}
-          <div
-            className="absolute inset-y-0 w-px bg-info"
-            style={{ left: `${elasticPct}%` }}
-            title={`Elastic: ${formatUsdc(ELASTIC_TRIGGER)}`}
-          />
+          {canExpand && (
+            <div
+              className="absolute inset-y-0 w-px bg-info"
+              style={{ left: `${elasticPct}%` }}
+              title={`Elastic: ${formatUsdc(ELASTIC_TRIGGER)}`}
+            />
+          )}
         </div>
         <div className="flex items-center gap-4 text-muted-foreground">
           <span className="flex items-center gap-1">
             <span className="w-2 h-2 rounded-full bg-amber-500" /> Min ({formatUsdc(MIN_SALE)})
           </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-info" /> Elastic ({formatUsdc(ELASTIC_TRIGGER)})
-          </span>
+          {canExpand && (
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-info" /> Elastic ({formatUsdc(ELASTIC_TRIGGER)})
+            </span>
+          )}
         </div>
       </div>
 
@@ -211,9 +221,9 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
           <tbody>
             {state.hopStats.map((stats, hop) => {
               const hopConfig = hop < HOP_CONFIGS.length ? HOP_CONFIGS[hop] : null
-              const isFloorHop = hop === 2
-              // Effective ceiling from the waterfall (projected sale size until finalized),
-              // matching the contract's finalCeilings — including hop-2's floor + rollover.
+              // Effective ceiling (projected sale size until finalized): the most the hop can
+              // absorb given the other hops' demand. Matches the contract's finalCeilings
+              // whenever the sale is filled, the only case in which a hop is pro-rated.
               const effectiveCeiling = estimate.perHopCeiling[hop] ?? 0n
               const overUnderPct = effectiveCeiling > 0n
                 ? Number(stats.cappedCommitted * 10000n / effectiveCeiling) / 100
@@ -226,7 +236,7 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
                 <tr key={hop} className="border-b border-border/50">
                   <td className="py-1 pr-4">{hopLabel(hop)}</td>
                   <td className="py-1 pr-4">
-                    {isFloorHop ? 'Floor' : `${(hopConfig?.ceilingBps ?? 0) / 100}%`}
+                    {hopCeilingLabel(hop, allocationConfig)}
                   </td>
                   <td className="py-1 pr-4">{hopConfig ? formatUsdc(hopConfig.capUsdc) : '-'}</td>
                   <td className="py-1 pr-4">
@@ -252,11 +262,11 @@ export function StatusDashboard({ state, role }: StatusDashboardProps) {
           <div className="text-muted-foreground">Launch Team Budget</div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <span className="text-muted-foreground">Hop-1 remaining: </span>
+              <span className="text-muted-foreground">{hop1BudgetLabel} remaining: </span>
               <span className="">{state.ltBudgetHop1Remaining} / {CROWDFUND_CONSTANTS.LAUNCH_TEAM_HOP1_BUDGET}</span>
             </div>
             <div>
-              <span className="text-muted-foreground">Hop-2 remaining: </span>
+              <span className="text-muted-foreground">{hopLabel(2)} remaining: </span>
               <span className="">{state.ltBudgetHop2Remaining} / {CROWDFUND_CONSTANTS.LAUNCH_TEAM_HOP2_BUDGET}</span>
             </div>
           </div>

@@ -34,6 +34,7 @@ import {
   type UserHopPosition,
   type HopStatsData,
   type HopVariant,
+  hopTagLabel,
 } from '@armada/crowdfund-shared'
 import { getHubNetworkLabel, getExplorerUrl } from '@/config/network'
 import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
@@ -140,7 +141,7 @@ function armToNumber(amount: bigint): number {
   return Number(whole) + Number(frac) / 1e18
 }
 
-const HOP_LABELS = ['HOP-0', 'HOP-1', 'HOP-2'] as const
+const HOP_LABELS = [hopTagLabel(0), hopTagLabel(1), hopTagLabel(2)] as const
 const HOP_DOT_KEYS = ['seed', 'hop-1', 'hop-2'] as const
 
 type AmountsByHop = Record<0 | 1 | 2, number>

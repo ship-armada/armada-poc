@@ -3,7 +3,7 @@
 
 import { join } from 'node:path'
 import { Contract, JsonRpcProvider } from 'ethers'
-import { getInitialCursor, readBooleanEnv, readNumberEnv, readRequiredEnv, readRequiredNumberEnv } from '../config.js'
+import { assertActiveProfile, getInitialCursor, readBooleanEnv, readNumberEnv, readRequiredEnv, readRequiredNumberEnv } from '../config.js'
 import { createIndexerStore } from '../db/createStore.js'
 import type { IndexerStore } from '../db/store.js'
 import type { IngestRangeRecord } from '../types.js'
@@ -34,6 +34,8 @@ async function resolveToBlock(
 
 async function main(): Promise<void> {
   const args = parseCliArgs(process.argv.slice(2))
+  // Snapshot and alert commands apply the profile's sale constants; fail before touching state.
+  assertActiveProfile()
   const store = createIndexerStore({
     defaultFilePath: join(process.cwd(), 'data/crowdfund-indexer/store.json'),
     initialCursor: getInitialCursor(),

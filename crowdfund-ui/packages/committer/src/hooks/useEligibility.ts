@@ -18,10 +18,29 @@ export interface HopPosition {
   invitedBy: string[]
 }
 
-export interface UseEligibilityResult {
+export interface CommitPositionSplit {
+  /** Positions with commit capacity (effective cap above $0) — the ones the commit flow offers. */
+  commitPositions: HopPosition[]
+  /** At least one position can take a commit. */
+  canCommit: boolean
+  /** Every position has a $0 cap (e.g. a relaunch team inviter wallet): invites are the only action. */
+  inviteOnly: boolean
+}
+
+export interface UseEligibilityResult extends CommitPositionSplit {
   eligible: boolean
   positions: HopPosition[]
   totalCommitted: bigint
+}
+
+/** Separate the positions the commit flow can offer from $0-cap positions. */
+export function splitCommitPositions(positions: HopPosition[]): CommitPositionSplit {
+  const commitPositions = positions.filter((p) => p.effectiveCap > 0n)
+  return {
+    commitPositions,
+    canCommit: commitPositions.length > 0,
+    inviteOnly: positions.length > 0 && commitPositions.length === 0,
+  }
 }
 
 /**
@@ -34,7 +53,7 @@ export function useEligibility(
 ): UseEligibilityResult {
   return useMemo(() => {
     if (!address) {
-      return { eligible: false, positions: [], totalCommitted: 0n }
+      return { eligible: false, positions: [], totalCommitted: 0n, ...splitCommitPositions([]) }
     }
 
     const positions: HopPosition[] = []
@@ -66,6 +85,7 @@ export function useEligibility(
       eligible: positions.length > 0,
       positions,
       totalCommitted,
+      ...splitCommitPositions(positions),
     }
   }, [address, nodes])
 }

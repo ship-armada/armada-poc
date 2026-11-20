@@ -353,6 +353,20 @@ describe('finalization alerts', () => {
     })
     expect(ruleA12(ctx)[0]).toMatchObject({ id: 'A12', severity: 'P3' })
   })
+  // WHY: the relaunch pays the launch team out of the proceeds at finalize; the success summary
+  // must show that payment so the responder can reconcile the treasury's (smaller) share.
+  it('A12 reports the launch-team payment when one was made', () => {
+    const ctx = makeContext({
+      snapshot: {
+        ...makeContext().snapshot,
+        events: [
+          makeEvent('LaunchTeamPaid', { recipient: '0xteam', amount: 250_000_000_000n }, 100),
+          makeEvent('Finalized', { refundMode: false, saleSize: 1_800_000_000_000n, netProceeds: 1_000_000_000_000n }, 100),
+        ],
+      } as never,
+    })
+    expect(ruleA12(ctx)[0].body).toContain('launchTeamPayment=250000000000')
+  })
 })
 
 // ============ A13 ============
@@ -386,6 +400,31 @@ describe('ruleA13 — treasury proceeds mismatch', () => {
     })
     // diff = 500, buffer = 10 → fires
     expect(ruleA13(ctx)[0]).toMatchObject({ id: 'A13', severity: 'P0' })
+  })
+  // WHY: Finalized.netProceeds is the full allocation, but the treasury receives it less the
+  // launch-team payment (LaunchTeamPaid). Without subtracting it, every successful relaunch
+  // finalize would raise a false P0.
+  it('expects netProceeds less the launch-team payment, within the rounding buffer', () => {
+    const nodes = new Map<string, GraphNode>()
+    for (let i = 0; i < 10; i++) nodes.set(`n${i}-0`, makeNode(`0xa${i}`, 0, 0n))
+    const graph: CrowdfundGraph = { ...emptyGraph(), nodes }
+    const finalize = (treasuryUsdcBalance: bigint) => makeContext({
+      treasuryUsdcBalance,
+      snapshot: {
+        ...makeContext().snapshot,
+        graph,
+        events: [
+          makeEvent('LaunchTeamPaid', { recipient: '0xteam', amount: 250_000n }, 100),
+          makeEvent('Finalized', { refundMode: false, netProceeds: 1_000_000n }, 100),
+        ],
+      } as never,
+    })
+    // treasury = 1,000,000 − 250,000 − 7 of buffer → no alert
+    expect(ruleA13(finalize(749_993n))).toEqual([])
+    // treasury received the full netProceeds (payment not deducted) → diff 250,000 → fires
+    const out = ruleA13(finalize(1_000_000n))
+    expect(out[0]).toMatchObject({ id: 'A13', severity: 'P0' })
+    expect(out[0].context).toMatchObject({ expectedTreasuryProceeds: '750000', launchTeamPayment: '250000' })
   })
 })
 

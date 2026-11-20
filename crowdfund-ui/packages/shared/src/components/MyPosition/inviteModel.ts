@@ -1,6 +1,7 @@
 // ABOUTME: Invite allowance math, list item kinds, sort/filter helpers for Whitelist a friend.
 
 import type { SlotData, SlotStatus } from '../InviteFlow/screens/SlotCard'
+import { hopLabel } from '../../lib/format'
 
 /** Hop the invitee joins at (never Hop-0 — inviters issue Hop-1 / Hop-2 only). */
 export type InviteeHop = 1 | 2
@@ -129,7 +130,7 @@ export function inviteStatusFilterActive(
 }
 
 export function formatInviteeHop(hop: InviteeHop): string {
-  return hop === 1 ? 'Hop-1' : 'Hop-2'
+  return hopLabel(hop)
 }
 
 export function formatExpiryDays(date: Date): string {

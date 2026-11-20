@@ -5,7 +5,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { EllipsisHorizontalIcon, XMarkIcon } from '@heroicons/react/24/outline'
 import { ZeroAddress } from 'ethers'
 import { Button } from '@armada/ui'
-import type { InviteMethod } from '../../lib/inviteUx'
+import { DIRECT_INVITES_ENABLED, type InviteMethod } from '../../lib/inviteUx'
 import { hopPillDotColor } from '../../lib/graphHopColors'
 import {
   ADDRESS_INPUT_MAX_LENGTH,
@@ -625,17 +625,21 @@ export function InviteActionScreen({
               label="Share link"
               onClick={() => onSelectMethod('link')}
             />
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              showIcon={false}
-              label="Whitelist new address"
-              onClick={() => onSelectMethod('onchain')}
-            />
+            {DIRECT_INVITES_ENABLED && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                showIcon={false}
+                label="Whitelist new address"
+                onClick={() => onSelectMethod('onchain')}
+              />
+            )}
             <p className={styles.hint}>
-              Share a link (no gas) or whitelist an address onchain. The invitee joins at{' '}
-              {hopLabel}.
+              {DIRECT_INVITES_ENABLED
+                ? 'Share a link (no gas) or whitelist an address onchain.'
+                : 'Share a link (no gas).'}{' '}
+              The invitee joins at {hopLabel}.
             </p>
           </div>
         )}

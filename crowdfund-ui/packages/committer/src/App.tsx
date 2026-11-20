@@ -11,6 +11,7 @@ import {
   createProvider,
   useContractEvents,
   useGraphState,
+  usePublicGraphState,
   useENS,
   AppShell,
   ErrorAlert,
@@ -310,12 +311,17 @@ export function App() {
     maxBlockRange: getMaxBlockRange(),
     indexerBaseUrl: indexerUrl,
   })
+  // Raw graph: the connected wallet's own positions, eligibility and invite slots need the real
+  // structure (a relaunch team wallet must still see its own invites).
   const { summaries, nodes } = useGraphState()
+  // Public graph + events: what participant-facing displays show (team inviter wallets hidden on
+  // the relaunch, their invitees attributed to Armada).
+  const { summaries: publicSummaries, events: publicEvents } = usePublicGraphState()
   const contractState = useContractState(provider, crowdfundAddress, pollInterval)
   // ENS resolver (kept addresses dep stable via memo).
-  const addresses = useMemo(() => [...summaries.keys()], [summaries])
+  const addresses = useMemo(() => [...publicSummaries.keys()], [publicSummaries])
   useENS({ provider, addresses })
-  const summaryArray = useMemo(() => [...summaries.values()], [summaries])
+  const summaryArray = useMemo(() => [...publicSummaries.values()], [publicSummaries])
 
   // RainbowKit's programmatic connect-modal opener. Wired to the
   // MyPositionEmptyState's "Connect wallet" CTA below.
@@ -832,7 +838,8 @@ export function App() {
     <div className="flex items-center gap-3">
       <LastTxChip override={lastTxChip} />
       <HeaderWalletButton usdcBalance={allowance.balance} />
-      {!claimReady && windowOpen && (
+      {/* An invite-only wallet (every cap $0) has nothing to commit. */}
+      {!claimReady && windowOpen && !eligibility.inviteOnly && (
         <ArmadaButton
           variant="gradient"
           size="md"
@@ -855,7 +862,8 @@ export function App() {
       onParticipate={openParticipate}
       claimAvailable={claimReady}
       myPositionEnabled={!preOpen}
-      participationEnabled={windowOpen}
+      // An invite-only wallet (every cap $0) has nothing to commit.
+      participationEnabled={windowOpen && !eligibility.inviteOnly}
       usdcBalance={allowance.balance}
     />
   )
@@ -894,7 +902,7 @@ export function App() {
           walletAddress={wallet.address}
           signer={wallet.signer}
           provider={provider}
-          positions={eligibility.positions}
+          positions={eligibility.commitPositions}
           balance={allowance.balance}
           needsApproval={allowance.needsApproval}
           refreshAllowance={allowance.refresh}
@@ -925,7 +933,7 @@ export function App() {
       open={detailsOpen}
       onClose={() => setDetailsOpen(false)}
       state={contractState}
-      events={events}
+      events={publicEvents}
       eventsLoading={eventsLoading}
       provider={provider}
     />

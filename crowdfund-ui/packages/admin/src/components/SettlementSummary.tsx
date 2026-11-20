@@ -1,5 +1,5 @@
 // ABOUTME: Post-finalization settlement stats with claim tracking and refund breakdown.
-// ABOUTME: Shows finalizedAt, sale size, refund mode, ARM claims, net proceeds, and refunds.
+// ABOUTME: Shows finalizedAt, sale size, refund mode, ARM claims, net proceeds (and any launch-team payment), and refunds.
 
 import {
   CROWDFUND_CONSTANTS,
@@ -21,6 +21,9 @@ export function SettlementSummary({ state, events }: SettlementSummaryProps) {
   // Extract net proceeds from Finalized event
   const finalizedEvent = events.find((e) => e.type === 'Finalized')
   const netProceeds = finalizedEvent?.args.netProceeds as bigint | undefined
+  // Where the contract paid the launch team, the treasury received netProceeds less that payment
+  // (and less any rounding buffer, at most one unit per node).
+  const launchTeamPaid = events.find((e) => e.type === 'LaunchTeamPaid')?.args.amount as bigint | undefined
 
   // Compute ARM claim stats
   const armClaimedPct = state.totalAllocatedArm > 0n
@@ -60,6 +63,18 @@ export function SettlementSummary({ state, events }: SettlementSummaryProps) {
             <span className="text-muted-foreground">Net proceeds: </span>
             <span className="">{formatUsdc(netProceeds)}</span>
           </div>
+        )}
+        {netProceeds !== undefined && launchTeamPaid !== undefined && (
+          <>
+            <div>
+              <span className="text-muted-foreground">Launch team paid:</span>{' '}
+              <span className="">{formatUsdc(launchTeamPaid)}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Treasury proceeds:</span>{' '}
+              <span className="">{formatUsdc(netProceeds - launchTeamPaid)}</span>
+            </div>
+          </>
         )}
         <div>
           <span className="text-muted-foreground">ARM claimed: </span>

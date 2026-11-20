@@ -3,12 +3,16 @@
 
 import { estimateAllocation, projectsRefundMode, type HopAllocationStats } from '../../../shared/src/lib/allocation.js'
 import { CROWDFUND_CONSTANTS } from '../../../shared/src/lib/constants.js'
+import { hopLabel } from '../../../shared/src/lib/format.js'
 import type { CrowdfundEvent } from '../../../shared/src/lib/events.js'
 import type { CrowdfundGraph } from '../../../shared/src/lib/graph.js'
 import type { AlertContext, AlertEvent, AlertRule } from './types.js'
 
 const TIER_LEVELS = [80, 90, 100] as const
 const EXPANSION_TIERS = [80, 90, 95, 100] as const
+
+/** True when BASE_SALE == MAX_SALE: crossing ELASTIC_TRIGGER changes nothing. */
+const NO_EXPANSION = CROWDFUND_CONSTANTS.BASE_SALE === CROWDFUND_CONSTANTS.MAX_SALE
 
 // ============ Generic helpers ============
 
@@ -156,7 +160,7 @@ export const ruleA4: AlertRule = (ctx) => {
     dedupeKey: `A4:${crossed}`,
     title: `Seed budget at ${crossed}% (${seedCount}/${CROWDFUND_CONSTANTS.MAX_SEEDS})`,
     body: `Hop-0 SeedAdded count reached ${crossed}% of the configured MAX_SEEDS (${CROWDFUND_CONSTANTS.MAX_SEEDS}).`,
-    runbook: 'OPERATIONS.md §4 Day-14 launch-team checkpoint; §10 decision log',
+    runbook: 'OPERATIONS.md §4 launch-team checkpoint; §10 decision log',
     context: { seedCount, crossedTier: crossed },
   }]
 }
@@ -173,8 +177,8 @@ export const ruleA5: AlertRule = (ctx) => {
       id: 'A5',
       severity: severityForBudget(crossed1),
       dedupeKey: `A5:hop1:${crossed1}`,
-      title: `Launch-team hop-1 placements at ${crossed1}%`,
-      body: `Hop-1 placements: ${hop1}/${CROWDFUND_CONSTANTS.LAUNCH_TEAM_HOP1_BUDGET}.`,
+      title: `Launch-team placements (${hopLabel(1)}) at ${crossed1}%`,
+      body: `${hopLabel(1)} placements: ${hop1}/${CROWDFUND_CONSTANTS.LAUNCH_TEAM_HOP1_BUDGET}.`,
       runbook: 'OPERATIONS.md §4 Launch-team operating cadence; §10 decision log',
       context: { hop: 1, count: hop1, crossedTier: crossed1 },
     })
@@ -185,8 +189,8 @@ export const ruleA5: AlertRule = (ctx) => {
       id: 'A5',
       severity: severityForBudget(crossed2),
       dedupeKey: `A5:hop2:${crossed2}`,
-      title: `Launch-team hop-2 placements at ${crossed2}%`,
-      body: `Hop-2 placements: ${hop2}/${CROWDFUND_CONSTANTS.LAUNCH_TEAM_HOP2_BUDGET}.`,
+      title: `Launch-team placements (${hopLabel(2)}) at ${crossed2}%`,
+      body: `${hopLabel(2)} placements: ${hop2}/${CROWDFUND_CONSTANTS.LAUNCH_TEAM_HOP2_BUDGET}.`,
       runbook: 'OPERATIONS.md §4 Launch-team operating cadence; §10 decision log',
       context: { hop: 2, count: hop2, crossedTier: crossed2 },
     })
@@ -223,6 +227,17 @@ export const ruleA7: AlertRule = (ctx) => {
   let crossed: number | null = null
   for (const t of EXPANSION_TIERS) if (ratioPct >= t) crossed = t
   if (crossed === null) return []
+  if (NO_EXPANSION) {
+    return [{
+      id: 'A7',
+      severity: 'P2',
+      dedupeKey: `A7:${crossed}`,
+      title: `cappedDemand at ${crossed}% of the sale size`,
+      body: `cappedDemand=${capped.toString()} (${ratioPct}% of the ${CROWDFUND_CONSTANTS.MAX_SALE.toString()} sale). Past 100%, oversubscribed tiers are pro-rated.`,
+      runbook: 'OPERATIONS.md §5 pre-finalization checkpoint',
+      context: { cappedDemand: capped.toString(), crossedTier: crossed },
+    }]
+  }
   return [{
     id: 'A7',
     severity: 'P2',
@@ -329,27 +344,39 @@ export const ruleA11: AlertRule = (ctx) => {
   }]
 }
 
+/** USDC paid to the launch team at finalize (LaunchTeamPaid), or 0 where the contract pays none. */
+function launchTeamPayment(events: readonly CrowdfundEvent[]): bigint {
+  const paid = findLatestEvent(events, 'LaunchTeamPaid')
+  return paid ? BigInt(String(paid.args.amount)) : 0n
+}
+
 // A12 — Successful finalization (P3)
 export const ruleA12: AlertRule = (ctx) => {
   const f = findLatestEvent(ctx.snapshot.events, 'Finalized')
   if (!f) return []
   if (f.args.refundMode === true) return []
+  const teamPayment = launchTeamPayment(ctx.snapshot.events)
   return [{
     id: 'A12',
     severity: 'P3',
     dedupeKey: 'A12',
     title: 'Crowdfund finalized successfully',
-    body: `Finalized(refundMode=false) at block ${f.blockNumber}. saleSize=${String(f.args.saleSize)}, netProceeds=${String(f.args.netProceeds)}.`,
+    body: `Finalized(refundMode=false) at block ${f.blockNumber}. saleSize=${String(f.args.saleSize)}, netProceeds=${String(f.args.netProceeds)}${teamPayment > 0n ? `, launchTeamPayment=${teamPayment.toString()}` : ''}.`,
     runbook: 'OPERATIONS.md §6 post-finalization verification; §8',
   }]
 }
 
 // A13 — Treasury proceeds mismatch (P0)
 //
-// The contract reduces the proceeds transfer by a rounding buffer equal to
-// participantNodes.length (NOT × NUM_HOPS as the spec text claims — see contract
-// line 511). Treasury balance increase must equal netProceeds within that
-// buffer; anything more is a real mismatch.
+// Finalized.netProceeds is the total allocation. The treasury receives it less the
+// launch-team payment (LaunchTeamPaid, where the contract makes one) and less a rounding
+// buffer of at most participantNodes.length (held back only when a hop is pro-rated).
+// Treasury balance increase must equal netProceeds − launch-team payment within that
+// buffer; anything more is a real mismatch. On profiles whose contract pays the launch team
+// (TEAM_PAYMENT_USDC > 0), LaunchTeamPaid must also be present with exactly that amount,
+// or the whole distributable amount (proceeds less the buffer) when the proceeds are smaller.
+// The payment's recipient is checked by hand (OPERATIONS.md §8): the alert params do not
+// carry the launch-team address.
 //
 // LIMITATION: ctx.treasuryUsdcBalance is the treasury's CURRENT balance, not its balance
 // at the finalization block. A pre-existing balance, or any treasury inflow/outflow after
@@ -360,24 +387,48 @@ export const ruleA13: AlertRule = (ctx) => {
   const f = findLatestEvent(ctx.snapshot.events, 'Finalized')
   if (!f) return []
   if (f.args.refundMode === true) return []
-  if (ctx.treasuryUsdcBalance === null) return []
   const netProceeds = BigInt(String(f.args.netProceeds))
+  const teamPayment = launchTeamPayment(ctx.snapshot.events)
+  const expected = netProceeds - teamPayment
   const participantNodes = BigInt(ctx.snapshot.graph.nodes.size)
-  const diff = netProceeds > ctx.treasuryUsdcBalance
-    ? netProceeds - ctx.treasuryUsdcBalance
-    : ctx.treasuryUsdcBalance - netProceeds
-  if (diff <= participantNodes) return []
+  const problems: string[] = []
+
+  const requiredPayment = CROWDFUND_CONSTANTS.TEAM_PAYMENT_USDC
+  if (requiredPayment > 0n) {
+    if (!findLatestEvent(ctx.snapshot.events, 'LaunchTeamPaid')) {
+      problems.push(`LaunchTeamPaid is missing (expected ${requiredPayment.toString()}).`)
+    } else {
+      const wholeDistributable = teamPayment < requiredPayment && netProceeds - teamPayment <= participantNodes
+      if (teamPayment !== requiredPayment && !wholeDistributable) {
+        problems.push(`launch-team payment ${teamPayment.toString()} is not ${requiredPayment.toString()} (it can be lower only when the distributable proceeds are).`)
+      }
+    }
+  }
+
+  let diff: bigint | null = null
+  if (ctx.treasuryUsdcBalance !== null) {
+    diff = expected > ctx.treasuryUsdcBalance
+      ? expected - ctx.treasuryUsdcBalance
+      : ctx.treasuryUsdcBalance - expected
+    if (diff > participantNodes) {
+      problems.push(`Treasury USDC balance=${ctx.treasuryUsdcBalance.toString()} vs expected ${expected.toString()} (Finalized.netProceeds=${netProceeds.toString()} − launch-team payment ${teamPayment.toString()}); diff=${diff.toString()} exceeds rounding buffer ${participantNodes.toString()}. NOTE: this compares the treasury's CURRENT balance, not its balance at the finalization block — a pre-existing balance or later treasury movement can cause a false positive. Verify against the finalization-block balance before escalating.`)
+    }
+  }
+
+  if (problems.length === 0) return []
   return [{
     id: 'A13',
     severity: 'P0',
     dedupeKey: 'A13',
     title: 'Treasury proceeds mismatch',
-    body: `Treasury USDC balance=${ctx.treasuryUsdcBalance.toString()} vs Finalized.netProceeds=${netProceeds.toString()}; diff=${diff.toString()} exceeds rounding buffer ${participantNodes.toString()}. NOTE: this compares the treasury's CURRENT balance, not its balance at the finalization block — a pre-existing balance or later treasury movement can cause a false positive. Verify against the finalization-block balance before escalating.`,
+    body: problems.join(' '),
     runbook: 'OPERATIONS.md §8 proceeds verification',
     context: {
-      treasuryUsdcBalance: ctx.treasuryUsdcBalance.toString(),
+      ...(ctx.treasuryUsdcBalance !== null ? { treasuryUsdcBalance: ctx.treasuryUsdcBalance.toString() } : {}),
       netProceeds: netProceeds.toString(),
-      diff: diff.toString(),
+      launchTeamPayment: teamPayment.toString(),
+      expectedTreasuryProceeds: expected.toString(),
+      ...(diff !== null ? { diff: diff.toString() } : {}),
       roundingBuffer: participantNodes.toString(),
     },
   }]

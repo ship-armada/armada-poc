@@ -9,9 +9,18 @@ import { GRAPH_HOP_NODE_COLORS } from '../../lib/graphHopColors.js'
 import { MOBILE_LAYOUT_MAX_WIDTH_PX } from '../../lib/viewportBreakpoints.js'
 import { useIsMobileLayout } from '../../hooks/useIsMobileLayout.js'
 import { SplashBackdrop } from '../SplashBackdrop.js'
+import { hopLabel } from '../../lib/format.js'
 import styles from './NodeSphere.module.css'
 
 type NodeKind = 'Hop 0' | 'Hop 1' | 'Hop 2' | 'Multi-hop' | 'Your wallet'
+
+/** Tooltip label for a node kind, in the active profile's tier names (the kind itself is a key). */
+function nodeKindLabel(kind: NodeKind): string {
+  if (kind === 'Hop 0') return hopLabel(0)
+  if (kind === 'Hop 1') return hopLabel(1)
+  if (kind === 'Hop 2') return hopLabel(2)
+  return kind
+}
 
 type HoverState = {
   visible: boolean
@@ -1311,7 +1320,7 @@ export function NodeSphere({
         (() => {
           const hoverIsOwnWallet =
             !!walletAddress && hover.address.toLowerCase() === walletAddress.toLowerCase()
-          const hoverEyebrow = hoverIsOwnWallet ? 'Your wallet' : hover.kind
+          const hoverEyebrow = hoverIsOwnWallet ? 'Your wallet' : nodeKindLabel(hover.kind)
           const hoverTruncated =
             hover.address.length > 12
               ? `${hover.address.slice(0, 6)}…${hover.address.slice(-4)}`
@@ -1335,7 +1344,7 @@ export function NodeSphere({
       {!hideNodePopover && selectedTip?.visible && (() => {
         const isOwnWallet =
           !!walletAddress && selectedTip.address.toLowerCase() === walletAddress.toLowerCase()
-        const eyebrow = isOwnWallet ? 'Your wallet' : selectedTip.kind
+        const eyebrow = isOwnWallet ? 'Your wallet' : nodeKindLabel(selectedTip.kind)
         const truncated =
           selectedTip.address.length > 12
             ? `${selectedTip.address.slice(0, 6)}…${selectedTip.address.slice(-4)}`

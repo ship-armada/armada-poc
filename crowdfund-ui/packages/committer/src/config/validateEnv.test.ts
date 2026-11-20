@@ -60,7 +60,33 @@ describe('validateEnv', () => {
     })
     expect(result.ok).toBe(false)
     if (!result.ok) {
-      expect(result.errors.some((e) => e.includes('mainnet must use the "mainnet" profile'))).toBe(true)
+      expect(result.errors.some((e) => e.includes('mainnet must use the "mainnet" or "relaunch" profile'))).toBe(true)
+    }
+  })
+
+  // WHY: the relaunch crowdfund is on mainnet with its own constants; a relaunch build must not be
+  // refused just because the network is mainnet.
+  it('passes a fully configured mainnet production build on the relaunch profile', () => {
+    expect(
+      validateEnv({
+        PROD: true,
+        VITE_NETWORK: 'mainnet',
+        VITE_WALLETCONNECT_PROJECT_ID: 'wc-id',
+        VITE_CROWDFUND_INDEXER_URL: 'https://indexer.example',
+        VITE_CROWDFUND_PROFILE: 'relaunch',
+        VITE_DEPLOYMENT_INSTANCE: 'relaunch1',
+        VITE_EXPECTED_CROWDFUND_ADDRESS: '0x52908400098527886E0F7030069857D2E4169EE7',
+      }),
+    ).toEqual({ ok: true })
+  })
+
+  // WHY: an unknown profile name silently falls back to the mainnet (Launch 1) constants, so a typo
+  // like "relaunh" would render the wrong sale. Production builds must refuse it on any network.
+  it('rejects an unknown profile name on a production build', () => {
+    const result = validateEnv({ ...COMPLETE_PROD, VITE_CROWDFUND_PROFILE: 'relaunh' })
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors.some((e) => e.includes('"relaunh" is not a known profile'))).toBe(true)
     }
   })
 
@@ -190,7 +216,7 @@ describe('validateEnv', () => {
       expect(result.ok).toBe(false)
       if (!result.ok) {
         expect(result.errors.some((e) => e.includes('VITE_WALLETCONNECT_PROJECT_ID'))).toBe(true)
-        expect(result.errors.some((e) => e.includes('mainnet must use the "mainnet" profile'))).toBe(true)
+        expect(result.errors.some((e) => e.includes('mainnet must use the "mainnet" or "relaunch" profile'))).toBe(true)
       }
       const noNetwork = validateEnv({ ...PRELAUNCH_MAINNET, VITE_NETWORK: undefined })
       expect(noNetwork.ok).toBe(false)

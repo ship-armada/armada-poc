@@ -4,11 +4,20 @@
 export {
   CROWDFUND_CONSTANTS,
   CROWDFUND_PROFILE,
+  CROWDFUND_PROFILES,
+  CROWDFUND_FEATURES,
   HOP_CONFIGS,
+  CONSTANTS_BY_PROFILE,
+  HOP_CONFIGS_BY_PROFILE,
+  FEATURES_BY_PROFILE,
+  TIER_LABELS,
+  TIER_LABELS_BY_PROFILE,
+  isCrowdfundProfile,
+  parseCrowdfundProfile,
   CROWDFUND_ABI_FRAGMENTS,
   ERC20_ABI_FRAGMENTS,
 } from './lib/constants.js'
-export type { HopConfig, CrowdfundConstants, CrowdfundProfile } from './lib/constants.js'
+export type { HopConfig, CrowdfundConstants, CrowdfundFeatures, CrowdfundProfile } from './lib/constants.js'
 
 export type { CrowdfundEvent, CrowdfundEventType, RawLog } from './lib/events.js'
 export { parseCrowdfundEvent, parseCrowdfundEvents } from './lib/events.js'
@@ -26,6 +35,8 @@ export {
   formatOpensAtDetail,
   formatUtcDateTime,
   hopLabel,
+  hopTagLabel,
+  formatUsdcShort,
   phaseName,
   phaseColor,
 } from './lib/format.js'
@@ -50,8 +61,17 @@ export {
   isValidEnsName,
 } from './lib/addressInput.js'
 
-export { estimateAllocation, estimateUserArmAllocation, projectsRefundMode } from './lib/allocation.js'
-export type { AllocationEstimate, HopAllocationStats, UserHopPosition } from './lib/allocation.js'
+export {
+  allocationMatchesDemand,
+  estimateAllocation,
+  estimateUserArmAllocation,
+  hop2HasFloor,
+  hopCeilingLabel,
+  projectedLaunchTeamPayment,
+  projectsRefundMode,
+} from './lib/allocation.js'
+export { toPublicEvents } from './lib/publicEvents.js'
+export type { AllocationConfig, AllocationEstimate, HopAllocationStats, UserHopPosition } from './lib/allocation.js'
 
 export {
   computeSelfFillPlan,
@@ -158,7 +178,13 @@ export {
 export type { UseContractEventsConfig, UseContractEventsResult } from './hooks/useContractEvents.js'
 export type { ReceiptLogLike } from './hooks/useContractEvents.js'
 
-export { crowdfundGraphAtom, useGraphState } from './hooks/useGraphState.js'
+export {
+  crowdfundGraphAtom,
+  publicCrowdfundEventsAtom,
+  publicCrowdfundGraphAtom,
+  useGraphState,
+  usePublicGraphState,
+} from './hooks/useGraphState.js'
 export type { UseGraphStateResult } from './hooks/useGraphState.js'
 
 export {

@@ -50,6 +50,13 @@
   color: var(--semantic-color-text-muted);
 }
 
+/* Disclosure under the header (team inviter wallets hidden from the list). */
+.note {
+  margin: 0;
+  font-size: calc(var(--primitives-fontSize-sm) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
 /* ── Controls ── */
 .controls {
   display: flex;

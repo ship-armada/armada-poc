@@ -1,8 +1,16 @@
 // ABOUTME: Crowdfund contract constants, hop configuration, and ABI fragments.
-// ABOUTME: Single source of truth for the magic numbers referenced across the UI apps; selects between `mainnet` (default) and `medi` (Sepolia testnet) profiles via the `VITE_CROWDFUND_PROFILE` build-time env var.
+// ABOUTME: Single source of truth for the magic numbers referenced across the UI apps; selects between `mainnet` (default, the Launch 1 crowdfund), `medi` (Sepolia testnet) and `relaunch` profiles via `VITE_CROWDFUND_PROFILE` (Vite) or `CROWDFUND_PROFILE` (Node).
 
 /** Deployment profile — selects which set of contract constants the UI uses. */
-export type CrowdfundProfile = 'mainnet' | 'medi'
+export type CrowdfundProfile = 'mainnet' | 'medi' | 'relaunch'
+
+/** Every known profile name, in a fixed order. */
+export const CROWDFUND_PROFILES: readonly CrowdfundProfile[] = ['mainnet', 'medi', 'relaunch']
+
+/** Whether a string names a known profile (used by env validation to refuse typos). */
+export function isCrowdfundProfile(value: string): value is CrowdfundProfile {
+  return (CROWDFUND_PROFILES as readonly string[]).includes(value)
+}
 
 /** Sale size + lifecycle parameters that vary between deployments. Mirrors
  *  what the contracts were deployed with — must stay in lockstep with the
@@ -25,8 +33,31 @@ export interface CrowdfundConstants {
   readonly CLAIM_DEADLINE_DURATION: number
   /** Matches ArmadaGovernor.QUIET_PERIOD_DURATION. */
   readonly GOVERNANCE_QUIET_PERIOD: number
+  /** How finalize() splits the sale between hops (see lib/allocation.ts): `waterfall` is the
+   *  floor/ceiling waterfall (Launch 1, medi); `hop2Reserve` gives hop 2 first priority for
+   *  HOP2_RESERVE_USDC, with unused capacity rolling both ways (relaunch). */
+  readonly ALLOCATION_MODEL: AllocationModel
+  /** Waterfall model only: hop-2 floors as a share of the sale. */
   readonly HOP2_BASE_FLOOR_BPS: number
   readonly HOP2_EXTRA_FLOOR_BPS: number
+  /** hop2Reserve model only: hop 2's first-priority capacity (USDC, 6 decimals). */
+  readonly HOP2_RESERVE_USDC: bigint
+  /** USDC paid to the launch team on a successful finalize, before the treasury (0 = none). */
+  readonly TEAM_PAYMENT_USDC: bigint
+}
+
+/** The allocation algorithm a deployment's contract runs at finalize(). */
+export type AllocationModel = 'waterfall' | 'hop2Reserve'
+
+/** UI features that differ between deployments. */
+export interface CrowdfundFeatures {
+  /** Invite a known address on-chain (`invite`), alongside invite links. */
+  readonly directInvites: boolean
+  /** The self-fill ("max out") flow: self-invites plus per-hop commits in one multicall. */
+  readonly selfFill: boolean
+  /** Hide hop-1 team inviter wallets from participant-facing views and show their invitees as
+   *  invited by the Armada root (see lib/publicEvents.ts). */
+  readonly hideTeamWallets: boolean
 }
 
 /** Per-hop configuration matching the contract's hopConfigs[3] */
@@ -37,7 +68,7 @@ export interface HopConfig {
   readonly maxInvitesReceived: number
 }
 
-const CONSTANTS_BY_PROFILE: Record<CrowdfundProfile, CrowdfundConstants> = {
+export const CONSTANTS_BY_PROFILE: Record<CrowdfundProfile, CrowdfundConstants> = {
   mainnet: {
     BASE_SALE: 1_200_000n * 10n ** 6n,
     MAX_SALE: 1_800_000n * 10n ** 6n,
@@ -52,8 +83,11 @@ const CONSTANTS_BY_PROFILE: Record<CrowdfundProfile, CrowdfundConstants> = {
     LAUNCH_TEAM_INVITE_PERIOD: 21 * 24 * 60 * 60, // 21 days (equal to WINDOW_DURATION)
     CLAIM_DEADLINE_DURATION: 1095 * 24 * 60 * 60, // 3 years
     GOVERNANCE_QUIET_PERIOD: 10 * 24 * 60 * 60, // 10 days
+    ALLOCATION_MODEL: 'waterfall',
     HOP2_BASE_FLOOR_BPS: 500, // 5%
     HOP2_EXTRA_FLOOR_BPS: 1000, // additional 10%, funded from hop-0's ceiling
+    HOP2_RESERVE_USDC: 0n,
+    TEAM_PAYMENT_USDC: 0n,
   },
   medi: {
     BASE_SALE: 1_000n * 10n ** 6n,
@@ -74,12 +108,35 @@ const CONSTANTS_BY_PROFILE: Record<CrowdfundProfile, CrowdfundConstants> = {
     LAUNCH_TEAM_INVITE_PERIOD: 14 * 24 * 60 * 60, // 14 days (equal to WINDOW_DURATION on medi-Sepolia)
     CLAIM_DEADLINE_DURATION: 60 * 24 * 60 * 60, // 60 days
     GOVERNANCE_QUIET_PERIOD: 1 * 24 * 60 * 60, // 1 day
+    ALLOCATION_MODEL: 'waterfall',
     HOP2_BASE_FLOOR_BPS: 500, // 5%
     HOP2_EXTRA_FLOOR_BPS: 0, // medi-Sepolia contracts predate the extra hop-2 floor
+    HOP2_RESERVE_USDC: 0n,
+    TEAM_PAYMENT_USDC: 0n,
+  },
+  relaunch: {
+    BASE_SALE: 1_800_000n * 10n ** 6n,
+    MAX_SALE: 1_800_000n * 10n ** 6n, // equal to BASE_SALE: no elastic expansion
+    MIN_SALE: 250_000n * 10n ** 6n,
+    ELASTIC_TRIGGER: 1_800_000n * 10n ** 6n,
+    ARM_PRICE: 1_000_000n,
+    MAX_SEEDS: 500,
+    LAUNCH_TEAM_HOP1_BUDGET: 1, // the team inviter wallet
+    LAUNCH_TEAM_HOP2_BUDGET: 500,
+    MIN_COMMIT: 100n * 10n ** 6n,
+    WINDOW_DURATION: 5 * 24 * 60 * 60, // 5 days (extendable on-chain up to MAX_WINDOW_DURATION)
+    LAUNCH_TEAM_INVITE_PERIOD: 5 * 24 * 60 * 60, // 5 days (equal to WINDOW_DURATION)
+    CLAIM_DEADLINE_DURATION: 1095 * 24 * 60 * 60, // 3 years
+    GOVERNANCE_QUIET_PERIOD: 10 * 24 * 60 * 60, // 10 days
+    ALLOCATION_MODEL: 'hop2Reserve',
+    HOP2_BASE_FLOOR_BPS: 0, // waterfall model only
+    HOP2_EXTRA_FLOOR_BPS: 0,
+    HOP2_RESERVE_USDC: 300_000n * 10n ** 6n,
+    TEAM_PAYMENT_USDC: 250_000n * 10n ** 6n,
   },
 }
 
-const HOP_CONFIGS_BY_PROFILE: Record<
+export const HOP_CONFIGS_BY_PROFILE: Record<
   CrowdfundProfile,
   readonly [HopConfig, HopConfig, HopConfig]
 > = {
@@ -93,20 +150,47 @@ const HOP_CONFIGS_BY_PROFILE: Record<
     { ceilingBps: 4500, capUsdc: 20n * 10n ** 6n, maxInvites: 2, maxInvitesReceived: 10 },
     { ceilingBps: 0, capUsdc: 10n * 10n ** 6n, maxInvites: 0, maxInvitesReceived: 20 },
   ],
+  // Known contributors / the team inviter wallet ($0 cap, invite links only) / invited contributors
+  // ($10k per invite, stacking to 20). ceilingBps is unused by the reserve model (0, as on-chain).
+  relaunch: [
+    { ceilingBps: 0, capUsdc: 100_000n * 10n ** 6n, maxInvites: 0, maxInvitesReceived: 1 },
+    { ceilingBps: 0, capUsdc: 0n, maxInvites: 100, maxInvitesReceived: 1 },
+    { ceilingBps: 0, capUsdc: 10_000n * 10n ** 6n, maxInvites: 0, maxInvitesReceived: 20 },
+  ],
 }
 
-/** Resolve the active profile from the `VITE_CROWDFUND_PROFILE` env var.
- *  Vite replaces `import.meta.env.VITE_*` at build time in the consuming
- *  apps; vitest exposes the same surface. We cast `import.meta` because
- *  this package's tsconfig doesn't reference `vite/client` (kept Vite-free
- *  so non-Vite consumers — say, future server-side tests — can import the
- *  module without pulling vite types in). Unknown / unset values fall back
- *  to `mainnet`, so existing mainnet-targeted builds need no env change. */
+/** Display names for hops 0/1/2. The relaunch names its tiers; other profiles number them. */
+export const TIER_LABELS_BY_PROFILE: Record<CrowdfundProfile, readonly [string, string, string]> = {
+  mainnet: ['Hop-0', 'Hop-1', 'Hop-2'],
+  medi: ['Hop-0', 'Hop-1', 'Hop-2'],
+  relaunch: ['Known', 'Team', 'Invited'],
+}
+
+export const FEATURES_BY_PROFILE: Record<CrowdfundProfile, CrowdfundFeatures> = {
+  mainnet: { directInvites: true, selfFill: true, hideTeamWallets: false },
+  medi: { directInvites: true, selfFill: true, hideTeamWallets: false },
+  // Outside contributors join only through team-wallet invite links, shown as launch-team invites.
+  relaunch: { directInvites: false, selfFill: false, hideTeamWallets: true },
+}
+
+/** Map a raw profile name to a profile. Unset and unknown values fall back to
+ *  `mainnet`, so existing mainnet-targeted builds need no env change; the apps'
+ *  startup env validation rejects unknown values on production builds. */
+export function parseCrowdfundProfile(raw: string | undefined): CrowdfundProfile {
+  const value = raw?.trim() ?? ''
+  return isCrowdfundProfile(value) ? value : 'mainnet'
+}
+
+/** Resolve the active profile. In the Vite apps, `import.meta.env.VITE_*` is
+ *  replaced at build time (vitest exposes the same surface). Node consumers such
+ *  as the indexer have no `import.meta.env`, so they read `CROWDFUND_PROFILE` from
+ *  `process.env` instead. We cast `import.meta` and `globalThis` because this
+ *  package's tsconfig references neither `vite/client` nor Node types (kept free of
+ *  both so either kind of consumer can import the module). */
 function resolveCrowdfundProfile(): CrowdfundProfile {
   const env = (import.meta as ImportMeta & { env?: { VITE_CROWDFUND_PROFILE?: string } }).env
-  const raw = env?.VITE_CROWDFUND_PROFILE
-  if (raw === 'medi') return 'medi'
-  return 'mainnet'
+  const nodeEnv = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
+  return parseCrowdfundProfile(env?.VITE_CROWDFUND_PROFILE ?? nodeEnv?.CROWDFUND_PROFILE)
 }
 
 export const CROWDFUND_PROFILE: CrowdfundProfile = resolveCrowdfundProfile()
@@ -116,6 +200,10 @@ export const CROWDFUND_CONSTANTS: CrowdfundConstants =
 
 export const HOP_CONFIGS: readonly [HopConfig, HopConfig, HopConfig] =
   HOP_CONFIGS_BY_PROFILE[CROWDFUND_PROFILE]
+
+export const CROWDFUND_FEATURES: CrowdfundFeatures = FEATURES_BY_PROFILE[CROWDFUND_PROFILE]
+
+export const TIER_LABELS: readonly [string, string, string] = TIER_LABELS_BY_PROFILE[CROWDFUND_PROFILE]
 
 /** ABI fragments for event parsing and contract reads.
  *  Must match the indexed flags + param shape of the on-chain events exactly
@@ -139,6 +227,7 @@ export const CROWDFUND_ABI_FRAGMENTS = [
   'event InviteNonceRevoked(address indexed inviter, uint256 nonce)',
   'event UnallocatedArmWithdrawn(address indexed treasury, uint256 amount)',
   'event WindowExtended(uint256 previousEnd, uint256 newEnd)',
+  'event LaunchTeamPaid(address indexed recipient, uint256 amount)',
   'function phase() view returns (uint8)',
   'function armLoaded() view returns (bool)',
   'function totalCommitted() view returns (uint256)',

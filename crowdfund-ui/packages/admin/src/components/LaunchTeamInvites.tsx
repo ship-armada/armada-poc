@@ -1,5 +1,5 @@
 // ABOUTME: Launch team invite panel with budget display, hop toggle, ENS resolution, and whitelist check.
-// ABOUTME: Sends launchTeamInvite() transactions within the 14-day launch-team window.
+// ABOUTME: Sends launchTeamInvite() transactions within the launch-team window.
 
 import { useState, useCallback, useEffect } from 'react'
 import { Contract, isAddress } from 'ethers'
@@ -9,6 +9,7 @@ import {
   HOP_CONFIGS,
   formatCountdown,
   formatUsdc,
+  hopLabel,
 } from '@armada/crowdfund-shared'
 import { isLocalMode } from '@/config/network'
 import { useTransactionFlow } from '@/hooks/useTransactionFlow'
@@ -104,6 +105,13 @@ export function LaunchTeamInvites(props: LaunchTeamInvitesProps) {
 
   const targetHop = selectedHop === 0 ? 1 : 2
   const targetCapUsdc = targetHop < HOP_CONFIGS.length ? HOP_CONFIGS[targetHop].capUsdc : 0n
+  // A repeat invite adds a slot only below the hop's stacking cap; at the cap the contract reverts.
+  const targetMaxReceived = targetHop < HOP_CONFIGS.length ? HOP_CONFIGS[targetHop].maxInvitesReceived : 0
+  const atStackingCap = existingSlots !== null && existingSlots >= targetMaxReceived
+  // A hop-1 placement with a $0 cap is a team inviter wallet (the relaunch), not a contributor.
+  const hop1IsTeamWallet = HOP_CONFIGS[1].capUsdc === 0n
+  const hop1BudgetLabel = hop1IsTeamWallet ? 'Team wallets' : hopLabel(1)
+  const hop1ActionLabel = hop1IsTeamWallet ? 'Add team wallet' : `Invite to ${hopLabel(1)}`
 
   return (
     <div className="rounded border border-border p-3 space-y-2">
@@ -117,11 +125,11 @@ export function LaunchTeamInvites(props: LaunchTeamInvitesProps) {
       {/* Budget display */}
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded border border-border p-2">
-          <span className="text-muted-foreground">Hop-1: </span>
+          <span className="text-muted-foreground">{hop1BudgetLabel}: </span>
           <span className="">{hop1Remaining} remaining</span>
         </div>
         <div className="rounded border border-border p-2">
-          <span className="text-muted-foreground">Hop-2: </span>
+          <span className="text-muted-foreground">{hopLabel(2)}: </span>
           <span className="">{hop2Remaining} remaining</span>
         </div>
       </div>
@@ -136,7 +144,7 @@ selectedHop === 0
 }`}
           onClick={() => setSelectedHop(0)}
         >
-          Invite to Hop-1 ({hop1Remaining})
+          {hop1ActionLabel} ({hop1Remaining})
         </button>
         <button
           className={`flex-1 px-3 py-1 rounded ${
@@ -146,7 +154,7 @@ selectedHop === 1
 }`}
           onClick={() => setSelectedHop(1)}
         >
-          Invite to Hop-2 ({hop2Remaining})
+          Invite to {hopLabel(2)} ({hop2Remaining})
         </button>
       </div>
 
@@ -182,9 +190,14 @@ selectedHop === 1
         )}
 
         {/* Already-whitelisted notice */}
-        {existingSlots !== null && (
+        {existingSlots !== null && atStackingCap && (
+          <div className="text-destructive bg-destructive/10 rounded px-2 py-1">
+            This address already holds the maximum {targetMaxReceived} slot{targetMaxReceived !== 1 ? 's' : ''} at {hopLabel(targetHop)}; this invite will revert.
+          </div>
+        )}
+        {existingSlots !== null && !atStackingCap && (
           <div className="text-info bg-info/10 rounded px-2 py-1">
-            This address already has {existingSlots} slot{existingSlots !== 1 ? 's' : ''} at Hop-{targetHop}.
+            This address already has {existingSlots} slot{existingSlots !== 1 ? 's' : ''} at {hopLabel(targetHop)}.
             This invite adds another slot, increasing their cap by {formatUsdc(targetCapUsdc)}.
           </div>
         )}

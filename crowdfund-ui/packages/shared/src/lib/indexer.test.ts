@@ -36,6 +36,19 @@ describe('reviveIndexedEvent', () => {
     expect(event.args.newEnd).toBe(1_796_313_600n)
   })
 
+  // WHY: the launch-team payment amount is compared with USDC bigints (proceeds checks), so it
+  // must be revived from the indexer's decimal string like the RPC path produces.
+  it('revives the LaunchTeamPaid amount as a bigint', () => {
+    const event = reviveIndexedEvent({
+      type: 'LaunchTeamPaid',
+      blockNumber: 300,
+      transactionHash: '0xabc',
+      logIndex: 3,
+      args: { recipient: '0x' + 'bb'.repeat(20), amount: '250000000000' },
+    })
+    expect(event.args.amount).toBe(250_000_000_000n)
+  })
+
   it('revives an event type with no bigint args', () => {
     const event = reviveIndexedEvent({
       type: 'Cancelled',

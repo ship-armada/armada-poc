@@ -44,14 +44,16 @@ so the image's resolved versions can differ from your local `node_modules`.
 cp /path/to/repo/deploy/docker-compose.yml .
 cp /path/to/repo/deploy/indexer.env.template .env
 # edit .env: set INDEXER_IMAGE=crowdfund-indexer:<sha>, CROWDFUND_CHAIN_ID,
-# CROWDFUND_DEPLOY_BLOCK (the crowdfund manifest's deployBlock), RPC URLs, contract
+# CROWDFUND_DEPLOY_BLOCK (the crowdfund manifest's deployBlock), CROWDFUND_PROFILE
+# (the sale constants of the deployed contract, e.g. relaunch), RPC URLs, contract
 # addresses, POSTGRES_PASSWORD + the matching CROWDFUND_DATABASE_URL, alert window
 # timestamps, and Discord webhooks.
 ```
 
 The template leaves every per-deploy value blank on purpose. Compose refuses to start
 without `INDEXER_IMAGE` and `POSTGRES_PASSWORD`; the indexer refuses to start without
-`CROWDFUND_CHAIN_ID`, with `CROWDFUND_DEPLOY_BLOCK` unset/0 on a non-local chain, or when
+`CROWDFUND_CHAIN_ID`, with `CROWDFUND_DEPLOY_BLOCK` unset/0 or `CROWDFUND_PROFILE` unset on a
+non-local chain, with an unknown `CROWDFUND_PROFILE`, or when
 an RPC reports a different chain.
 
 ## 3. Run

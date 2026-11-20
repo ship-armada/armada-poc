@@ -5,7 +5,7 @@ import express from 'express'
 import { join } from 'node:path'
 import { JsonRpcProvider } from 'ethers'
 import { buildHealth } from './health.js'
-import { getInitialCursor, loadIndexerConfig, readBooleanEnv, readRequiredEnv } from '../config.js'
+import { assertActiveProfile, getInitialCursor, loadIndexerConfig, readBooleanEnv, readRequiredEnv } from '../config.js'
 import { createIndexerStore } from '../db/createStore.js'
 import type { IndexerMeta, IndexerStore } from '../db/store.js'
 import { CrowdfundIndexerPoller } from '../ingest/poller.js'
@@ -192,6 +192,8 @@ export function createIndexerApi(options: CreateIndexerApiOptions) {
 
 async function main(): Promise<void> {
   const config = loadIndexerConfig()
+  // Snapshots and the API's graph apply the profile's sale constants; fail before serving them.
+  assertActiveProfile()
   const polling = config.pollOnStart || config.backfillOnStart
   if (polling) {
     if (!config.primaryRpcUrl) throw new Error('Missing required environment variable: CROWDFUND_PRIMARY_RPC_URL')

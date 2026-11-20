@@ -9,7 +9,7 @@ pragma solidity ^0.8.17;
 // ========== Enums ==========
 
 enum Phase {
-    Active,         // Invites + commits happen concurrently (3-week window)
+    Active,         // Invites + commits happen concurrently (WINDOW_DURATION, extendable)
     Finalized,      // Allocations computed, claims open
     Canceled        // Security Council cancel or permanent shutdown; full refunds
 }
@@ -19,8 +19,8 @@ enum Phase {
 // Field order packs the small fields into one slot, with the uint256 in its own
 // slot (audit-68). 5 bytes packed (uint16 + uint8 + uint16) + 1 slot for capUsdc.
 struct HopConfig {
-    uint16 ceilingBps;          // Ceiling as basis points — overlapping (6000, 4500, 0). Hop-2 uses floor+rollover instead.
-    uint8 maxInvites;           // How many addresses this hop can invite (3, 2, 0)
+    uint16 ceilingBps;          // Unused by the allocation (0 for every hop; see ArmadaCrowdfund's ALLOCATION DESIGN NOTE). Kept so the hopConfigs() getter keeps its shape.
+    uint8 maxInvites;           // How many addresses this hop can invite (0, 100, 0)
     uint16 maxInvitesReceived;  // Cap on invite stacking per (address, hop) node
     uint256 capUsdc;            // Max individual commitment in USDC (6 decimals)
 }

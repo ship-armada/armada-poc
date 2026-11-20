@@ -513,8 +513,8 @@ describe("RevenueLock max revenue increase per day", () => {
 const SPEC_OUTFLOW = {
   usdc: { windowDuration: 30 * 86400, limitBps: 1000, limitAbsolute: "100000000000", floorAbsolute: "0" },
   arm: {
-    windowDuration: 30 * 86400, limitBps: 300,
-    limitAbsolute: "250000000000000000000000", floorAbsolute: "0",
+    windowDuration: 30 * 86400, limitBps: 2,
+    limitAbsolute: "25000000000000000000000", floorAbsolute: "0",
   },
   // USDC pattern: 30-day window, 10%, 25 ETH absolute (~$100k), no floor.
   eth: { windowDuration: 30 * 86400, limitBps: 1000, limitAbsolute: "25000000000000000000", floorAbsolute: "0" },

@@ -18,16 +18,16 @@ Complete this table before deployment. Every address must be confirmed before an
 | Role | Description | Address | Wallet type | Quorum |
 |---|---|---|---|---|
 | Deployer | Deploys the contract | `[TBD]` | EOA, preferably a Ledger (`DEPLOYER_LEDGER_ADDRESS`, see `docs/ledger-deploy.md`); otherwise a fresh single-use key. The pipeline signs as one account; it holds no role or ARM after the run | — |
-| Treasury | Receives net USDC proceeds + unsold/unclaimed ARM | `[TBD]` (from the governance manifest) | Contract: `ArmadaTreasuryGov`, deployed by the launch and controlled by governance through the timelock; not a wallet | — |
-| ROOT / Launch team | `addSeed()`, `launchTeamInvite()`, `extendWindow()` | `[TBD]` | Safe multisig, every signer on a hardware wallet | 1-of-3 |
+| Treasury | Receives net USDC proceeds (after the $250,000 team payment to the launch team) + unsold/unclaimed ARM | `[TBD]` (from the governance manifest) | Contract: `ArmadaTreasuryGov`, deployed by the launch and controlled by governance through the timelock; not a wallet | — |
+| ROOT / Launch team | `addSeed()`, `launchTeamInvite()`, `extendWindow()`; wind-down guardian (`ArmadaWindDown.guardianTriggerWindDown()`, permanent until `renounceGuardian()`) | `[TBD]` | Safe multisig, every signer on a hardware wallet | 1-of-3 during the sale; 2-of-3 before finalization (guardian power) |
 | Security Council | `cancel()` authority | `[TBD]` | Safe multisig | 2-of-3 |
 | Treasury Steward | Elected at deploy with the USDC steward budget; `proposeStewardSpend()` (GOVERNANCE.md §Treasury Steward) | `[TBD]` | Safe multisig | 2-of-3 |
 | ARM token contract | Source of preloaded ARM | `[TBD]` | — | — |
 | USDC token contract | Committed currency | Circle mainnet USDC | — | — |
 
 **Key access rules (from CROWDFUND.md):**
-- `addSeed()` and `launchTeamInvite()`: ROOT only, days 1-21 only (the full commitment window; closes at `windowEnd`)
-- `extendWindow(newEnd)`: ROOT only, while the window is open; moves `windowEnd` and `launchTeamInviteEnd` later together, never beyond `windowStart + MAX_WINDOW_DURATION`
+- `addSeed()` and `launchTeamInvite()`: ROOT only, days 1-5 only (the full commitment window, plus any extension; closes at `windowEnd`)
+- `extendWindow(newEnd)`: ROOT only, while the window is open; moves `windowEnd` and `launchTeamInviteEnd` later together, never beyond `windowStart + MAX_WINDOW_DURATION` (15 days). Operational rule: extend in +5-day steps, at most twice
 - `cancel()`: Security Council only, pre-finalization only
 - `finalize()`, `withdrawUnallocatedArm()`: permissionless (anyone)
 - `claim(delegate)`, `claimRefund()`: permissionless (participant-initiated)
@@ -49,18 +49,20 @@ Complete every item before calling the deploy script. Sign off with initials and
 | Treasury address | `[address]` | ☐ | Immutable post-deploy |
 | ARM token address | `[address]` | ☐ | Verify against official ARM deployment |
 | USDC token address | Circle mainnet USDC | ☐ | 6 decimals |
-| ROOT / launch team address | `[address]` | ☐ | Must match multisig above |
+| ROOT / launch team address | `[address]` | ☐ | Must match multisig above. Also receives the $250,000 team payment at a successful finalize |
 | Security Council address | `[address]` | ☐ | Must match 2-of-3 multisig above |
 | Commitment window open timestamp | `[unix timestamp]` | ☐ | Verify against intended date/time + timezone |
-| Commitment deadline timestamp | `[unix timestamp]` | ☐ | Open + 21 days |
-| Launch team invite deadline | `[unix timestamp]` | ☐ | Open + 21 days (equals the commitment deadline) |
+| Commitment deadline timestamp | `[unix timestamp]` | ☐ | Open + 5 days |
+| Launch team invite deadline | `[unix timestamp]` | ☐ | Open + 5 days (equals the commitment deadline) |
 | MAX_SALE | 1,800,000 × 10^6 | ☐ | USDC units (6 decimals) |
-| BASE_SALE | 1,200,000 × 10^6 | ☐ | USDC units |
-| MINIMUM_RAISE | 1,000,000 × 10^6 | ☐ | USDC units (6 decimals) |
-| EXPANSION_TRIGGER | 1,500,000 × 10^6 | ☐ | USDC units |
-| Hop-0 budget | 180 | ☐ | Max hop-0 participants |
-| Launch team hop-1 budget | 100 | ☐ | |
-| Launch team hop-2 budget | 120 | ☐ | |
+| BASE_SALE | 1,800,000 × 10^6 | ☐ | USDC units (equal to MAX_SALE) |
+| MINIMUM_RAISE | 250,000 × 10^6 | ☐ | USDC units (6 decimals) |
+| EXPANSION_TRIGGER | 1,800,000 × 10^6 | ☐ | USDC units |
+| HOP2_RESERVE_USDC | 300,000 × 10^6 | ☐ | USDC units; hop-2 first-priority capacity |
+| TEAM_PAYMENT_USDC | 250,000 × 10^6 | ☐ | USDC units; paid to the launch team at a successful finalize |
+| Hop-0 budget | 500 | ☐ | Max hop-0 participants |
+| Launch team hop-1 budget | 1 | ☐ | The team inviter wallet (100 invite slots) |
+| Launch team hop-2 budget | 500 | ☐ | |
 
 ### EIP-712 domain
 
@@ -136,9 +138,9 @@ Record: `contract_address = [address]`, `deploy_tx = [hash]`, `block = [number]`
 | | |
 |---|---|
 | **Actor** | Deployer |
-| **Action** | Verify `ARM.balanceOf(crowdfundContract)` = 1,800,000e18. The deployer transfers ARM to the crowdfund contract via `armToken.transfer(crowdfundContract, 1_800_000e18)` after both contracts are deployed. (See `scripts/deploy_crowdfund.ts` for the canonical step.) |
+| **Action** | Verify `ARM.balanceOf(crowdfundContract)` ≥ 1,800,000e18 (MAX_SALE) and equals the configured `ARM_CROWDFUND_ALLOCATION`. The deployer transfers ARM to the crowdfund contract via `armToken.transfer(crowdfundContract, allocation)` after both contracts are deployed. (See `scripts/deploy_crowdfund.ts` for the canonical step.) |
 | **Preconditions** | Step 3 complete; ARM token deployed; deployer has executed the funding transfer to the crowdfund |
-| **On-chain confirmation** | `ARM.balanceOf(crowdfundContract)` = 1,800,000e18 |
+| **On-chain confirmation** | `ARM.balanceOf(crowdfundContract)` ≥ 1,800,000e18 |
 | **Fallback** | If balance is wrong: re-run the funding transfer, or check that the deployer holds sufficient ARM. |
 
 ### Step 5: Load ARM
@@ -147,19 +149,19 @@ Record: `contract_address = [address]`, `deploy_tx = [hash]`, `block = [number]`
 |---|---|
 | **Actor** | Anyone (typically deployer) |
 | **Action** | Call `loadArm()` — verifies the ARM balance and sets the flag that arms the sale. The commitment window opens at the configured open timestamp, not at the moment `loadArm()` is called. If `loadArm()` is called before the open timestamp, the contract is armed but commitments will revert until the window opens. |
-| **Preconditions** | `ARM.balanceOf(crowdfundContract)` = 1,800,000e18 (Step 4 verified) |
+| **Preconditions** | `ARM.balanceOf(crowdfundContract)` ≥ 1,800,000e18 (Step 4 verified) |
 | **On-chain confirmation** | `ArmLoaded` event emitted |
 | **Fallback** | If `loadArm()` reverts: check contract ARM balance equals MAX_SALE exactly; check `loadArm()` has not already been called |
 
 Record: `loadArm_tx = [hash]`
 
-> **If `loadArm()` was called before `openTimestamp`:** Stop here. Verify observer shows ARMED / PRE-OPEN. Do not proceed to Steps 6, 7, or 10 until `block.timestamp ≥ openTimestamp`. The contract is armed but commitments will revert and `addSeed()` / `launchTeamInvite()` may also revert until the launch-team window (days 1-21) is active. (Step 8, the committer integrity-anchor config, is not gated by `openTimestamp` and may be done now.)
+> **If `loadArm()` was called before `openTimestamp`:** Stop here. Verify observer shows ARMED / PRE-OPEN. Do not proceed to Steps 6, 7, or 10 until `block.timestamp ≥ openTimestamp`. The contract is armed but commitments will revert and `addSeed()` / `launchTeamInvite()` may also revert until the launch-team window (days 1-5) is active. (Step 8, the committer integrity-anchor config, is not gated by `openTimestamp` and may be done now.)
 
 > **At or after `openTimestamp`:** Continue to Steps 6, 7, 8, 9, and 10 in order.
 
 ### Step 6: Add initial seeds
 
-**Execute only once `block.timestamp ≥ openTimestamp` and the launch-team window (days 1-21) is active.**
+**Execute only once `block.timestamp ≥ openTimestamp` and the launch-team window (days 1-5) is active.**
 
 See §4 (Launch-team operating cadence) for the full seed addition procedure. The first batch of seeds should be added immediately once the launch-team window is active (`block.timestamp ≥ openTimestamp`), before announcing the sale.
 
@@ -211,9 +213,9 @@ opening passes.
 
 ---
 
-## 4. Launch-Team Operating Cadence (Days 1-21)
+## 4. Launch-Team Operating Cadence (Days 1-5, plus any extension)
 
-The launch-team window (days 1-21, the full commitment window) is the highest-risk operational phase. Hop-0 participants are added, launch-team budgets are spent, and these actions are either irreversible (`invite()` path) or immediately visible on-chain. Execute with care.
+The launch-team window (days 1-5, the full commitment window) is the highest-risk operational phase. Hop-0 participants are added, launch-team budgets are spent, and these actions are either irreversible (`invite()` path) or immediately visible on-chain. Execute with care.
 
 ### Adding a hop-0 participant
 
@@ -221,7 +223,7 @@ The launch-team window (days 1-21, the full commitment window) is the highest-ri
 |---|---|
 | **Actor** | ROOT (launch team multisig) |
 | **Action** | Call `addSeeds([...])` from the launch-team Safe: rows with hop 0 in a `npx hardhat cf-safe-batch` CSV, executed as Transaction Builder batches (`docs/safe-launch-batches.md`) |
-| **Preconditions** | Within launch-team window; hop-0 count < 180; address not already a seed (duplicate `addSeed()` for the same address is invalid); address confirmed with seed (they know what they're signing up for); entry recorded in decision log (§10) |
+| **Preconditions** | Within launch-team window; hop-0 count < 500; address not already a seed (duplicate `addSeed()` for the same address is invalid); address confirmed with seed (they know what they're signing up for); entry recorded in decision log (§10) |
 | **On-chain confirmation** | `SeedAdded(address)` event emitted; observer shows new hop-0 node with edge from ROOT |
 | **Fallback** | If the batch reverts: re-run the CSV with `--check` (deadline, hop-0 count, already-added seeds); see failure scenario §9.1 (wrong seed added) |
 
@@ -230,8 +232,8 @@ The launch-team window (days 1-21, the full commitment window) is the highest-ri
 | | |
 |---|---|
 | **Actor** | ROOT (launch team multisig) |
-| **Action** | Call `launchTeamInvite(invitee, fromHop)` where `fromHop` is 0 (for hop-1 placement) or 1 (for hop-2 placement), from the launch-team Safe: rows with target hop 1 or 2 in a `npx hardhat cf-safe-batch` CSV (`docs/safe-launch-batches.md`). Inviting an already-invited address stacks (raises its cap) and needs `--allow-stack` |
-| **Preconditions** | Within launch-team window; budget remaining for target hop; invitee address confirmed; entry recorded in decision log (§10) |
+| **Action** | Call `launchTeamInvite(invitee, fromHop)` where `fromHop` is 0 (for hop-1 placement) or 1 (for hop-2 placement), from the launch-team Safe: rows with target hop 1 or 2 in a `npx hardhat cf-safe-batch` CSV (`docs/safe-launch-batches.md`). Inviting an already-invited hop-2 address stacks (adds a $10,000 slot, up to 20 per address) and needs `--allow-stack` |
+| **Preconditions** | Within launch-team window; budget remaining for target hop (1 hop-1, 500 hop-2); invitee below the stacking cap at that hop (1 at hop 1, 20 at hop 2); invitee address confirmed; entry recorded in decision log (§10) |
 | **On-chain confirmation** | `Invited(ROOT, invitee, fromHop+1, 0)` emitted; observer shows new node with dashed edge from ROOT |
 | **Fallback** | If placement was wrong: see failure scenario §9.2 (bad launch-team invite) |
 
@@ -241,26 +243,27 @@ The launch-team window (days 1-21, the full commitment window) is the highest-ri
 |---|---|
 | **Actor** | ROOT (launch team multisig) |
 | **Action** | Call `extendWindow(newEnd)` from the launch-team Safe: `npx hardhat cf-safe-extend --end <ISO 8601 UTC>` writes the Transaction Builder file and a summary for the signers (`docs/safe-launch-batches.md`). The call can also be bundled with `addSeed()` / `launchTeamInvite()` calls in one Safe transaction |
-| **Preconditions** | The transaction must be **mined before `windowEnd`** (after that, extension is impossible and anyone may finalize), so start collecting signatures well ahead of the deadline. `newEnd` is later than the current `windowEnd` and no later than `windowStart + MAX_WINDOW_DURATION`. Decision and rationale recorded in the decision log (§10). New deadline announced to participants |
+| **Preconditions** | The transaction must be **mined before `windowEnd`** (after that, extension is impossible and anyone may finalize), so start collecting signatures well ahead of the deadline. `newEnd` is later than the current `windowEnd` and no later than `windowStart + MAX_WINDOW_DURATION` (15 days). Each extension moves the deadline by +5 days, at most twice (an operational rule; the contract enforces only the 15-day cap; why: CROWDFUND.md decisions table, "Extension steps"). Decision and rationale recorded in the decision log (§10). New deadline announced to participants |
 | **On-chain confirmation** | `WindowExtended(previousEnd, newEnd)` emitted; `windowEnd()` and `launchTeamInviteEnd()` both return `newEnd`; committer countdown shows the new deadline (it re-reads `windowEnd` on every poll); `evaluate-alerts` picks it up on its next run |
 | **Fallback** | An extension cannot be undone or shortened. If the new deadline was set too late, the window simply stays open longer; if it was set too early, extend again before it passes |
 
-### Daily checks (days 1-21)
+### Daily checks (days 1-3)
 
 Each day during the launch-team window, the operator should verify:
 
 - [ ] Current hop-0 count (observer or `getHopStats(0).whitelistCount` view on `ArmadaCrowdfund`)
-- [ ] Remaining hop-0 budget: 180 − current count
-- [ ] Remaining launch-team hop-1 budget: 100 − issued count
-- [ ] Remaining launch-team hop-2 budget: 120 − issued count
+- [ ] Remaining hop-0 budget: 500 − current count
+- [ ] Remaining launch-team hop-1 (team wallet) budget: 1 − issued count
+- [ ] Remaining launch-team hop-2 budget: 500 − issued count
+- [ ] Team-wallet invite slots used (100 − `invitesSent`)
 - [ ] Any unexpected addresses in the graph (check for anomalies)
-- [ ] Projected `totalAllocatedUsdc` trend vs `MINIMUM_RAISE`, plus `capped_demand` vs `EXPANSION_TRIGGER`
+- [ ] `capped_demand` trend vs `MINIMUM_RAISE` ($250k); hop-2 demand vs its $300k reserve, and total capped demand vs the $1.8M sale (above it, hops are pro-rated)
 - [ ] Observer and committer responding normally
 - [ ] No anomalous contract calls (check events for unexpected interactions)
 
-### Day-14 launch-team checkpoint
+### Day-3 launch-team checkpoint
 
-With one week of the sale remaining (end of day 14), verify:
+With two days of the base window remaining (end of day 3), verify:
 
 | Condition | Status | Owner |
 |---|---|---|
@@ -268,36 +271,37 @@ With one week of the sale remaining (end of day 14), verify:
 | All planned launch-team hop-1 placements issued or budget explicitly reserved | ☐ | ROOT |
 | All planned launch-team hop-2 placements issued or budget explicitly reserved | ☐ | ROOT |
 | Remaining budgets documented (no phantom unspent slots) | ☐ | ROOT |
-| Projected `totalAllocatedUsdc` reviewed for minimum-raise reachability; `capped_demand` reviewed for expansion | ☐ | Ops |
+| `capped_demand` reviewed for minimum-raise reachability | ☐ | Ops |
+| Extension decision made: if the sale should run longer, start collecting `extendWindow()` signatures now (the transaction must be mined before `windowEnd`) | ☐ | ROOT |
 | Security Council confirmed reachable for remainder of window | ☐ | Ops |
 
-**If minimum raise looks unreachable:** Do not cancel yet. Projected post-waterfall `totalAllocatedUsdc`, rather than capped demand alone, determines success. Monitor through the final week before any decision. Cancel is only appropriate for catastrophic events (exploit, legal injunction), not low demand.
+**If minimum raise looks unreachable:** Do not cancel. Consider extending the window (+5 days, at most twice: up to 15 days from open) so the sale can keep filling. Cancel is only appropriate for catastrophic events (exploit, legal injunction), not low demand.
 
 ---
 
-## 5. Final-Week Operating Cadence
+## 5. Final-Days Operating Cadence
 
-The launch-team window stays open until `windowEnd`, so ROOT can still add hop-0 participants and issue placements during days 15-21 under the §4 procedures and decision-log discipline. Late placements leave invitees little time to commit, and every placement consumes a `MAX_FINALIZE_NODES` slot (and `finalize()` gas) whether or not the invitee commits. Otherwise the operator's role is monitoring.
+The launch-team window stays open until `windowEnd`, so ROOT can still add hop-0 participants and issue placements during days 4-5 (and any extension) under the §4 procedures and decision-log discipline. Late placements leave invitees little time to commit, and every placement adds a participant node (and `finalize()` gas) whether or not the invitee commits. Otherwise the operator's role is monitoring.
 
-### Daily checks (days 15-21)
+### Daily checks (days 4-5, and any extension)
 
-- [ ] Projected `totalAllocatedUsdc` vs MINIMUM_RAISE ($1M), plus `capped_demand` vs EXPANSION_TRIGGER ($1.5M)
-- [ ] Per-hop demand vs ceilings (observer stats banner)
+- [ ] `capped_demand` vs MINIMUM_RAISE ($250k)
+- [ ] Total capped demand vs the $1.8M sale (above it, hops are pro-rated: hop 2 keeps at least `min(d2, $300k)`)
 - [ ] Commitment count and graph growth
 - [ ] Observer and committer responding normally
 - [ ] No anomalous contract calls
 
 ### Pre-finalization go/no-go checkpoint
 
-After commitment deadline passes (day 21+, or the extended deadline if `extendWindow()` was used), before calling `finalize()`:
+After commitment deadline passes (day 5+, or the extended deadline if `extendWindow()` was used), before calling `finalize()`:
 
 | Condition | Check | Owner |
 |---|---|---|
 | `block.timestamp > commitmentDeadline` | Confirmed | Ops |
-| Projected `totalAllocatedUsdc ≥ MINIMUM_RAISE ($1M)` | Apply per-address caps, sale-size selection, hop-2 floor, hop-0 ceiling, hop-0 rollover, hop-1 remaining-pool bound, hop-1 rollover, and hop-2 demand bound. Do **not** use capped demand alone as proof of success. | Ops |
+| `capped_demand ≥ MINIMUM_RAISE ($250k)` | Allocation = min(capped demand, $1.8M), so capped demand (per-address caps applied) decides success | Ops |
 | `cancelled == false` | Read from contract state | Ops |
 | `finalized == false` | Read from contract state | Ops |
-| Gas estimation for `finalize()` | Run `eth_estimateGas`; must be under the 16,777,216 (2^24, EIP-7825) per-tx cap. Expect ~7-12M at ~800 participants (cold); node count is capped at 1,800 (`MAX_FINALIZE_NODES`) to stay submittable | Ops |
+| Gas estimation for `finalize()` | Run `eth_estimateGas`; must be under the 16,777,216 (2^24, EIP-7825) per-tx cap. Expect at most ~9.41M at the 1,101-node structural maximum (measured cold, success path); the budgets keep the tree below the 1,800-node `MAX_FINALIZE_NODES` backstop | Ops |
 
 **If projected `totalAllocatedUsdc < MINIMUM_RAISE`:** Call `finalize()` anyway — it is permissionless and will set `refundMode = true`, enabling refunds via `claimRefund()` and ARM recovery via `withdrawUnallocatedArm()`. Announce to participants immediately.
 
@@ -320,7 +324,7 @@ Under lazy settlement, `finalize()` writes only aggregate state — zero per-par
 | **Actor** | Anyone (typically ops) |
 | **Action** | Call `finalize()` |
 | **Preconditions** | Pre-finalization go/no-go checkpoint passed |
-| **On-chain confirmation** | `Finalized(saleSize, totalAllocatedArm, netProceeds, refundMode)` emitted; aggregate state written; USDC transferred to treasury (success path) |
+| **On-chain confirmation** | `Finalized(saleSize, totalAllocatedArm, netProceeds, refundMode)` emitted; aggregate state written; `LaunchTeamPaid(launchTeam, amount)` emitted and USDC transferred to the launch team and treasury (success path) |
 | **Fallback** | If tx reverts: check preconditions; check gas limit; see §9.6 |
 
 Record: `finalize_tx = [hash]`, `block = [number]`, `refundMode = [true/false]`, `netProceeds = [amount]`
@@ -333,7 +337,8 @@ Record: `finalize_tx = [hash]`, `block = [number]`, `refundMode = [true/false]`,
 
 ### Step 3: Post-finalization verification (success path)
 
-- [ ] Treasury received proceeds: verify `USDC.balanceOf(treasury)` increased by approximately `netProceeds` from the `Finalized` event, minus the rounding buffer (`participantNodes.length × NUM_HOPS` USDC units). The event's `netProceeds` is the theoretical allocated USDC; the actual transfer is reduced by the buffer. A difference within the buffer is expected; a difference exceeding it indicates a real mismatch.
+- [ ] Launch team received the team payment: `LaunchTeamPaid(launchTeam, amount)` emitted with `amount` = $250,000 (`250_000 × 10^6`), and `USDC.balanceOf(launchTeam)` increased by that amount.
+- [ ] Treasury received proceeds: verify `USDC.balanceOf(treasury)` increased by `netProceeds` from the `Finalized` event minus the team payment, minus the rounding buffer (`participantNodes.length` USDC units) when any hop was pro-rated (no buffer otherwise, so the delta is exact). The event's `netProceeds` is the total allocated USDC; the actual treasury transfer is reduced by the team payment and the buffer. At exactly the $250,000 minimum the treasury delta is 0. A difference beyond the buffer indicates a real mismatch.
 - [ ] Aggregate state is correctly written: read `saleSize`, `ceilings[]`, `hopDemand[]`, `totalAllocatedArm`, `totalArmTransferred == 0` from contract
 - [ ] Verify `computeAllocation(address)` returns correct values for a sample of known participants (spot-check against manual calculation)
 - [ ] Unsold ARM: `ARM.balanceOf(crowdfundContract)` > `totalAllocatedArm` (unsold portion is sweepable)
@@ -349,10 +354,10 @@ This occurs when `finalize()` calculates `totalAllocatedUsdc < MINIMUM_RAISE` af
 
 | | |
 |---|---|
-| **On-chain state** | `finalized == true`, `refundMode == true`; no ARM allocated; no treasury transfer; no `Allocated` events |
+| **On-chain state** | `finalized == true`, `refundMode == true`; no ARM allocated; no team payment or treasury transfer; no `Allocated` events |
 | **Participant action** | Call `claimRefund()` to recover full deposited USDC |
 | **Operator action** | Announce immediately: "Crowdfund entered refund mode — full refunds available"; update UI messaging |
-| **ARM** | All 1,800,000 ARM sweepable via `withdrawUnallocatedArm()` — call and verify transfer to treasury |
+| **ARM** | All preloaded ARM sweepable via `withdrawUnallocatedArm()` — call and verify transfer to treasury |
 
 Verify: `ARM.balanceOf(crowdfundContract)` drops to 0 after `withdrawUnallocatedArm()`.
 
@@ -386,7 +391,7 @@ Record: `cancel_tx = [hash]`, `block = [number]`, `rationale = [description]`
 
 - [ ] Publish participant announcement: crowdfund cancelled, full refunds available via `claimRefund()`
 - [ ] Update observer/committer to "CANCELLED" state (automatic from `Cancelled` event)
-- [ ] Call `withdrawUnallocatedArm()` to sweep all 1,800,000 ARM to treasury
+- [ ] Call `withdrawUnallocatedArm()` to sweep all preloaded ARM to treasury
 - [ ] Verify `ARM.balanceOf(crowdfundContract)` = 0
 
 ---
@@ -398,7 +403,7 @@ Record: `cancel_tx = [hash]`, `block = [number]`, `rationale = [description]`
 | | |
 |---|---|
 | **Actor** | Treasury |
-| **Action** | Record `USDC.balanceOf(treasury)` **before** calling `finalize()`. After finalization, verify the balance increased by approximately `netProceeds` from the `Finalized` event, minus the rounding buffer (`participantNodes.length × NUM_HOPS` USDC units). The event's `netProceeds` is the theoretical allocated USDC; the actual transfer is reduced by the buffer to ensure the contract never runs short on refund payouts. A difference within the buffer is expected; a difference exceeding it requires investigation. Do not compare against the absolute post-finalization balance — the treasury may hold USDC from other sources. |
+| **Action** | Record `USDC.balanceOf(treasury)` **before** calling `finalize()`. After finalization, verify the balance increased by `netProceeds` from the `Finalized` event minus the `LaunchTeamPaid` amount ($250,000), minus the rounding buffer (`participantNodes.length` USDC units) when any hop was pro-rated. The event's `netProceeds` is the total allocated USDC; the actual transfer is reduced by the team payment and, when a hop is pro-rated, by the buffer that ensures the contract never runs short on refund payouts. Without pro-rating the delta is exact; a difference exceeding the buffer requires investigation. Settlement identity: team payment + treasury proceeds + contract dust + refunds == `totalCommitted`. Do not compare against the absolute post-finalization balance — the treasury may hold USDC from other sources. |
 | **Preconditions** | Successful finalization (not refundMode) |
 | **Fallback** | If proceeds delta mismatch: investigate immediately; do not transfer or use until reconciled |
 
@@ -409,7 +414,7 @@ Record: `cancel_tx = [hash]`, `block = [number]`, `rationale = [description]`
 | **Actor** | Anyone (typically ops) |
 | **Action** | Call `withdrawUnallocatedArm()` |
 | **Preconditions** | `finalized == true`; within 3-year deadline; unsold ARM > 0 |
-| **On-chain confirmation** | `ARM.balanceOf(treasury)` increases by `1,800,000 - totalAllocatedArm` |
+| **On-chain confirmation** | `ARM.balanceOf(treasury)` increases by `preloaded ARM - totalAllocatedArm` |
 | **Fallback** | If nothing to sweep (fully allocated): no action needed |
 
 ### Claims monitoring
@@ -431,7 +436,7 @@ When `block.timestamp > finalization_timestamp + (3 * 365 * 24 * 3600)`:
 | | |
 |---|---|
 | **Actor** | Anyone (typically treasury ops) |
-| **Action** | Call `withdrawUnallocatedArm()` — sweeps `1,800,000 - totalArmTransferred` (all remaining ARM: unsold + allocated-but-unclaimed + forfeited by post-expiry claimants) |
+| **Action** | Call `withdrawUnallocatedArm()` — sweeps `preloaded ARM - totalArmTransferred` (all remaining ARM: unsold + allocated-but-unclaimed + forfeited by post-expiry claimants) |
 | **Preconditions** | `block.timestamp > finalization_timestamp + (3 × 365 × 24 × 3600)` — strict post-deadline. Claims are available *through* the deadline; the expanded sweep formula (using `totalArmTransferred` instead of `totalAllocatedArm`) is only eligible *after* the deadline passes. |
 | **On-chain confirmation** | `ARM.balanceOf(crowdfundContract)` = 0; treasury ARM balance increases by the swept amount |
 | **Fallback** | If contract ARM balance already 0: nothing to sweep; verify no ARM was accidentally sent to the contract address |
@@ -533,16 +538,16 @@ Under lazy settlement, `finalize()` writes only aggregate state, but it still **
 
 ### 9.7 RefundMode surprise
 
-**Detection:** `Finalized` event has `refundMode == true`, including where capped demand met the expansion trigger.
+**Detection:** `Finalized` event has `refundMode == true`.
 
-**What happened:** Post-waterfall `totalAllocatedUsdc` was below `MINIMUM_RAISE`. This can occur at base or expanded size because the expanded hop-0 ceiling is $846,000, below the $1,000,000 minimum.
+**What happened:** Capped demand was below `MINIMUM_RAISE` ($250k). (The post-allocation check on `totalAllocatedUsdc` cannot trigger on its own under the current constants: allocation equals min(capped demand, $1.8M).)
 
 **Immediate actions:**
 - Announce immediately: "Crowdfund entered refund mode — full refunds available"
 - All participants can call `claimRefund()` for their full deposited USDC
-- Call `withdrawUnallocatedArm()` to sweep all 1,800,000 ARM to treasury
+- Call `withdrawUnallocatedArm()` to sweep all preloaded ARM to treasury
 - Update observer/committer to show "REFUND MODE"
-- No ARM is allocated; no treasury USDC transfer occurred
+- No ARM is allocated; no team payment or treasury USDC transfer occurred
 
 This is not an exploit. The mechanism operated correctly. The announcement should explain why it happened in plain terms.
 
@@ -610,12 +615,14 @@ Every irreversible action must be logged here before it is executed. This is the
 | All pre-launch checklist items signed off | ☐ | Deployer |
 | Contract deployed and verified | ☐ | Deployer |
 | EIP-712 domain separator verified | ☐ | Deployer |
-| ARM token deployed — constructor mints 1.8M ARM directly to crowdfund contract | ☐ | Deployer |
+| ARM token deployed and the crowdfund allocation (≥ 1.8M ARM, MAX_SALE) transferred to the crowdfund contract | ☐ | Deployer |
 | Observer and committer URLs confirmed working | ☐ | Ops |
 | Monitoring alerts active | ☐ | Ops |
 | Security Council reachability confirmed | ☐ | Ops |
 | Initial steward elected + USDC steward budget verified (`verify_deployment` Launch Values) | ☐ | Deployer |
 | Reserve distributor funded at the configured cap with the intended allocator Safe (`verify_deployment` Revenue Reserve) | ☐ | Deployer |
+| Governor deployer cleared and the crowdfund registered, so the quiet period and veto bootstrap apply (`verify_deployment` Governance Wiring) | ☐ | Deployer |
+| Wind-down guardian = launch-team Safe (`verify_deployment` Launch Values) | ☐ | Deployer |
 | Steward proposal alert active (MONITORING.md §12e); no steward proposals before the quiet period ends | ☐ | Ops |
 | Initial hop-0 list finalized | ☐ | ROOT |
 | Announcement drafted and ready | ☐ | Ops |
@@ -624,7 +631,7 @@ Every irreversible action must be logged here before it is executed. This is the
 
 ---
 
-### Checkpoint 2: Day 14 (one week before the launch-team and commitment windows close)
+### Checkpoint 2: Day 3 (two days before the base launch-team and commitment windows close)
 
 | Condition | Status | Owner |
 |---|---|---|
@@ -632,11 +639,11 @@ Every irreversible action must be logged here before it is executed. This is the
 | Launch-team hop-1 budget accounted for (issued + reserved) | ☐ | ROOT |
 | Launch-team hop-2 budget accounted for (issued + reserved) | ☐ | ROOT |
 | Decision log entries complete for all addSeed/launchTeamInvite actions | ☐ | ROOT |
-| Projected `totalAllocatedUsdc` reviewed for minimum-raise reachability; `capped_demand` reviewed for expansion | ☐ | Ops |
+| `capped_demand` reviewed for minimum-raise reachability; extension decided (signatures in progress if extending) | ☐ | Ops |
 | Observer graph reviewed for anomalies | ☐ | Ops |
 | No active security concerns | ☐ | Security Council |
 
-**If projected `totalAllocatedUsdc` suggests the minimum raise is unlikely:** Do not cancel. Monitor through the final week.
+**If capped demand suggests the minimum raise is unlikely:** Do not cancel. Consider extending the window (+5 days, at most twice: up to 15 days from open) and monitor through the final days.
 
 ---
 
@@ -649,7 +656,7 @@ Every irreversible action must be logged here before it is executed. This is the
 | `finalized == false` | ☐ | Ops |
 | `cancelled == false` | ☐ | Ops |
 | `finalize()` gas estimate verified under the 16,777,216 (2^24) per-tx cap (expect ~7-12M at ~800 participants, cold) | ☐ | Ops |
-| Treasury standing by to verify proceeds | ☐ | Treasury |
+| Treasury and launch team standing by to verify proceeds and the team payment | ☐ | Treasury |
 | Participant announcement drafted for both success and refundMode outcomes | ☐ | Ops |
 
 **If projected `totalAllocatedUsdc < MINIMUM_RAISE:** Call `finalize()` anyway — it sets `refundMode = true`. Announce immediately.

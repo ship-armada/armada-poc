@@ -11,6 +11,10 @@ import "../contracts/cctp/MockUSDCV2.sol";
 /// @dev Drives the crowdfund through its lifecycle with bounded fuzz inputs.
 ///      Tracks ghost variables for invariant assertions.
 contract CrowdfundHandler is Test {
+    // Per-hop caps (relaunch): known contributors, team inviter wallets, invited contributors.
+    uint256 constant HOP0_CAP = 100_000 * 1e6;
+    uint256 constant HOP2_CAP = 10_000 * 1e6;
+
     ArmadaCrowdfund public crowdfund;
     MockUSDCV2 public usdc;
     ArmadaToken public armToken;
@@ -28,6 +32,7 @@ contract CrowdfundHandler is Test {
     uint256 public ghost_totalUsdcRefunded; // USDC returned via claimRefund() (normal pro-rata path)
     uint256 public ghost_totalUsdcCancelRefunded; // USDC returned via claimRefund() (canceled/refundMode full refund)
     uint256 public ghost_proceedsPushed;    // USDC pushed to treasury at finalization
+    uint256 public ghost_teamPaid;          // USDC paid to the launch team (admin) at finalization
     uint256 public ghost_unallocArmWithdrawn; // ARM withdrawn via withdrawUnallocatedArm()
     uint256 public ghost_claimCount;        // number of successful claims
     bool public ghost_finalized;
@@ -67,7 +72,7 @@ contract CrowdfundHandler is Test {
         if (ghost_timeWarped) return; // commits revert after windowEnd
         if (seeds.length == 0) return;
         seedIdx = bound(seedIdx, 0, seeds.length - 1);
-        amount = bound(amount, 1, 15_000 * 1e6); // up to hop-0 cap
+        amount = bound(amount, 1, HOP0_CAP); // up to hop-0 cap
 
         address seed = seeds[seedIdx];
 
@@ -75,8 +80,8 @@ contract CrowdfundHandler is Test {
         // the contract's cap enforcement and refund-at-settlement logic
         uint256 currentCommitted = crowdfund.getCommitment(seed, 0);
         if (seedIdx % 4 != 0) {
-            if (currentCommitted + amount > 15_000 * 1e6) {
-                amount = 15_000 * 1e6 - currentCommitted;
+            if (currentCommitted + amount > HOP0_CAP) {
+                amount = HOP0_CAP - currentCommitted;
             }
             if (amount == 0) return;
         }
@@ -98,21 +103,15 @@ contract CrowdfundHandler is Test {
         vm.stopPrank();
     }
 
-    /// @dev Fuzzed commit for hop-1 addresses
+    /// @dev Fuzzed commit for hop-1 addresses (team inviter wallets). Their cap is $0, so every
+    ///      commit is over-cap: it must be excluded from capped demand and refunded in full.
     function commitHop1(uint256 idx, uint256 amount) external {
         if (ghost_timeWarped) return; // commits revert after windowEnd
         if (hop1Addrs.length == 0) return;
         idx = bound(idx, 0, hop1Addrs.length - 1);
-        amount = bound(amount, 1, 4_000 * 1e6); // hop-1 cap
+        amount = bound(amount, 1, HOP2_CAP);
 
         address addr = hop1Addrs[idx];
-        uint256 currentCommitted = crowdfund.getCommitment(addr, 1);
-        if (idx % 4 != 0) {
-            if (currentCommitted + amount > 4_000 * 1e6) {
-                amount = 4_000 * 1e6 - currentCommitted;
-            }
-            if (amount == 0) return;
-        }
 
         usdc.mint(addr, amount);
         vm.startPrank(addr);
@@ -135,13 +134,13 @@ contract CrowdfundHandler is Test {
         if (ghost_timeWarped) return; // commits revert after windowEnd
         if (hop2Addrs.length == 0) return;
         idx = bound(idx, 0, hop2Addrs.length - 1);
-        amount = bound(amount, 1, 1_000 * 1e6); // hop-2 cap
+        amount = bound(amount, 1, HOP2_CAP); // hop-2 cap
 
         address addr = hop2Addrs[idx];
         uint256 currentCommitted = crowdfund.getCommitment(addr, 2);
         if (idx % 4 != 0) {
-            if (currentCommitted + amount > 1_000 * 1e6) {
-                amount = 1_000 * 1e6 - currentCommitted;
+            if (currentCommitted + amount > HOP2_CAP) {
+                amount = HOP2_CAP - currentCommitted;
             }
             if (amount == 0) return;
         }
@@ -171,26 +170,30 @@ contract CrowdfundHandler is Test {
     }
 
     /// @dev Finalize the crowdfund (permissionless).
-    ///      Proceeds are pushed to treasury atomically at finalization.
+    ///      The team payment and the treasury's proceeds are pushed atomically at finalization.
     function finalize() external {
         if (ghost_finalized || ghost_canceled) return;
 
         address treasury = address(0xBEEF);
         uint256 usdcBefore = usdc.balanceOf(treasury);
+        uint256 teamBefore = usdc.balanceOf(admin);
 
         try crowdfund.finalize() {
             Phase p = crowdfund.phase();
             if (p == Phase.Finalized) {
                 ghost_finalized = true;
                 ghost_refundMode = crowdfund.refundMode();
-                // Track proceeds pushed at finalization
+                // Track proceeds pushed and the team payment made at finalization
                 uint256 usdcGained = usdc.balanceOf(treasury) - usdcBefore;
                 ghost_proceedsPushed += usdcGained;
+                ghost_teamPaid += usdc.balanceOf(admin) - teamBefore;
             }
         } catch {}
     }
 
-    /// @dev Claim ARM for a random committer (ARM only, no USDC)
+    /// @dev claim() for a random committer with no delegate. Claims that owe ARM revert (a
+    ///      delegate is required); refund-only claims (team wallets at their $0 cap, a crowded-out
+    ///      hop-2) succeed and pay USDC, which is tracked as a settlement refund.
     function claim(uint256 idx) external {
         if (!ghost_finalized) return;
         if (allCommitters.length == 0) return;
@@ -199,11 +202,13 @@ contract CrowdfundHandler is Test {
         address claimer = allCommitters[idx];
 
         uint256 armBefore = armToken.balanceOf(claimer);
+        uint256 usdcBefore = usdc.balanceOf(claimer);
 
         vm.prank(claimer);
         try crowdfund.claim(address(0)) {
             uint256 armGained = armToken.balanceOf(claimer) - armBefore;
             ghost_totalArmTransferred += armGained;
+            ghost_totalUsdcRefunded += usdc.balanceOf(claimer) - usdcBefore;
             ghost_claimCount++;
         } catch {}
     }
@@ -295,11 +300,12 @@ contract CrowdfundInvariantTest is Test {
         crowdfund.loadArm();
 
         // Create actor addresses
-        // 80 seeds to ensure we can reach MIN_SALE ($1M) with seeds alone ($15K * 80 = $1.2M)
+        // 80 seeds: enough to reach MIN_SALE ($250K) and to oversubscribe the $1.8M sale.
+        // 1 hop-1 team inviter wallet (LAUNCH_TEAM_HOP1_BUDGET) and 20 hop-2 invitees.
         for (uint256 i = 0; i < 80; i++) {
             seeds.push(address(uint160(0x1000 + i)));
         }
-        for (uint256 i = 0; i < 20; i++) {
+        for (uint256 i = 0; i < 1; i++) {
             hop1Addrs.push(address(uint160(0x2000 + i)));
         }
         for (uint256 i = 0; i < 20; i++) {
@@ -309,29 +315,15 @@ contract CrowdfundInvariantTest is Test {
         // Setup phase: add seeds
         crowdfund.addSeeds(seeds);
 
-        // Do invitations: each seed invites up to 3 hop-1 addresses
-        uint256 hop1Idx = 0;
-        for (uint256 i = 0; i < seeds.length && hop1Idx < hop1Addrs.length; i++) {
-            // Only some seeds invite (to make it more realistic)
-            if (i < 7) { // first 7 seeds invite
-                for (uint256 j = 0; j < 3 && hop1Idx < hop1Addrs.length; j++) {
-                    vm.prank(seeds[i]);
-                    crowdfund.invite(hop1Addrs[hop1Idx], 0);
-                    hop1Idx++;
-                }
-            }
+        // The launch team places the hop-1 team wallet (seeds cannot invite).
+        for (uint256 i = 0; i < hop1Addrs.length; i++) {
+            crowdfund.launchTeamInvite(hop1Addrs[i], 0);
         }
 
-        // Some hop-1 addresses invite hop-2
-        uint256 hop2Idx = 0;
-        for (uint256 i = 0; i < hop1Addrs.length && hop2Idx < hop2Addrs.length; i++) {
-            if (i < 10) { // first 10 hop-1 invite
-                for (uint256 j = 0; j < 2 && hop2Idx < hop2Addrs.length; j++) {
-                    vm.prank(hop1Addrs[i]);
-                    crowdfund.invite(hop2Addrs[hop2Idx], 1);
-                    hop2Idx++;
-                }
-            }
+        // The team wallet invites the hop-2 addresses
+        for (uint256 i = 0; i < hop2Addrs.length; i++) {
+            vm.prank(hop1Addrs[0]);
+            crowdfund.invite(hop2Addrs[i], 1);
         }
 
         // Fast-forward into the active window (invites + commits concurrent)
@@ -357,14 +349,23 @@ contract CrowdfundInvariantTest is Test {
 
     // ============ Invariants ============
 
-    /// @notice USDC conservation: contract balance = totalCommitted - claimed refunds - proceeds pushed - cancel refunds
+    /// @notice USDC conservation: contract balance = totalCommitted - claimed refunds - proceeds pushed
+    ///         - team payment - cancel refunds
     function invariant_usdcConservation() public view {
         uint256 contractUsdc = usdc.balanceOf(address(crowdfund));
         uint256 expectedUsdc = handler.ghost_totalUsdcIn()
             - handler.ghost_totalUsdcRefunded()
             - handler.ghost_proceedsPushed()
+            - handler.ghost_teamPaid()
             - handler.ghost_totalUsdcCancelRefunded();
         assertEq(contractUsdc, expectedUsdc, "USDC conservation violated");
+    }
+
+    /// @notice WHY: the launch team is paid exactly TEAM_PAYMENT_USDC on a successful finalization
+    ///         and nothing otherwise (before finalization, in refund mode, or after a cancel).
+    function invariant_teamPaymentExactOnSuccessOnly() public view {
+        bool success = handler.ghost_finalized() && !handler.ghost_refundMode();
+        assertEq(handler.ghost_teamPaid(), success ? crowdfund.TEAM_PAYMENT_USDC() : 0, "team payment");
     }
 
     /// @notice ARM conservation: contract balance = initial funding - claimed ARM - unalloc withdrawn

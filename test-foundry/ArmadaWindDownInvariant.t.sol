@@ -45,14 +45,18 @@ contract WindDownHandler is Test {
     ArmadaWindDown public windDown;
     MockRevenueWD public revenueCounter;
     address public timelock;
+    address public guardian;
 
     uint256 public ghost_triggerCount;
     uint256 public ghost_revertCount;
+    bool public ghost_renounced;
+    uint256 public ghost_guardianTriggersAfterRenounce;
 
-    constructor(ArmadaWindDown _wd, MockRevenueWD _rc, address _timelock) {
+    constructor(ArmadaWindDown _wd, MockRevenueWD _rc, address _timelock, address _guardian) {
         windDown = _wd;
         revenueCounter = _rc;
         timelock = _timelock;
+        guardian = _guardian;
     }
 
     /// @dev Fuzzed: set revenue to an arbitrary amount
@@ -85,6 +89,25 @@ contract WindDownHandler is Test {
             ghost_revertCount++;
         }
     }
+
+    /// @dev Fuzzed: attempt the guardian trigger as the original guardian
+    function tryGuardianTrigger() external {
+        vm.prank(guardian);
+        try windDown.guardianTriggerWindDown() {
+            ghost_triggerCount++;
+            if (ghost_renounced) ghost_guardianTriggersAfterRenounce++;
+        } catch {
+            ghost_revertCount++;
+        }
+    }
+
+    /// @dev Fuzzed: the original guardian surrenders the power
+    function tryRenounceGuardian() external {
+        vm.prank(guardian);
+        try windDown.renounceGuardian() {
+            ghost_renounced = true;
+        } catch {}
+    }
 }
 
 contract ArmadaWindDownInvariantTest is Test {
@@ -98,6 +121,7 @@ contract ArmadaWindDownInvariantTest is Test {
     WindDownHandler public handler;
 
     address public timelock = address(0x7140);
+    address public guardian = address(0x6A2D);
     address public redemption = address(0x4D);
 
     uint256 constant THRESHOLD = 500_000e18;
@@ -120,11 +144,12 @@ contract ArmadaWindDownInvariantTest is Test {
             address(revenueCounter),
             address(revenueLock),
             timelock,
+            guardian,
             THRESHOLD,
             block.timestamp + DEADLINE
         );
 
-        handler = new WindDownHandler(windDown, revenueCounter, timelock);
+        handler = new WindDownHandler(windDown, revenueCounter, timelock, guardian);
         targetContract(address(handler));
     }
 
@@ -137,7 +162,7 @@ contract ArmadaWindDownInvariantTest is Test {
     }
 
     /// @notice INV-WD2: At most one successful trigger can occur.
-    ///         WHY: Both trigger functions check !triggered, so only one should succeed.
+    ///         WHY: All three trigger functions check !triggered, so only one should succeed.
     function invariant_atMostOneTrigger() public {
         assertLe(handler.ghost_triggerCount(), 1, "INV-WD2: at most one trigger");
     }
@@ -150,5 +175,18 @@ contract ArmadaWindDownInvariantTest is Test {
             assertTrue(governor.windDownActive(), "INV-WD3: governor must be wind-down active");
             assertTrue(pauseCtrl.windDownActive(), "INV-WD3: pause must be wind-down active");
         }
+    }
+
+    /// @notice INV-WD4: The guardian is either the deployed guardian or, once renounced, address(0)
+    ///         forever, and a renounced guardian never triggers.
+    ///         WHY: the guardian power is permanent unless surrendered, and surrender is irreversible.
+    function invariant_guardianRenounceIsPermanent() public {
+        address g = windDown.guardian();
+        if (handler.ghost_renounced()) {
+            assertEq(g, address(0), "INV-WD4: renounced guardian must stay zero");
+        } else {
+            assertEq(g, guardian, "INV-WD4: guardian changes only by renouncing");
+        }
+        assertEq(handler.ghost_guardianTriggersAfterRenounce(), 0, "INV-WD4: no trigger after renounce");
     }
 }

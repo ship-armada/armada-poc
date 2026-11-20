@@ -72,6 +72,7 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
     event ETHSwept(address indexed recipient, uint256 amount);
     event RevenueThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
     event WindDownDeadlineUpdated(uint256 oldDeadline, uint256 newDeadline);
+    event GuardianRenounced(address indexed guardian);
 
     ArmadaWindDown public windDown;
     ArmadaToken public armToken;
@@ -89,6 +90,7 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
     MockRevenueLock public revenueLockMock;
     address public revenueLock; // set to revenueLockMock address in setUp
     address public crowdfund = address(0xCF00);
+    address public guardian = address(0x6A2D); // launch-team Safe
 
     uint256 constant TOTAL_SUPPLY = 12_000_000 * 1e18;
     uint256 constant TWO_DAYS = 2 days;
@@ -135,6 +137,7 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
             address(revenueCounter),
             revenueLock,
             address(timelock),
+            guardian,
             REVENUE_THRESHOLD,
             WIND_DOWN_DEADLINE
         );
@@ -269,6 +272,92 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         vm.prank(address(timelock));
         vm.expectRevert("ArmadaWindDown: already triggered");
         windDown.governanceTriggerWindDown();
+    }
+
+    // ======== Guardian Trigger ========
+
+    /// @dev WHY: the launch-team guardian is the last-resort brake on a captured governance: it
+    ///      can wind down at any time, before the deadline and whatever the revenue, with the same
+    ///      effects as the other triggers (governance off, transfers on, treasury sweepable).
+    function test_guardianTrigger_succeedsAnyTimeWithFullEffects() public {
+        assertLt(block.timestamp, WIND_DOWN_DEADLINE);
+        revenueCounter.setRevenue(REVENUE_THRESHOLD * 10); // well above the permissionless threshold
+
+        vm.prank(guardian);
+        vm.expectEmit(true, false, false, true);
+        emit WindDownTriggered(guardian, block.timestamp, true);
+        windDown.guardianTriggerWindDown();
+
+        assertTrue(windDown.triggered());
+        assertEq(windDown.triggerTime(), block.timestamp);
+        assertTrue(governor.windDownActive());
+        assertTrue(armToken.transferable());
+        windDown.sweepToken(address(usdc));
+        assertEq(usdc.balanceOf(address(redemption)), 500_000e6);
+    }
+
+    /// @dev WHY: only the guardian holds this power; the timelock (a captured governance) and
+    ///      anyone else are refused.
+    function test_guardianTrigger_revertsForNonGuardian() public {
+        vm.prank(randomUser);
+        vm.expectRevert("ArmadaWindDown: not guardian");
+        windDown.guardianTriggerWindDown();
+
+        vm.prank(address(timelock));
+        vm.expectRevert("ArmadaWindDown: not guardian");
+        windDown.guardianTriggerWindDown();
+    }
+
+    /// @dev WHY: wind-down happens once, whichever path triggered it first.
+    function test_guardianTrigger_revertsAfterAnyTrigger() public {
+        vm.prank(address(timelock));
+        windDown.governanceTriggerWindDown();
+
+        vm.prank(guardian);
+        vm.expectRevert("ArmadaWindDown: already triggered");
+        windDown.guardianTriggerWindDown();
+    }
+
+    /// @dev WHY: the power is permanent unless the guardian surrenders it. Renouncing is
+    ///      irreversible: the guardian becomes address(0), so no one can ever use the trigger again.
+    function test_renounceGuardian_permanentlyDisablesTheTrigger() public {
+        assertEq(windDown.guardian(), guardian);
+
+        vm.prank(guardian);
+        vm.expectEmit(true, false, false, false);
+        emit GuardianRenounced(guardian);
+        windDown.renounceGuardian();
+
+        assertEq(windDown.guardian(), address(0));
+        vm.prank(guardian);
+        vm.expectRevert("ArmadaWindDown: not guardian");
+        windDown.guardianTriggerWindDown();
+        vm.prank(guardian);
+        vm.expectRevert("ArmadaWindDown: not guardian");
+        windDown.renounceGuardian();
+    }
+
+    /// @dev WHY: nobody but the guardian can surrender it, so a captured governance cannot disarm
+    ///      the brake before using it.
+    function test_renounceGuardian_onlyGuardian() public {
+        vm.prank(address(timelock));
+        vm.expectRevert("ArmadaWindDown: not guardian");
+        windDown.renounceGuardian();
+
+        vm.prank(randomUser);
+        vm.expectRevert("ArmadaWindDown: not guardian");
+        windDown.renounceGuardian();
+        assertEq(windDown.guardian(), guardian);
+    }
+
+    /// @dev WHY: a deploy that forgot the guardian would silently have no brake; refuse it.
+    function test_constructorRejectsZeroGuardian() public {
+        vm.expectRevert("ArmadaWindDown: zero guardian");
+        new ArmadaWindDown(
+            address(armToken), address(treasury), address(governor), address(redemption),
+            address(pauseController), address(revenueCounter), revenueLock, address(timelock), address(0),
+            REVENUE_THRESHOLD, WIND_DOWN_DEADLINE
+        );
     }
 
     // ======== Trigger Time (consumed by ArmadaRedemption delay gate) ========
@@ -492,7 +581,7 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         vm.expectRevert("ArmadaWindDown: zero armToken");
         new ArmadaWindDown(
             address(0), address(treasury), address(governor), address(redemption),
-            address(pauseController), address(revenueCounter), revenueLock, address(timelock),
+            address(pauseController), address(revenueCounter), revenueLock, address(timelock), guardian,
             REVENUE_THRESHOLD, WIND_DOWN_DEADLINE
         );
     }
@@ -501,7 +590,7 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         vm.expectRevert("ArmadaWindDown: zero revenueLock");
         new ArmadaWindDown(
             address(armToken), address(treasury), address(governor), address(redemption),
-            address(pauseController), address(revenueCounter), address(0), address(timelock),
+            address(pauseController), address(revenueCounter), address(0), address(timelock), guardian,
             REVENUE_THRESHOLD, WIND_DOWN_DEADLINE
         );
     }
@@ -510,7 +599,7 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         vm.expectRevert("ArmadaWindDown: deadline in past");
         new ArmadaWindDown(
             address(armToken), address(treasury), address(governor), address(redemption),
-            address(pauseController), address(revenueCounter), revenueLock, address(timelock),
+            address(pauseController), address(revenueCounter), revenueLock, address(timelock), guardian,
             REVENUE_THRESHOLD, block.timestamp - 1
         );
     }
@@ -519,7 +608,7 @@ contract ArmadaWindDownTest is Test, GovernorDeployHelper {
         vm.expectRevert("ArmadaWindDown: zero threshold");
         new ArmadaWindDown(
             address(armToken), address(treasury), address(governor), address(redemption),
-            address(pauseController), address(revenueCounter), revenueLock, address(timelock),
+            address(pauseController), address(revenueCounter), revenueLock, address(timelock), guardian,
             0, WIND_DOWN_DEADLINE
         );
     }

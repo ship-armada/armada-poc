@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// ABOUTME: Wind-down contract with permissionless trigger and governance trigger.
+// ABOUTME: Wind-down contract with permissionless, governance and launch-team guardian triggers.
 // ABOUTME: Sweeps treasury assets to redemption contract; enables ARM transfers; disables governance.
 pragma solidity ^0.8.17;
 
@@ -37,9 +37,12 @@ interface ITreasuryWindDown {
 /// @title ArmadaWindDown — Protocol wind-down trigger and treasury sweep
 /// @notice Not upgradeable. Trigger logic is immutable. Only parameters are governable.
 ///
-///         Two trigger paths:
+///         Three trigger paths:
 ///         1. Permissionless: Anyone can trigger if deadline has passed AND revenue is below threshold.
 ///         2. Governance: Timelock can trigger at any time regardless of conditions.
+///         3. Guardian: the launch-team guardian can trigger at any time, outside governance and the
+///            veto, as a last resort against a captured governance. Permanent unless the guardian
+///            renounces it.
 ///
 ///         On trigger:
 ///         - ARM transfers are enabled (via setTransferable on token)
@@ -76,6 +79,11 @@ contract ArmadaWindDown {
     /// @notice Timelock address (governance authority for direct trigger and parameter changes)
     address public immutable timelock;
 
+    /// @notice Launch-team guardian: may trigger wind-down at any time. Set at deploy; only the
+    ///         guardian itself can change it, and only to address(0) (renounceGuardian). Governance
+    ///         has no power over it, so a captured governance cannot disarm it.
+    address public guardian;
+
     // ============ Governable Parameters ============
 
     /// @notice Revenue threshold for permissionless trigger (in 18-decimal USD)
@@ -97,6 +105,7 @@ contract ArmadaWindDown {
     // ============ Events ============
 
     event WindDownTriggered(address indexed caller, uint256 timestamp, bool governanceForced);
+    event GuardianRenounced(address indexed guardian);
     event TokenSwept(address indexed token, address indexed recipient, uint256 amount);
     event ETHSwept(address indexed recipient, uint256 amount);
     event RevenueThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
@@ -111,6 +120,7 @@ contract ArmadaWindDown {
     /// @param _pauseContract Shield pause controller address
     /// @param _revenueCounter Revenue counter address
     /// @param _timelock Timelock address (governance authority)
+    /// @param _guardian Launch-team guardian (may trigger wind-down at any time; renounceable)
     /// @param _revenueThreshold Initial revenue threshold (18-decimal USD)
     /// @param _windDownDeadline Initial deadline (unix timestamp)
     constructor(
@@ -122,6 +132,7 @@ contract ArmadaWindDown {
         address _revenueCounter,
         address _revenueLock,
         address _timelock,
+        address _guardian,
         uint256 _revenueThreshold,
         uint256 _windDownDeadline
     ) {
@@ -133,6 +144,7 @@ contract ArmadaWindDown {
         require(_revenueCounter != address(0), "ArmadaWindDown: zero revenueCounter");
         require(_revenueLock != address(0), "ArmadaWindDown: zero revenueLock");
         require(_timelock != address(0), "ArmadaWindDown: zero timelock");
+        require(_guardian != address(0), "ArmadaWindDown: zero guardian");
         require(_windDownDeadline > block.timestamp, "ArmadaWindDown: deadline in past");
         require(_revenueThreshold > 0, "ArmadaWindDown: zero threshold");
 
@@ -144,6 +156,7 @@ contract ArmadaWindDown {
         revenueCounter = IRevenueCounterWindDown(_revenueCounter);
         revenueLock = IRevenueLockWindDown(_revenueLock);
         timelock = _timelock;
+        guardian = _guardian;
         revenueThreshold = _revenueThreshold;
         windDownDeadline = _windDownDeadline;
     }
@@ -178,6 +191,24 @@ contract ArmadaWindDown {
         require(msg.sender == timelock, "ArmadaWindDown: not timelock");
         require(!triggered, "ArmadaWindDown: already triggered");
         _executeWindDown(true);
+    }
+
+    /// @notice Guardian trigger. The guardian can trigger at any time, no conditions required,
+    ///         outside governance and the Security Council veto. Intended as a last resort: to stop
+    ///         a capture proposal that governance failed to defeat before it executes.
+    function guardianTriggerWindDown() external {
+        require(msg.sender == guardian, "ArmadaWindDown: not guardian");
+        require(!triggered, "ArmadaWindDown: already triggered");
+        _executeWindDown(true);
+    }
+
+    /// @notice Permanently surrender the guardian power. Irreversible: guardian becomes address(0),
+    ///         so the guardian trigger can never be used again.
+    function renounceGuardian() external {
+        address current = guardian;
+        require(msg.sender == current, "ArmadaWindDown: not guardian");
+        guardian = address(0);
+        emit GuardianRenounced(current);
     }
 
     // ============ Sweep Functions ============

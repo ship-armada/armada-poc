@@ -171,9 +171,6 @@ describe("Sale-window steward exposure with a deploy-time budget (accepted risk,
     const signers = await ethers.getSigners();
     const [deployer, sc, stewardKey, recipient, lockStandIn] = signers;
     const seeds = signers.slice(10, 110);
-    // Hop-1 committers: under the revised waterfall hop-0 alone is capped below MIN_SALE ($846k at
-    // the expanded sale), so the sale needs hop-1 demand to finalize successfully and fund the treasury.
-    const hop1 = signers.slice(5, 10);
 
     const timelock = await (await ethers.getContractFactory("TimelockController"))
       .deploy(0, [deployer.address], [deployer.address], deployer.address);
@@ -212,7 +209,7 @@ describe("Sale-window steward exposure with a deploy-time budget (accepted risk,
       { steward: await steward.getAddress(), treasury: treasuryAddress, usdc: await usdc.getAddress() },
       asTimelock);
 
-    return { deployer, sc, stewardKey, recipient, seeds, hop1, timelock, governor, treasury, steward, usdc, crowdfund, asTimelock };
+    return { deployer, sc, stewardKey, recipient, seeds, timelock, governor, treasury, steward, usdc, crowdfund, asTimelock };
   }
 
   async function proposeSpend(governor: any, stewardKey: any, usdc: any, recipient: string, amount: bigint) {
@@ -227,7 +224,7 @@ describe("Sale-window steward exposure with a deploy-time budget (accepted risk,
   // council veto, and steward removal killing the queued backlog. A change that widens any of
   // these must fail here.
   it("bounds a sale-window steward spend to one budget per window, vetoable and removable", async function () {
-    const { sc, stewardKey, recipient, seeds, hop1, governor, treasury, steward, usdc, crowdfund, asTimelock } =
+    const { sc, stewardKey, recipient, seeds, governor, treasury, steward, usdc, crowdfund, asTimelock } =
       await launchFixture();
     const QUEUED = 4n, CANCELED = 6n;
     const UNDERLYING_REVERT = "TimelockController: underlying transaction reverted";
@@ -235,13 +232,17 @@ describe("Sale-window steward exposure with a deploy-time budget (accepted risk,
     // Sale opens; seeds are added. Three $60k spend proposals are created during the sale.
     await time.increaseTo(await crowdfund.windowStart());
     await crowdfund.addSeeds(seeds.map(s => s.address));
-    // The launch team invites each hop-1 committer 10 times, stacking its cap to $40k.
-    for (const p of hop1) {
-      for (let i = 0; i < 10; i++) await crowdfund.launchTeamInvite(p.address, 0);
-    }
     const first = await proposeSpend(governor, stewardKey, usdc, recipient.address, USDC(60_000));
     const second = await proposeSpend(governor, stewardKey, usdc, recipient.address, USDC(60_000));
     const third = await proposeSpend(governor, stewardKey, usdc, recipient.address, USDC(60_000));
+
+    // Seeds commit during the sale: 100 × $18K fills the $1.8M sale at hop 0, clearing the $250K
+    // minimum. The USDC stays in the crowdfund until finalize, so the treasury is still empty.
+    for (const seed of seeds) {
+      await usdc.mint(seed.address, USDC(18_000));
+      await usdc.connect(seed).approve(await crowdfund.getAddress(), USDC(18_000));
+      await crowdfund.connect(seed).commit(0, USDC(18_000));
+    }
 
     // Nobody holds voting power during the sale, so the proposals cannot be voted down.
     await expect(governor.connect(seeds[0]).castVote(first, 0)).to.be.revertedWithCustomError(governor, "Gov_NoVotingPower");
@@ -253,25 +254,18 @@ describe("Sale-window steward exposure with a deploy-time budget (accepted risk,
     await time.increase(2 * ONE_DAY + 1);
     await expect(governor.execute(first)).to.be.revertedWith(UNDERLYING_REVERT);
 
-    // The security council vetoes one queued proposal; it can never execute.
+    // The security council vetoes one queued proposal; it cannot execute unless a ratification
+    // vote overturns the veto. The crowdfund has not finalized, so the veto bootstrap (which
+    // starts at finalization) has not begun and the veto opens the normal ratification vote.
     await governor.connect(sc).veto(third, ethers.id("compromised steward"));
     expect(await governor.state(third)).to.equal(CANCELED);
+    expect(await governor.vetoRatificationId(third)).to.not.equal(0n);
 
-    // Seeds commit; the sale finalizes and pushes proceeds to the treasury.
-    for (const seed of seeds) {
-      await usdc.mint(seed.address, USDC(15_000));
-      await usdc.connect(seed).approve(await crowdfund.getAddress(), USDC(15_000));
-      await crowdfund.connect(seed).commit(0, USDC(15_000));
-    }
-    // $1.5M hop-0 (expanded sale, $846k allocated) + $200k hop-1 clears the $1M minimum.
-    for (const p of hop1) {
-      await usdc.mint(p.address, USDC(40_000));
-      await usdc.connect(p).approve(await crowdfund.getAddress(), USDC(40_000));
-      await crowdfund.connect(p).commit(1, USDC(40_000));
-    }
-    await time.increaseTo((await crowdfund.windowEnd()) + 1n);
+    // The 5-day sale window has already closed (the proposals' 9-day vote + queue outlasts it).
+    // The sale finalizes and pushes proceeds, less the $250K launch-team payment, to the treasury.
+    expect(BigInt(await time.latest())).to.be.gt(await crowdfund.windowEnd());
     await crowdfund.finalize();
-    expect(await usdc.balanceOf(await treasury.getAddress())).to.be.gt(USDC(120_000));
+    expect(await usdc.balanceOf(await treasury.getAddress())).to.equal(USDC(1_550_000));
 
     // The first queued spend now pays out; the second exceeds the 30-day budget. stewardSpend
     // checks the budget before the outflow limit, so a zero remaining budget is the revert.

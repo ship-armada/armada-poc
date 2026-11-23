@@ -281,6 +281,7 @@ export function ObserveParticipantsTable({ events, phase, provider }: ObservePar
           </button>
         </div>
 
+        <span className={styles.selectWrap}>
         <select
           className={styles.select}
           value={hopFilter ?? 'all'}
@@ -292,7 +293,9 @@ export function ObserveParticipantsTable({ events, phase, provider }: ObservePar
             <option key={h} value={String(h)}>{hopLabel(h)}</option>
           ))}
         </select>
+        </span>
 
+        <span className={styles.selectWrap}>
         <select
           className={styles.select}
           value={statusFilter}
@@ -303,8 +306,10 @@ export function ObserveParticipantsTable({ events, phase, provider }: ObservePar
           <option value="committed">Committed</option>
           <option value="invited">Not committed</option>
         </select>
+        </span>
 
         {phase >= 1 && (
+          <span className={styles.selectWrap}>
           <select
             className={styles.select}
             value={claimFilter}
@@ -315,6 +320,7 @@ export function ObserveParticipantsTable({ events, phase, provider }: ObservePar
             <option value="claimed">Claimed</option>
             <option value="unclaimed">Unclaimed</option>
           </select>
+          </span>
         )}
 
         <input

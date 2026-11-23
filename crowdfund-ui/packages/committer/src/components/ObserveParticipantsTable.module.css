@@ -112,6 +112,32 @@
   cursor: pointer;
 }
 
+/* Native selects draw their arrow flush against the right edge. The selects drop it
+   (appearance: none) and the wrapper draws a chevron inset by the same spacing as the text. */
+.select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: calc(var(--primitives-spacing-3) * 2 + 8px);
+}
+
+.selectWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.selectWrap::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: var(--primitives-spacing-3);
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--semantic-color-text-secondary);
+  border-bottom: 1.5px solid var(--semantic-color-text-secondary);
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+
 .select:focus-visible,
 .search:focus-visible {
   outline: none;

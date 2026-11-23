@@ -52,7 +52,8 @@ export interface ProgressProps {
   title?: string
   totalCommitted?: string
   committedAmount?: number // raw number e.g. 857000
-  minFundAmount?: number // e.g. 1200000
+  /** The "100% funded" point: the tick on the bar, and what FUNDED / LEFT measure toward. */
+  goalAmount?: number // e.g. 750000
   maxAmount?: number // full bar scale e.g. 1800000
   /** Countdown tag text (e.g. "3 DAYS LEFT"). Pass `null` to suppress.
    *  Ignored when `endsAt` is set. */
@@ -84,6 +85,15 @@ function formatCommitted(amount: number) {
   return `$${Math.round(amount).toLocaleString('en-US')}`
 }
 
+/** Short dollar form for headline amounts: "$1.8M", "$250K", "$0". Mirrors formatUsdcShort in
+ *  @armada/crowdfund-shared, which this package cannot import. */
+function formatShortDollars(amount: number) {
+  const trim = (n: number) => n.toFixed(2).replace(/\.?0+$/, '')
+  if (amount >= 1_000_000) return `$${trim(amount / 1_000_000)}M`
+  if (amount >= 1_000) return `$${trim(amount / 1_000)}K`
+  return formatCommitted(amount)
+}
+
 function easeOutCubic(t: number) {
   return 1 - Math.pow(1 - t, 3)
 }
@@ -112,7 +122,7 @@ export function Progress({
   title = 'Armada Crowdfund',
   totalCommitted,
   committedAmount = 857000,
-  minFundAmount = 1200000,
+  goalAmount = 1200000,
   maxAmount = 1800000,
   daysLeft = '3 DAYS LEFT',
   daysLeftTooltip,
@@ -139,14 +149,14 @@ export function Progress({
     remainingForMode < TIME_LEFT_COUNTER_THRESHOLD_S
 
   const filledPct = Math.max(0, Math.min(100, (committedAmount / maxAmount) * 100))
-  const minFundPct = (minFundAmount / maxAmount) * 100
+  const goalPct = (goalAmount / maxAmount) * 100
 
-  const fundedTowardMin = Math.max(
-    0,
-    Math.min(100, Math.round((committedAmount / minFundAmount) * 100)),
-  )
-  const leftToMinAmount = Math.max(0, minFundAmount - committedAmount)
-  const leftToMin = `$${Math.round(leftToMinAmount / 1000)}k`
+  // FUNDED and LEFT measure progress toward the goal (the tick). FUNDED is not capped at 100%:
+  // commitments can run past the goal up to the bar's maximum. LEFT is hidden once the goal is
+  // met. Deviation from the mockup port, which capped FUNDED at 100% and always showed LEFT.
+  const fundedTowardGoal = Math.max(0, Math.round((committedAmount / goalAmount) * 100))
+  const leftToGoalAmount = Math.max(0, goalAmount - committedAmount)
+  const leftToGoal = formatShortDollars(leftToGoalAmount)
 
   const finalCommittedLabel = useMemo(() => {
     return totalCommitted ?? formatCommitted(committedAmount)
@@ -180,8 +190,8 @@ export function Progress({
     return () => cancelAnimationFrame(raf)
   }, [animateOnMount, filledPct, committedAmount])
 
-  const gradientFillPct = Math.min(animatedPct, minFundPct)
-  const overMinFillPct = Math.max(0, animatedPct - minFundPct)
+  const gradientFillPct = Math.min(animatedPct, goalPct)
+  const overGoalFillPct = Math.max(0, animatedPct - goalPct)
 
   return (
     <div
@@ -235,33 +245,31 @@ export function Progress({
           <div className={styles.barTrack}>
             <BarTrackTicks />
             <div className={styles.barFillGradient} style={{ width: `${gradientFillPct}%` }} />
-            {overMinFillPct > 0 && (
+            {overGoalFillPct > 0 && (
               <div
                 className={styles.barFillOverMin}
-                style={{ left: `${minFundPct}%`, width: `${overMinFillPct}%` }}
+                style={{ left: `${goalPct}%`, width: `${overGoalFillPct}%` }}
               />
             )}
-            <div className={styles.threshold} style={{ left: `${minFundPct}%` }} />
+            <div className={styles.threshold} style={{ left: `${goalPct}%` }} />
           </div>
 
           <div className={styles.barLabels}>
             <div className={styles.labelLeft}>
               <div className={styles.stat}>
-                <span className={styles.statValue}>{fundedTowardMin}%</span>
+                <span className={styles.statValue}>{fundedTowardGoal}%</span>
                 <span className={styles.statKey}>FUNDED</span>
               </div>
-              <div className={styles.stat}>
-                <span className={styles.statValue}>{leftToMin}</span>
-                <span className={styles.statKey}>LEFT</span>
-              </div>
+              {leftToGoalAmount > 0 && (
+                <div className={styles.stat}>
+                  <span className={styles.statValue}>{leftToGoal}</span>
+                  <span className={styles.statKey}>LEFT</span>
+                </div>
+              )}
             </div>
-
-            <div className={styles.labelMinFund} style={{ left: `${minFundPct}%` }}>
-              <div className={styles.stat}>
-                <span className={styles.statValue}>{formatCommitted(minFundAmount)}</span>
-                <span className={styles.statKey}>MIN FUND</span>
-              </div>
-            </div>
+            {/* The goal is shown only as the threshold marker on the bar, with no label.
+                Deviation from the mockup port: a floating label there overlapped the FUNDED /
+                LEFT stats whenever the marker sat near the start of the bar. */}
           </div>
         </div>
 

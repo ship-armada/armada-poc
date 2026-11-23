@@ -31,7 +31,7 @@ function phaseDot(phase: number): TagDot {
 }
 
 export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
-  const { MAX_SALE, MIN_SALE, BASE_SALE } = CROWDFUND_CONSTANTS
+  const { MAX_SALE, MIN_SALE, BASE_SALE, FUNDING_GOAL } = CROWDFUND_CONSTANTS
   const allocationConfig = { constants: CROWDFUND_CONSTANTS, hopConfigs: HOP_CONFIGS }
   const estimate = estimateAllocation(state.hopStats, state.cappedDemand, state.saleSize, allocationConfig)
   // Waterfall profiles with a hop-2 floor show "Floor" instead of a fill % for hop 2.
@@ -45,16 +45,17 @@ export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
   const saleIsProjected = state.saleSize === 0n
   const saleLabel = projectedSaleSize > BASE_SALE ? 'EXPANDED' : 'BASE'
 
-  // Sale progress bar — same math as the hero Progress card: a gradient fill up
-  // to the min-fund threshold, an animated "over min" fill beyond it.
+  // Sale progress bar — same math as the hero Progress card: the bar scales to MAX_SALE, with a
+  // gradient fill up to the funding-goal tick and an "over goal" fill beyond it.
   const filledPct =
     MAX_SALE > 0n ? Math.max(0, Math.min(100, Number((state.totalCommitted * 100n) / MAX_SALE))) : 0
-  const minFundPct = MAX_SALE > 0n ? Number((MIN_SALE * 100n) / MAX_SALE) : 0
-  const gradientFillPct = Math.min(filledPct, minFundPct)
-  const overMinFillPct = Math.max(0, filledPct - minFundPct)
-  const fundedTowardMin =
-    MIN_SALE > 0n ? Math.max(0, Math.min(100, Number((state.totalCommitted * 100n) / MIN_SALE))) : 0
-  const leftToMin = state.totalCommitted >= MIN_SALE ? 0n : MIN_SALE - state.totalCommitted
+  const goalPct = MAX_SALE > 0n ? Number((FUNDING_GOAL * 100n) / MAX_SALE) : 0
+  const gradientFillPct = Math.min(filledPct, goalPct)
+  const overGoalFillPct = Math.max(0, filledPct - goalPct)
+  // FUNDED and LEFT measure progress toward the goal; FUNDED can pass 100% and LEFT is hidden once
+  // the goal is met. The goal and the contract's minimum are their own stats beside them.
+  const fundedTowardGoal = FUNDING_GOAL > 0n ? Number((state.totalCommitted * 100n) / FUNDING_GOAL) : 0
+  const leftToGoal = state.totalCommitted >= FUNDING_GOAL ? 0n : FUNDING_GOAL - state.totalCommitted
 
   return (
     <div className={styles.card}>
@@ -78,29 +79,33 @@ export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
           <div className={styles.barTrack}>
             <BarTrackTicks />
             <div className={styles.barFillGradient} style={{ width: `${gradientFillPct}%` }} />
-            {overMinFillPct > 0 && (
+            {overGoalFillPct > 0 && (
               <div
                 className={styles.barFillOverMin}
-                style={{ left: `${minFundPct}%`, width: `${overMinFillPct}%` }}
+                style={{ left: `${goalPct}%`, width: `${overGoalFillPct}%` }}
               />
             )}
-            <div className={styles.threshold} style={{ left: `${minFundPct}%` }} />
+            <div className={styles.threshold} style={{ left: `${goalPct}%` }} />
           </div>
           <div className={styles.barLabels}>
             <div className={styles.labelLeft}>
               <span className={styles.stat}>
-                <span className={styles.statValue}>{fundedTowardMin}%</span>
+                <span className={styles.statValue}>{fundedTowardGoal}%</span>
                 <span className={styles.statKey}>FUNDED</span>
               </span>
+              {leftToGoal > 0n && (
+                <span className={styles.stat}>
+                  <span className={styles.statValue}>{formatUsdc(leftToGoal)}</span>
+                  <span className={styles.statKey}>LEFT</span>
+                </span>
+              )}
               <span className={styles.stat}>
-                <span className={styles.statValue}>{formatUsdc(leftToMin)}</span>
-                <span className={styles.statKey}>LEFT</span>
+                <span className={styles.statValue}>{formatUsdc(FUNDING_GOAL)}</span>
+                <span className={styles.statKey}>GOAL</span>
               </span>
-            </div>
-            <div className={styles.labelMinFund} style={{ left: `${minFundPct}%` }}>
               <span className={styles.stat}>
                 <span className={styles.statValue}>{formatUsdc(MIN_SALE)}</span>
-                <span className={styles.statKey}>MIN FUND</span>
+                <span className={styles.statKey}>MIN</span>
               </span>
             </div>
           </div>

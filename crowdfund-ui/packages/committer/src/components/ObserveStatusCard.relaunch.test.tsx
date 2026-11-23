@@ -77,4 +77,14 @@ describe('ObserveStatusCard on the relaunch profile', () => {
     expect(known[7]).toBe(formatUsdc(USDC(1_790_000)))
     expect(known[known.length - 1]).toBe('101%') // $1.8M of $1.79M: pro-rated
   })
+
+  // WHY: the relaunch presents a $750K goal as "100% funded" on a bar that runs to the $1.8M
+  // maximum; the $250K minimum stays visible here as a detail stat only.
+  it('measures progress toward the $750K goal and lists the goal and minimum', () => {
+    render(<ObserveStatusCard state={makeState([300_000, 0, 150_000])} />)
+    expect(screen.getByText('FUNDED').parentElement?.textContent).toBe('60%FUNDED')
+    expect(screen.getByText('LEFT').parentElement?.textContent).toBe('$300,000LEFT')
+    expect(screen.getByText('GOAL').parentElement?.textContent).toBe('$750,000GOAL')
+    expect(screen.getByText('MIN').parentElement?.textContent).toBe('$250,000MIN')
+  })
 })

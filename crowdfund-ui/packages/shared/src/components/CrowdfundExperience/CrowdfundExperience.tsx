@@ -1162,7 +1162,7 @@ export function CrowdfundExperience({
                     <Progress
                       participants={`${dashRows.length} PARTICIPANTS`}
                       committedAmount={committedAmount}
-                      minFundAmount={Number(CROWDFUND_CONSTANTS.MIN_SALE / 1_000_000n)}
+                      goalAmount={Number(CROWDFUND_CONSTANTS.FUNDING_GOAL / 1_000_000n)}
                       maxAmount={Number(CROWDFUND_CONSTANTS.MAX_SALE / 1_000_000n)}
                       {...(liveReady?.opensAtUnix != null && liveReady.opensAtUnix > 0
                         ? { endsAt: liveReady.opensAtUnix * 1000, countdown: 'opens' as const }

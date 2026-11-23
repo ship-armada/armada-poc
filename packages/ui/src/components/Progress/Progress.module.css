@@ -222,13 +222,6 @@
   align-items: baseline;
 }
 
-/* Pinned under the threshold line — $ value aligns with vertical marker above */
-.labelMinFund {
-  position: absolute;
-  transform: translateX(0);
-  white-space: nowrap;
-}
-
 .stat {
   display: flex;
   align-items: baseline;

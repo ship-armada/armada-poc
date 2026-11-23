@@ -168,11 +168,6 @@
   align-items: baseline;
 }
 
-.labelMinFund {
-  position: absolute;
-  white-space: nowrap;
-}
-
 .stat {
   display: inline-flex;
   align-items: baseline;

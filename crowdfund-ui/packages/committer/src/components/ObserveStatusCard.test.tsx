@@ -50,6 +50,23 @@ describe('ObserveStatusCard per-hop Fill', () => {
   // WHY: at BASE_SALE hop-0's effective ceiling is $564k (60% of the 95% base pool,
   // less the 10% extra hop-2 floor). $600k is oversubscribed — a naive
   // saleSize × ceilingBps ceiling ($720k) would show a misleading 83%.
+  // WHY: FUNDED and LEFT measure progress toward the funding goal (on the mainnet profile the goal
+  // is its $1M minimum), with the goal and minimum as their own stats.
+  it('measures FUNDED and LEFT against the goal and shows the goal and minimum as stats', () => {
+    render(<ObserveStatusCard state={makeState([450_000, 0, 0])} />)
+    expect(screen.getByText('FUNDED').parentElement?.textContent).toBe('45%FUNDED')
+    expect(screen.getByText('LEFT').parentElement?.textContent).toBe('$550,000LEFT')
+    expect(screen.getByText('GOAL').parentElement?.textContent).toBe('$1,000,000GOAL')
+    expect(screen.getByText('MIN').parentElement?.textContent).toBe('$1,000,000MIN')
+  })
+
+  // WHY: commitments can run past the goal, so FUNDED passes 100% and LEFT is hidden.
+  it('lets FUNDED pass 100% and hides LEFT past the goal', () => {
+    render(<ObserveStatusCard state={makeState([2_100_000, 0, 0])} />)
+    expect(screen.getByText('FUNDED').parentElement?.textContent).toBe('210%FUNDED')
+    expect(screen.queryByText('LEFT')).toBeNull()
+  })
+
   it('measures hop-0 against its effective waterfall ceiling before finalization', () => {
     render(<ObserveStatusCard state={makeState([600_000, 0, 0])} />)
     expect(fillCell(0)).toBe('106%')

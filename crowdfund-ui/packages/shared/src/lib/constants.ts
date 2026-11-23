@@ -21,6 +21,9 @@ export interface CrowdfundConstants {
   readonly MAX_SALE: bigint
   readonly MIN_SALE: bigint
   readonly ELASTIC_TRIGGER: bigint
+  /** UI-only funding goal (USDC, 6 decimals): the "100% funded" point and tick on the progress bars,
+   *  which scale to MAX_SALE. Not a contract parameter; the contract's threshold is MIN_SALE. */
+  readonly FUNDING_GOAL: bigint
   /** USDC per ARM (6-decimal USDC = 1e6). */
   readonly ARM_PRICE: bigint
   readonly MAX_SEEDS: number
@@ -73,6 +76,7 @@ export const CONSTANTS_BY_PROFILE: Record<CrowdfundProfile, CrowdfundConstants> 
     BASE_SALE: 1_200_000n * 10n ** 6n,
     MAX_SALE: 1_800_000n * 10n ** 6n,
     MIN_SALE: 1_000_000n * 10n ** 6n,
+    FUNDING_GOAL: 1_000_000n * 10n ** 6n, // the minimum: no separate goal
     ELASTIC_TRIGGER: 1_500_000n * 10n ** 6n,
     ARM_PRICE: 1_000_000n,
     MAX_SEEDS: 180,
@@ -93,6 +97,7 @@ export const CONSTANTS_BY_PROFILE: Record<CrowdfundProfile, CrowdfundConstants> 
     BASE_SALE: 1_000n * 10n ** 6n,
     MAX_SALE: 1_500n * 10n ** 6n,
     MIN_SALE: 800n * 10n ** 6n,
+    FUNDING_GOAL: 800n * 10n ** 6n, // the minimum: no separate goal
     ELASTIC_TRIGGER: 1_250n * 10n ** 6n,
     ARM_PRICE: 1_000_000n,
     MAX_SEEDS: 25,
@@ -118,6 +123,7 @@ export const CONSTANTS_BY_PROFILE: Record<CrowdfundProfile, CrowdfundConstants> 
     BASE_SALE: 1_800_000n * 10n ** 6n,
     MAX_SALE: 1_800_000n * 10n ** 6n, // equal to BASE_SALE: no elastic expansion
     MIN_SALE: 250_000n * 10n ** 6n,
+    FUNDING_GOAL: 750_000n * 10n ** 6n, // shown as 100% funded; the $250K minimum stays internal
     ELASTIC_TRIGGER: 1_800_000n * 10n ** 6n,
     ARM_PRICE: 1_000_000n,
     MAX_SEEDS: 500,

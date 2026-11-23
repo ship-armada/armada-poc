@@ -2,6 +2,8 @@
 /* ABOUTME: Ported from the armada-crowdfund mockup — content + CTA centered as a group; button hugs label. */
 
 .shell {
+  /* Anchors the FlowChrome overlay close button to the card's corner. */
+  position: relative;
   width: 480px;
   min-width: 480px;
   height: 500px;

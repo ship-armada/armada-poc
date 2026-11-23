@@ -645,6 +645,7 @@ export function ParticipateFlowV2({
             disconnect()
             openConnectModal?.()
           }}
+          onClose={handleClose}
         />
       )
     }

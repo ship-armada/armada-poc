@@ -89,4 +89,11 @@ describe('ObserveStatusCard on the relaunch profile', () => {
     expect(screen.getByText('GOAL').parentElement?.textContent).toBe('$750,000GOAL')
     expect(screen.getByText('MIN').parentElement?.textContent).toBe('$250,000MIN')
   })
+
+  // WHY: with no elastic expansion the sale size is always the $1.8M maximum, already shown as
+  // "of $1,800,000 max"; a "Projected size" line repeated it and suggested the size could change.
+  it('shows no projected or sale size line', () => {
+    render(<ObserveStatusCard state={makeState([300_000, 0, 50_000])} />)
+    expect(screen.queryByText(/Projected size|Sale size/)).toBeNull()
+  })
 })

@@ -60,13 +60,15 @@ export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
 
   return (
     <div className={styles.card}>
-      {/* Phase + sale size */}
+      {/* Phase + sale size. The size line only informs where the sale can expand; otherwise it is
+          always MAX_SALE, already shown as "of … max" below. */}
       <div className={styles.header}>
         <Tag label={phaseName(state.phase)} dot={phaseDot(state.phase)} />
-        <span className={styles.saleSize}>
-          {saleIsProjected ? 'Projected size' : 'Sale size'} {formatUsdc(projectedSaleSize)}
-          {canExpand && <> · {saleLabel}</>}
-        </span>
+        {canExpand && (
+          <span className={styles.saleSize}>
+            {saleIsProjected ? 'Projected size' : 'Sale size'} {formatUsdc(projectedSaleSize)} · {saleLabel}
+          </span>
+        )}
       </div>
 
       {/* Sale progress bar — modeled on the hero Progress card */}

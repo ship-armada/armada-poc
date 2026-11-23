@@ -84,4 +84,10 @@ describe('ObserveStatusCard per-hop Fill', () => {
     render(<ObserveStatusCard state={makeState([600_000, 0, 0], { phase: 1, saleSize: USDC(1_200_000) })} />)
     expect(fillCell(0)).toBe('106%')
   })
+
+  // WHY: Launch 1's sale could expand, so the projected sale size (and BASE / EXPANDED) still informs.
+  it('keeps the projected sale size where the sale can expand', () => {
+    render(<ObserveStatusCard state={makeState([450_000, 0, 0])} />)
+    expect(screen.getByText(/Projected size/)).toBeTruthy()
+  })
 })

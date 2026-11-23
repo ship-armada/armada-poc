@@ -63,7 +63,7 @@ describe('useInviteLinks revokeLink', () => {
     mockRevoke.mockResolvedValue({ wait: vi.fn().mockResolvedValue({ status: 1, logs: [] }) })
     expect(await revoke(signerOnChain(getHubChainId()))).toBe(true)
     expect(mockRevoke).toHaveBeenCalledWith(NONCE)
-    expect(mockUpdateStatus).toHaveBeenCalledWith(WALLET.toLowerCase(), NONCE, 'revoked')
+    expect(mockUpdateStatus).toHaveBeenCalledWith(WALLET.toLowerCase(), NONCE, 'revoked', CROWDFUND)
   })
 
   it('resolves false without sending when the wallet is on another chain', async () => {

@@ -49,25 +49,25 @@ export function useInviteLinks(
    *  truth (display only; nonce selection reads `usedNonces` directly). */
   events: CrowdfundEvent[] = [],
 ): UseInviteLinksResult {
-  // Raw stored links — read from IndexedDB only on address change (and after an
+  // Raw stored links — read from IndexedDB only on address or crowdfund change (and after an
   // explicit create/revoke via refreshLinks), NOT on every poll tick.
   const [storedLinks, setStoredLinks] = useState<StoredInviteLink[]>([])
   const [loading, setLoading] = useState(true)
 
   const refreshLinks = useCallback(async () => {
-    if (!address) {
+    if (!address || !crowdfundAddress) {
       setStoredLinks([])
       setLoading(false)
       return
     }
     try {
-      setStoredLinks(await getStoredInviteLinks(address.toLowerCase()))
+      setStoredLinks(await getStoredInviteLinks(address.toLowerCase(), crowdfundAddress))
     } catch {
       // Non-fatal
     } finally {
       setLoading(false)
     }
-  }, [address])
+  }, [address, crowdfundAddress])
 
   useEffect(() => {
     refreshLinks()
@@ -119,13 +119,13 @@ export function useInviteLinks(
   // Persist newly-redeemed links to IDB so they survive a cold load where the
   // event stream isn't available yet. Display already reflects redeemedNonces.
   useEffect(() => {
-    if (!lowerAddr) return
+    if (!lowerAddr || !crowdfundAddress) return
     for (const l of storedLinks) {
       if (redeemedNonces.has(l.nonce) && l.status !== 'redeemed' && l.status !== 'revoked') {
-        void updateInviteLinkStatus(lowerAddr, l.nonce, 'redeemed').catch(() => {})
+        void updateInviteLinkStatus(lowerAddr, l.nonce, 'redeemed', crowdfundAddress).catch(() => {})
       }
     }
-  }, [storedLinks, redeemedNonces, lowerAddr])
+  }, [storedLinks, redeemedNonces, lowerAddr, crowdfundAddress])
 
   const createLink = useCallback(async (fromHop: number, deadlineSeconds?: number): Promise<CreatedInviteLink | null> => {
     if (!address || !signer || !crowdfundAddress) return null
@@ -159,7 +159,7 @@ export function useInviteLinks(
         status: 'pending',
       }
 
-      await storeInviteLink(linkData)
+      await storeInviteLink(linkData, crowdfundAddress)
       await refreshLinks()
 
       return {
@@ -185,7 +185,7 @@ export function useInviteLinks(
       const tx = await submitWrite(crowdfund, 'revokeInviteNonce', [nonce], signer)
       const receipt = await tx.wait(getTxConfirmations(), TX_WAIT_TIMEOUT_MS)
       if (!receipt || receipt.status === 0) return false
-      await updateInviteLinkStatus(address.toLowerCase(), nonce, 'revoked')
+      await updateInviteLinkStatus(address.toLowerCase(), nonce, 'revoked', crowdfundAddress)
       await refreshLinks()
       return true
     } catch (err) {

@@ -325,7 +325,7 @@ Under lazy settlement, `finalize()` writes only aggregate state — zero per-par
 | **Action** | Call `finalize()` |
 | **Preconditions** | Pre-finalization go/no-go checkpoint passed |
 | **On-chain confirmation** | `Finalized(saleSize, totalAllocatedArm, netProceeds, refundMode)` emitted; aggregate state written; `LaunchTeamPaid(launchTeam, amount)` emitted and USDC transferred to the launch team and treasury (success path) |
-| **Fallback** | If tx reverts: check preconditions; check gas limit; see §9.6 |
+| **Fallback** | If tx reverts: check preconditions; check gas limit; see §9.6. If it reverts on the USDC transfer to the launch team (the address cannot receive USDC), a successful finalize is impossible: escalate to the security council for `cancel()` (§7), which lets every participant claim a full refund |
 
 Record: `finalize_tx = [hash]`, `block = [number]`, `refundMode = [true/false]`, `netProceeds = [amount]`
 

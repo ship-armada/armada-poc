@@ -393,6 +393,8 @@ The `commitWithInvite()` transaction exposes the invite signature in calldata. B
 
 This does not affect `invite()` (direct path — the invitee address is explicit) or `commit()` (no signature involved).
 
+The incentive to steal links is higher than in a flat allocation: hop 2 is served first from its $300,000 reserve, and one address can stack up to 20 hop-2 slots, so each stolen link is a $10,000 slot with first priority and a front-runner can collect several onto one address.
+
 **Mitigation: private transaction submission.**
 
 Because `commitWithInvite()` exposes a bearer invite signature in calldata, redeeming an invite link through the public mempool creates theft risk. On Ethereum mainnet, the committer app should recommend and, where supported by the connected wallet/provider, default to a private transaction path such as Flashbots Protect (`https://rpc.flashbots.net`). This reduces public-mempool front-running risk by avoiding public broadcast before inclusion. It is a trust-based mitigation, not a cryptographic guarantee: users still trust the private-orderflow provider and participating builders not to disclose or misuse transaction contents.

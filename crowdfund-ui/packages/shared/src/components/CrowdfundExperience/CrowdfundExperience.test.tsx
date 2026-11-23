@@ -112,10 +112,22 @@ describe('CrowdfundExperience My Position for an invite-only wallet', () => {
 })
 
 describe('CrowdfundExperience Your position fill bar', () => {
-  it('captions the fill as a share of the hop cap', () => {
+  // WHY: the bar is the wallet's own cap; "hop cap" leaked hop wording onto the relaunch, which
+  // names tiers, and "your cap" reads correctly on every profile.
+  it('captions the fill as a share of your cap', () => {
     renderMyPosition(readyPosition(500n * 1_000_000n))
     const card = within(screen.getByRole('region', { name: 'Your position' }))
-    expect(card.getByText(/% of hop cap$/)).toBeTruthy()
+    expect(card.getByText(/% of your cap$/)).toBeTruthy()
+  })
+})
+
+// WHY: on the relaunch only the team wallet can invite, so for Known and Invited contributors an
+// invite card could only ever say "no invite slots". It is left out when the wallet has no slots.
+describe('CrowdfundExperience Your position invite card', () => {
+  it('is hidden when the wallet has no invite slots', () => {
+    renderMyPosition(readyPosition(500n * 1_000_000n))
+    expect(screen.queryByRole('region', { name: 'Whitelist a friend' })).toBeNull()
+    expect(screen.queryByText(/no invite slots available/)).toBeNull()
   })
 })
 

@@ -368,13 +368,6 @@
   flex-shrink: 0;
 }
 
-.inviteEmpty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--primitives-spacing-6) var(--primitives-spacing-4);
-}
-
 /* ── Multi-hop sections ──
  * Header only renders when the wallet holds more than one hop. Each section
  * groups one hop's SlotCards under a small label + colored dot + slot count. */
@@ -415,13 +408,6 @@
   color: var(--semantic-color-text-muted);
 }
 
-.inviteEmptyText {
-  margin: 0;
-  font-family: var(--primitives-fontFamily-ui);
-  font-size: calc(var(--primitives-fontSize-base) * 1px);
-  color: var(--semantic-color-text-muted);
-  text-align: center;
-}
 
 @media (max-width: 1100px) {
   .leftCorner {

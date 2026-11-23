@@ -250,7 +250,7 @@ export function ParticipateFlowInviteSlots({
       {isEmpty ? (
         <div className={styles.empty} role="status">
           <p className={styles.emptyText}>
-            You have no invite slots available at this hop.
+            You have no invite slots available.
           </p>
         </div>
       ) : (

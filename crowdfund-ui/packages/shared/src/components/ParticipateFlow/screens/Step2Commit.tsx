@@ -826,7 +826,7 @@ function MultiHopVariant({
           )}
           {anyBelowMin && !overBalance && (
             <p className={styles.overBalance}>
-              Each hop you commit to must be at least {MIN_COMMIT_USD.toLocaleString()} USDC.
+              Each {tierWord()} you commit to must be at least {MIN_COMMIT_USD.toLocaleString()} USDC.
             </p>
           )}
           {commaError && <p className={styles.overBalance}>Use a period for decimals.</p>}

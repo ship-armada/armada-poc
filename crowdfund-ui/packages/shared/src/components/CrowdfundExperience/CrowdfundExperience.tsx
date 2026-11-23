@@ -811,6 +811,9 @@ export function CrowdfundExperience({
   const myPositionPanelAnimates = panelAnimates(view, 'myposition', panelPhase, motionReady)
 
   const liveSections = inviteSlotSections
+  // Live data with no invite slots at any position (no sections, or every section empty).
+  const walletHasNoInviteSlots =
+    !!liveSections && (liveSections.length === 0 || liveSections.every((s) => s.config.slots.length === 0))
   const liveAllowance = useMemo(
     () => (liveSections ? allowanceFromInviteSections(liveSections) : null),
     [liveSections],
@@ -1387,7 +1390,7 @@ export function CrowdfundExperience({
                 </div>
                 <div className={mpStyles.barLabels}>
                   <span className={mpStyles.barCaption}>
-                    {Math.round(myPositionFillPct)}% of hop cap
+                    {Math.round(myPositionFillPct)}% of your cap
                   </span>
                   <span className={mpStyles.barCaption}>
                     Cap {formatUsdcCommitted(myPositionCapUsd)}
@@ -1468,23 +1471,14 @@ export function CrowdfundExperience({
           </div>
         )}
 
-        {participationEnabled && !myPositionCancelled && myPositionEmptyKind === null && (
+        {/* The invite card is left out when the wallet has no invite slots at any position (on the
+            relaunch, everyone but the team wallet): an empty card could only say "no invite slots". */}
+        {participationEnabled && !myPositionCancelled && myPositionEmptyKind === null && !walletHasNoInviteSlots && (
         <div
           className={layerClass(invitesPanelVisible, motionReady, myPositionPanelAnimates)}
           aria-hidden={!invitesPanelVisible}
         >
-          {liveSections &&
-          (liveSections.length === 0 ||
-            liveSections.every((s) => s.config.slots.length === 0)) ? (
-            <section className={mpStyles.inviteCard} aria-label="Whitelist a friend">
-              <div className={mpStyles.inviteEmpty} role="status">
-                <p className={mpStyles.inviteEmptyText}>
-                  You have no invite slots available at this hop.
-                </p>
-              </div>
-            </section>
-          ) : (
-            <InvitesCard
+          <InvitesCard
               variant="hero"
               slots={invitesSlots}
               allowance={invitesAllowance}
@@ -1505,7 +1499,6 @@ export function CrowdfundExperience({
                 startPanelTransition('crowdfund', { selectAddress: address })
               }
             />
-          )}
         </div>
         )}
       </div>

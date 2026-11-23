@@ -8,6 +8,7 @@ import styles from './Step3Review.module.css'
 import { FlowChrome } from '../FlowChrome'
 import type { ParticipateStepBarProps } from '../participateFlowSteps'
 import { tierWord } from '../../../lib/format'
+import { TIER_NOUN } from '../../../lib/constants'
 
 /** Per-hop commit row for the multi-hop review variant. Triggers the
  *  multi-hop layout when `hopCommits.length > 1`. */
@@ -111,7 +112,7 @@ export default function Step3Review({
           ) : (
             <>
               <div className={styles.summaryRow}>
-                <span className={styles.summaryLabel}>Hop level</span>
+                <span className={styles.summaryLabel}>{TIER_NOUN === 'Tier' ? 'Tier' : 'Hop level'}</span>
                 <span className={styles.summaryValue}>{hopLevel}</span>
               </div>
               <div className={styles.divider} />

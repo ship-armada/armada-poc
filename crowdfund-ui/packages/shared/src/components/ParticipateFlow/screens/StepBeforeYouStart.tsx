@@ -9,7 +9,7 @@ import { hopPillDotColor } from '../../../lib/graphHopColors'
 import { DEMO_WALLET, DEMO_WALLET_DISPLAY } from '../../MyPosition/myPositionDemo'
 import { FlowChrome } from '../FlowChrome'
 import { DISCORD_URL, X_URL } from '../../../lib/socials'
-import { CROWDFUND_CONSTANTS } from '../../../lib/constants'
+import { CROWDFUND_CONSTANTS, TIER_NOUN } from '../../../lib/constants'
 import styles from './StepBeforeYouStart.module.css'
 import { formatUsdcShort, hopLabel, hopTagLabel, multiTierTagLabel, tierWord } from '../../../lib/format'
 import { allocationMatchesDemand } from '../../../lib/allocation'
@@ -251,7 +251,7 @@ export default function StepBeforeYouStart({
               </div>
               <div className={styles.divider} aria-hidden />
               <div className={styles.factRow}>
-                <span className={styles.factLabel}>Hop limit</span>
+                <span className={styles.factLabel}>{TIER_NOUN} limit</span>
                 <span className={styles.factValue}>{formatUsdc(capUsdc)} USDC</span>
               </div>
               <div className={styles.divider} aria-hidden />

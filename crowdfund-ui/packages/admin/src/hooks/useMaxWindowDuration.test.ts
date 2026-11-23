@@ -1,5 +1,5 @@
 // ABOUTME: Tests for useMaxWindowDuration — the one-off MAX_WINDOW_DURATION read.
-// ABOUTME: Verifies seconds on success and null (feature absent) when the contract lacks the getter.
+// ABOUTME: Verifies seconds on success, null (feature absent) on a revert, and a retry on RPC errors.
 
 import { renderHook, waitFor } from '@testing-library/react'
 import type { JsonRpcProvider } from 'ethers'
@@ -41,9 +41,25 @@ describe('useMaxWindowDuration', () => {
   // admin app still serves it (refunds, ARM sweep), so the failure must mean "no extension",
   // not an error that breaks the page.
   it('returns null when the contract has no MAX_WINDOW_DURATION', async () => {
-    maxWindowDurationImpl = () => Promise.reject(new Error('execution reverted'))
+    // ethers v6 tags a revert (including a missing function, which reverts without data) this way.
+    maxWindowDurationImpl = () => Promise.reject(Object.assign(new Error('missing revert data'), { code: 'CALL_EXCEPTION' }))
     const { result } = renderHook(() => useMaxWindowDuration(provider, '0xcf'))
     await waitFor(() => expect(result.current).toBeNull())
+  })
+
+  // WHY: a timeout or dropped connection says nothing about the contract. Treating it as "no
+  // extension" would hide the Extend Window panel for the session, possibly close to the deadline.
+  it('retries after an RPC error instead of reporting the feature absent', async () => {
+    let attempts = 0
+    maxWindowDurationImpl = async () => {
+      attempts++
+      if (attempts === 1) throw Object.assign(new Error('request timeout'), { code: 'TIMEOUT' })
+      return 1_209_600n
+    }
+    const { result } = renderHook(() => useMaxWindowDuration(provider, '0xcf', 10))
+    expect(result.current).toBeUndefined()
+    await waitFor(() => expect(result.current).toBe(1_209_600))
+    expect(maxWindowDurationCalls).toBe(2)
   })
 
   it('stays undefined without a provider or address', () => {

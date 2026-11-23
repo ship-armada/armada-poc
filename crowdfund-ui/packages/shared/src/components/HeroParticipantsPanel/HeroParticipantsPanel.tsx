@@ -8,7 +8,7 @@ import { useCrowdfundListAnimation } from '../CrowdfundLeftColumn/index.js'
 import { heroListHopColor } from '../../lib/graphHopColors.js'
 import styles from './HeroParticipantsPanel.module.css'
 import { hopLabel, hopTagLabel } from '../../lib/format.js'
-import { CROWDFUND_FEATURES } from '../../lib/constants.js'
+import { CROWDFUND_FEATURES, TIER_NOUN } from '../../lib/constants.js'
 
 export type HeroHopFilter = 'all' | 'seed' | 'hop1' | 'hop2' | 'multi'
 
@@ -77,7 +77,7 @@ function HopFilterBar({
     <div
       className={[styles.filters, className].filter(Boolean).join(' ')}
       role="tablist"
-      aria-label="Hop filters"
+      aria-label={`${TIER_NOUN} filters`}
     >
       {FILTERS.map((f) => (
         <button

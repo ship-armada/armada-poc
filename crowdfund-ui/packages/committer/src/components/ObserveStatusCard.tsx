@@ -8,6 +8,7 @@ import {
   heroListHopColor,
   CROWDFUND_CONSTANTS,
   CROWDFUND_FEATURES,
+  TIER_NOUN,
   HOP_CONFIGS,
   estimateAllocation,
   hop2HasFloor,
@@ -118,7 +119,7 @@ export function ObserveStatusCard({ state }: ObserveStatusCardProps) {
           <table className={styles.table}>
             <thead>
               <tr>
-                <th>Hop</th>
+                <th>{TIER_NOUN}</th>
                 <th>Ceiling</th>
                 <th>Cap/slot</th>
                 <th>Whitelist</th>

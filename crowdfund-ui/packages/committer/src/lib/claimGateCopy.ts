@@ -5,6 +5,13 @@ import { formatUsdc } from '@armada/crowdfund-shared'
 
 /** Body text for the "Sale ended below minimum" gate. When allocation matches demand only low
  *  demand can miss the minimum; with hop ceilings or a floor, allocation limits can cause it too. */
+/** The claim screen's ARM-allocation tooltip bullet, naming the limit in the profile's term. */
+export function armAllocationBullet(tierNoun: 'Hop' | 'Tier'): string {
+  return tierNoun === 'Tier'
+    ? "Pro-rata share of the sale, capped at your tier's allocation"
+    : 'Pro-rata share of the sale, capped at your hop allocation'
+}
+
 export function belowMinimumMessage(matchesDemand: boolean, minSale: bigint, committed: bigint): string {
   const reason = matchesDemand
     ? `The crowdfund didn't reach the ${formatUsdc(minSale)} minimum fund.`

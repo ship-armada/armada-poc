@@ -17,6 +17,8 @@ import {
   formatUtcDateTime,
   hopLabel,
   hopTagLabel,
+  multiTierTagLabel,
+  tierWord,
   formatUsdcShort,
   phaseName,
   phaseColor,
@@ -341,3 +343,13 @@ describe('formatUsdcShort', () => {
     expect(formatUsdcShort(50_000_000n)).toBe('$50')
   })
 })
+
+describe('tierWord / multiTierTagLabel', () => {
+  // WHY: on hop-numbered profiles (Launch 1, medi) the shared copy keeps its hop wording.
+  it('says hop and MULTI-HOP outside the relaunch', () => {
+    expect(tierWord()).toBe('hop')
+    expect(tierWord(true)).toBe('hops')
+    expect(multiTierTagLabel()).toBe('MULTI-HOP')
+  })
+})
+

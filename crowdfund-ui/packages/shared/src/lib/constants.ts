@@ -172,6 +172,13 @@ export const TIER_LABELS_BY_PROFILE: Record<CrowdfundProfile, readonly [string, 
   relaunch: ['Known', 'Team', 'Invited'],
 }
 
+/** What a hop is called in participant-facing copy (headers, filters): the relaunch names tiers. */
+export const TIER_NOUN_BY_PROFILE: Record<CrowdfundProfile, 'Hop' | 'Tier'> = {
+  mainnet: 'Hop',
+  medi: 'Hop',
+  relaunch: 'Tier',
+}
+
 export const FEATURES_BY_PROFILE: Record<CrowdfundProfile, CrowdfundFeatures> = {
   mainnet: { directInvites: true, selfFill: true, hideTeamWallets: false },
   medi: { directInvites: true, selfFill: true, hideTeamWallets: false },
@@ -210,6 +217,8 @@ export const HOP_CONFIGS: readonly [HopConfig, HopConfig, HopConfig] =
 export const CROWDFUND_FEATURES: CrowdfundFeatures = FEATURES_BY_PROFILE[CROWDFUND_PROFILE]
 
 export const TIER_LABELS: readonly [string, string, string] = TIER_LABELS_BY_PROFILE[CROWDFUND_PROFILE]
+
+export const TIER_NOUN: 'Hop' | 'Tier' = TIER_NOUN_BY_PROFILE[CROWDFUND_PROFILE]
 
 /** ABI fragments for event parsing and contract reads.
  *  Must match the indexed flags + param shape of the on-chain events exactly

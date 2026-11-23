@@ -8,6 +8,7 @@ import {
   FEATURES_BY_PROFILE,
   HOP_CONFIGS_BY_PROFILE,
   TIER_LABELS_BY_PROFILE,
+  TIER_NOUN_BY_PROFILE,
   isCrowdfundProfile,
   parseCrowdfundProfile,
 } from './constants.js'
@@ -68,6 +69,7 @@ describe('tier labels', () => {
   // hop numbering their users and operators already know.
   it('names the relaunch tiers and keeps hop numbers elsewhere', () => {
     expect(TIER_LABELS_BY_PROFILE.relaunch).toEqual(['Known', 'Team', 'Invited'])
+    expect(TIER_NOUN_BY_PROFILE).toEqual({ mainnet: 'Hop', medi: 'Hop', relaunch: 'Tier' })
     expect(TIER_LABELS_BY_PROFILE.mainnet).toEqual(['Hop-0', 'Hop-1', 'Hop-2'])
     expect(TIER_LABELS_BY_PROFILE.medi).toEqual(['Hop-0', 'Hop-1', 'Hop-2'])
   })

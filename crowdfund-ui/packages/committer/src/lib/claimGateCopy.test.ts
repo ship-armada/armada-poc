@@ -2,7 +2,7 @@
 // ABOUTME: appears only where hop limits can cause the shortfall (not when allocation matches demand).
 
 import { describe, it, expect } from 'vitest'
-import { belowMinimumMessage } from './claimGateCopy'
+import { armAllocationBullet, belowMinimumMessage } from './claimGateCopy'
 
 const MIN = 250_000_000_000n
 
@@ -22,3 +22,13 @@ describe('belowMinimumMessage', () => {
     expect(belowMinimumMessage(false, MIN, 5_000_000_000n)).toContain('minimum fund after per-hop allocation limits.')
   })
 })
+
+describe('armAllocationBullet', () => {
+  // WHY: the claim tooltip names the allocation limit in the profile's own term: the relaunch's tiers,
+  // Launch 1's hops.
+  it('names the tier or hop allocation', () => {
+    expect(armAllocationBullet('Tier')).toBe("Pro-rata share of the sale, capped at your tier's allocation")
+    expect(armAllocationBullet('Hop')).toBe('Pro-rata share of the sale, capped at your hop allocation')
+  })
+})
+

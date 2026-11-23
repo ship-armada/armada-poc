@@ -28,8 +28,9 @@ import {
   truncateAddress,
   ADDRESS_INPUT_MAX_LENGTH,
   allocationMatchesDemand,
+  TIER_NOUN,
 } from '@armada/crowdfund-shared'
-import { belowMinimumMessage } from '@/lib/claimGateCopy'
+import { armAllocationBullet, belowMinimumMessage } from '@/lib/claimGateCopy'
 import { Button as ArmadaButton, Tooltip } from '@armada/ui'
 import { sendAndWaitTx } from '@/lib/sendAndWaitTx'
 import { savePendingTx, removePendingTx } from '@/lib/pendingTx'
@@ -1300,7 +1301,7 @@ function ClaimFlowScreens(props: ClaimFlowV2Props) {
                 title="ARM allocation"
                 description="The ARM tokens delivered to your wallet by this transaction."
                 bullets={[
-                  'Pro-rata share of the sale, capped at your hop allocation',
+                  armAllocationBullet(TIER_NOUN),
                   'Delegate set below receives your governance voting power',
                   'Any committed USDC not used to buy ARM is refunded in the same tx',
                 ]}

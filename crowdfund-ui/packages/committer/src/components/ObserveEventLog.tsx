@@ -7,6 +7,7 @@ import {
   formatUsdc,
   formatArm,
   formatUtcDateTime,
+  hopLabel,
   truncateAddress,
   useENS,
   type CrowdfundEvent,
@@ -55,23 +56,23 @@ const ALL_EVENT_TYPES = Object.keys(EVENT_CATEGORY) as CrowdfundEventType[]
 
 const PAGE_SIZE = 200
 
-function formatEventData(event: CrowdfundEvent, name: (addr: string) => string): string {
+export function formatEventData(event: CrowdfundEvent, name: (addr: string) => string): string {
   const { args } = event
   switch (event.type) {
     case 'SeedAdded':
       return name(args.seed as string)
     case 'Invited':
-      return `${name(args.inviter as string)} → ${name(args.invitee as string)} · hop-${args.hop}`
+      return `${name(args.inviter as string)} → ${name(args.invitee as string)} · ${hopLabel(Number(args.hop))}`
     case 'LaunchTeamInvited':
-      return `LT → ${name(args.invitee as string)} · hop-${args.hop}`
+      return `LT → ${name(args.invitee as string)} · ${hopLabel(Number(args.hop))}`
     case 'Committed':
-      return `${name(args.participant as string)} · ${formatUsdc(args.amount as bigint)} · hop-${args.hop}`
+      return `${name(args.participant as string)} · ${formatUsdc(args.amount as bigint)} · ${hopLabel(Number(args.hop))}`
     case 'Finalized':
       return `size ${formatUsdc(args.saleSize as bigint)} · refund ${args.refundMode ? 'yes' : 'no'}`
     case 'Allocated':
       return `${name(args.participant as string)} · ${formatArm(args.armTransferred as bigint)}`
     case 'AllocatedHop':
-      return `${name(args.participant as string)} · hop-${args.hop} · ${formatUsdc(args.acceptedUsdc as bigint)}`
+      return `${name(args.participant as string)} · ${hopLabel(Number(args.hop))} · ${formatUsdc(args.acceptedUsdc as bigint)}`
     case 'RefundClaimed':
       return `${name(args.participant as string)} · ${formatUsdc(args.usdcAmount as bigint)}`
     case 'InviteNonceRevoked':

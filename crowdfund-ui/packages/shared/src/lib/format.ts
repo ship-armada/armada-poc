@@ -1,7 +1,7 @@
 // ABOUTME: Formatting utilities for USDC amounts, ARM tokens, addresses, and countdowns. Pure functions, no React or ethers dependency.
 // ABOUTME: parseUsdcInput / formatUsdc / formatUsdcPlain / truncateAddress are kept in LOCKSTEP with apps/armada-interface/src/lib/format.ts — any change must land in both files in the same PR. Tracked for eth-utils extraction in .claude/ARMADA_INTERFACE_POLISH.md.
 
-import { TIER_LABELS } from './constants.js'
+import { TIER_LABELS, TIER_NOUN } from './constants.js'
 
 /** Format a USDC amount (6 decimals) as a dollar string, e.g. "$1,200,000" */
 export function formatUsdc(amount: bigint): string {
@@ -233,4 +233,15 @@ export function hopLabel(hop: number): string {
 /** Upper-case tag form of hopLabel, for chips and pills (e.g. "HOP-1", or "TEAM" on the relaunch). */
 export function hopTagLabel(hop: number): string {
   return hopLabel(hop).toUpperCase()
+}
+
+/** The profile's word for a hop in running copy: "hop" / "hops", or "tier" / "tiers" on the relaunch. */
+export function tierWord(plural = false): string {
+  const word = TIER_NOUN.toLowerCase()
+  return plural ? `${word}s` : word
+}
+
+/** Tag for a wallet that holds positions at more than one hop: "MULTI-HOP", or "MULTI-TIER". */
+export function multiTierTagLabel(): string {
+  return `MULTI-${TIER_NOUN.toUpperCase()}`
 }

@@ -35,6 +35,7 @@ import {
   type HopStatsData,
   type HopVariant,
   hopTagLabel,
+  tierWord,
 } from '@armada/crowdfund-shared'
 import { getHubNetworkLabel, getExplorerUrl } from '@/config/network'
 import { resolveSigner, describeSignerError } from '@/lib/resolveSigner'
@@ -782,13 +783,13 @@ export function ParticipateFlowV2({
               <>
                 <strong>Self-invite bundle.</strong> Issues {maxPlan.totalInvites}{' '}
                 self-invite{maxPlan.totalInvites === 1 ? '' : 's'} to unlock your full
-                ceiling, then commits at every hop — all in one transaction. This spends
+                ceiling, then commits at every {tierWord()} — all in one transaction. This spends
                 your own invite slots on yourself, so they won't be available to invite
                 others.
               </>
             ) : (
               <>
-                <strong>Commit the maximum.</strong> Commits your full cap at every hop
+                <strong>Commit the maximum.</strong> Commits your full cap at every {tierWord()}
                 — all in one transaction.
               </>
             )}

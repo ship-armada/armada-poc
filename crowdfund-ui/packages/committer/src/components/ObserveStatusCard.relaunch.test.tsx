@@ -12,6 +12,7 @@ vi.mock('@armada/crowdfund-shared', async (importOriginal) => {
     CROWDFUND_CONSTANTS: actual.CONSTANTS_BY_PROFILE.relaunch,
     HOP_CONFIGS: actual.HOP_CONFIGS_BY_PROFILE.relaunch,
     CROWDFUND_FEATURES: actual.FEATURES_BY_PROFILE.relaunch,
+    TIER_NOUN: actual.TIER_NOUN_BY_PROFILE.relaunch,
     hopLabel: (hop: number) => actual.TIER_LABELS_BY_PROFILE.relaunch[hop] ?? `Hop-${hop}`,
   }
 })
@@ -48,6 +49,7 @@ describe('ObserveStatusCard on the relaunch profile', () => {
   // appear; the public sale has two tiers.
   it('shows only the Known and Invited tiers', () => {
     render(<ObserveStatusCard state={makeState([300_000, 0, 50_000])} />)
+    expect(screen.getByRole('columnheader', { name: 'Tier' })).toBeTruthy()
     const tiers = screen.getAllByRole('row').slice(1).map((r) => within(r).getAllByRole('cell')[0].textContent)
     expect(tiers).toEqual(['Known', 'Invited'])
   })

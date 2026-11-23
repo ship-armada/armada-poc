@@ -22,7 +22,7 @@ const COPY: Record<MyPositionEmptyStateKind, { headline: string; subhead: string
   },
   'no-position': {
     headline: 'No position yet',
-    subhead: "You haven't been invited to a hop or committed USDC yet.",
+    subhead: "You haven't been invited or committed USDC yet.",
     // No CTA — non-whitelisted wallets can't act here; the Participate CTA
     // is gated on eligibility and only reachable via the hero.
     cta: '',

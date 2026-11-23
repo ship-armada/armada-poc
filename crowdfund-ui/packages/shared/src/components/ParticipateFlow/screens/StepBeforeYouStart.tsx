@@ -11,14 +11,14 @@ import { FlowChrome } from '../FlowChrome'
 import { DISCORD_URL, X_URL } from '../../../lib/socials'
 import { CROWDFUND_CONSTANTS } from '../../../lib/constants'
 import styles from './StepBeforeYouStart.module.css'
-import { formatUsdcShort, hopLabel, hopTagLabel } from '../../../lib/format'
+import { formatUsdcShort, hopLabel, hopTagLabel, multiTierTagLabel, tierWord } from '../../../lib/format'
 import { allocationMatchesDemand } from '../../../lib/allocation'
 
 const HOP_TAG_LABEL: Record<HopVariant, string> = {
   seed: hopTagLabel(0),
   'hop-1': hopTagLabel(1),
   'hop-2': hopTagLabel(2),
-  'multi-hop': 'MULTI-HOP',
+  'multi-hop': multiTierTagLabel(),
 }
 
 function DiscordIcon(props: SVGProps<SVGSVGElement>) {
@@ -70,7 +70,7 @@ function resourceLinks(contractAddress: string | undefined, explorerBaseUrl: str
 
 const NEXT_STEPS = [
   { label: 'Commit', hint: 'Choose how much USDC to lock' },
-  { label: 'Review', hint: 'Confirm amount and hop details' },
+  { label: 'Review', hint: `Confirm amount and ${tierWord()} details` },
   { label: 'Confirm', hint: 'Approve USDC, then commit in your wallet' },
 ] as const
 
@@ -139,7 +139,7 @@ function inviteBullet(
   const ceiling =
     maxOutCeilingUsdc != null && maxOutCeilingUsdc > capUsdc ? maxOutCeilingUsdc : null
   if (ceiling == null) {
-    return `${base} You can invite others, or self-invite to open additional hop seats.`
+    return `${base} You can invite others, or self-invite to open additional ${tierWord()} seats.`
   }
 
   return `${base} You can increase your commit limit by self-inviting — up to $${formatUsdc(ceiling)}.`

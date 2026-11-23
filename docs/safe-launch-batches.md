@@ -106,7 +106,9 @@ each extension adds 5 days and there are at most two (the contract enforces only
 the task warns in the console and in `summary.md`, but still writes the file.
 
 The Safe must **execute before the current deadline**. After it, `extendWindow()` reverts and anyone
-can finalize, so start signing well ahead. An extension cannot be undone or shortened. Procedure and
+can finalize, so start signing well ahead (at least 24 hours before the deadline). Propose it as its
+own transaction, not combined with seed or invite calls, and clear any earlier queued transaction
+first: the queue executes by nonce. An extension cannot be undone or shortened. Procedure and
 decision-log rules: `specs/OPERATIONS.md` §4, Extending the commitment window.
 
 ## Emergency cancel

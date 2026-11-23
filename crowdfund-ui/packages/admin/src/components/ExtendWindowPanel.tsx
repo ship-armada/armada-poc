@@ -1,5 +1,5 @@
 // ABOUTME: Launch team panel to extend the commitment window (extendWindow) up to the contract's maximum.
-// ABOUTME: Takes the new deadline in UTC, checks it against the contract rules, and warns near the deadline.
+// ABOUTME: Takes the new deadline in UTC, checks it against the contract rules, and warns near the deadline or off the +5-day step.
 
 import { useState } from 'react'
 import { Contract } from 'ethers'
@@ -7,10 +7,8 @@ import type { Signer, JsonRpcProvider } from 'ethers'
 import { CROWDFUND_ABI_FRAGMENTS, formatCountdown, formatUtcDateTime } from '@armada/crowdfund-shared'
 import { useMaxWindowDuration } from '@/hooks/useMaxWindowDuration'
 import { useTransactionFlow } from '@/hooks/useTransactionFlow'
-import { checkExtension, maxWindowEnd, parseUtcInput, toUtcInput, type WindowTiming } from '@/lib/windowExtension'
+import { EXTENSION_STEP_SECONDS, checkExtension, maxWindowEnd, parseUtcInput, toUtcInput, type WindowTiming } from '@/lib/windowExtension'
 import { TransactionFlow } from './TransactionFlow'
-
-const ONE_DAY = 86400
 
 export interface ExtendWindowPanelProps {
   signer: Signer | null
@@ -83,21 +81,17 @@ export function ExtendWindowForm({
         />
       </label>
 
+      {/* One preset: the operational +5-day step. Any other end goes through the input above and
+          draws a step warning (checkExtension). */}
       <div className="flex gap-1">
-        <button className="flex-1 px-3 py-1 rounded bg-muted text-muted-foreground hover:text-foreground" onClick={() => preset(windowEnd + ONE_DAY)}>
-          +1 day
-        </button>
-        <button className="flex-1 px-3 py-1 rounded bg-muted text-muted-foreground hover:text-foreground" onClick={() => preset(windowEnd + 3 * ONE_DAY)}>
-          +3 days
-        </button>
-        <button className="flex-1 px-3 py-1 rounded bg-muted text-muted-foreground hover:text-foreground" onClick={() => preset(maxEnd)}>
-          Maximum
+        <button className="flex-1 px-3 py-1 rounded bg-muted text-muted-foreground hover:text-foreground" onClick={() => preset(windowEnd + EXTENSION_STEP_SECONDS)}>
+          +5 days
         </button>
       </div>
 
       {input !== '' && newEnd === null && <div className="text-destructive">Enter a date and time.</div>}
       {check?.error && <div className="text-destructive">{check.error}</div>}
-      {check?.warning && <div className="text-amber-500">{check.warning}</div>}
+      {check?.warnings.map((w) => <div key={w} className="text-amber-500">{w}</div>)}
 
       <div className="text-muted-foreground">
         Moves the commitment and launch-team deadlines together. It cannot be undone or shortened.

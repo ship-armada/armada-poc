@@ -61,7 +61,9 @@ export function useParticipants(events: CrowdfundEvent[]): ParticipantRow[] {
         allocatedArm: alloc?.arm ?? null,
         refundUsdc: alloc?.refund ?? null,
         armClaimed: allocations.has(node.address),
-        refundClaimed: refundClaims.has(node.address),
+        // claim() pays the refund together with the ARM and emits only Allocated; RefundClaimed
+        // comes from claimRefund() (refund mode or a cancelled sale). Either means it was paid.
+        refundClaimed: refundClaims.has(node.address) || allocations.has(node.address),
       })
     }
 

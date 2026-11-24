@@ -65,6 +65,39 @@ jobs:
             exit 1
           fi
 
+  # Crowdfund front end: type checks and vitest suites for the @armada/ui design system, the shared
+  # crowdfund library, the committer and admin apps, and the indexer. Nothing else in CI covers these
+  # packages. The deprecated standalone observer app is not included. One step per package so a
+  # failure names the package.
+  crowdfund-ui:
+    name: Crowdfund UI Tests & Types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - run: npm ci --legacy-peer-deps
+      - name: Typecheck @armada/ui
+        run: npm run typecheck -w @armada/ui
+      - name: Typecheck shared
+        run: npm run typecheck -w @armada/crowdfund-shared
+      - name: Typecheck committer
+        run: npm run typecheck -w @armada/crowdfund-committer
+      - name: Typecheck admin
+        run: npm run typecheck -w @armada/crowdfund-admin
+      - name: Typecheck indexer
+        run: npm run typecheck -w @armada/crowdfund-indexer
+      - name: Test shared
+        run: npm test -w @armada/crowdfund-shared
+      - name: Test committer
+        run: npm test -w @armada/crowdfund-committer
+      - name: Test admin
+        run: npm test -w @armada/crowdfund-admin
+      - name: Test indexer
+        run: npm test -w @armada/crowdfund-indexer
+
   # Hardhat compilation and full integration test suite
   hardhat:
     name: Hardhat Compile & Test

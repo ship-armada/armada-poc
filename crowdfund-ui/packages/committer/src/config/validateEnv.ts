@@ -149,10 +149,12 @@ export function validateEnv(env: EnvRecord): EnvValidationResult {
           'first-sale address; remove the variable.',
       )
     }
-    if (expected === SALE1_CROWDFUND_MAINNET.toLowerCase()) {
+    // Only the relaunch build: the Launch 1 committer (mainnet profile) is the first sale's own
+    // refund UI and is configured with exactly this address until the switch-over.
+    if (profile === 'relaunch' && expected === SALE1_CROWDFUND_MAINNET.toLowerCase()) {
       errors.push(
-        'VITE_EXPECTED_CROWDFUND_ADDRESS is the cancelled first-sale contract — point the committer ' +
-          'at the live crowdfund.',
+        'VITE_EXPECTED_CROWDFUND_ADDRESS is the cancelled first-sale contract on a relaunch build — ' +
+          'point the committer at the relaunch crowdfund.',
       )
     }
   } else if (!missing(refundOverride)) {

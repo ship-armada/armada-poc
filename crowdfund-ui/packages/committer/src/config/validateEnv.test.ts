@@ -303,11 +303,19 @@ describe('validateEnv', () => {
       }
     })
 
-    // WHY: the live app pointed at the cancelled first sale would invite commits into a dead contract.
-    it('rejects a mainnet build whose expected crowdfund is the first-sale contract', () => {
+    // WHY: the relaunch app pointed at the cancelled first sale would invite commits into a dead contract.
+    it('rejects a relaunch build whose expected crowdfund is the first-sale contract', () => {
       const result = validateEnv({ ...MAINNET_LIVE, VITE_EXPECTED_CROWDFUND_ADDRESS: SALE1.toLowerCase() })
       expect(result.ok).toBe(false)
       if (!result.ok) expect(result.errors.some((e) => e.includes('first-sale'))).toBe(true)
+    })
+
+    // WHY: the Launch 1 committer (mainnet profile) is the first sale's own refund UI and is
+    // configured with exactly that address; rebuilding it must keep working until the switch-over.
+    it('accepts a Launch 1 (mainnet profile) build pointed at the first-sale contract', () => {
+      expect(
+        validateEnv({ ...MAINNET_LIVE, VITE_CROWDFUND_PROFILE: 'mainnet', VITE_EXPECTED_CROWDFUND_ADDRESS: SALE1 }),
+      ).toEqual({ ok: true })
     })
 
     it('accepts a valid override on a sepolia build', () => {

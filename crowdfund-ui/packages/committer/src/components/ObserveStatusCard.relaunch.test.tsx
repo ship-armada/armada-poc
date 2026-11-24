@@ -47,35 +47,35 @@ function rowCells(tier: string): string[] {
 describe('ObserveStatusCard on the relaunch profile', () => {
   // WHY: team inviter wallets are hidden from public views, so their (always $0) hop-1 row must not
   // appear; the public sale has two tiers.
-  it('shows only the Known and Invited tiers', () => {
+  it('shows only the Backer and Community tiers', () => {
     render(<ObserveStatusCard state={makeState([300_000, 0, 50_000])} />)
     expect(screen.getByRole('columnheader', { name: 'Tier' })).toBeTruthy()
     const tiers = screen.getAllByRole('row').slice(1).map((r) => within(r).getAllByRole('cell')[0].textContent)
-    expect(tiers).toEqual(['Known', 'Invited'])
+    expect(tiers).toEqual(['Backer', 'Community'])
   })
 
-  // WHY: the relaunch has no bps ceilings, hop-2 floor or expansion: the Invited tier has a $300K
-  // reserve and Known takes the remainder. Fill is demand against the most a tier could absorb (its
+  // WHY: the relaunch has no bps ceilings, hop-2 floor or expansion: the Community tier has a $300K
+  // reserve and Backer takes the remainder. Fill is demand against the most a tier could absorb (its
   // allocation plus the $1.45M still unallocated), so an undersubscribed tier reads well below 100%.
   it('labels the reserve and remainder, measures fill against capacity, and drops the sale-size badge', () => {
     render(<ObserveStatusCard state={makeState([300_000, 0, 50_000])} />)
-    const invited = rowCells('Invited')
+    const invited = rowCells('Community')
     expect(invited[1]).toBe('$300K reserve')
     expect(invited[invited.length - 1]).toBe('3%') // $50k of $50k + $1.45M
-    const known = rowCells('Known')
+    const known = rowCells('Backer')
     expect(known[1]).toBe('Remainder')
     expect(known[known.length - 1]).toBe('17%') // $300k of $300k + $1.45M
     expect(screen.queryByText(/BASE|EXPANDED/)).toBeNull()
   })
 
-  // WHY: the reserve means Known demand that fills the sale cannot crowd the Invited tier out: its
-  // $10K is allocated in full (fill 100%), and Known is pro-rated into the rest.
-  it('keeps the Invited tier inside its reserve when Known demand fills the sale', () => {
+  // WHY: the reserve means Backer demand that fills the sale cannot crowd the Community tier out: its
+  // $10K is allocated in full (fill 100%), and Backer is pro-rated into the rest.
+  it('keeps the Community tier inside its reserve when Backer demand fills the sale', () => {
     render(<ObserveStatusCard state={makeState([1_800_000, 0, 10_000])} />)
-    const invited = rowCells('Invited')
+    const invited = rowCells('Community')
     expect(invited[7]).toBe(formatUsdc(USDC(10_000))) // Est. alloc
     expect(invited[invited.length - 1]).toBe('100%')
-    const known = rowCells('Known')
+    const known = rowCells('Backer')
     expect(known[7]).toBe(formatUsdc(USDC(1_790_000)))
     expect(known[known.length - 1]).toBe('101%') // $1.8M of $1.79M: pro-rated
   })

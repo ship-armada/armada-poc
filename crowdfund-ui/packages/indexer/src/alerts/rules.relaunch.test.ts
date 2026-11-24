@@ -82,8 +82,8 @@ function run(rule: (m: RulesModule) => AlertRule, ctx: AlertContext) {
 
 describe('graph under the relaunch profile', () => {
   // WHY: the graph caps each node's committed amount at its hop cap. Under the Launch 1 caps a
-  // $100k Known deposit was clamped to $15k, corrupting snapshots, demand alerts and reconciliation.
-  it('caps a Known deposit at $100k and an Invited deposit at $10k', () => {
+  // $100k Backer deposit was clamped to $15k, corrupting snapshots, demand alerts and reconciliation.
+  it('caps a Backer deposit at $100k and a Community deposit at $10k', () => {
     const graph = graphLib.buildGraph([
       makeEvent('SeedAdded', { seed: '0xaaa' }, 1),
       makeEvent('Committed', { participant: '0xaaa', hop: 0, amount: 200_000n * USDC }, 2),
@@ -98,7 +98,7 @@ describe('graph under the relaunch profile', () => {
 })
 
 describe('A4/A5 budgets under the relaunch profile', () => {
-  // WHY: the relaunch budgets are 500 seeds, 1 team wallet and 500 Invited placements; the alerts
+  // WHY: the relaunch budgets are 500 seeds, 1 team wallet and 500 Community placements; the alerts
   // must measure against those, not Launch 1's 180/100/120.
   it('A4 fires at 80% of the 500-seed budget', () => {
     const events = Array.from({ length: 400 }, (_, i) => makeEvent('SeedAdded', { seed: `0x${i}` }, i + 1))
@@ -107,7 +107,7 @@ describe('A4/A5 budgets under the relaunch profile', () => {
     expect(out[0].title).toContain('400/500')
   })
 
-  it('A5 measures the team wallet against 1 and Invited placements against 500, naming the tiers', () => {
+  it('A5 measures the team wallet against 1 and Community placements against 500, naming the tiers', () => {
     const events = [
       makeEvent('LaunchTeamInvited', { invitee: '0xa0', hop: 1 }, 1),
       ...Array.from({ length: 400 }, (_, i) => makeEvent('LaunchTeamInvited', { invitee: `0xb${i}`, hop: 2 }, i + 100)),
@@ -117,13 +117,13 @@ describe('A4/A5 budgets under the relaunch profile', () => {
     const invited = out.find((e) => e.dedupeKey === 'A5:hop2:80')
     expect(team?.title).toContain('Team')
     expect(team?.body).toContain('1/1')
-    expect(invited?.title).toContain('Invited')
+    expect(invited?.title).toContain('Community')
     expect(invited?.body).toContain('400/500')
   })
 })
 
 describe('A6 under the relaunch profile (hop-2 stacking up to 20)', () => {
-  // WHY: Invited contributors may stack up to 20 invites, so a stacked node is intended, not a
+  // WHY: Community contributors may stack up to 20 invites, so a stacked node is intended, not a
   // configuration error. A6 stays an awareness alert: silent for a few stacked nodes, firing once
   // the stacked share reaches the threshold (MONITORING.md A6 / §9.1).
   it('stays silent for a single stacked node and fires at the ratio threshold', () => {

@@ -43,8 +43,8 @@ describe('relaunch profile', () => {
     expect(c.HOP2_EXTRA_FLOOR_BPS).toBe(0)
   })
 
-  // WHY: hop configs drive caps, invite-slot counts and stacking limits. Known: $100k, no invites;
-  // Team wallet: $0 cap, 100 invites; Invited: $10k per invite, stacking to 20 invites. ceilingBps
+  // WHY: hop configs drive caps, invite-slot counts and stacking limits. Backer: $100k, no invites;
+  // Team wallet: $0 cap, 100 invites; Community: $10k per invite, stacking to 20 invites. ceilingBps
   // is unused by the reserve model, and 0 as in the contract.
   it('matches the relaunch contract hop configs', () => {
     expect(HOP_CONFIGS_BY_PROFILE.relaunch).toEqual([
@@ -68,7 +68,7 @@ describe('tier labels', () => {
   // WHY: the relaunch presents its hops as named tiers; the Launch 1 and testnet profiles keep the
   // hop numbering their users and operators already know.
   it('names the relaunch tiers and keeps hop numbers elsewhere', () => {
-    expect(TIER_LABELS_BY_PROFILE.relaunch).toEqual(['Known', 'Team', 'Invited'])
+    expect(TIER_LABELS_BY_PROFILE.relaunch).toEqual(['Backer', 'Team', 'Community'])
     expect(TIER_NOUN_BY_PROFILE).toEqual({ mainnet: 'Hop', medi: 'Hop', relaunch: 'Tier' })
     expect(TIER_LABELS_BY_PROFILE.mainnet).toEqual(['Hop-0', 'Hop-1', 'Hop-2'])
     expect(TIER_LABELS_BY_PROFILE.medi).toEqual(['Hop-0', 'Hop-1', 'Hop-2'])

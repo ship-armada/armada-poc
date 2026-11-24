@@ -8,17 +8,17 @@
  * (concurrent) → advance past window. Per-hop caps and the minimum sale are read
  * from the deployed contract.
  *
- * Tiers: Known contributors (hop 0, added as seeds) commit their full cap. With
+ * Tiers: Backers (hop 0, added as seeds) commit their full cap. With
  * HOPS, the launch team also places team inviter wallets (hop 1, $0 cap, never
- * commit) and those wallets invite Invited contributors (hop 2), who commit their
- * full cap. Known contributors cannot invite.
+ * commit) and those wallets invite Community contributors (hop 2), who commit their
+ * full cap. Backers cannot invite.
  *
  * Leaves the contract ready for admin to finalize via the UI or CLI.
  *
  * Environment variables:
  *   TARGET  - Target total in whole USDC (default: 500000, above the $250K MIN_SALE)
- *   HOPS    - If "true", also place team wallets and Invited contributors (default: false)
- *   INVITED - Invited contributors to add when HOPS is set (default: 12)
+ *   HOPS    - If "true", also place team wallets and Community contributors (default: false)
+ *   INVITED - Community contributors to add when HOPS is set (default: 12)
  *
  * Usage:
  *   npx hardhat run scripts/crowdfund_populate.ts --network hub
@@ -107,8 +107,8 @@ async function main() {
 
   // Caps come from the deployed contract (whole USDC), so the plan matches its constants.
   const capOf = async (hop: number) => Number((await crowdfund.hopConfigs(hop)).capUsdc / 1_000_000n);
-  const SEED_CAP = await capOf(0);      // Known contributor cap
-  const INVITED_CAP = await capOf(2);   // Invited contributor cap
+  const SEED_CAP = await capOf(0);      // Backer cap
+  const INVITED_CAP = await capOf(2);   // Community contributor cap
   const TEAM_WALLET_INVITES = Number((await crowdfund.hopConfigs(1)).maxInvites);
   const TEAM_WALLET_BUDGET = Number(await crowdfund.LAUNCH_TEAM_HOP1_BUDGET());
   const minSale = await crowdfund.MIN_SALE();
@@ -119,26 +119,26 @@ async function main() {
 
   // Signer allocation mirrors the UI's dropdown (crowdfund-ui/packages/committer):
   //   signers[0]   = Admin / Deployer (launch team)
-  //   signers[1-3] = Seed A/B/C (hop-0, Known)        — UI accounts
+  //   signers[1-3] = Seed A/B/C (hop-0, Backer)       — UI accounts
   //   signers[4-6] = Hop-1 A/B/C (hop-1, team wallets) — UI accounts
-  //   signers[7-9] = Hop-2 A/B/C (hop-2, Invited)      — UI accounts
-  //   signers[11+] = generated participants (bulk Known seeds, extra Invited)
+  //   signers[7-9] = Hop-2 A/B/C (hop-2, Community)    — UI accounts
+  //   signers[11+] = generated participants (bulk Backer seeds, extra Community)
   const availableSigners = signers.slice(11);
 
   // UI accounts — these match the predefined addresses in the UI dropdown
   const uiSeeds = signers.slice(1, 4);     // Seed A/B/C
   const uiHop1  = signers.slice(4, 7);     // Hop-1 A/B/C: team inviter wallets
-  const uiHop2  = signers.slice(7, 10);    // Hop-2 A/B/C: first Invited contributors
+  const uiHop2  = signers.slice(7, 10);    // Hop-2 A/B/C: first Community contributors
 
   // Plan: team wallets (if HOPS) are the UI hop-1 accounts, within the launch-team budget.
-  // Invited contributors are the UI hop-2 accounts plus generated signers, spread across the team
-  // wallets' invite slots. Known seeds (UI seeds + generated) cover the rest of the target.
+  // Community contributors are the UI hop-2 accounts plus generated signers, spread across the team
+  // wallets' invite slots. Backer seeds (UI seeds + generated) cover the rest of the target.
   const teamWallets = includeHops ? uiHop1.slice(0, Math.min(uiHop1.length, TEAM_WALLET_BUDGET)) : [];
   const invitedCount = Math.min(invitedTarget, teamWallets.length * TEAM_WALLET_INVITES);
   const generatedInvited = Math.max(0, invitedCount - uiHop2.length);
   const invitedTotal = invitedCount * INVITED_CAP;
   const remainingTarget = Math.max(0, targetUsdc - uiSeeds.length * SEED_CAP - invitedTotal);
-  const seedCount = Math.ceil(remainingTarget / SEED_CAP); // generated Known seeds
+  const seedCount = Math.ceil(remainingTarget / SEED_CAP); // generated Backer seeds
 
   const seedSigners = availableSigners.slice(0, seedCount);
   const invitedSigners = includeHops
@@ -156,10 +156,10 @@ async function main() {
 
   const knownCount = uiSeeds.length + seedCount;
   const expectedTotal = knownCount * SEED_CAP + invitedTotal;
-  log("PLAN", `Known: ${knownCount} × $${SEED_CAP.toLocaleString()} = $${(knownCount * SEED_CAP).toLocaleString()}`);
+  log("PLAN", `Backers: ${knownCount} × $${SEED_CAP.toLocaleString()} = $${(knownCount * SEED_CAP).toLocaleString()}`);
   if (includeHops) {
     log("PLAN", `Team wallets: ${teamWallets.length} (no commits)`);
-    log("PLAN", `Invited: ${invitedCount} × $${INVITED_CAP.toLocaleString()} = $${invitedTotal.toLocaleString()}`);
+    log("PLAN", `Community: ${invitedCount} × $${INVITED_CAP.toLocaleString()} = $${invitedTotal.toLocaleString()}`);
   }
   log("PLAN", `Expected total: $${expectedTotal.toLocaleString()}`);
   console.log("");
@@ -234,13 +234,13 @@ async function main() {
     }
     log("INVITE", `${teamWallets.length} team wallets placed at hop 1`);
 
-    // Team wallets invite Invited contributors round-robin (an invite link does the same on-chain).
+    // Team wallets invite Community contributors round-robin (an invite link does the same on-chain).
     for (let i = 0; i < invitedSigners.length; i++) {
       const inviter = teamWallets[i % teamWallets.length];
       const tx = await crowdfund.connect(inviter).invite(invitedSigners[i].address, 1);
       await tx.wait();
     }
-    log("INVITE", `${invitedSigners.length} Invited contributors invited at hop 2`);
+    log("INVITE", `${invitedSigners.length} Community contributors invited at hop 2`);
   }
 
   // ============ MINT + APPROVE + COMMIT ============
@@ -295,7 +295,7 @@ async function main() {
   await commitBatch(seedSigners, SEED_CAP, 0, "Seeds");
   if (includeHops) {
     // Team wallets have a $0 cap and never commit.
-    await commitBatch(invitedSigners, INVITED_CAP, 2, "Invited");
+    await commitBatch(invitedSigners, INVITED_CAP, 2, "Community");
   }
 
   // ============ ADVANCE PAST WINDOW ============

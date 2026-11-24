@@ -18,7 +18,7 @@ describe('shouldShowMaxOut', () => {
   })
 
   // WHY: on the relaunch a team wallet could otherwise self-invite into hop 2 and self-commit
-  // $10k, and a Known contributor would get a "commit to cap" banner. The profile turns it off.
+  // $10k, and a Backer contributor would get a "commit to cap" banner. The profile turns it off.
   it('hides the offer when the profile disables self-fill, even if a plan exists', () => {
     expect(shouldShowMaxOut({ ...base, selfFillEnabled: false })).toBe(false)
   })

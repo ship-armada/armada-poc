@@ -156,8 +156,9 @@ export const HOP_CONFIGS_BY_PROFILE: Record<
     { ceilingBps: 4500, capUsdc: 20n * 10n ** 6n, maxInvites: 2, maxInvitesReceived: 10 },
     { ceilingBps: 0, capUsdc: 10n * 10n ** 6n, maxInvites: 0, maxInvitesReceived: 20 },
   ],
-  // Known contributors / the team inviter wallet ($0 cap, invite links only) / invited contributors
-  // ($10k per invite, stacking to 20). ceilingBps is unused by the reserve model (0, as on-chain).
+  // Backers (the brief's known contributors) / the team inviter wallet ($0 cap, invite links only) /
+  // Community (the brief's invited contributors; $10k per invite, stacking to 20). ceilingBps is
+  // unused by the reserve model (0, as on-chain).
   relaunch: [
     { ceilingBps: 0, capUsdc: 100_000n * 10n ** 6n, maxInvites: 0, maxInvitesReceived: 1 },
     { ceilingBps: 0, capUsdc: 0n, maxInvites: 100, maxInvitesReceived: 1 },
@@ -165,11 +166,12 @@ export const HOP_CONFIGS_BY_PROFILE: Record<
   ],
 }
 
-/** Display names for hops 0/1/2. The relaunch names its tiers; other profiles number them. */
+/** Display names for hops 0/1/2. The relaunch names its tiers (Backer / Team / Community; the specs keep
+ *  the team brief's "known" and "invited contributors" for hops 0 and 2); other profiles number them. */
 export const TIER_LABELS_BY_PROFILE: Record<CrowdfundProfile, readonly [string, string, string]> = {
   mainnet: ['Hop-0', 'Hop-1', 'Hop-2'],
   medi: ['Hop-0', 'Hop-1', 'Hop-2'],
-  relaunch: ['Known', 'Team', 'Invited'],
+  relaunch: ['Backer', 'Team', 'Community'],
 }
 
 /** What a hop is called in participant-facing copy (headers, filters): the relaunch names tiers. */

@@ -1,5 +1,5 @@
 // ABOUTME: Tests the admin LaunchTeamInvites panel under the relaunch profile (mocked): hop-1 placements
-// ABOUTME: are team inviter wallets and hop-2 placements are the Invited tier.
+// ABOUTME: are team inviter wallets and hop-2 placements are the Community tier.
 
 import { render, screen } from '@testing-library/react'
 
@@ -24,8 +24,8 @@ import { LaunchTeamInvites } from './LaunchTeamInvites'
 
 describe('LaunchTeamInvites on the relaunch profile', () => {
   // WHY: a hop-1 placement on the relaunch is a $0-cap team inviter wallet, not a contributor; the
-  // operator must see that, and the hop-2 budget as the Invited tier.
-  it('labels the budgets and actions as team wallets and the Invited tier', () => {
+  // operator must see that, and the hop-2 budget as the Community tier.
+  it('labels the budgets and actions as team wallets and the Community tier', () => {
     render(
       <LaunchTeamInvites
         signer={null}
@@ -38,8 +38,8 @@ describe('LaunchTeamInvites on the relaunch profile', () => {
       />,
     )
     expect(screen.getByRole('button', { name: 'Add team wallet (5)' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Invite to Invited (500)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Invite to Community (500)' })).toBeInTheDocument()
     expect(screen.getByText('Team wallets:')).toBeInTheDocument()
-    expect(screen.getByText('Invited:')).toBeInTheDocument()
+    expect(screen.getByText('Community:')).toBeInTheDocument()
   })
 })

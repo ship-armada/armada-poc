@@ -1,5 +1,5 @@
 // ABOUTME: Tests the committer's Details participants table under the relaunch profile (mocked): the team-wallet
-// ABOUTME: disclosure, and tier wording (Tier / Known / Invited) in the filters, toggle and headers instead of hops.
+// ABOUTME: disclosure, and tier wording (Tier / Backer / Community) in the filters, toggle and headers instead of hops.
 
 import { render, screen, within } from '@testing-library/react'
 import { createElement, type ReactNode } from 'react'
@@ -37,7 +37,7 @@ describe('ObserveParticipantsTable team-wallet disclosure', () => {
   it('filters by tier, without the hidden Team tier', () => {
     render(<ObserveParticipantsTable events={[]} phase={0} provider={null} />, { wrapper })
     const options = within(screen.getByLabelText('Tier filter')).getAllByRole('option').map((o) => o.textContent)
-    expect(options).toEqual(['All tiers', 'Known', 'Invited'])
+    expect(options).toEqual(['All tiers', 'Backer', 'Community'])
   })
 
   // WHY: the view toggle and column header name tiers too, so no "hop" wording reaches participants.
@@ -48,8 +48,8 @@ describe('ObserveParticipantsTable team-wallet disclosure', () => {
     expect(screen.queryByText(/hop/i)).toBeNull()
   })
 
-  // WHY: "Invited only" (invited, not yet committed) read as "the Invited tier only" once Invited
-  // became a tier name; the option says what it filters.
+  // WHY: "Invited only" (invited, not yet committed) sits next to the tier filter and reads like a
+  // tier; the option says what it filters.
   it('labels the uncommitted status option "Not committed"', () => {
     render(<ObserveParticipantsTable events={[]} phase={0} provider={null} />, { wrapper })
     const options = within(screen.getByLabelText('Status filter')).getAllByRole('option').map((o) => o.textContent)

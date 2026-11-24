@@ -21,7 +21,7 @@ describe('mapRevertToMessage on the relaunch profile', () => {
     )
   })
 
-  // WHY: Known and Invited contributors cannot invite at all on the relaunch, so "the deepest hop
+  // WHY: Backer and Community contributors cannot invite at all on the relaunch, so "the deepest hop
   // level" would not explain why; say plainly that this account cannot invite here.
   it('explains a max-hop revert as not being able to invite at this tier', () => {
     expect(mapRevertToMessage(new Error('ArmadaCrowdfund: max hop reached'))).toBe("Your account can't invite at this tier.")

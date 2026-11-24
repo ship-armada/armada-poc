@@ -127,7 +127,7 @@ describe('getInitialCursor', () => {
 
 describe('CROWDFUND_PROFILE', () => {
   // WHY: the indexer runs under Node, where the shared constants used to fall back silently to the
-  // mainnet (Launch 1) profile. On the relaunch that capped every Known deposit at $15k in the
+  // mainnet (Launch 1) profile. On the relaunch that capped every Backer deposit at $15k in the
   // published snapshots and alerts. Outside local Anvil the profile must be stated explicitly.
   it('rejects an unset profile on a non-local chain', () => {
     process.env.CROWDFUND_CHAIN_ID = '1'

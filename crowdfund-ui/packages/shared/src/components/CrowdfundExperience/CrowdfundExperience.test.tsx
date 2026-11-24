@@ -121,7 +121,7 @@ describe('CrowdfundExperience Your position fill bar', () => {
   })
 })
 
-// WHY: on the relaunch only the team wallet can invite, so for Known and Invited contributors an
+// WHY: on the relaunch only the team wallet can invite, so for Backer and Community contributors an
 // invite card could only ever say "no invite slots". It is left out when the wallet has no slots.
 describe('CrowdfundExperience Your position invite card', () => {
   it('is hidden when the wallet has no invite slots', () => {

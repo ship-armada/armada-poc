@@ -40,7 +40,7 @@ const REVERT_MAP: [RegExp, string][] = [
   [/invite limit reached/i, 'The inviter has no remaining invite slots.'],
   [/already whitelisted/i, 'This address is already invited.'],
   [/max invites received/i, `You've already accepted the maximum number of invites for ${AT_THIS}.`],
-  // On the relaunch, Known and Invited contributors cannot invite at all, so "deepest level" would
+  // On the relaunch, Backer and Community contributors cannot invite at all, so "deepest level" would
   // not explain the failure.
   [/max hop reached/i, TIERED ? "Your account can't invite at this tier." : 'You are already at the deepest hop level.'],
   // OpenZeppelin ERC20 (USDC) revert strings.

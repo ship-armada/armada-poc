@@ -15,11 +15,11 @@ const ev = (type: string, args: Record<string, unknown>) =>
 const name = (a: string) => a
 
 describe('ObserveEventLog descriptions on the relaunch profile', () => {
-  // WHY: the event log is participant-facing; it names the tier ("Invited") like the rest of the UI.
+  // WHY: the event log is participant-facing; it names the tier ("Community") like the rest of the UI.
   it('names the tier instead of hop-N', () => {
-    expect(formatEventData(ev('Invited', { inviter: 'alice', invitee: 'bob', hop: 2 }), name)).toBe('alice → bob · Invited')
-    expect(formatEventData(ev('LaunchTeamInvited', { invitee: 'bob', hop: 2 }), name)).toBe('LT → bob · Invited')
-    expect(formatEventData(ev('Committed', { participant: 'bob', hop: 0, amount: 10_000_000_000n }), name)).toBe('bob · $10,000 · Known')
-    expect(formatEventData(ev('AllocatedHop', { participant: 'bob', hop: 2, acceptedUsdc: 5_000_000_000n }), name)).toBe('bob · Invited · $5,000')
+    expect(formatEventData(ev('Invited', { inviter: 'alice', invitee: 'bob', hop: 2 }), name)).toBe('alice → bob · Community')
+    expect(formatEventData(ev('LaunchTeamInvited', { invitee: 'bob', hop: 2 }), name)).toBe('LT → bob · Community')
+    expect(formatEventData(ev('Committed', { participant: 'bob', hop: 0, amount: 10_000_000_000n }), name)).toBe('bob · $10,000 · Backer')
+    expect(formatEventData(ev('AllocatedHop', { participant: 'bob', hop: 2, acceptedUsdc: 5_000_000_000n }), name)).toBe('bob · Community · $5,000')
   })
 })

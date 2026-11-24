@@ -16,7 +16,7 @@ describe('graphShellRadii', () => {
   })
 
   // WHY: with hop 1 hidden its shell is always empty, which left a double-width gap between
-  // Known (hop 0) and Invited (hop 2). Hop 2 and multi-hop move in one shell so the visible tiers
+  // Backer (hop 0) and Community (hop 2). Hop 2 and multi-hop move in one shell so the visible tiers
   // keep the standard spacing, and multi-hop no longer sits past the default camera distance.
   it('moves hop 2 and multi-hop in one shell when team wallets are hidden', () => {
     const radii = graphShellRadii(true)

@@ -109,6 +109,8 @@ The team wallet appears in the invite graph with the launch team address as invi
 | 1 | Team inviter wallet (max 1, launch team) | Third (demand is always $0) | $0 | 100 | 1 |
 | 2 | Invited contributors (team-wallet links + up to 500 launch-team placements) | First for the $300,000 reserve; last for anything above it | $10,000 | 0 | Up to 20 |
 
+**Display names.** This spec uses the team brief's terms. The apps label hop 0 **Backer**, hop 1 **Team** and hop 2 **Community** (`TIER_LABELS_BY_PROFILE` in `crowdfund-ui/packages/shared/src/lib/constants.ts`); published terms and participant-facing wording should use the display names.
+
 The launch team's placement budgets (1 hop-1, 500 hop-2) are separate from hop-0 and from the team wallet's invite slots. Launch team placements may be issued at any time during the commitment window.
 
 The allocation, with `S` the sale size, `d_h` each hop's capped demand and `a_h` its allocation:

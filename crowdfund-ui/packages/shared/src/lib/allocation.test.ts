@@ -363,9 +363,9 @@ describe('estimateAllocation — relaunch profile cross-language differential ve
     expect(projectsRefundMode(under, 249n * K, relaunch)).toBe(true)
   })
 
-  // WHY: the hop-2 reserve means Known demand that fills the sale cannot crowd the Invited tier
-  // out: an Invited contributor inside the reserve is projected their full allocation.
-  it('projects full ARM for an Invited contributor inside the reserve when Known demand fills the sale', () => {
+  // WHY: the hop-2 reserve means Backer demand that fills the sale cannot crowd the Community tier
+  // out: a Community contributor inside the reserve is projected their full allocation.
+  it('projects full ARM for a Community contributor inside the reserve when Backer demand fills the sale', () => {
     const stats = emptyHopStats()
     stats[0].cappedCommitted = 1_800n * K
     stats[2].cappedCommitted = 10n * K
@@ -374,8 +374,8 @@ describe('estimateAllocation — relaunch profile cross-language differential ve
   })
 
   // WHY: when both tiers are oversubscribed, pro-rata happens within a tier against that tier's
-  // allocation: $600K of Invited demand shares the $300K reserve, so a $10K position gets $5K.
-  it('pro-rates an Invited contributor against the reserve when both tiers are oversubscribed', () => {
+  // allocation: $600K of Community demand shares the $300K reserve, so a $10K position gets $5K.
+  it('pro-rates a Community contributor against the reserve when both tiers are oversubscribed', () => {
     const stats = emptyHopStats()
     stats[0].cappedCommitted = 2_000n * K
     stats[2].cappedCommitted = 600n * K

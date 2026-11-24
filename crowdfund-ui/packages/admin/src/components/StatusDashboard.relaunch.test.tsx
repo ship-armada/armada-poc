@@ -57,6 +57,6 @@ describe('StatusDashboard on the relaunch profile', () => {
   it('names the launch-team budgets by tier', () => {
     render(<StatusDashboard state={makeState()} role="launch_team" />)
     expect(screen.getByText('Team wallets remaining:')).toBeInTheDocument()
-    expect(screen.getByText('Invited remaining:')).toBeInTheDocument()
+    expect(screen.getByText('Community remaining:')).toBeInTheDocument()
   })
 })

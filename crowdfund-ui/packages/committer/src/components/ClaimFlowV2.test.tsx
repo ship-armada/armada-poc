@@ -550,7 +550,7 @@ describe('ClaimFlowV2 wrong-network gate', () => {
 })
 
 // WHY: on a successful sale a contributor can be allocated 0 ARM and refunded in full (on the
-// relaunch, an Invited contributor crowded out by the Known tier, or a $0-cap team wallet). They
+// relaunch, a Community contributor crowded out by the Backer tier, or a $0-cap team wallet). They
 // must not be walked through an ARM claim with a delegate step for 0 ARM; a single refund claim
 // with no delegate (`claim(address(0))`) is the honest path, and the contract allows it.
 describe('ClaimFlowV2 zero-ARM refund on a successful sale', () => {

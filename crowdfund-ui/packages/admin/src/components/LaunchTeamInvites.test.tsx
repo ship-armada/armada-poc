@@ -50,8 +50,8 @@ describe('LaunchTeamInvites repeat-invite notice', () => {
     expect(await screen.findByText(/This invite adds another slot/)).toBeInTheDocument()
   })
 
-  // WHY: at the cap the contract rejects the invite (on the relaunch the cap is 1 at every hop, so
-  // any repeat reverts). Promising "another slot" there would send a transaction that fails.
+  // WHY: once an address has received its tier's maximum invites (maxInvitesReceived), the
+  // contract rejects another one. Promising "another slot" there would send a transaction that fails.
   it('warns that the invite will revert once the address is at the stacking cap', async () => {
     invitesReceived = 10 // mainnet hop-1 maxInvitesReceived
     renderPanel()

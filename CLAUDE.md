@@ -44,7 +44,7 @@ npm run test:crowdfund      # Crowdfund lifecycle + adversarial tests
 npm run crowdfund:observer  # Start crowdfund observer UI (port 5173) — DEPRECATED standalone app; components live on in shared
 npm run crowdfund:committer # Start crowdfund committer UI (port 5174)
 npm run crowdfund:admin     # Start crowdfund admin UI (port 5175)
-npm run crowdfund:populate  # Fill crowdfund to $1M+ minimum (local only)
+npm run crowdfund:populate  # Fill the local crowdfund (default $500K, above the minimum; TARGET / HOPS / INVITED env vars)
 
 # Launch-team / security-council actions from their Safes (docs/safe-launch-batches.md)
 npx hardhat cf-safe-batch --file launch.csv --network mainnetHub   # seeds + invites → Transaction Builder files

@@ -1,5 +1,5 @@
 /* ABOUTME: CSS Module for Progress — card surface with blur, gradient-filled track, and threshold marker. */
-/* ABOUTME: Ported byte-identical from the mockup; gradient + over-min shine animation included. */
+/* ABOUTME: Ported from the mockup; gradient + over-goal shine (.barFillOverMin) included; threshold label style dropped (see Progress.tsx). */
 
 .card {
   position: relative;
@@ -246,7 +246,7 @@
 
 /* Laptop / narrow-column responsive — caps the Progress card at 480px and
  * tightens the labels row so the left labels (FUNDED %, LEFT $X) don't
- * overlap the MIN-FUND marker when the host column is below ~1366px wide.
+ * overlap the goal marker (threshold line) when the host column is below ~1366px wide.
  * Ported from the armada-crowdfund mockup (commit 214b972). */
 @media (max-width: 1440px) {
   .card {

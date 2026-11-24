@@ -20,10 +20,11 @@ The UI is built for one deployment at a time, selected by `VITE_CROWDFUND_PROFIL
 
 **Relaunch profile differences** (see CROWDFUND.md for the sale itself):
 
-- **Tiers, not hops.** Hop 0 is labelled "Known" ($100k cap), hop 2 "Invited" ($10k per invite). Hop 1 holds the one team inviter wallet ($0 cap), labelled "Team" where shown at all.
+- **Tiers, not hops.** Hop 0 is labelled "Known" ($100k cap), hop 2 "Invited" ($10k per invite). Hop 1 holds the one team inviter wallet ($0 cap), labelled "Team" where shown at all. Participant-facing copy says "tier" where other profiles say "hop" (`TIER_NOUN`, `tierWord()`), e.g. the Details filters, Your position and the participate flow.
 - **Team wallets are invite-only.** A wallet whose every position has a $0 cap gets no commit flow and no Participate buttons; its invite card takes the Participate card's place. Its invite list is the compact "Invite to Invited · N invites left" row plus the links it has issued.
 - **Link-only invites.** Direct invite by address (Path B), the self-invite shortcut and the self-fill ("max out") flow are not offered; the Invite button opens the link screen directly.
 - **Team wallets hidden from public views.** The participants list, graph and Details modal (participants table, event log, per-tier stats) are built from `toPublicEvents()` (`shared/src/lib/publicEvents.ts`): team wallets are dropped and their invitees shown as invited by Armada, exactly like direct launch-team placements. A disclosure under the Details participants table explains this; the wallets remain visible on-chain. The connected wallet's own position, eligibility and invite slots use the real graph.
+- **Details card and graph.** The Details card omits the projected sale-size line (the sale cannot expand). The network graph moves the Invited shell in where the hidden team wallet's shell would be, so Known and Invited sit at the usual spacing (`graphShellRadii`).
 - **Progress toward a $750K goal.** The progress bars run to the $1.8M maximum, with the tick at a UI-only funding goal (`FUNDING_GOAL`, $750K). FUNDED and LEFT measure toward the goal; FUNDED can pass 100% and LEFT is hidden once the goal is met. The contract's $250K minimum (refund threshold) is not shown on the main card; the Details card lists it beside the goal. On the `mainnet` and `medi` profiles the goal is the minimum, so their bars are unchanged.
 - **Stacking at Invited only.** An Invited address can receive up to 20 invites, each adding $10k of cap (up to $200k); the 21st reverts on-chain. A repeat Known or Team placement reverts.
 - **Allocation copy.** Allocation equals min(capped demand, sale size) under the relaunch's reserve model (`allocationMatchesDemand()`), so the allocation caveat reads "If total demand exceeds the $1.8M sale, you get a pro-rata share and the rest comes back to you", the "refund after allocation" FAQ item is hidden, and the below-minimum claim gate does not mention per-hop limits. The per-tier status tables label Invited by its $300K reserve and Known by "Remainder".
@@ -492,7 +493,7 @@ This uses the direct invite path (inviter pays gas, immediate on-chain recording
 
 Multiple inviters can invite the same address to the same hop. Each invite creates a new participation slot — the invitee's effective cap at that hop equals `invites_received × HOP_CAP[hop]`, and outgoing invite slots scale proportionally. The same inviter can also invite the same address more than once (e.g., via two separate links). All edges are recorded and visible in the graph.
 
-The UI does not block duplicate invites but shows a notice: "This address already has N slots at Hop-1. Your invite will add another slot, increasing their cap by $4,000." Once the address holds the hop's maximum slots (`maxInvitesReceived`; 1 at every hop on the relaunch) the admin app warns that the invite will revert instead.
+The UI does not block duplicate invites but shows a notice: "This address already has N slots at Hop-1. Your invite will add another slot, increasing their cap by $4,000." Once the address holds the hop's maximum slots (`maxInvitesReceived`; on the relaunch 1 for Known and the team wallet, 20 for Invited) the admin app warns that the invite will revert instead.
 
 ---
 

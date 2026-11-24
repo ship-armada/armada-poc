@@ -86,8 +86,6 @@ describe('mainnet profile', () => {
     expect(c.MAX_SEEDS).toBe(180)
   })
 
-  // WHY: Launch 1 and the medi testnet deployments run the floor/ceiling waterfall and pay no
-  // launch team at settlement; only the relaunch uses the reserve model and team payment.
   // WHY: the funding goal is a UI-only figure (the contract has none). Outside the relaunch it is the
   // minimum, so the Launch 1 and medi progress bars keep measuring toward their minimum as before.
   it('uses the minimum as the funding goal outside the relaunch', () => {
@@ -96,6 +94,8 @@ describe('mainnet profile', () => {
     }
   })
 
+  // WHY: Launch 1 and the medi testnet deployments run the floor/ceiling waterfall and pay no
+  // launch team at settlement; only the relaunch uses the reserve model and team payment.
   it('keeps the waterfall model and no team payment outside the relaunch', () => {
     for (const p of ['mainnet', 'medi'] as const) {
       expect(CONSTANTS_BY_PROFILE[p].ALLOCATION_MODEL).toBe('waterfall')

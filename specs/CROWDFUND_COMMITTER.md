@@ -155,7 +155,7 @@ Below the amount inputs, before the review step, show an estimated allocation:
 **Caveats (always displayed):**
 - "Estimate only" — demand changes between now and deadline
 - "Commitments are final" — no withdrawals before deadline
-- "3-week maximum lock" — USDC is locked until finalization + refund claim
+- "Maximum lock" — USDC is locked until finalization + refund claim. The deadline is 3 weeks from open and the launch team can extend it (only later, up to `MAX_WINDOW_DURATION` from open), so the copy should state the maximum, not just the base window
 
 ### Review and Confirm
 

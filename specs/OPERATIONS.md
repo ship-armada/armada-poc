@@ -19,7 +19,7 @@ Complete this table before deployment. Every address must be confirmed before an
 |---|---|---|---|---|
 | Deployer | Deploys the contract | `[TBD]` | EOA, preferably a Ledger (`DEPLOYER_LEDGER_ADDRESS`, see `docs/ledger-deploy.md`); otherwise a fresh single-use key. The pipeline signs as one account; it holds no role or ARM after the run | — |
 | Treasury | Receives net USDC proceeds + unsold/unclaimed ARM | `[TBD]` (from the governance manifest) | Contract: `ArmadaTreasuryGov`, deployed by the launch and controlled by governance through the timelock; not a wallet | — |
-| ROOT / Launch team | `addSeed()`, `launchTeamInvite()` | `[TBD]` | Safe multisig, every signer on a hardware wallet | 1-of-3 |
+| ROOT / Launch team | `addSeed()`, `launchTeamInvite()`, `extendWindow()` | `[TBD]` | Safe multisig, every signer on a hardware wallet | 1-of-3 |
 | Security Council | `cancel()` authority | `[TBD]` | Safe multisig | 2-of-3 |
 | Treasury Steward | Elected at deploy with the USDC steward budget; `proposeStewardSpend()` (GOVERNANCE.md §Treasury Steward) | `[TBD]` | Safe multisig | 2-of-3 |
 | ARM token contract | Source of preloaded ARM | `[TBD]` | — | — |
@@ -27,6 +27,7 @@ Complete this table before deployment. Every address must be confirmed before an
 
 **Key access rules (from CROWDFUND.md):**
 - `addSeed()` and `launchTeamInvite()`: ROOT only, days 1-21 only (the full commitment window; closes at `windowEnd`)
+- `extendWindow(newEnd)`: ROOT only, while the window is open; moves `windowEnd` and `launchTeamInviteEnd` later together, never beyond `windowStart + MAX_WINDOW_DURATION`
 - `cancel()`: Security Council only, pre-finalization only
 - `finalize()`, `withdrawUnallocatedArm()`: permissionless (anyone)
 - `claim(delegate)`, `claimRefund()`: permissionless (participant-initiated)
@@ -234,6 +235,16 @@ The launch-team window (days 1-21, the full commitment window) is the highest-ri
 | **On-chain confirmation** | `Invited(ROOT, invitee, fromHop+1, 0)` emitted; observer shows new node with dashed edge from ROOT |
 | **Fallback** | If placement was wrong: see failure scenario §9.2 (bad launch-team invite) |
 
+### Extending the commitment window
+
+| | |
+|---|---|
+| **Actor** | ROOT (launch team multisig) |
+| **Action** | Call `extendWindow(newEnd)` from the launch-team Safe: `npx hardhat cf-safe-extend --end <ISO 8601 UTC>` writes the Transaction Builder file and a summary for the signers (`docs/safe-launch-batches.md`). Send it as **its own Safe transaction**, never bundled with `addSeed()` / `launchTeamInvite()` calls: a bundle is all-or-nothing, so one row that has become invalid since simulation reverts the extension too |
+| **Preconditions** | The transaction must be **mined before `windowEnd`** (after that, extension is impossible and anyone may finalize, which on an under-minimum sale means permanent refund mode). Target execution at least 24 hours before `windowEnd`; `cf-safe-extend` warns inside that margin. The Safe executes its queue strictly by nonce, so execute or replace any earlier queued transaction (e.g. a seed batch) first, or it blocks the extension. `newEnd` is later than the current `windowEnd` and no later than `windowStart + MAX_WINDOW_DURATION`. Decision and rationale recorded in the decision log (§10). New deadline announced to participants |
+| **On-chain confirmation** | `WindowExtended(previousEnd, newEnd)` emitted; `windowEnd()` and `launchTeamInviteEnd()` both return `newEnd`; committer countdown shows the new deadline (it re-reads `windowEnd` on every poll); `evaluate-alerts` picks it up on its next run |
+| **Fallback** | An extension cannot be undone or shortened. If the new deadline was set too late, the window simply stays open longer; if it was set too early, extend again before it passes |
+
 ### Daily checks (days 1-21)
 
 Each day during the launch-team window, the operator should verify:
@@ -278,7 +289,7 @@ The launch-team window stays open until `windowEnd`, so ROOT can still add hop-0
 
 ### Pre-finalization go/no-go checkpoint
 
-After commitment deadline passes (day 21+), before calling `finalize()`:
+After commitment deadline passes (day 21+, or the extended deadline if `extendWindow()` was used), before calling `finalize()`:
 
 | Condition | Check | Owner |
 |---|---|---|

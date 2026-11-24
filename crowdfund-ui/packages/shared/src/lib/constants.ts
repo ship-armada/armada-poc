@@ -138,6 +138,7 @@ export const CROWDFUND_ABI_FRAGMENTS = [
   'event RefundClaimed(address indexed participant, uint256 usdcAmount)',
   'event InviteNonceRevoked(address indexed inviter, uint256 nonce)',
   'event UnallocatedArmWithdrawn(address indexed treasury, uint256 amount)',
+  'event WindowExtended(uint256 previousEnd, uint256 newEnd)',
   'function phase() view returns (uint8)',
   'function armLoaded() view returns (bool)',
   'function totalCommitted() view returns (uint256)',
@@ -147,6 +148,7 @@ export const CROWDFUND_ABI_FRAGMENTS = [
   'function windowStart() view returns (uint256)',
   'function windowEnd() view returns (uint256)',
   'function launchTeamInviteEnd() view returns (uint256)',
+  'function MAX_WINDOW_DURATION() view returns (uint256)',
   'function finalizedAt() view returns (uint256)',
   'function claimDeadline() view returns (uint256)',
   'function refundMode() view returns (bool)',
@@ -184,6 +186,7 @@ export const CROWDFUND_ABI_FRAGMENTS = [
   'function cancel() external',
   'function withdrawUnallocatedArm() external',
   'function launchTeamInvite(address invitee, uint8 fromHop) external',
+  'function extendWindow(uint256 newEnd) external',
 ] as const
 
 /** ERC-20 ABI fragments for USDC approval and balance checks */

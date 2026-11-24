@@ -1,10 +1,11 @@
 # Launch-team and security-council actions from a Safe
 
 On mainnet the launch team is a 1-of-3 Safe and the security council a 2-of-3 Safe. The crowdfund admin app
-signs with a browser wallet, so it cannot act for them. Instead, two Hardhat tasks write files
+signs with a browser wallet, so it cannot act for them. Instead, three Hardhat tasks write files
 for the Safe app's **Transaction Builder**:
 
 - `cf-safe-batch`: seeds and launch-team invites, from a CSV
+- `cf-safe-extend`: the launch team's window extension, `extendWindow(newEnd)`
 - `cf-safe-cancel`: the security council's emergency `cancel()`
 
 Each file is **one Safe transaction**. A file with several calls is executed by the Safe as one
@@ -41,6 +42,7 @@ address,hop,label
 ```bash
 npx hardhat cf-safe-batch --file launch.csv --network mainnetHub          # write batches
 npx hardhat cf-safe-batch --file launch.csv --network mainnetHub --check  # validate only
+npx hardhat cf-safe-extend --end 2026-12-01T16:00:00Z --network mainnetHub  # extendWindow() file
 npx hardhat cf-safe-cancel --network mainnetHub                           # cancel() file
 ```
 
@@ -89,6 +91,20 @@ Rules:
 - A proposed Safe transaction is stored on Safe's public transaction service, so its
   addresses are visible before execution.
 
+## Extending the window
+
+`cf-safe-extend --end <ISO 8601 UTC>` writes `extend.json` (one call, `extendWindow(newEnd)`) and a
+`summary.md` with the current, new and maximum end. `--end` must be canonical UTC with an explicit
+`Z`, like `2026-12-01T16:00:00Z`. Before writing, the task checks that the sale is active, the window
+has not ended, the new end is later than the current one, and it is no later than
+`windowStart + MAX_WINDOW_DURATION`. With less than 24 hours left it warns.
+
+The Safe must **execute before the current deadline**. After it, `extendWindow()` reverts and anyone
+can finalize, so start signing well ahead (at least 24 hours before the deadline). Propose it as its
+own transaction, not combined with seed or invite calls, and clear any earlier queued transaction
+first: the queue executes by nonce. An extension cannot be undone or shortened. Procedure and
+decision-log rules: `specs/OPERATIONS.md` §4, Extending the commitment window.
+
 ## Emergency cancel
 
 `cf-safe-cancel` writes `cancel.json` for the security-council Safe. Prepare and check it
@@ -105,4 +121,6 @@ Rehearse with a Sepolia crowdfund whose launch team is a 1-of-3 Safe and securit
       and the decoded calls match `summary.md` (including `fromHop`).
 - [ ] Owner 1 executes with one signature; the seeds and invites appear on chain.
 - [ ] Re-running the same CSV refuses (already added) and writes nothing.
+- [ ] `cf-safe-extend` writes a file that imports without a checksum warning, shows `newEnd` as the
+      unix value in `summary.md`, and moves `windowEnd()` once executed.
 - [ ] `cf-safe-cancel` imports and simulates cleanly (execute only on a throwaway deploy).

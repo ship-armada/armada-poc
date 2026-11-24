@@ -44,6 +44,15 @@ them, all reachable from URL state:
   pre-validates the link and sale state (e.g. a cancelled or not-yet-open
   sale), and hands off to `InviteLinkFlowController` for the commitWithInvite
   path.
+- **`/refund`** — `RefundPage`: claim back USDC from the cancelled first sale
+  (Sale 1), served in pre-launch and live builds alike. Reads the refund from
+  that contract through its own minimal ABI (`lib/refundOnlyClaim.ts`, no
+  indexer) and sends `claimRefund()` to it. The target is `config/refundOnly.ts`:
+  built in on mainnet, `VITE_REFUND_ONLY_CROWDFUND_ADDRESS` on Sepolia/local
+  rehearsals. Linked from the pre-launch countdown (`PrelaunchRefundNotice`, shown
+  to everyone) and, on the live app, from a banner shown only to wallets with a
+  refund waiting (`EligibleRefundNotice`). Temporary: remove once the Sale 1
+  balance is 0 (TODO in `config/refundOnly.ts`).
 
 ## Development
 
@@ -74,11 +83,12 @@ The committer's `getDeploymentFileName()` resolves to `instances/<name>/sepolia/
 ### Pre-launch mode
 
 Set `VITE_PRELAUNCH_OPENS_AT=<ISO 8601 UTC, e.g. 2026-10-08T17:00:00Z>` to build a countdown-only
-committer for publishing the URL before the contracts exist. `main.tsx` then
-renders `PreLaunchApp` on every path instead of the routes: the hero's pre-open
+committer for publishing the URL before the contracts exist. `CommitterRoutes`
+then renders `PreLaunchApp` on every path except `/refund`: the hero's pre-open
 state (OPENS SOON, the opening countdown, an empty network) from that fixed
 time, with no wallet button or sale actions and no manifest / RPC / indexer
-reads. Once the time passes the page reloads every minute so open tabs pick up
+reads (only the separate `/refund` page connects a wallet and reads the chain,
+which is why mainnet requires `VITE_HUB_RPC` in this mode too). Once the time passes the page reloads every minute so open tabs pick up
 the live deploy. `validateEnv` drops the indexer and expected-address
 requirements in this mode and rejects a malformed value (whole seconds, explicit
 `Z`). Use the same value as the deploy's `CROWDFUND_OPEN_TIME` — it becomes the
@@ -144,11 +154,12 @@ check), `windowClock.ts` (chain-time → device-clock countdowns),
 
 ## URL Routing
 
-Routes (react-router-dom, see `src/main.tsx`):
+Routes (react-router-dom, see `src/CommitterRoutes.tsx`):
 - `/` — main app. `?view=myposition` opens Your position; `?view=claim` opens
   the Claim modal; `?view=observe` opens the Details modal.
 - `/observe` — same app with the Details modal open.
 - `/invite?inviter=...&fromHop=...&nonce=...&deadline=...&sig=...` — invite link redemption landing (`InviteLandingPage.tsx`).
+- `/refund` — first-sale refund claim (`RefundPage.tsx`). The only route a pre-launch build serves besides the countdown.
 
 ## Contract Write Functions
 
@@ -160,3 +171,4 @@ Routes (react-router-dom, see `src/main.tsx`):
 | `revokeInviteNonce(nonce)` | Invite slots | On-chain revocation of a generated link. |
 | `claim(delegate)` | Claim modal | ARM claim with mandatory delegation. |
 | `claimRefund()` | Claim modal | USDC refund claim. |
+| `claimRefund()` on the first-sale contract | `/refund` | First-sale (Sale 1) refund, via `lib/refundOnlyClaim.ts`'s own ABI. |

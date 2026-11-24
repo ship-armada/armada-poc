@@ -1,5 +1,5 @@
 // ABOUTME: Pre-launch committer — the crowdfund hero's pre-open state driven by a fixed opening time.
-// ABOUTME: Published before the contracts exist: no wallet, manifest, RPC or indexer; reloads once the opening passes.
+// ABOUTME: Published before the contracts exist: no wallet, manifest, RPC or indexer; reloads once the opening passes. Links to /refund for first-sale refunds.
 
 import { useEffect, useMemo } from 'react'
 import {
@@ -13,6 +13,7 @@ import { PRELAUNCH_RELOAD_CHECK_MS, prelaunchShouldReload } from '@/config/prela
 import { formatSaleStatusLabel } from '@/lib/saleStatus'
 import { PageNav } from '@/appNav'
 import { PROJECT_URL } from '@/config/socials'
+import { PrelaunchRefundNotice } from '@/components/RefundNotice'
 
 function reloadPage() {
   window.location.reload()
@@ -23,7 +24,8 @@ function reloadPage() {
  * OPENS SOON, the Progress "OPENS IN …" countdown, the PreOpenCard and an
  * empty network — but from the announced opening time instead of the chain's
  * `windowStart`. Every action surface is off: no wallet button, Participate,
- * Details, Your position or Claim.
+ * Details, Your position or Claim. The one link out is the first-sale refund
+ * line (PrelaunchRefundNotice), which goes to the separate /refund page.
  *
  * The countdown runs on the device clock (there is no chain time to anchor
  * to). Once the opening passes, the page reloads every
@@ -81,6 +83,7 @@ export function PreLaunchApp({
         myPositionData={{ status: 'disconnected' }}
         participationEnabled={false}
       />
+      <PrelaunchRefundNotice />
     </AppShell>
   )
 }

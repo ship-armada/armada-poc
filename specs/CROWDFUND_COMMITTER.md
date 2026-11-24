@@ -786,16 +786,19 @@ The action panel is lightweight — it's a form with a few inputs and transactio
 
 ## URL Routing
 
-The app has two entry points:
+The app has three entry points:
 
 | Route | View | Notes |
 |---|---|---|
 | `/` | Main app (observer + action panel) | Default. Shows observer + Commit/Invite/Claim tabs. |
 | `/invite?inviter=…&fromHop=…&nonce=…&deadline=…&sig=…` | Invite redemption landing | Invitee-facing. Shows invite details, connect wallet, commit. After success, redirects to main app. |
+| `/refund` | First-sale refund | Claims back USDC from the cancelled first crowdfund (Sale 1) via its `claimRefund()`. Served in pre-launch and live builds; the only non-countdown route in pre-launch mode. |
 
 The `/invite` route renders `InviteLinkRedemption.tsx` — a focused single-purpose page. It does NOT show the full observer or action panel until the invite is accepted. After acceptance, the invitee is redirected to `/` where they see their new position in the observer and can proceed to commit.
 
 If the invite link is invalid, expired, or already redeemed, the landing page shows the appropriate error with a link to the main app.
+
+The `/refund` page exists because the relaunch replaces the first sale's frontend at the same URL while that contract still holds unclaimed refunds (which never expire). It reads the wallet's refund straight from the first-sale contract (no indexer) and sends `claimRefund()` to it. The mainnet address is built in, not configured. The pre-launch countdown links to it for everyone; the live app shows a banner only to wallets with a refund waiting. Details in the committer's `CLAUDE.md`.
 
 ---
 

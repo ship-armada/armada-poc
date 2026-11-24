@@ -42,6 +42,7 @@ describe('validateEnv', () => {
         PROD: true,
         VITE_NETWORK: 'mainnet',
         VITE_WALLETCONNECT_PROJECT_ID: 'wc-id',
+        VITE_HUB_RPC: 'https://rpc.example',
         VITE_CROWDFUND_INDEXER_URL: 'https://indexer.example',
         VITE_CROWDFUND_PROFILE: 'mainnet',
         VITE_DEPLOYMENT_INSTANCE: 'launch1',
@@ -72,6 +73,7 @@ describe('validateEnv', () => {
         PROD: true,
         VITE_NETWORK: 'mainnet',
         VITE_WALLETCONNECT_PROJECT_ID: 'wc-id',
+        VITE_HUB_RPC: 'https://rpc.example',
         VITE_CROWDFUND_INDEXER_URL: 'https://indexer.example',
         VITE_CROWDFUND_PROFILE: 'relaunch',
         VITE_DEPLOYMENT_INSTANCE: 'relaunch1',
@@ -96,6 +98,7 @@ describe('validateEnv', () => {
         PROD: true,
         VITE_NETWORK: 'mainnet',
         VITE_WALLETCONNECT_PROJECT_ID: 'wc-id',
+        VITE_HUB_RPC: 'https://rpc.example',
         VITE_CROWDFUND_INDEXER_URL: 'https://indexer.example',
         VITE_EXPECTED_CROWDFUND_ADDRESS: '0x52908400098527886E0F7030069857D2E4169EE7',
       }),
@@ -139,6 +142,7 @@ describe('validateEnv', () => {
         PROD: true,
         VITE_NETWORK: 'mainnet',
         VITE_WALLETCONNECT_PROJECT_ID: 'wc-id',
+        VITE_HUB_RPC: 'https://rpc.example',
         VITE_CROWDFUND_INDEXER_URL: 'https://indexer.example',
         VITE_EXPECTED_CROWDFUND_ADDRESS: '0x52908400098527886e0f7030069857d2e4169ee7',
       }),
@@ -199,6 +203,7 @@ describe('validateEnv', () => {
       PROD: true,
       VITE_NETWORK: 'mainnet',
       VITE_WALLETCONNECT_PROJECT_ID: 'wc-id',
+      VITE_HUB_RPC: 'https://rpc.example',
       VITE_CROWDFUND_PROFILE: 'mainnet',
       VITE_PRELAUNCH_OPENS_AT: '2026-10-08T17:00:00Z',
     }
@@ -255,5 +260,78 @@ describe('validateEnv', () => {
       // VITE_NETWORK, WalletConnect id, and indexer url are all missing.
       expect(result.errors.length).toBeGreaterThanOrEqual(3)
     }
+  })
+
+  describe('first-sale refunds (VITE_REFUND_ONLY_CROWDFUND_ADDRESS, VITE_HUB_RPC)', () => {
+    const MAINNET_LIVE = {
+      PROD: true,
+      VITE_NETWORK: 'mainnet',
+      VITE_WALLETCONNECT_PROJECT_ID: 'wc-id',
+      VITE_HUB_RPC: 'https://rpc.example',
+      VITE_CROWDFUND_INDEXER_URL: 'https://indexer.example',
+      VITE_CROWDFUND_PROFILE: 'relaunch',
+      VITE_EXPECTED_CROWDFUND_ADDRESS: '0x52908400098527886E0F7030069857D2E4169EE7',
+    }
+    const SALE1 = '0xB4b0BBac50Df6c9479180AA788dAd8f88D520163'
+    const LOCAL_TARGET = '0x5FbDB2315678afecb367f032d93F642f64180aa3'
+
+    // WHY: mainnet builds always offer first-sale refunds (the /refund page reads the chain, even
+    // in pre-launch mode), so they need a dedicated RPC rather than the public fallback.
+    it('requires VITE_HUB_RPC on a mainnet build, live or pre-launch', () => {
+      for (const env of [
+        { ...MAINNET_LIVE, VITE_HUB_RPC: undefined },
+        {
+          PROD: true,
+          VITE_NETWORK: 'mainnet',
+          VITE_WALLETCONNECT_PROJECT_ID: 'wc-id',
+          VITE_PRELAUNCH_OPENS_AT: '2026-12-01T17:00:00Z',
+        },
+      ]) {
+        const result = validateEnv(env)
+        expect(result.ok).toBe(false)
+        if (!result.ok) expect(result.errors.some((e) => e.includes('VITE_HUB_RPC'))).toBe(true)
+      }
+    })
+
+    // WHY: on mainnet the refund target is the built-in Sale 1 address; a Netlify setting that
+    // tries to change it is a misconfiguration (or an attack), not an override.
+    it('rejects VITE_REFUND_ONLY_CROWDFUND_ADDRESS on a mainnet build', () => {
+      const result = validateEnv({ ...MAINNET_LIVE, VITE_REFUND_ONLY_CROWDFUND_ADDRESS: LOCAL_TARGET })
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.errors.some((e) => e.includes('VITE_REFUND_ONLY_CROWDFUND_ADDRESS'))).toBe(true)
+      }
+    })
+
+    // WHY: the live app pointed at the cancelled first sale would invite commits into a dead contract.
+    it('rejects a mainnet build whose expected crowdfund is the first-sale contract', () => {
+      const result = validateEnv({ ...MAINNET_LIVE, VITE_EXPECTED_CROWDFUND_ADDRESS: SALE1.toLowerCase() })
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.errors.some((e) => e.includes('first-sale'))).toBe(true)
+    })
+
+    it('accepts a valid override on a sepolia build', () => {
+      expect(validateEnv({ ...COMPLETE_PROD, VITE_REFUND_ONLY_CROWDFUND_ADDRESS: LOCAL_TARGET })).toEqual({ ok: true })
+    })
+
+    // WHY: a typo would silently turn the rehearsal's refund panel off.
+    it('rejects a malformed override', () => {
+      const result = validateEnv({ ...COMPLETE_PROD, VITE_REFUND_ONLY_CROWDFUND_ADDRESS: '0x1234' })
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.errors.some((e) => e.includes('VITE_REFUND_ONLY_CROWDFUND_ADDRESS'))).toBe(true)
+      }
+    })
+
+    // WHY: the refund target must be the old sale, never the one being committed to.
+    it('rejects an override equal to the expected crowdfund address', () => {
+      const result = validateEnv({
+        ...COMPLETE_PROD,
+        VITE_EXPECTED_CROWDFUND_ADDRESS: LOCAL_TARGET,
+        VITE_REFUND_ONLY_CROWDFUND_ADDRESS: LOCAL_TARGET.toLowerCase(),
+      })
+      expect(result.ok).toBe(false)
+      if (!result.ok) expect(result.errors.some((e) => e.includes('same as'))).toBe(true)
+    })
   })
 })

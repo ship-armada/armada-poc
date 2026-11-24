@@ -45,6 +45,7 @@ import { useAllowance } from '@/hooks/useAllowance'
 import { useInviteLinks } from '@/hooks/useInviteLinks'
 import { ParticipateFlowV2 } from '@/components/ParticipateFlowV2'
 import { ClaimFlowV2 } from '@/components/ClaimFlowV2'
+import { EligibleRefundNotice } from '@/components/RefundNotice'
 import { ObserveDetailsModal } from '@/components/ObserveDetailsModal'
 import { CommitterMobileMenu } from '@/components/CommitterMobileMenu'
 import { CommitterMobileWallet } from '@/components/CommitterMobileWallet'
@@ -1034,6 +1035,7 @@ export function App() {
             etherscanBaseUrl={getExplorerUrl()}
           />
         </AppShell>
+        <EligibleRefundNotice walletAddress={wallet.address} activeCrowdfundAddress={crowdfundAddress} />
         {participateModal}
         {claimModal}
         {detailsModal}
@@ -1058,6 +1060,7 @@ export function App() {
       </div>
      </ErrorBoundary>
     </AppShell>
+    <EligibleRefundNotice walletAddress={wallet.address} activeCrowdfundAddress={crowdfundAddress} />
     {participateModal}
     {claimModal}
     </>

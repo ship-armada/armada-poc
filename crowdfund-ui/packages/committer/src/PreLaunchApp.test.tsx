@@ -4,6 +4,12 @@
 
 import { act, render, screen } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { MemoryRouter } from 'react-router-dom'
+
+// First-sale refund address: off (null) by default, as on a local build without the override.
+const refund = vi.hoisted(() => ({ address: null as string | null }))
+vi.mock('@/config/refundOnly', () => ({ getRefundOnlyCrowdfundAddress: () => refund.address }))
+
 import { PreLaunchApp } from './PreLaunchApp'
 import { PRELAUNCH_RELOAD_CHECK_MS } from '@/config/prelaunch'
 import { CROWDFUND_INFO_URL, PROJECT_URL } from '@/config/socials'
@@ -62,6 +68,21 @@ describe('PreLaunchApp', () => {
     const about = screen.getAllByRole('link', { name: 'About the crowdfund' })
     expect(about).toHaveLength(2)
     for (const link of about) expect(link).toHaveAttribute('href', CROWDFUND_INFO_URL)
+  })
+
+  // WHY: the old frontend is taken down at switch-over, so the countdown must point first-sale
+  // committers at /refund, without adding a wallet button to the page itself.
+  it('links to the first-sale refund page when the network has one, with no wallet button', () => {
+    refund.address = '0xB4b0BBac50Df6c9479180AA788dAd8f88D520163'
+    vi.useFakeTimers({ now: (OPENS_AT - 3600) * 1000 })
+    render(
+      <MemoryRouter>
+        <PreLaunchApp opensAtUnix={OPENS_AT} onReload={vi.fn()} />
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('link', { name: /claim your refund/i })).toHaveAttribute('href', '/refund')
+    expect(screen.queryByRole('button', { name: /connect wallet/i })).toBeNull()
+    refund.address = null
   })
 
   it('shows no demo participants or invite slots', () => {

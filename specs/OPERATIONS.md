@@ -184,7 +184,11 @@ If the site is serving the pre-launch countdown (`VITE_PRELAUNCH_OPENS_AT` set),
 this step is also the switch-over to the live committer: unset
 `VITE_PRELAUNCH_OPENS_AT` and set `DEPLOYMENT_INSTANCE`, `NETWORK=mainnet` and
 `VITE_CROWDFUND_INDEXER_URL` (plus `VITE_HUB_RPC`) in the same change. The build
-refuses to run with both the pre-launch var and the manifest vars set. Do this
+refuses to run with both the pre-launch var and the manifest vars set.
+`VITE_HUB_RPC` is required on mainnet in pre-launch mode too: the countdown links
+first-sale (Sale 1) committers to `/refund`, which reads the chain. That page
+stays available after the switch-over, so unclaimed first-sale refunds remain
+claimable through the URL throughout. Do this
 before `openTimestamp` so the live app's chain-read countdown can be checked
 against the announced time; pre-launch tabs reload to the live app once the
 opening passes.

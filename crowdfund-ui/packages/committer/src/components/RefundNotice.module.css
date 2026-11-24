@@ -1,0 +1,66 @@
+/* ABOUTME: First-sale refund notice — a pill floating over the hero, in the open band between the header and the graph on desktop. */
+/* ABOUTME: Brand-gradient border, lavender-tinted fill and soft glow (the Participate button's gradient) so it reads at a glance. */
+/* ABOUTME: On the mobile layout the header is in-flow, so the pill sits at the bottom of the viewport instead. */
+
+.notice {
+  position: fixed;
+  /* Desktop: the hero's cards sit in the bottom corners and the graph in the middle, so the open
+     band between the fixed header (24px + 56px) and the graph is the prominent spot. Scales with
+     the viewport height, but never closer than 32px to the header or lower than 220px. */
+  top: clamp(calc(24px + 56px + 32px), 15vh, 220px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: var(--primitives-spacing-4);
+  max-width: calc(100vw - 2 * var(--primitives-spacing-6));
+  box-sizing: border-box;
+  padding: var(--primitives-spacing-3) var(--primitives-spacing-6);
+  /* Gradient border: the fill is clipped to the padding box and the brand gradient (the
+     Participate button's amber → rose → lavender) shows through the transparent border. */
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background:
+    linear-gradient(
+        color-mix(in srgb, var(--semantic-color-brand-lavender) 14%, var(--semantic-color-surface-default)),
+        color-mix(in srgb, var(--semantic-color-brand-lavender) 14%, var(--semantic-color-surface-default))
+      )
+      padding-box,
+    linear-gradient(
+        to right,
+        var(--semantic-component-button-gradient-default-from) 0%,
+        var(--semantic-component-button-gradient-default-mid) 52%,
+        var(--semantic-component-button-gradient-default-to) 100%
+      )
+      border-box;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--semantic-color-brand-lavender) 8%, transparent);
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+}
+
+.text {
+  color: var(--semantic-color-text-primary);
+}
+
+.link {
+  flex-shrink: 0;
+  font-weight: var(--primitives-fontWeight-semibold);
+  color: var(--semantic-color-brand-lavender);
+  text-decoration: none;
+}
+
+.link:hover {
+  opacity: 0.8;
+}
+
+@media (max-width: 767px) {
+  .notice {
+    top: auto;
+    bottom: calc(var(--primitives-spacing-4) + env(safe-area-inset-bottom));
+    flex-wrap: wrap;
+    justify-content: center;
+    border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+    text-align: center;
+  }
+}

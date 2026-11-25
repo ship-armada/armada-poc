@@ -1,4 +1,4 @@
-// ABOUTME: Tests for ExtendWindowPanel — deadline display, UTC input, presets, validation, and submission.
+// ABOUTME: Tests for ExtendWindowPanel — deadline display, UTC input, the +5-day preset, validation, and submission.
 // ABOUTME: Verifies the button only enables for a valid new end and calls extendWindow(newEnd).
 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
@@ -81,15 +81,41 @@ describe('ExtendWindowForm', () => {
     expect(extendButton()).toHaveTextContent('Extend to 2026-12-10 12:30 UTC')
   })
 
-  // WHY: presets count from the current end and never exceed the maximum the contract accepts.
-  it('fills presets from the current end, capped at the maximum', () => {
+  // WHY: the operational rule is +5 days per extension, so that is the only preset; other steps
+  // need the date input and draw a warning.
+  it('offers a single +5 days preset counted from the current end', () => {
+    render(<ExtendWindowForm {...props} maxWindowDuration={14 * DAY} />)
+    expect(screen.queryByRole('button', { name: '+1 day' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '+3 days' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Maximum' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '+5 days' }))
+    expect(input().value).toBe('2026-12-13T16:00')
+    expect(screen.queryByText(/operational rule/)).toBeNull()
+  })
+
+  // WHY: a current end with seconds can't be matched exactly by the minute-precision input; the
+  // preset must still count as the +5-day step rather than warn.
+  it('shows no step warning for the +5 days preset when the current end has seconds', () => {
+    render(<ExtendWindowForm {...props} windowEnd={props.windowEnd + 23} maxWindowDuration={14 * DAY} />)
+    fireEvent.click(screen.getByRole('button', { name: '+5 days' }))
+    expect(input().value).toBe('2026-12-13T16:00')
+    expect(screen.queryByText(/operational rule/)).toBeNull()
+  })
+
+  // WHY: the preset must never fill an end the contract would reject.
+  it('caps the +5 days preset at the maximum end', () => {
     render(<ExtendWindowForm {...props} maxWindowDuration={8 * DAY} />)
-    fireEvent.click(screen.getByRole('button', { name: '+1 day' }))
+    fireEvent.click(screen.getByRole('button', { name: '+5 days' }))
     expect(input().value).toBe('2026-12-09T16:00')
-    fireEvent.click(screen.getByRole('button', { name: '+3 days' }))
-    expect(input().value).toBe('2026-12-09T16:00') // +3 days would pass the 8-day maximum
-    fireEvent.click(screen.getByRole('button', { name: 'Maximum' }))
-    expect(input().value).toBe('2026-12-09T16:00')
+  })
+
+  // WHY: the contract allows any step up to the maximum, so an off-rule end stays submittable, but
+  // the operator is told it breaks the +5-day rule, as cf-safe-extend does on the Safe path.
+  it('warns, without blocking, when the new end is not a +5-day step', () => {
+    render(<ExtendWindowForm {...props} maxWindowDuration={14 * DAY} />)
+    fireEvent.change(input(), { target: { value: '2026-12-10T16:00' } })
+    expect(screen.getByText(/2 days after the current end; the operational rule is \+5 days/)).toBeInTheDocument()
+    expect(extendButton()).not.toBeDisabled()
   })
 
   // WHY: with under 24h of chain time left the transaction may land too late, which can't be retried.

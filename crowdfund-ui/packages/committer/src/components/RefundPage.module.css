@@ -1,0 +1,101 @@
+/* ABOUTME: Layout for the /refund page — logo, a single claim card and a "Back to the crowdfund" footer. */
+/* ABOUTME: Same page frame as the /invite landing page; type scale matches the Claim modal (2xl title, base body). */
+
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--semantic-color-surface-bg);
+  padding: var(--primitives-spacing-16) var(--primitives-spacing-6);
+  box-sizing: border-box;
+}
+
+.logo {
+  flex-shrink: 0;
+  margin-bottom: var(--primitives-spacing-12);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--primitives-spacing-5);
+  width: 100%;
+  max-width: 480px;
+  box-sizing: border-box;
+  background: var(--semantic-color-surface-default);
+  border: 1px solid var(--semantic-color-border-lavender);
+  border-radius: calc(var(--semantic-borderRadius-modal) * 1px);
+  padding: var(--primitives-spacing-8);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-2xl) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+}
+
+.intro,
+.body {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  line-height: 1.5;
+  color: var(--semantic-color-text-muted);
+}
+
+.amountBlock {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--primitives-spacing-2);
+}
+
+.amountLabel {
+  flex-basis: 100%;
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+.amount {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-3xl) * 1px);
+  font-weight: var(--primitives-fontWeight-medium);
+  color: var(--semantic-color-text-primary);
+}
+
+.amountUnit {
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-md) * 1px);
+  color: var(--semantic-color-text-muted);
+}
+
+.success {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-lg) * 1px);
+  color: var(--semantic-color-text-primary);
+}
+
+.error {
+  margin: 0;
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-status-error);
+}
+
+.txLink {
+  align-self: center;
+  font-family: var(--primitives-fontFamily-ui);
+  font-size: calc(var(--primitives-fontSize-base) * 1px);
+  color: var(--semantic-color-brand-lavender);
+}
+
+.footer {
+  margin-top: var(--primitives-spacing-10);
+}

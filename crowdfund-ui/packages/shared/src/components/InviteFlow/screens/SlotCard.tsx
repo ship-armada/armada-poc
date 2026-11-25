@@ -13,8 +13,9 @@ import {
   sanitizeAddressInput,
   tryGetChecksumAddress,
 } from '../../../lib/addressInput'
-import { INVITE_METHOD_PICKER_UX } from '../../../lib/inviteUx'
+import { DIRECT_INVITES_ENABLED, INVITE_METHOD_PICKER_UX } from '../../../lib/inviteUx'
 import { MOBILE_LAYOUT_MAX_WIDTH_PX } from '../../../lib/viewportBreakpoints'
+import { hopLabel } from '../../../lib/format'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -127,9 +128,9 @@ function formatJoinedOn(date: Date): string {
 }
 
 const INVITEE_HOP_META: Record<0 | 1 | 2, string> = {
-  0: 'Hop-0',
-  1: 'Hop-1',
-  2: 'Hop-2',
+  0: hopLabel(0),
+  1: hopLabel(1),
+  2: hopLabel(2),
 }
 
 export function truncateAddress(addr: string): string {
@@ -428,13 +429,15 @@ export default function SlotCard({
                   showIcon={false}
                   onClick={() => toggleExpand('link')}
                 />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  label="Invite onchain"
-                  showIcon={false}
-                  onClick={() => toggleExpand('onchain')}
-                />
+                {DIRECT_INVITES_ENABLED && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    label="Invite onchain"
+                    showIcon={false}
+                    onClick={() => toggleExpand('onchain')}
+                  />
+                )}
               </div>
             ))}
 
@@ -558,7 +561,7 @@ export default function SlotCard({
       )}
 
       {/* ── Expanded: invite onchain ── */}
-      {!useMethodPicker && slot.status === 'empty' && expandedAction === 'onchain' && (
+      {DIRECT_INVITES_ENABLED && !useMethodPicker && slot.status === 'empty' && expandedAction === 'onchain' && (
         <div className={styles.expandedSection}>
           <div className={styles.inputWrapper}>
             <input

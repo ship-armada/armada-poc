@@ -4,10 +4,14 @@
 import { ExclamationCircleIcon } from '@heroicons/react/24/outline'
 import { Button } from '@armada/ui'
 import styles from './Step1WalletNotWhitelisted.module.css'
+import { FlowChrome } from '../FlowChrome'
 
 interface Step1WalletNotWhitelistedProps {
   address: string
   onSelectAnother: () => void
+  /** Closes the participate flow. Renders the same corner X as the other flow screens.
+   *  Deviation from the mockup port, which had no close control on this screen. */
+  onClose?: () => void
 }
 
 // Local mirror of the mockup's `truncateWalletAddress` helper (em-dash variant).
@@ -22,11 +26,15 @@ function truncateWalletAddress(address: string): string {
 export default function Step1WalletNotWhitelisted({
   address,
   onSelectAnother,
+  onClose,
 }: Step1WalletNotWhitelistedProps) {
   const displayAddress = truncateWalletAddress(address)
 
   return (
     <div className={styles.shell} data-flow-shell>
+      {onClose ? (
+        <FlowChrome variant="overlay" showBack={false} onClose={onClose} closeAriaLabel="Close participate flow" />
+      ) : null}
       <div className={styles.content}>
         <ExclamationCircleIcon className={styles.icon} aria-hidden />
         <h2 className={styles.title}>Address not whitelisted</h2>

@@ -21,6 +21,7 @@ import {
   type CrowdfundInviteSlotSection,
   type ReceiptLogLike,
   type SlotCardEnsResult,
+  hopTagLabel,
 } from '@armada/crowdfund-shared'
 import type { HopPosition } from '@/hooks/useEligibility'
 import type { UseInviteLinksResult } from '@/hooks/useInviteLinks'
@@ -36,7 +37,7 @@ export interface UseInviteSlotsResult {
   empty: boolean
 }
 
-const HOP_LABELS = ['HOP-0', 'HOP-1', 'HOP-2'] as const
+const HOP_LABELS = [hopTagLabel(0), hopTagLabel(1), hopTagLabel(2)] as const
 const HOP_DOT_KEYS = ['seed', 'hop-1', 'hop-2'] as const
 
 /** Map an `HopPosition` plus its slot UI to one `CrowdfundInviteSlotSection`.

@@ -10,6 +10,7 @@ import type { ParticipateStepBarProps } from '../participateFlowSteps'
 import { WhatHappensNextSlider } from './WhatHappensNextSlider'
 import { UsefulLinks } from '../../UsefulLinks/UsefulLinks'
 import { MaxOutBanner, type Step2MaxOutOption } from './Step2Commit'
+import { tierWord } from '../../../lib/format'
 
 export interface Step5ConfirmationProps extends ParticipateStepBarProps {
   /** When false (e.g. Hop-2 with no invite capacity), hide Invite and promote View position. */
@@ -125,7 +126,7 @@ export default function Step5Confirmation({
       : 'Commit successful'
 
   const subline = maxedOut
-    ? 'You’re already fully committed for this hop. Below, find useful information for the next steps.'
+    ? `You’re already fully committed for this ${tierWord()}. Below, find useful information for the next steps.`
     : isAdditionalCommit
       ? 'Welcome back, sailor. Below, find useful information for the next steps.'
       : 'Welcome on board, sailor. Below, find useful information for the next steps.'

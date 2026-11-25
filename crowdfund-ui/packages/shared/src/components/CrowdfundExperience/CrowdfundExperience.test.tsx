@@ -56,6 +56,22 @@ function readyPosition(committedUsdc: bigint): CrowdfundExperienceMyPositionData
   }
 }
 
+/** A relaunch team inviter wallet: a hop-1 position with a $0 cap and invite slots. */
+function inviteOnlyPosition(): CrowdfundExperienceMyPositionData {
+  return {
+    status: 'ready',
+    walletAddress: WALLET,
+    walletDisplay: '0xaaaa…aaaa',
+    hop: 1,
+    committedUsdc: 0n,
+    capUsdc: 0n,
+    armAllocation: 0n,
+    positions: [
+      { hop: 1, committed: 0n, cap: 0n, invitesReceived: 1, invitesAvailable: 100, invitesUsed: 0 },
+    ],
+  }
+}
+
 function renderMyPosition(myPositionData: CrowdfundExperienceMyPositionData) {
   render(
     <CrowdfundExperience
@@ -84,11 +100,34 @@ describe('CrowdfundExperience My Position participate CTAs', () => {
   })
 })
 
+// WHY: a $0-cap (invite-only) wallet cannot commit, so offering "Participate" would lead to a dead
+// commit box. Its only action is issuing invites.
+describe('CrowdfundExperience My Position for an invite-only wallet', () => {
+  it('shows neither "Participate" nor "Commit again"', () => {
+    renderMyPosition(inviteOnlyPosition())
+    const card = within(screen.getByRole('region', { name: 'Your position' }))
+    expect(card.queryByRole('button', { name: /Participate/ })).toBeNull()
+    expect(card.queryByRole('button', { name: /Commit again/ })).toBeNull()
+  })
+})
+
 describe('CrowdfundExperience Your position fill bar', () => {
-  it('captions the fill as a share of the hop cap', () => {
+  // WHY: the bar is the wallet's own cap; "hop cap" leaked hop wording onto the relaunch, which
+  // names tiers, and "your cap" reads correctly on every profile.
+  it('captions the fill as a share of your cap', () => {
     renderMyPosition(readyPosition(500n * 1_000_000n))
     const card = within(screen.getByRole('region', { name: 'Your position' }))
-    expect(card.getByText(/% of hop cap$/)).toBeTruthy()
+    expect(card.getByText(/% of your cap$/)).toBeTruthy()
+  })
+})
+
+// WHY: on the relaunch only the team wallet can invite, so for Backer and Community contributors an
+// invite card could only ever say "no invite slots". It is left out when the wallet has no slots.
+describe('CrowdfundExperience Your position invite card', () => {
+  it('is hidden when the wallet has no invite slots', () => {
+    renderMyPosition(readyPosition(500n * 1_000_000n))
+    expect(screen.queryByRole('region', { name: 'Whitelist a friend' })).toBeNull()
+    expect(screen.queryByText(/no invite slots available/)).toBeNull()
   })
 })
 
@@ -197,13 +236,14 @@ describe('CrowdfundExperience invite card on the Crowdfund view', { timeout: 20_
     committedUsdc: bigint,
     sections: CrowdfundInviteSlotSection[],
     participationEnabled = true,
+    myPositionData: CrowdfundExperienceMyPositionData = readyPosition(committedUsdc),
   ) {
     return (
       <CrowdfundExperience
         view={view}
         header={null}
         inviteSlotSections={sections}
-        myPositionData={readyPosition(committedUsdc)}
+        myPositionData={myPositionData}
         onParticipate={vi.fn()}
         participationEnabled={participationEnabled}
         liveData={{ status: 'ready', dashRows: [], totalCommitted: 0 }}
@@ -224,6 +264,14 @@ describe('CrowdfundExperience invite card on the Crowdfund view', { timeout: 20_
     render(experience('crowdfund', 0n, [inviteSection(0, 3)]))
     expect(participateCard()).toBeTruthy()
     expect(inviteCard()).toBeNull()
+  })
+
+  // WHY: an invite-only wallet never commits, so the "committed first" rule would leave it on a
+  // Participate card it cannot use. Its invite card takes the slot straight away.
+  it('shows the invite card for an invite-only wallet that has not committed', () => {
+    render(experience('crowdfund', 0n, [inviteSection(1, 100)], true, inviteOnlyPosition()))
+    expect(inviteCard()).toBeTruthy()
+    expect(participateCard()).toBeNull()
   })
 
   it('keeps the Participate card for a committed wallet with no invite slots', () => {

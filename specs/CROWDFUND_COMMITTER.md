@@ -8,6 +8,30 @@ Built as a standalone React app with wallet connection. The observer component i
 
 ---
 
+## Deployment Profiles
+
+The UI is built for one deployment at a time, selected by `VITE_CROWDFUND_PROFILE` (`crowdfund-ui/packages/shared/src/lib/constants.ts`). The profile supplies the sale constants, hop configs, tier labels and feature flags; production builds refuse an unknown name, and mainnet builds accept only `mainnet` or `relaunch`.
+
+| Profile | Deployment | Notes |
+|---|---|---|
+| `mainnet` (default) | Launch 1 crowdfund | Hop-0/1/2 with stacking, per-hop ceilings and a hop-2 floor. **The examples in this spec use these values** ($15k/$4k/$1k caps, $1M minimum). |
+| `medi` | medi Sepolia instances | Scaled-down Launch 1 shape. |
+| `relaunch` | Relaunch crowdfund | See below. |
+
+**Relaunch profile differences** (see CROWDFUND.md for the sale itself):
+
+- **Tiers, not hops.** Hop 0 is labelled "Backer" ($100k cap), hop 2 "Community" ($10k per invite); CROWDFUND.md keeps the team brief's "known" and "invited contributors". Hop 1 holds the one team inviter wallet ($0 cap), labelled "Team" where shown at all. Participant-facing copy says "tier" where other profiles say "hop" (`TIER_NOUN`, `tierWord()`), e.g. the Details filters, Your position and the participate flow.
+- **Team wallets are invite-only.** A wallet whose every position has a $0 cap gets no commit flow and no Participate buttons; its invite card takes the Participate card's place. Its invite list is the compact "Invite to Community · N invites left" row plus the links it has issued.
+- **Link-only invites.** Direct invite by address (Path B), the self-invite shortcut and the self-fill ("max out") flow are not offered; the Invite button opens the link screen directly.
+- **Team wallets hidden from public views.** The participants list, graph and Details modal (participants table, event log, per-tier stats) are built from `toPublicEvents()` (`shared/src/lib/publicEvents.ts`): team wallets are dropped and their invitees shown as invited by Armada, exactly like direct launch-team placements. A disclosure under the Details participants table explains this; the wallets remain visible on-chain. The connected wallet's own position, eligibility and invite slots use the real graph.
+- **Details card and graph.** The Details card omits the projected sale-size line (the sale cannot expand). The network graph moves the Community shell in where the hidden team wallet's shell would be, so Backer and Community sit at the usual spacing (`graphShellRadii`).
+- **Progress toward a $750K goal.** The progress bars run to the $1.8M maximum, with the tick at a UI-only funding goal (`FUNDING_GOAL`, $750K). FUNDED and LEFT measure toward the goal; FUNDED can pass 100% and LEFT is hidden once the goal is met. The contract's $250K minimum (refund threshold) is not shown on the main card; the Details card lists it beside the goal. On the `mainnet` and `medi` profiles the goal is the minimum, so their bars are unchanged.
+- **Stacking at Community only.** A Community address can receive up to 20 invites, each adding $10k of cap (up to $200k); the 21st reverts on-chain. A repeat Backer or Team placement reverts.
+- **Allocation copy.** Allocation equals min(capped demand, sale size) under the relaunch's reserve model (`allocationMatchesDemand()`), so the allocation caveat reads "If total demand exceeds the $1.8M sale, you get a pro-rata share and the rest comes back to you", the "refund after allocation" FAQ item is hidden, and the below-minimum claim gate does not mention per-hop limits. The per-tier status tables label Community by its $300K reserve and Backer by "Remainder".
+- **Zero-ARM refund claim.** A participant allocated 0 ARM with a refund (e.g. the team wallet, refunded in full under its $0 cap) sees a single "Claim your refund" screen that calls `claim(address(0))`, with no delegate step. This applies on every profile.
+
+---
+
 ## Architecture
 
 The app has two halves:
@@ -423,6 +447,8 @@ If a participant suspects their invite link has been leaked or compromised, the 
 
 ### Path B: Direct Invite Flow
 
+Not offered under the `relaunch` profile, where invites are link-only (see §Deployment Profiles).
+
 For inviters who already know the recipient's address:
 
 ```
@@ -449,6 +475,8 @@ For inviters who already know the recipient's address:
 
 ### Self-Invite Shortcut
 
+Not offered under the `relaunch` profile (see §Deployment Profiles).
+
 If the connected address has unused invite slots, offer a one-click self-invite option:
 
 ```
@@ -465,7 +493,7 @@ This uses the direct invite path (inviter pays gas, immediate on-chain recording
 
 Multiple inviters can invite the same address to the same hop. Each invite creates a new participation slot — the invitee's effective cap at that hop equals `invites_received × HOP_CAP[hop]`, and outgoing invite slots scale proportionally. The same inviter can also invite the same address more than once (e.g., via two separate links). All edges are recorded and visible in the graph.
 
-The UI does not block duplicate invites but shows a notice: "This address already has N slots at Hop-1. Your invite will add another slot, increasing their cap by $4,000."
+The UI does not block duplicate invites but shows a notice: "This address already has N slots at Hop-1. Your invite will add another slot, increasing their cap by $4,000." Once the address holds the hop's maximum slots (`maxInvitesReceived`; on the relaunch 1 for Backer and the team wallet, 20 for Community) the admin app warns that the invite will revert instead.
 
 ---
 
@@ -759,16 +787,19 @@ The action panel is lightweight — it's a form with a few inputs and transactio
 
 ## URL Routing
 
-The app has two entry points:
+The app has three entry points:
 
 | Route | View | Notes |
 |---|---|---|
 | `/` | Main app (observer + action panel) | Default. Shows observer + Commit/Invite/Claim tabs. |
 | `/invite?inviter=…&fromHop=…&nonce=…&deadline=…&sig=…` | Invite redemption landing | Invitee-facing. Shows invite details, connect wallet, commit. After success, redirects to main app. |
+| `/refund` | First-sale refund | Claims back USDC from the cancelled first crowdfund (Sale 1) via its `claimRefund()`. Served in pre-launch and live builds; the only non-countdown route in pre-launch mode. |
 
 The `/invite` route renders `InviteLinkRedemption.tsx` — a focused single-purpose page. It does NOT show the full observer or action panel until the invite is accepted. After acceptance, the invitee is redirected to `/` where they see their new position in the observer and can proceed to commit.
 
 If the invite link is invalid, expired, or already redeemed, the landing page shows the appropriate error with a link to the main app.
+
+The `/refund` page exists because the relaunch replaces the first sale's frontend at the same URL while that contract still holds unclaimed refunds (which never expire). It reads the wallet's refund straight from the first-sale contract (no indexer) and sends `claimRefund()` to it. The mainnet address is built in, not configured. The pre-launch countdown links to it for everyone; the live app shows a banner only to wallets with a refund waiting. Details in the committer's `CLAUDE.md`.
 
 ---
 

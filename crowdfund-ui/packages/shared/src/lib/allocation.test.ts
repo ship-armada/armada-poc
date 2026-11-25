@@ -5,10 +5,18 @@ import { describe, it, expect } from 'vitest'
 import {
   estimateAllocation,
   estimateUserArmAllocation,
+  allocationMatchesDemand,
+  hopCeilingLabel,
+  projectedLaunchTeamPayment,
   projectsRefundMode,
   type UserHopPosition,
 } from './allocation.js'
-import { CROWDFUND_CONSTANTS, HOP_CONFIGS } from './constants.js'
+import {
+  CONSTANTS_BY_PROFILE,
+  CROWDFUND_CONSTANTS,
+  HOP_CONFIGS,
+  HOP_CONFIGS_BY_PROFILE,
+} from './constants.js'
 import type { HopStatsData } from '../components/StatsBar.js'
 
 const ARM_FROM_USDC = 10n ** 12n // 1 USDC (6 dec) → 1 ARM (18 dec)
@@ -92,11 +100,11 @@ describe('estimateAllocation', () => {
   })
 })
 
-describe('estimateAllocation — cross-language differential vectors', () => {
-  // WHY: this is the off-chain mirror of the contract's _computeHopAllocations, which drives the
-  // committer/admin/indexer refund projection. This SAME (saleSize, demand) → total table is
-  // asserted against the Solidity source of truth in test-foundry/CrowdfundWaterfallMath.t.sol.
-  // Any drift between the two implementations fails one side. Keep the two tables in lockstep.
+describe('estimateAllocation — Launch 1 (mainnet profile) waterfall vectors', () => {
+  // WHY: the mainnet profile still serves the deployed Launch 1 crowdfund, whose contract used
+  // 60/45 ceilings and a 15% hop-2 floor. These pin the off-chain mirror to that deployed
+  // waterfall. (The current Solidity source carries the relaunch constants; its differential table
+  // is mirrored by the relaunch block below.)
   const K = 1_000n * USDC
   const B = CROWDFUND_CONSTANTS.BASE_SALE
   const M = CROWDFUND_CONSTANTS.MAX_SALE
@@ -265,5 +273,154 @@ describe('estimateUserArmAllocation', () => {
       { hop: 0, committed: 0n, effectiveCap: HOP_CONFIGS[0].capUsdc },
     ]
     expect(estimateUserArmAllocation(positions, hopStats, 0n, 0n)).toBe(0n)
+  })
+})
+
+describe('estimateAllocation — relaunch profile cross-language differential vectors', () => {
+  // WHY: this is the off-chain mirror of the relaunch contract's _computeHopAllocations, which
+  // drives the committer/admin/indexer refund projection. This SAME (saleSize, demand) → total table
+  // is asserted against the Solidity source of truth in
+  // test-foundry/CrowdfundWaterfallMath.t.sol::test_differentialVectors. Any drift between the two
+  // implementations fails one side. Keep the two tables in lockstep.
+  const relaunch = { constants: CONSTANTS_BY_PROFILE.relaunch, hopConfigs: HOP_CONFIGS_BY_PROFILE.relaunch }
+  const K = 1_000n * USDC
+  const S = CONSTANTS_BY_PROFILE.relaunch.BASE_SALE
+  const cases: Array<[bigint, bigint, bigint, bigint, bigint]> = [
+    // saleSize, d0, d1, d2, expectedTotal
+    [S, 2_000n * K, 0n, 0n, 1_800n * K], // hop-0 oversub, no hop-2 → takes the whole sale
+    [S, 2_000n * K, 2_000n * K, 2_000n * K, 1_800n * K], // saturated → full sale
+    [S, 2_000n * K, 0n, 50n * K, 1_800n * K], // unused reserve rolls to hop-0
+    [S, 564n * K, 0n, 2_000n * K, 1_800n * K], // unused hop-0 rolls to hop-2
+    [S, 0n, 2_000n * K, 0n, 1_800n * K], // hop-0 empty → hop-1 gets the whole sale
+    [S, 1_200n * K, 0n, 900n * K, 1_800n * K], // hop-2 gets reserve + $300k rollover
+    [S, 1_050n * K, 436n * K, 0n, 1_486n * K], // under the sale → everyone filled
+    [S, 200n * K, 0n, 50n * K, 250n * K], // exactly MIN_SALE
+    [S, 200n * K, 0n, 49n * K, 249n * K], // $1K less → below MIN_SALE
+    [S, 0n, 0n, 0n, 0n], // no demand
+  ]
+  it.each(cases)('saleSize=%s d=(%s,%s,%s) → %s', (saleSize, d0, d1, d2, expected) => {
+    const stats = emptyHopStats()
+    stats[0].cappedCommitted = d0
+    stats[1].cappedCommitted = d1
+    stats[2].cappedCommitted = d2
+    expect(estimateAllocation(stats, d0 + d1 + d2, saleSize, relaunch).totalAllocUsdc).toBe(expected)
+  })
+
+  // WHY: per-hop amounts drive the status tables and each user's pro-rata projection, so they must
+  // match the contract's finalCeilings: hop-2 first for its $300k reserve, hop-0 up to the rest,
+  // hop-1 next, then hop-2's excess; unused capacity rolls both ways.
+  it.each([
+    // d0, d1, d2 → [hop0, hop1, hop2]
+    [2_000n, 0n, 2_000n, [1_500n, 0n, 300n]], // both oversubscribed: split at the reserve
+    [2_000n, 0n, 50n, [1_750n, 0n, 50n]], // unused reserve rolls to hop-0
+    [564n, 0n, 2_000n, [564n, 0n, 1_236n]], // unused hop-0 capacity rolls to hop-2
+    [1_200n, 0n, 900n, [1_200n, 0n, 600n]], // hop-2 reserve plus the $300k left over
+    [1_000n, 2_000n, 100n, [1_000n, 700n, 100n]], // hop-1 fills after hop-0, before hop-2's excess
+  ] as Array<[bigint, bigint, bigint, bigint[]]>)('per-hop allocation for d=(%sK,%sK,%sK)', (d0, d1, d2, expected) => {
+    const stats = emptyHopStats()
+    stats[0].cappedCommitted = d0 * K
+    stats[1].cappedCommitted = d1 * K
+    stats[2].cappedCommitted = d2 * K
+    const est = estimateAllocation(stats, (d0 + d1 + d2) * K, 0n, relaunch)
+    expect(est.perHopAlloc).toEqual(expected.map((v) => v * K))
+    // The sale is filled, so each hop's ceiling is its allocation, as in the contract's finalCeilings.
+    expect(est.perHopCeiling).toEqual(est.perHopAlloc)
+  })
+
+  // WHY: the status tables show fill as capped demand / ceiling. With capacity left over, any hop
+  // could absorb it, so a hop's ceiling is its allocation plus the unallocated remainder; an
+  // undersubscribed hop then reads below 100% instead of looking full.
+  it('adds unallocated capacity to every hop ceiling when the sale is undersubscribed', () => {
+    const stats = emptyHopStats()
+    stats[0].cappedCommitted = 1_000n * K
+    stats[2].cappedCommitted = 100n * K
+    const est = estimateAllocation(stats, 1_100n * K, 0n, relaunch)
+    expect(est.perHopAlloc).toEqual([1_000n * K, 0n, 100n * K])
+    expect(est.perHopCeiling).toEqual([1_700n * K, 700n * K, 800n * K])
+  })
+
+  // WHY: pre-finalization the projection passes saleSize = 0 and picks the sale size from capped
+  // demand. With BASE_SALE == MAX_SALE that is $1.8M on both sides of the trigger.
+  it('uses the $1.8M sale size on both sides of the elastic trigger', () => {
+    const below = emptyHopStats()
+    below[0].cappedCommitted = 1_000n * K
+    expect(estimateAllocation(below, 1_000n * K, 0n, relaunch).effectiveSaleSize).toBe(S)
+    const above = emptyHopStats()
+    above[0].cappedCommitted = 2_000n * K
+    expect(estimateAllocation(above, 2_000n * K, 0n, relaunch).effectiveSaleSize).toBe(S)
+  })
+
+  // WHY: the relaunch refunds only when capped demand is below the $250K minimum (allocation equals
+  // min(capped demand, sale size)); the projection must flip at exactly that boundary.
+  it('projects refund mode exactly below the $250K minimum', () => {
+    const at = emptyHopStats()
+    at[0].cappedCommitted = 200n * K
+    at[2].cappedCommitted = 50n * K
+    expect(projectsRefundMode(at, 250n * K, relaunch)).toBe(false)
+    const under = emptyHopStats()
+    under[0].cappedCommitted = 200n * K
+    under[2].cappedCommitted = 49n * K
+    expect(projectsRefundMode(under, 249n * K, relaunch)).toBe(true)
+  })
+
+  // WHY: the hop-2 reserve means Backer demand that fills the sale cannot crowd the Community tier
+  // out: a Community contributor inside the reserve is projected their full allocation.
+  it('projects full ARM for a Community contributor inside the reserve when Backer demand fills the sale', () => {
+    const stats = emptyHopStats()
+    stats[0].cappedCommitted = 1_800n * K
+    stats[2].cappedCommitted = 10n * K
+    const invited: UserHopPosition[] = [{ hop: 2, committed: 10n * K, effectiveCap: 10n * K }]
+    expect(estimateUserArmAllocation(invited, stats, 1_810n * K, 0n, relaunch)).toBe(10n * K * ARM_FROM_USDC)
+  })
+
+  // WHY: when both tiers are oversubscribed, pro-rata happens within a tier against that tier's
+  // allocation: $600K of Community demand shares the $300K reserve, so a $10K position gets $5K.
+  it('pro-rates a Community contributor against the reserve when both tiers are oversubscribed', () => {
+    const stats = emptyHopStats()
+    stats[0].cappedCommitted = 2_000n * K
+    stats[2].cappedCommitted = 600n * K
+    const invited: UserHopPosition[] = [{ hop: 2, committed: 10n * K, effectiveCap: 10n * K }]
+    expect(estimateUserArmAllocation(invited, stats, 2_600n * K, 0n, relaunch)).toBe(5n * K * ARM_FROM_USDC)
+  })
+})
+
+describe('hopCeilingLabel', () => {
+  // WHY: the per-hop tables label how each hop's capacity is set. The reserve model has no bps
+  // ceilings (ceilingBps is 0), so printing "0%" would be wrong: hop 2 shows its reserve and the
+  // other hops the remainder of the sale. The Launch 1 waterfall keeps its bps ceilings and floor.
+  it('labels the reserve model by reserve and remainder, and the waterfall by bps and floor', () => {
+    const relaunch = { constants: CONSTANTS_BY_PROFILE.relaunch, hopConfigs: HOP_CONFIGS_BY_PROFILE.relaunch }
+    expect([0, 1, 2].map((h) => hopCeilingLabel(h, relaunch))).toEqual(['Remainder', 'Remainder', '$300K reserve'])
+    const mainnet = { constants: CONSTANTS_BY_PROFILE.mainnet, hopConfigs: HOP_CONFIGS_BY_PROFILE.mainnet }
+    expect([0, 1, 2].map((h) => hopCeilingLabel(h, mainnet))).toEqual(['60%', '45%', 'Floor'])
+    const noFloor = {
+      constants: { ...CONSTANTS_BY_PROFILE.mainnet, HOP2_BASE_FLOOR_BPS: 0, HOP2_EXTRA_FLOOR_BPS: 0 },
+      hopConfigs: HOP_CONFIGS_BY_PROFILE.mainnet,
+    }
+    expect(hopCeilingLabel(2, noFloor)).toBe('Rollover')
+  })
+})
+
+describe('projectedLaunchTeamPayment', () => {
+  // WHY: the relaunch pays the launch team min($250K, proceeds) at finalize, before the treasury;
+  // the admin projection must show that split, and nothing on profiles that pay no team.
+  it('is min($250K, allocation) on the relaunch and 0 elsewhere', () => {
+    const relaunch = { constants: CONSTANTS_BY_PROFILE.relaunch, hopConfigs: HOP_CONFIGS_BY_PROFILE.relaunch }
+    expect(projectedLaunchTeamPayment(1_000_000n * USDC, relaunch)).toBe(250_000n * USDC)
+    expect(projectedLaunchTeamPayment(250_000n * USDC, relaunch)).toBe(250_000n * USDC)
+    expect(projectedLaunchTeamPayment(100_000n * USDC, relaunch)).toBe(100_000n * USDC)
+    const mainnet = { constants: CONSTANTS_BY_PROFILE.mainnet, hopConfigs: HOP_CONFIGS_BY_PROFILE.mainnet }
+    expect(projectedLaunchTeamPayment(1_000_000n * USDC, mainnet)).toBe(0n)
+  })
+})
+
+describe('allocationMatchesDemand', () => {
+  // WHY: when allocation equals min(capped demand, sale size), copy about per-hop limits and refunds
+  // "after allocation" is false; the UI keys that copy off this. The relaunch's reserve model has
+  // the property (unused capacity rolls both ways); Launch 1's floor/ceiling waterfall does not.
+  it('is true for the relaunch reserve model and false for the Launch 1 waterfall', () => {
+    expect(allocationMatchesDemand({ constants: CONSTANTS_BY_PROFILE.relaunch, hopConfigs: HOP_CONFIGS_BY_PROFILE.relaunch })).toBe(true)
+    expect(allocationMatchesDemand({ constants: CONSTANTS_BY_PROFILE.mainnet, hopConfigs: HOP_CONFIGS_BY_PROFILE.mainnet })).toBe(false)
+    expect(allocationMatchesDemand({ constants: CONSTANTS_BY_PROFILE.medi, hopConfigs: HOP_CONFIGS_BY_PROFILE.medi })).toBe(false)
   })
 })

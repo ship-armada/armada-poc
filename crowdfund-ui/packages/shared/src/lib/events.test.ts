@@ -185,6 +185,18 @@ describe('parseCrowdfundEvent', () => {
     expect(result!.args.newEnd).toBe(1_796_313_600n)
   })
 
+  // WHY: the relaunch pays the launch team $250K at finalize; the payment must reach the event
+  // logs and the indexer's proceeds check, so parsing must not drop it as an unknown event.
+  it('parses LaunchTeamPaid event', () => {
+    const recipient = '0x' + 'bb'.repeat(20)
+    const log = encodeLog('LaunchTeamPaid', [recipient, 250_000n * 10n ** 6n])
+    const result = parseCrowdfundEvent(log)
+    expect(result).not.toBeNull()
+    expect(result!.type).toBe('LaunchTeamPaid')
+    expect(result!.args.recipient).toBe(recipient.toLowerCase())
+    expect(result!.args.amount).toBe(250_000n * 10n ** 6n)
+  })
+
   it('returns null for unrecognized log topics', () => {
     const result = parseCrowdfundEvent({
       blockNumber: 100,

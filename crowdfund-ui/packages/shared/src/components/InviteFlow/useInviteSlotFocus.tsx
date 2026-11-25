@@ -2,7 +2,7 @@
 // ABOUTME: Mobile opens InviteActionSheet after method-picker exit; desktop crossfades in-place.
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { InviteMethod } from '../../lib/inviteUx'
+import { DIRECT_INVITES_ENABLED, type InviteMethod } from '../../lib/inviteUx'
 import { useIsMobileLayout } from '../../hooks/useIsMobileLayout'
 import {
   formatInviteeHop,
@@ -85,6 +85,15 @@ export function useInviteHopFocus(): InviteHopFocus {
 
   const openPicker = useCallback((hop: InviteeHop, anchor: HTMLElement) => {
     inviteBtnRefs.current.set(hop, anchor)
+    if (!DIRECT_INVITES_ENABLED) {
+      // Link-only profile: one method, so skip the picker and open the link screen.
+      clearTimer()
+      setFading(false)
+      setFocusHop(hop)
+      setFocusMethod('link')
+      setRenderView('action')
+      return
+    }
     setPickerHop(hop)
     setPickerAnchor(anchor)
   }, [])

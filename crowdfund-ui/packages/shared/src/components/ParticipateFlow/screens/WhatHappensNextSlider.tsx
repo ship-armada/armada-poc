@@ -9,6 +9,7 @@ import {
   TIME_LEFT_COUNTER_THRESHOLD_S,
 } from '../../../lib/format'
 import styles from './WhatHappensNextSlider.module.css'
+import { allocationMatchesDemand } from '../../../lib/allocation'
 
 export interface WhatHappensNextSliderProps {
   /**
@@ -76,6 +77,12 @@ const STATIC_ITEMS: ReadonlyArray<Omit<Item, 'body'> & { body?: string }> = [
   },
 ]
 
+/** FAQ item ids to show. When allocation matches demand (the relaunch) a sale that clears the
+ *  minimum on demand cannot refund after allocation, so that item is dropped. */
+export function faqItemIds(matchesDemand: boolean): string[] {
+  return STATIC_ITEMS.map((item) => item.id).filter((id) => !(matchesDemand && id === 'refund'))
+}
+
 /** @deprecated Name kept for import stability — renders as a FAQ accordion. */
 export function WhatHappensNextSlider({
   daysLeft,
@@ -117,7 +124,7 @@ export function WhatHappensNextSlider({
 
   const items: ReadonlyArray<Item> = useMemo(
     () =>
-      STATIC_ITEMS.map((item) =>
+      STATIC_ITEMS.filter((item) => faqItemIds(allocationMatchesDemand()).includes(item.id)).map((item) =>
         item.id === 'window'
           ? { id: item.id, title: item.title, body: windowOpenBody(remainingLabel) }
           : { id: item.id, title: item.title, body: item.body! },

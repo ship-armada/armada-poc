@@ -295,7 +295,7 @@ function applyEvent(
 
     default:
       // Other events (ArmLoaded, Finalized, Cancelled, InviteNonceRevoked,
-      // UnallocatedArmWithdrawn, WindowExtended) don't affect graph topology
+      // UnallocatedArmWithdrawn, WindowExtended, LaunchTeamPaid) don't affect graph topology
       break
   }
 }

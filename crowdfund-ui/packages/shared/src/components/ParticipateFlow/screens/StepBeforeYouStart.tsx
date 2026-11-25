@@ -9,14 +9,16 @@ import { hopPillDotColor } from '../../../lib/graphHopColors'
 import { DEMO_WALLET, DEMO_WALLET_DISPLAY } from '../../MyPosition/myPositionDemo'
 import { FlowChrome } from '../FlowChrome'
 import { DISCORD_URL, X_URL } from '../../../lib/socials'
-import { CROWDFUND_CONSTANTS } from '../../../lib/constants'
+import { CROWDFUND_CONSTANTS, TIER_NOUN } from '../../../lib/constants'
 import styles from './StepBeforeYouStart.module.css'
+import { formatUsdcShort, hopLabel, hopTagLabel, multiTierTagLabel, tierWord } from '../../../lib/format'
+import { allocationMatchesDemand } from '../../../lib/allocation'
 
 const HOP_TAG_LABEL: Record<HopVariant, string> = {
-  seed: 'HOP-0',
-  'hop-1': 'HOP-1',
-  'hop-2': 'HOP-2',
-  'multi-hop': 'MULTI-HOP',
+  seed: hopTagLabel(0),
+  'hop-1': hopTagLabel(1),
+  'hop-2': hopTagLabel(2),
+  'multi-hop': multiTierTagLabel(),
 }
 
 function DiscordIcon(props: SVGProps<SVGSVGElement>) {
@@ -68,7 +70,7 @@ function resourceLinks(contractAddress: string | undefined, explorerBaseUrl: str
 
 const NEXT_STEPS = [
   { label: 'Commit', hint: 'Choose how much USDC to lock' },
-  { label: 'Review', hint: 'Confirm amount and hop details' },
+  { label: 'Review', hint: `Confirm amount and ${tierWord()} details` },
   { label: 'Confirm', hint: 'Approve USDC, then commit in your wallet' },
 ] as const
 
@@ -115,9 +117,9 @@ function truncateMiddle(address: string, head = 4, tail = 4): string {
   return `${address.slice(0, head)}…${address.slice(-tail)}`
 }
 
-function inviteSeatHop(hopVariant: HopVariant): 'Hop-1' | 'Hop-2' | null {
-  if (hopVariant === 'seed' || hopVariant === 'multi-hop') return 'Hop-1'
-  if (hopVariant === 'hop-1') return 'Hop-2'
+function inviteSeatHop(hopVariant: HopVariant): string | null {
+  if (hopVariant === 'seed' || hopVariant === 'multi-hop') return hopLabel(1)
+  if (hopVariant === 'hop-1') return hopLabel(2)
   return null
 }
 
@@ -137,10 +139,18 @@ function inviteBullet(
   const ceiling =
     maxOutCeilingUsdc != null && maxOutCeilingUsdc > capUsdc ? maxOutCeilingUsdc : null
   if (ceiling == null) {
-    return `${base} You can invite others, or self-invite to open additional hop seats.`
+    return `${base} You can invite others, or self-invite to open additional ${tierWord()} seats.`
   }
 
   return `${base} You can increase your commit limit by self-inviting — up to $${formatUsdc(ceiling)}.`
+}
+
+/** The allocation caveat. When allocation matches demand (the relaunch), pro-rating starts only once
+ *  total demand exceeds the sale, so the wording keys off the sale size rather than one hop. */
+export function allocationBullet(matchesDemand: boolean, saleSizeUsdc: bigint): string {
+  return matchesDemand
+    ? `Allocation isn’t guaranteed. If total demand exceeds the ${formatUsdcShort(saleSizeUsdc)} sale, you get a pro-rata share and the rest comes back to you.`
+    : 'Allocation isn’t guaranteed. If your hop is oversubscribed you get a pro-rata share and the rest comes back to you.'
 }
 
 function knowItems(
@@ -157,7 +167,7 @@ function knowItems(
   if (invites) items.push(invites)
 
   items.push(
-    'Allocation isn’t guaranteed. If your hop is oversubscribed you get a pro-rata share and the rest comes back to you.',
+    allocationBullet(allocationMatchesDemand(), CROWDFUND_CONSTANTS.MAX_SALE),
     `If the raise ends under $${formatUsdc(minSaleUsdc)}, everyone gets a full refund.`,
     'ARM is claimed after the window closes. Voting power starts once you claim and delegate.',
   )
@@ -241,7 +251,7 @@ export default function StepBeforeYouStart({
               </div>
               <div className={styles.divider} aria-hidden />
               <div className={styles.factRow}>
-                <span className={styles.factLabel}>Hop limit</span>
+                <span className={styles.factLabel}>{TIER_NOUN} limit</span>
                 <span className={styles.factValue}>{formatUsdc(capUsdc)} USDC</span>
               </div>
               <div className={styles.divider} aria-hidden />

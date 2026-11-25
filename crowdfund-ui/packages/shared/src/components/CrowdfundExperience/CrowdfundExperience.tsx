@@ -60,6 +60,7 @@ import fleetMp4 from '../../assets/fleet.mp4'
 import heroStyles from './Hero.module.css'
 import mpStyles from '../MyPosition/MyPositionHero.module.css'
 import shellStyles from './CrowdfundExperience.module.css'
+import { hopTagLabel } from '../../lib/format'
 
 export type CrowdfundView = 'crowdfund' | 'myposition'
 
@@ -258,7 +259,7 @@ export type CrowdfundExperienceMyPositionData =
       cancelled?: boolean
     }
 
-const HOP_TAG_LABELS = ['HOP-0', 'HOP-1', 'HOP-2'] as const
+const HOP_TAG_LABELS = [hopTagLabel(0), hopTagLabel(1), hopTagLabel(2)] as const
 
 function usdcBigintToUsdNumber(value: bigint): number {
   return Number(value / 1_000_000n)
@@ -567,6 +568,12 @@ export function CrowdfundExperience({
         myPositionReady.positions.reduce((sum, p) => sum + p.cap, 0n),
       )
     : CAP
+  // A position set with no commit capacity at all (every cap $0, e.g. a relaunch team inviter
+  // wallet): the wallet can only issue invites, so commit CTAs are hidden for it.
+  const myPositionInviteOnly =
+    myPositionReady !== null &&
+    myPositionReady.positions.length > 0 &&
+    myPositionReady.positions.every((p) => p.cap === 0n)
   const myPositionFillPct = myPositionReady
     ? computeFillPct(
         myPositionReady.positions.reduce((sum, p) => sum + p.committed, 0n),
@@ -804,6 +811,9 @@ export function CrowdfundExperience({
   const myPositionPanelAnimates = panelAnimates(view, 'myposition', panelPhase, motionReady)
 
   const liveSections = inviteSlotSections
+  // Live data with no invite slots at any position (no sections, or every section empty).
+  const walletHasNoInviteSlots =
+    !!liveSections && (liveSections.length === 0 || liveSections.every((s) => s.config.slots.length === 0))
   const liveAllowance = useMemo(
     () => (liveSections ? allowanceFromInviteSections(liveSections) : null),
     [liveSections],
@@ -819,12 +829,13 @@ export function CrowdfundExperience({
   // same card instance serves both views, so in-progress invite state survives
   // a view switch. Keyed on the slot allowance rather than slots left, so the
   // card can't unmount mid-confirmation when the last slot is used. Live data
-  // only; the showcase keeps the mockup's Participate card.
+  // only; the showcase keeps the mockup's Participate card. An invite-only
+  // wallet never commits, so it gets the invite card without committing first.
   const invitesOnCrowdfund =
     participationEnabled &&
     !myPositionCancelled &&
     myPositionReady !== null &&
-    myPositionCommittedUsd > 0 &&
+    (myPositionCommittedUsd > 0 || myPositionInviteOnly) &&
     liveAllowance !== null &&
     liveAllowance.hop1 + liveAllowance.hop2 > 0
   const invitesPanelVisible = invitesOnCrowdfund || myPositionPanelVisible
@@ -1154,7 +1165,7 @@ export function CrowdfundExperience({
                     <Progress
                       participants={`${dashRows.length} PARTICIPANTS`}
                       committedAmount={committedAmount}
-                      minFundAmount={Number(CROWDFUND_CONSTANTS.MIN_SALE / 1_000_000n)}
+                      goalAmount={Number(CROWDFUND_CONSTANTS.FUNDING_GOAL / 1_000_000n)}
                       maxAmount={Number(CROWDFUND_CONSTANTS.MAX_SALE / 1_000_000n)}
                       {...(liveReady?.opensAtUnix != null && liveReady.opensAtUnix > 0
                         ? { endsAt: liveReady.opensAtUnix * 1000, countdown: 'opens' as const }
@@ -1250,7 +1261,7 @@ export function CrowdfundExperience({
             <div className={mpStyles.cardHeader}>
               <div className={mpStyles.titleRow}>
                 <h1 className={mpStyles.pageTitle}>Your Position</h1>
-                {participationEnabled && onParticipate && (
+                {participationEnabled && onParticipate && !myPositionInviteOnly && (
                   <Button
                     className={mpStyles.headerCta}
                     variant="gradient"
@@ -1379,7 +1390,7 @@ export function CrowdfundExperience({
                 </div>
                 <div className={mpStyles.barLabels}>
                   <span className={mpStyles.barCaption}>
-                    {Math.round(myPositionFillPct)}% of hop cap
+                    {Math.round(myPositionFillPct)}% of your cap
                   </span>
                   <span className={mpStyles.barCaption}>
                     Cap {formatUsdcCommitted(myPositionCapUsd)}
@@ -1387,7 +1398,7 @@ export function CrowdfundExperience({
                 </div>
               </div>
 
-              {participationEnabled && onParticipate ? (
+              {participationEnabled && onParticipate && !myPositionInviteOnly ? (
                 <Button
                   className={mpStyles.footerCta}
                   variant="gradient"
@@ -1460,23 +1471,14 @@ export function CrowdfundExperience({
           </div>
         )}
 
-        {participationEnabled && !myPositionCancelled && myPositionEmptyKind === null && (
+        {/* The invite card is left out when the wallet has no invite slots at any position (on the
+            relaunch, everyone but the team wallet): an empty card could only say "no invite slots". */}
+        {participationEnabled && !myPositionCancelled && myPositionEmptyKind === null && !walletHasNoInviteSlots && (
         <div
           className={layerClass(invitesPanelVisible, motionReady, myPositionPanelAnimates)}
           aria-hidden={!invitesPanelVisible}
         >
-          {liveSections &&
-          (liveSections.length === 0 ||
-            liveSections.every((s) => s.config.slots.length === 0)) ? (
-            <section className={mpStyles.inviteCard} aria-label="Whitelist a friend">
-              <div className={mpStyles.inviteEmpty} role="status">
-                <p className={mpStyles.inviteEmptyText}>
-                  You have no invite slots available at this hop.
-                </p>
-              </div>
-            </section>
-          ) : (
-            <InvitesCard
+          <InvitesCard
               variant="hero"
               slots={invitesSlots}
               allowance={invitesAllowance}
@@ -1497,7 +1499,6 @@ export function CrowdfundExperience({
                 startPanelTransition('crowdfund', { selectAddress: address })
               }
             />
-          )}
         </div>
         )}
       </div>

@@ -2,6 +2,12 @@
 // ABOUTME: Single source of truth for env readers, the initial cursor, and runtime config.
 
 import type { CursorState } from './types.js'
+import {
+  CROWDFUND_PROFILE,
+  CROWDFUND_PROFILES,
+  isCrowdfundProfile,
+  type CrowdfundProfile,
+} from '../../shared/src/lib/constants.js'
 
 export interface IndexerConfig {
   chainId: number
@@ -27,6 +33,7 @@ export interface IndexerConfig {
   retryBaseDelayMs: number
   retryJitterMs: number
   snapshotPublishIntervalMs: number
+  profile: CrowdfundProfile
 }
 
 export function readRequiredEnv(name: string): string {
@@ -84,6 +91,43 @@ function readDeployBlock(): number {
   return deployBlock
 }
 
+/**
+ * CROWDFUND_PROFILE: which set of sale constants (caps, budgets, sale sizes) the shared graph
+ * and alert code applies. The shared constants read the same variable at import time; this
+ * check makes a missing or misspelt value fail at startup instead of silently falling back to
+ * the mainnet (Launch 1) profile. Defaults to mainnet only on local Anvil.
+ */
+export function readCrowdfundProfile(): CrowdfundProfile {
+  const raw = process.env.CROWDFUND_PROFILE?.trim()
+  if (!raw) {
+    if (process.env.CROWDFUND_CHAIN_ID === LOCAL_CHAIN_ID) return 'mainnet'
+    throw new Error(
+      `CROWDFUND_PROFILE must be set on non-local chains (one of: ${CROWDFUND_PROFILES.join(', ')})`,
+    )
+  }
+  if (!isCrowdfundProfile(raw)) {
+    throw new Error(
+      `CROWDFUND_PROFILE "${raw}" is not a known profile (expected one of: ${CROWDFUND_PROFILES.join(', ')})`,
+    )
+  }
+  return raw
+}
+
+/**
+ * Validate CROWDFUND_PROFILE and check it matches the profile the shared constants resolved at
+ * import (`resolved`, normally the shared CROWDFUND_PROFILE). Call once at each entry point.
+ */
+export function assertActiveProfile(resolved: CrowdfundProfile = CROWDFUND_PROFILE): CrowdfundProfile {
+  const profile = readCrowdfundProfile()
+  if (profile !== resolved) {
+    throw new Error(
+      `CROWDFUND_PROFILE is "${profile}" but the shared constants resolved the "${resolved}" profile; ` +
+        'set CROWDFUND_PROFILE in the process environment before the indexer starts',
+    )
+  }
+  return profile
+}
+
 export function getInitialCursor(): CursorState {
   const deployBlock = readDeployBlock()
   return {
@@ -120,5 +164,6 @@ export function loadIndexerConfig(): IndexerConfig {
     retryBaseDelayMs: readNumberEnv('CROWDFUND_RPC_RETRY_BASE_DELAY_MS', 1_000),
     retryJitterMs: readNumberEnv('CROWDFUND_RPC_RETRY_JITTER_MS', 250),
     snapshotPublishIntervalMs: readNumberEnv('CROWDFUND_SNAPSHOT_PUBLISH_INTERVAL_MS', 60_000),
+    profile: readCrowdfundProfile(),
   }
 }

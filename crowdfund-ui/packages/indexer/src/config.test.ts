@@ -2,14 +2,14 @@
 // ABOUTME: Locks in defaults, overrides, and required-variable enforcement.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { getInitialCursor, loadIndexerConfig } from './config.js'
+import { assertActiveProfile, getInitialCursor, loadIndexerConfig, readCrowdfundProfile } from './config.js'
 
 const TOUCHED = [
   'CROWDFUND_CONTRACT_ADDRESS', 'CROWDFUND_CHAIN_ID', 'CROWDFUND_DEPLOY_BLOCK',
   'CROWDFUND_PRIMARY_RPC_URL', 'CROWDFUND_AUDIT_RPC_URL', 'CROWDFUND_CONFIRMATION_DEPTH',
   'CROWDFUND_MAX_BLOCK_RANGE', 'CROWDFUND_INDEXER_PORT',
   'CROWDFUND_STALE_AFTER_MS', 'CROWDFUND_REPAIR_MAX_ATTEMPTS', 'CROWDFUND_POLL_ON_START',
-  'CROWDFUND_POLL_INTERVAL_MS', 'CROWDFUND_RPC_MAX_RETRIES',
+  'CROWDFUND_POLL_INTERVAL_MS', 'CROWDFUND_RPC_MAX_RETRIES', 'CROWDFUND_PROFILE',
 ]
 
 const saved: Record<string, string | undefined> = {}
@@ -57,8 +57,10 @@ describe('loadIndexerConfig', () => {
     process.env.CROWDFUND_PRIMARY_RPC_URL = 'https://rpc.example.com/key'
     process.env.CROWDFUND_POLL_ON_START = 'true'
     process.env.CROWDFUND_STALE_AFTER_MS = '120000'
+    process.env.CROWDFUND_PROFILE = 'relaunch'
     const config = loadIndexerConfig()
     expect(config.chainId).toBe(1)
+    expect(config.profile).toBe('relaunch')
     expect(config.deployBlock).toBe(23_000_000)
     expect(config.primaryRpcUrl).toBe('https://rpc.example.com/key')
     expect(config.pollOnStart).toBe(true)
@@ -120,5 +122,58 @@ describe('getInitialCursor', () => {
     const cursor = getInitialCursor()
     expect(cursor.ingestedCursor).toBe(0)
     expect(cursor.verifiedCursor).toBe(0)
+  })
+})
+
+describe('CROWDFUND_PROFILE', () => {
+  // WHY: the indexer runs under Node, where the shared constants used to fall back silently to the
+  // mainnet (Launch 1) profile. On the relaunch that capped every Backer deposit at $15k in the
+  // published snapshots and alerts. Outside local Anvil the profile must be stated explicitly.
+  it('rejects an unset profile on a non-local chain', () => {
+    process.env.CROWDFUND_CHAIN_ID = '1'
+    expect(() => readCrowdfundProfile()).toThrow('CROWDFUND_PROFILE must be set')
+  })
+
+  it('defaults an unset profile to mainnet on local Anvil', () => {
+    process.env.CROWDFUND_CHAIN_ID = '31337'
+    expect(readCrowdfundProfile()).toBe('mainnet')
+  })
+
+  // WHY: a typo would otherwise fall back to the Launch 1 constants with no error.
+  it('rejects an unknown profile name on any chain', () => {
+    process.env.CROWDFUND_CHAIN_ID = '31337'
+    process.env.CROWDFUND_PROFILE = 'relaunh'
+    expect(() => readCrowdfundProfile()).toThrow('"relaunh" is not a known profile')
+  })
+
+  it('accepts each known profile', () => {
+    process.env.CROWDFUND_CHAIN_ID = '1'
+    for (const p of ['mainnet', 'medi', 'relaunch']) {
+      process.env.CROWDFUND_PROFILE = p
+      expect(readCrowdfundProfile()).toBe(p)
+    }
+  })
+
+  it('is required by loadIndexerConfig on a non-local chain', () => {
+    process.env.CROWDFUND_CHAIN_ID = '11155111'
+    process.env.CROWDFUND_CONTRACT_ADDRESS = '0xabc'
+    process.env.CROWDFUND_DEPLOY_BLOCK = '100'
+    expect(() => loadIndexerConfig()).toThrow('CROWDFUND_PROFILE must be set')
+  })
+})
+
+describe('assertActiveProfile', () => {
+  // WHY: the shared constants resolve the profile once, when first imported. If the environment
+  // were populated after that (or another variable won), the graph and alerts would run on
+  // different constants than the ones validated. Entry points check the two agree.
+  it('passes when the validated profile matches the resolved constants', () => {
+    process.env.CROWDFUND_CHAIN_ID = '31337'
+    expect(assertActiveProfile('mainnet')).toBe('mainnet')
+  })
+
+  it('throws when the shared constants resolved a different profile', () => {
+    process.env.CROWDFUND_CHAIN_ID = '1'
+    process.env.CROWDFUND_PROFILE = 'relaunch'
+    expect(() => assertActiveProfile('mainnet')).toThrow('resolved the "mainnet" profile')
   })
 })

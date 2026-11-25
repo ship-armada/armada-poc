@@ -31,9 +31,15 @@
 #                           mainnet (validateEnv hard-fails without it); optional on
 #                           Sepolia (checked only when set).
 #   VITE_HUB_RPC            dedicated hub RPC URL (+ optional VITE_HUB_RPC_FALLBACK).
-#                           Strongly recommended on mainnet; without it the app falls
-#                           back to a public node. (Legacy VITE_SEPOLIA_RPC still works
-#                           on the Sepolia site.)
+#                           REQUIRED on mainnet, live and pre-launch alike (validateEnv
+#                           hard-fails without it): the /refund page for first-sale
+#                           refunds reads the chain in both modes. Elsewhere the app
+#                           falls back to a public node. (Legacy VITE_SEPOLIA_RPC still
+#                           works on the Sepolia site.)
+#   VITE_REFUND_ONLY_CROWDFUND_ADDRESS  Sepolia/local rehearsals only: the cancelled
+#                           crowdfund whose refunds /refund offers. Unset = no refund
+#                           page content on that network. Mainnet uses the built-in
+#                           first-sale (Sale 1) address and validateEnv REJECTS this var.
 #   VITE_WALLETCONNECT_PROJECT_ID  required — WalletConnect modal is dead without it.
 #   VITE_CROWDFUND_INDEXER_URL     required — indexer API base URL for the active
 #                                  instance (e.g. https://api.knowable.run). Startup
@@ -42,8 +48,10 @@
 #                                  UTC, e.g. 2026-10-08T17:00:00Z (same value as the deploy's
 #                                  CROWDFUND_OPEN_TIME). When set, the build fetches
 #                                  NO manifest and ships a countdown-only committer (the
-#                                  hero's pre-open state, no wallet/RPC/indexer), so the
-#                                  URL can go live before the contracts exist. The build
+#                                  hero's pre-open state, no wallet/indexer), so the
+#                                  URL can go live before the contracts exist. The one
+#                                  exception is /refund (first-sale refunds), which
+#                                  connects a wallet and reads the chain. The build
 #                                  fails if it is malformed or already past, or if
 #                                  DEPLOYMENT_REF / VITE_EXPECTED_CROWDFUND_ADDRESS are also
 #                                  set (a half-done switch-over). Leave unset
@@ -51,8 +59,9 @@
 #                                  vars above + redeploying is the launch switch-over.
 #                                  In this mode DEPLOYMENT_INSTANCE / DEPLOYMENT_REF /
 #                                  VITE_EXPECTED_CROWDFUND_ADDRESS / VITE_CROWDFUND_INDEXER_URL
-#                                  are not needed; VITE_NETWORK, VITE_CROWDFUND_PROFILE and
-#                                  VITE_WALLETCONNECT_PROJECT_ID still are.
+#                                  are not needed; VITE_NETWORK, VITE_CROWDFUND_PROFILE,
+#                                  VITE_WALLETCONNECT_PROJECT_ID and (on mainnet)
+#                                  VITE_HUB_RPC still are.
 #   VITE_SENTRY_DSN                error monitoring DSN; silent no-op if unset.
 #   VITE_SENTRY_RELEASE            release tag used to group events.
 #   VITE_SENTRY_ENVIRONMENT        deploy environment, e.g. "production".

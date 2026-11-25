@@ -31,12 +31,13 @@ const EVENT_COLORS: Record<CrowdfundEventType, string> = {
   InviteNonceRevoked: 'bg-amber-500/20 text-amber-500',
   UnallocatedArmWithdrawn: 'bg-amber-500/20 text-amber-500',
   WindowExtended: 'bg-amber-500/20 text-amber-500',
+  LaunchTeamPaid: 'bg-success/20 text-success',
 }
 
 const ALL_EVENT_TYPES: CrowdfundEventType[] = [
   'ArmLoaded', 'SeedAdded', 'Invited', 'LaunchTeamInvited', 'Committed', 'Finalized',
   'Cancelled', 'Allocated', 'AllocatedHop', 'RefundClaimed',
-  'InviteNonceRevoked', 'UnallocatedArmWithdrawn', 'WindowExtended',
+  'InviteNonceRevoked', 'UnallocatedArmWithdrawn', 'WindowExtended', 'LaunchTeamPaid',
 ]
 
 function formatEventData(event: CrowdfundEvent): string {
@@ -64,6 +65,8 @@ function formatEventData(event: CrowdfundEvent): string {
       return `${truncateAddress(args.treasury as string)} ${formatArm(args.amount as bigint)}`
     case 'WindowExtended':
       return `deadline -> ${formatUtcDateTime(Number(args.newEnd))}`
+    case 'LaunchTeamPaid':
+      return `${truncateAddress(args.recipient as string)} ${formatUsdc(args.amount as bigint)}`
     default:
       return ''
   }

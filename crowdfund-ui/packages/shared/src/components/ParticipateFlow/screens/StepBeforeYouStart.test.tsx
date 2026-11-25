@@ -4,7 +4,7 @@
 
 import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import StepBeforeYouStart from './StepBeforeYouStart.js'
+import StepBeforeYouStart, { allocationBullet } from './StepBeforeYouStart.js'
 
 const CROWDFUND = '0x' + 'c'.repeat(40)
 
@@ -73,5 +73,22 @@ describe('StepBeforeYouStart refund threshold', () => {
     const { default: MediStep } = await import('./StepBeforeYouStart.js')
     render(<MediStep onBack={vi.fn()} onContinue={vi.fn()} />)
     expect(screen.getByText(/If the raise ends under \$800, everyone gets a full refund\./)).toBeTruthy()
+  })
+})
+
+describe('allocationBullet', () => {
+  // WHY: when allocation matches demand (the relaunch) pro-rating starts only once total demand
+  // exceeds the sale, so the "if your hop is oversubscribed" wording is wrong there. The hop-2
+  // reserve means no tier is crowded out to nothing, so the decided copy promises a pro-rata share.
+  it('uses the sale-wide pro-rata wording with the sale size when allocation matches demand', () => {
+    expect(allocationBullet(true, 1_800_000_000_000n)).toBe(
+      'Allocation isn’t guaranteed. If total demand exceeds the $1.8M sale, you get a pro-rata share and the rest comes back to you.',
+    )
+  })
+
+  it('keeps the per-hop pro-rata wording otherwise', () => {
+    expect(allocationBullet(false, 1_200_000_000_000n)).toBe(
+      'Allocation isn’t guaranteed. If your hop is oversubscribed you get a pro-rata share and the rest comes back to you.',
+    )
   })
 })

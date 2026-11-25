@@ -1,8 +1,8 @@
 // ABOUTME: Entry point for the crowdfund committer app.
 // ABOUTME: Renders with wagmi, RainbowKit, Jotai, routing, toast providers, and Sentry error boundary.
-import { StrictMode, Suspense, lazy } from 'react'
+import { StrictMode, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter } from 'react-router-dom'
 import { Provider as JotaiProvider } from 'jotai'
 import { CrowdfundToaster } from '@armada/crowdfund-shared'
 import { WagmiProvider } from 'wagmi'
@@ -15,20 +15,9 @@ import { initSentry, SentryErrorBoundary, isSentryEnabled } from '@/lib/sentry'
 import { validateEnv } from '@/config/validateEnv'
 import { getPrelaunchOpensAt } from '@/config/prelaunch'
 import { DISCORD_URL } from '@/config/socials'
+import { CommitterRoutes } from '@/CommitterRoutes'
 import '@rainbow-me/rainbowkit/styles.css'
 import './index.css'
-
-// Lazy-load the routes so each lands in its own chunk: the /invite landing page
-// and the dev-only MockCommitterApp (TreeView/TableView → d3 + react-table) stay
-// out of the main bundle.
-const App = lazy(() => import('@/App').then((m) => ({ default: m.App })))
-const InviteLandingPage = lazy(() =>
-  import('@/components/InviteLandingPage').then((m) => ({ default: m.InviteLandingPage })),
-)
-const MockCommitterApp = lazy(() => import('@/MockCommitterApp'))
-const PreLaunchApp = lazy(() =>
-  import('@/PreLaunchApp').then((m) => ({ default: m.PreLaunchApp })),
-)
 
 // Crash-help footer for the Sentry error fallbacks: a copyable event reference
 // (only when Sentry actually captured + sent the event, so the user can quote
@@ -121,7 +110,7 @@ if (!envCheck.ok) {
   // Dev-only stress harness selection (0 in production).
   const mockSize = getMockSizeFromUrl()
   // Pre-launch build (VITE_PRELAUNCH_OPENS_AT): the countdown hero on every
-  // path, published before the contracts exist.
+  // path except /refund (see CommitterRoutes), published before the contracts exist.
   const prelaunchOpensAt = getPrelaunchOpensAt()
   const suspenseFallback = (
     <div className="min-h-screen bg-background text-foreground flex items-center justify-center p-6 text-muted-foreground">
@@ -139,27 +128,11 @@ if (!envCheck.ok) {
                 <BrowserRouter>
                   <MotionConfig reducedMotion="user">
                     <Suspense fallback={suspenseFallback}>
-                      {prelaunchOpensAt !== null ? (
-                        <PreLaunchApp opensAtUnix={prelaunchOpensAt} />
-                      ) : mockSize > 0 ? (
-                        <MockCommitterApp size={mockSize} />
-                      ) : (
-                        <Routes>
-                          <Route path="/" element={<App />} />
-                          {/* `/observe` renders the same App; it resolves to the
-                              Observe page via the pathname (App also accepts
-                              `/?view=observe`). */}
-                          <Route path="/observe" element={<App />} />
-                          <Route
-                            path="/invite"
-                            element={
-                              <SentryErrorBoundary fallback={inviteFallback}>
-                                <InviteLandingPage />
-                              </SentryErrorBoundary>
-                            }
-                          />
-                        </Routes>
-                      )}
+                      <CommitterRoutes
+                        prelaunchOpensAt={prelaunchOpensAt}
+                        mockSize={mockSize}
+                        inviteFallback={inviteFallback}
+                      />
                     </Suspense>
                   </MotionConfig>
                 </BrowserRouter>

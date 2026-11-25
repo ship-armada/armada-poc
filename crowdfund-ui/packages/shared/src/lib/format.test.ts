@@ -16,6 +16,10 @@ import {
   formatOpensCountdown,
   formatUtcDateTime,
   hopLabel,
+  hopTagLabel,
+  multiTierTagLabel,
+  tierWord,
+  formatUsdcShort,
   phaseName,
   phaseColor,
 } from './format.js'
@@ -318,3 +322,34 @@ describe('phaseColor', () => {
     expect(phaseColor(99)).toContain('muted')
   })
 })
+
+describe('hopTagLabel', () => {
+  // WHY: chips and pills show the tier in upper case; on the mainnet profile that must stay the
+  // familiar "HOP-n" (relaunch tier names come from TIER_LABELS_BY_PROFILE, tested in constants).
+  it('upper-cases the active profile hop label', () => {
+    expect(hopTagLabel(0)).toBe('HOP-0')
+    expect(hopTagLabel(1)).toBe('HOP-1')
+    expect(hopTagLabel(2)).toBe('HOP-2')
+  })
+})
+
+describe('formatUsdcShort', () => {
+  // WHY: sale-size copy reads "$1.5M sale" rather than "$1,500,000 sale"; amounts below a thousand
+  // fall back to the full form.
+  it('abbreviates millions and thousands, trimming trailing zeros', () => {
+    expect(formatUsdcShort(1_500_000_000_000n)).toBe('$1.5M')
+    expect(formatUsdcShort(1_000_000_000_000n)).toBe('$1M')
+    expect(formatUsdcShort(250_000_000_000n)).toBe('$250K')
+    expect(formatUsdcShort(50_000_000n)).toBe('$50')
+  })
+})
+
+describe('tierWord / multiTierTagLabel', () => {
+  // WHY: on hop-numbered profiles (Launch 1, medi) the shared copy keeps its hop wording.
+  it('says hop and MULTI-HOP outside the relaunch', () => {
+    expect(tierWord()).toBe('hop')
+    expect(tierWord(true)).toBe('hops')
+    expect(multiTierTagLabel()).toBe('MULTI-HOP')
+  })
+})
+

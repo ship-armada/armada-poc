@@ -13,6 +13,7 @@ import {
   isInvalidCommaInput,
 } from '../../../lib/amountInput'
 import { CROWDFUND_CONSTANTS } from '../../../lib/constants'
+import { tierWord } from '../../../lib/format'
 import type { ParticipateStepBarProps } from '../participateFlowSteps'
 import maxOutStyles from './MaxOutBanner.module.css'
 
@@ -62,11 +63,11 @@ export function MaxOutBanner({
   const invitePhrase = `${inviteCount} self-invite${inviteCount === 1 ? '' : 's'}`
   const subtitle = balanceLimited
     ? inviteCount > 0
-      ? `Top up your wallet to bundle ${invitePhrase} and commit ${commitUsd} across all your hops.`
-      : `Top up your wallet to commit ${commitUsd} across all your hops.`
+      ? `Top up your wallet to bundle ${invitePhrase} and commit ${commitUsd} across all your ${tierWord(true)}.`
+      : `Top up your wallet to commit ${commitUsd} across all your ${tierWord(true)}.`
     : inviteCount > 0
-      ? `Bundle ${invitePhrase} + per-hop commits (${commitUsd}) into one transaction.`
-      : `Commit ${commitUsd} across all your hops in one transaction.`
+      ? `Bundle ${invitePhrase} + per-${tierWord()} commits (${commitUsd}) into one transaction.`
+      : `Commit ${commitUsd} across all your ${tierWord(true)} in one transaction.`
 
   const placementClass =
     placement === 'aboveShell'
@@ -338,7 +339,7 @@ function SingleHopVariant({
             <div className={styles.fullyCommittedGroup}>
               <p className={styles.maxLabel}>
                 You&apos;ve committed the maximum {maxAmount.toLocaleString('en-US')} USDC for{' '}
-                {hopLabel ?? 'this hop'}.
+                {hopLabel ?? `this ${tierWord()}`}.
               </p>
             </div>
           </div>
@@ -794,11 +795,11 @@ function MultiHopVariant({
               <Tooltip
                 variant="rich"
                 title="EST. ARM Allocation"
-                description="Estimated total ARM across all hops based on the amounts entered."
+                description={`Estimated total ARM across all ${tierWord(true)} based on the amounts entered.`}
                 bullets={[
                   '1 ARM per 1 USDC committed',
                   'Final allocation confirmed at close',
-                  'Subject to per-hop pool caps',
+                  `Subject to per-${tierWord()} pool caps`,
                 ]}
               >
                 <button
@@ -825,7 +826,7 @@ function MultiHopVariant({
           )}
           {anyBelowMin && !overBalance && (
             <p className={styles.overBalance}>
-              Each hop you commit to must be at least {MIN_COMMIT_USD.toLocaleString()} USDC.
+              Each {tierWord()} you commit to must be at least {MIN_COMMIT_USD.toLocaleString()} USDC.
             </p>
           )}
           {commaError && <p className={styles.overBalance}>Use a period for decimals.</p>}

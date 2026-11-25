@@ -59,6 +59,20 @@ describe('useParticipants', () => {
     expect(result.current[0].refundClaimed).toBe(true)
   })
 
+  // WHY: in a successful sale claim() pays the ARM and the refund in one transaction and emits only
+  // Allocated (RefundClaimed comes from claimRefund(), used in refund mode or after a cancel), so an
+  // Allocated event means the refund was paid too.
+  it('marks the refund claimed when claim() paid it with the ARM', () => {
+    const events: CrowdfundEvent[] = [
+      makeEvent('SeedAdded', { seed: ADDR_A }, 1, 0),
+      makeEvent('Committed', { participant: ADDR_A, hop: 0, amount: 5000n * 10n ** 6n }, 2, 0),
+      makeEvent('Allocated', { participant: ADDR_A, armTransferred: 4000n * 10n ** 18n, refundUsdc: 1000n * 10n ** 6n, delegate: ADDR_A }, 3, 0),
+    ]
+    const { result } = renderHook(() => useParticipants(events))
+    expect(result.current[0].armClaimed).toBe(true)
+    expect(result.current[0].refundClaimed).toBe(true)
+  })
+
   it('sorts rows by committed descending', () => {
     const events: CrowdfundEvent[] = [
       makeEvent('SeedAdded', { seed: ADDR_A }, 1, 0),

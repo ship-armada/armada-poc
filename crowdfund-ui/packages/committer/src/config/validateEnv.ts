@@ -2,6 +2,11 @@
 // ABOUTME: Hard-fails production builds that are missing critical VITE_* config.
 
 import { isValidPrelaunchOpensAt } from './prelaunch'
+import { SALE1_CROWDFUND_MAINNET } from './refundOnly'
+import { CROWDFUND_PROFILES, isCrowdfundProfile, type CrowdfundProfile } from '@armada/crowdfund-shared'
+
+/** Profiles whose constants describe a mainnet sale. */
+const MAINNET_PROFILES: readonly CrowdfundProfile[] = ['mainnet', 'relaunch']
 
 /** The subset of the Vite env we validate. All fields optional so the pure
  *  function can be exercised with plain records in tests. */
@@ -14,7 +19,11 @@ export interface EnvRecord {
   VITE_DEPLOYMENT_INSTANCE?: string
   VITE_EXPECTED_CROWDFUND_ADDRESS?: string
   VITE_PRELAUNCH_OPENS_AT?: string
+  VITE_HUB_RPC?: string
+  VITE_REFUND_ONLY_CROWDFUND_ADDRESS?: string
 }
+
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/
 
 export type EnvValidationResult = { ok: true } | { ok: false; errors: string[] }
 
@@ -30,9 +39,9 @@ function missing(value?: string): boolean {
  * silently fall back to a local/localhost config). Dev builds always pass: they
  * default to local and tolerate absent vars.
  *
- * Pre-launch mode (VITE_PRELAUNCH_OPENS_AT set) renders only a countdown and
- * reads no chain data, so it drops the indexer and expected-crowdfund-address
- * requirements; everything else still applies. A malformed opening time fails
+ * Pre-launch mode (VITE_PRELAUNCH_OPENS_AT set) renders only a countdown (plus the
+ * first-sale /refund page) and reads no sale data, so it drops the indexer and
+ * expected-crowdfund-address requirements; everything else still applies. A malformed opening time fails
  * in every build, dev included, so a typo surfaces before it is deployed.
  */
 export function validateEnv(env: EnvRecord): EnvValidationResult {
@@ -76,17 +85,27 @@ export function validateEnv(env: EnvRecord): EnvValidationResult {
         'the UI would apply mainnet sale constants to the deployed instance.',
     )
   }
-  // A non-mainnet profile (e.g. the medi/Sepolia profile) on a mainnet build would
-  // render $1k-scale sale numbers over the real $1.2M sale. Unset is allowed — it
-  // defaults to the mainnet profile.
+  // An unknown profile name silently falls back to the mainnet (Launch 1) constants,
+  // so a typo would render the wrong sale. Refuse it on any production build.
+  const profile = env.VITE_CROWDFUND_PROFILE?.trim()
+  if (!missing(profile) && !isCrowdfundProfile(profile!)) {
+    errors.push(
+      `VITE_CROWDFUND_PROFILE "${profile}" is not a known profile ` +
+        `(expected one of: ${CROWDFUND_PROFILES.join(', ')}).`,
+    )
+  }
+  // A testnet profile (e.g. medi/Sepolia) on a mainnet build would render $1k-scale
+  // sale numbers over a real mainnet sale. Mainnet builds use the Launch 1 profile
+  // ("mainnet") or the relaunch profile. Unset is allowed — it defaults to mainnet.
   if (
     network === 'mainnet' &&
-    !missing(env.VITE_CROWDFUND_PROFILE) &&
-    env.VITE_CROWDFUND_PROFILE!.trim() !== 'mainnet'
+    !missing(profile) &&
+    isCrowdfundProfile(profile!) &&
+    !MAINNET_PROFILES.includes(profile!)
   ) {
     errors.push(
-      `VITE_CROWDFUND_PROFILE is "${env.VITE_CROWDFUND_PROFILE!.trim()}" on a mainnet build — ` +
-        'mainnet must use the "mainnet" profile (or leave it unset, which defaults to mainnet).',
+      `VITE_CROWDFUND_PROFILE is "${profile}" on a mainnet build — ` +
+        'mainnet must use the "mainnet" or "relaunch" profile (or leave it unset, which defaults to mainnet).',
     )
   }
   // The crowdfund address is the USDC approve/commit target. On mainnet it must be
@@ -105,11 +124,50 @@ export function validateEnv(env: EnvRecord): EnvValidationResult {
   // checksum) so a lowercase-entered value is accepted.
   if (
     !missing(env.VITE_EXPECTED_CROWDFUND_ADDRESS) &&
-    !/^0x[0-9a-fA-F]{40}$/.test(env.VITE_EXPECTED_CROWDFUND_ADDRESS!.trim())
+    !ADDRESS_RE.test(env.VITE_EXPECTED_CROWDFUND_ADDRESS!.trim())
   ) {
     errors.push(
       'VITE_EXPECTED_CROWDFUND_ADDRESS is not a valid Ethereum address (expected 0x + 40 hex chars).',
     )
+  }
+
+  // First-sale (Sale 1) refunds — config/refundOnly. Mainnet always offers them at the built-in
+  // address, and the /refund page reads the chain even in pre-launch mode, so a mainnet build needs
+  // a dedicated RPC rather than the public fallback, and must not try to override the address.
+  const expected = env.VITE_EXPECTED_CROWDFUND_ADDRESS?.trim().toLowerCase()
+  const refundOverride = env.VITE_REFUND_ONLY_CROWDFUND_ADDRESS?.trim()
+  if (network === 'mainnet') {
+    if (missing(env.VITE_HUB_RPC)) {
+      errors.push(
+        'VITE_HUB_RPC is not set on a mainnet build — first-sale refunds (/refund) read the chain ' +
+          'and need a dedicated RPC.',
+      )
+    }
+    if (!missing(refundOverride)) {
+      errors.push(
+        'VITE_REFUND_ONLY_CROWDFUND_ADDRESS is set on a mainnet build — mainnet uses the built-in ' +
+          'first-sale address; remove the variable.',
+      )
+    }
+    // Only the relaunch build: the Launch 1 committer (mainnet profile) is the first sale's own
+    // refund UI and is configured with exactly this address until the switch-over.
+    if (profile === 'relaunch' && expected === SALE1_CROWDFUND_MAINNET.toLowerCase()) {
+      errors.push(
+        'VITE_EXPECTED_CROWDFUND_ADDRESS is the cancelled first-sale contract on a relaunch build — ' +
+          'point the committer at the relaunch crowdfund.',
+      )
+    }
+  } else if (!missing(refundOverride)) {
+    if (!ADDRESS_RE.test(refundOverride!)) {
+      errors.push(
+        'VITE_REFUND_ONLY_CROWDFUND_ADDRESS is not a valid Ethereum address (expected 0x + 40 hex chars).',
+      )
+    } else if (expected === refundOverride!.toLowerCase()) {
+      errors.push(
+        'VITE_REFUND_ONLY_CROWDFUND_ADDRESS is the same as VITE_EXPECTED_CROWDFUND_ADDRESS — the ' +
+          'refund target must be the old, cancelled sale.',
+      )
+    }
   }
 
   return errors.length > 0 ? { ok: false, errors } : { ok: true }

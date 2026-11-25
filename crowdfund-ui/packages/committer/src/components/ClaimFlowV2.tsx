@@ -27,7 +27,10 @@ import {
   isValidEnsName,
   truncateAddress,
   ADDRESS_INPUT_MAX_LENGTH,
+  allocationMatchesDemand,
+  TIER_NOUN,
 } from '@armada/crowdfund-shared'
+import { armAllocationBullet, belowMinimumMessage } from '@/lib/claimGateCopy'
 import { Button as ArmadaButton, Tooltip } from '@armada/ui'
 import { sendAndWaitTx } from '@/lib/sendAndWaitTx'
 import { savePendingTx, removePendingTx } from '@/lib/pendingTx'
@@ -455,6 +458,12 @@ function ClaimFlowScreens(props: ClaimFlowV2Props) {
   const hasClaimed = reads.hasClaimed || justClaimed
   const armAmount = reads.armAmount
   const refundAmount = reads.refundAmount
+  // A successful sale that allocated this wallet no ARM but owes it a refund (e.g. a later tier
+  // crowded out, or a $0-cap position). The claim returns only USDC, so it needs no delegate.
+  const armlessRefund =
+    mode === 'arm' && !armClaimWindowClosed && armAmount === 0n && refundAmount > 0n
+  // Either way the ARM path delivers only the USDC refund: label and validate it as such.
+  const refundOnlyClaim = armClaimWindowClosed || armlessRefund
   const readError = reads.readError
   // `loading` only while an enabled query has no data yet (false when disabled,
   // so the gate states render). An account switch re-keys the query → loading.
@@ -524,9 +533,10 @@ function ClaimFlowScreens(props: ClaimFlowV2Props) {
   // handling. Updates `txs` so WalletConfirmStep / Step4Approve renders controlled status.
   const runClaim = async () => {
     if (runningRef.current) return
-    // Past the deadline the ARM path claims only the USDC refund — label it honestly.
+    // Past the deadline, or with no ARM allocated, the ARM path claims only the USDC refund —
+    // label it honestly.
     const opLabel =
-      mode === 'arm' && !armClaimWindowClosed ? 'Claim ARM' : 'Claim USDC refund'
+      mode === 'arm' && !refundOnlyClaim ? 'Claim ARM' : 'Claim USDC refund'
     if (!crowdfundAddress) {
       // Surface an error row instead of bailing into a neutral state.
       setTxs([
@@ -541,13 +551,17 @@ function ClaimFlowScreens(props: ClaimFlowV2Props) {
     // Submit the canonical checksummed delegate — `resolvedDelegate` is set by
     // handleDelegateChange (from ENS resolution or a direct 0x… entry). Fall
     // back to checksumming the raw input as a defense-in-depth backstop.
-    const delegateAddress = resolvedDelegate || tryGetChecksumAddress(delegate)
+    // With no ARM allocated there is nothing to delegate: claim with address(0), which the contract
+    // accepts only when no ARM is transferred (so a wrong 0-ARM reading fails safe on-chain).
+    const delegateAddress = armlessRefund
+      ? ZeroAddress
+      : resolvedDelegate || tryGetChecksumAddress(delegate)
     // Past the ARM claim deadline the contract skips delegation entirely (ARM is
     // forfeited), so no delegate is required — the claim returns only the USDC
     // refund. Don't block that refund-only claim on delegate validation.
     if (
       mode === 'arm' &&
-      !armClaimWindowClosed &&
+      !refundOnlyClaim &&
       (!delegateAddress || delegateAddress === ZeroAddress)
     ) {
       setTxs([
@@ -726,7 +740,7 @@ function ClaimFlowScreens(props: ClaimFlowV2Props) {
     return (
       <DoneScreen
         mode={mode}
-        armForfeited={armClaimWindowClosed}
+        armForfeited={refundOnlyClaim}
         armDisplay={armDisplay}
         refundDisplay={refundDisplay}
         refundAmount={refundAmount}
@@ -772,9 +786,7 @@ function ClaimFlowScreens(props: ClaimFlowV2Props) {
       return (
         <GateShell title="Sale ended below minimum">
           <p className={styles.gateBody}>
-            {props.totalCommitted > 0n
-              ? `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum fund after per-hop allocation limits. Once it's finalized, you'll be able to claim a refund of your committed ${formatUsdc(props.totalCommitted)} from here.`
-              : `The crowdfund didn't reach the ${formatUsdc(CROWDFUND_CONSTANTS.MIN_SALE)} minimum fund after per-hop allocation limits. Once it's finalized, all committed USDC will be refundable to the addresses that participated.`}
+            {belowMinimumMessage(allocationMatchesDemand(), CROWDFUND_CONSTANTS.MIN_SALE, props.totalCommitted)}
           </p>
           <p className={styles.gateBodyFootnote}>
             Finalization is permissionless — anyone can trigger it. Refresh this page once
@@ -830,6 +842,40 @@ function ClaimFlowScreens(props: ClaimFlowV2Props) {
         onGoToNetwork={onGoToNetwork}
         onClose={handleClose}
       />
+    )
+  }
+
+  // Successful sale, no ARM allocated, refund owed: offer the refund as one claim with no
+  // delegate step (the normal flow would walk through delegation for 0 ARM).
+  if (armlessRefund && step !== 'submit') {
+    return (
+      <GateShell title="Claim your refund">
+        <p className={styles.gateBody}>
+          No ARM was allocated to your commitment, so your full {formatUsdc(refundAmount)} USDC is
+          refundable.
+        </p>
+        <div className={styles.gateActions}>
+          <ArmadaButton
+            variant="primary"
+            size="md"
+            label={`Claim ${formatUsdc(refundAmount)} refund`}
+            showIcon={false}
+            disabled={submitting}
+            onClick={() => {
+              setTxs(null)
+              setStep('submit')
+              void runClaim()
+            }}
+          />
+          <ArmadaButton
+            variant="secondary"
+            size="md"
+            label="Back to crowdfund"
+            showIcon={false}
+            onClick={onGoToNetwork}
+          />
+        </div>
+      </GateShell>
     )
   }
 
@@ -1255,7 +1301,7 @@ function ClaimFlowScreens(props: ClaimFlowV2Props) {
                 title="ARM allocation"
                 description="The ARM tokens delivered to your wallet by this transaction."
                 bullets={[
-                  'Pro-rata share of the sale, capped at your hop allocation',
+                  armAllocationBullet(TIER_NOUN),
                   'Delegate set below receives your governance voting power',
                   'Any committed USDC not used to buy ARM is refunded in the same tx',
                 ]}

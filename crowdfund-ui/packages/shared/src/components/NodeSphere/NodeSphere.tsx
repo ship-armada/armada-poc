@@ -6,12 +6,22 @@ import * as THREE from 'three'
 import { ArrowTopRightOnSquareIcon } from '@heroicons/react/24/outline'
 import armadaSymbolUrl from '../../assets/armada-symbol.svg'
 import { GRAPH_HOP_NODE_COLORS } from '../../lib/graphHopColors.js'
+import { graphDefaultCameraZ, graphShellRadii } from '../../lib/graphShellRadii.js'
 import { MOBILE_LAYOUT_MAX_WIDTH_PX } from '../../lib/viewportBreakpoints.js'
 import { useIsMobileLayout } from '../../hooks/useIsMobileLayout.js'
 import { SplashBackdrop } from '../SplashBackdrop.js'
+import { hopLabel } from '../../lib/format.js'
 import styles from './NodeSphere.module.css'
 
 type NodeKind = 'Hop 0' | 'Hop 1' | 'Hop 2' | 'Multi-hop' | 'Your wallet'
+
+/** Tooltip label for a node kind, in the active profile's tier names (the kind itself is a key). */
+function nodeKindLabel(kind: NodeKind): string {
+  if (kind === 'Hop 0') return hopLabel(0)
+  if (kind === 'Hop 1') return hopLabel(1)
+  if (kind === 'Hop 2') return hopLabel(2)
+  return kind
+}
 
 type HoverState = {
   visible: boolean
@@ -360,7 +370,8 @@ export function NodeSphere({
     // lerp target; deselecting eases the camera back to Z_DEFAULT.
     const Z_MIN = 6
     const Z_MAX = 28
-    const Z_DEFAULT = Z_MIN
+    // Profiles that hide team wallets start a little further out (see graphDefaultCameraZ).
+    const Z_DEFAULT = graphDefaultCameraZ(Z_MIN)
     // My Position pulls the camera back to this fixed level to frame the user's
     // invite tree, rather than sitting at the main view's tight default zoom.
     const Z_MYPOSITION = 11
@@ -423,11 +434,14 @@ export function NodeSphere({
     const indicesByKind = new Map<NodeKind, number[]>()
     const indexByAddress = new Map<string, number>()
 
+    // Per-profile radii (see graphShellRadii): profiles that hide team wallets drop the empty
+    // hop-1 shell so hop 2 doesn't float a double gap away from hop 0.
+    const radii = graphShellRadii()
     const shellRadii: Array<{ kind: NodeKind; radius: number }> = [
-      { kind: 'Hop 0', radius: 2.4 },
-      { kind: 'Hop 1', radius: 3.6 },
-      { kind: 'Hop 2', radius: 5.1 },
-      { kind: 'Multi-hop', radius: 6.4 },
+      { kind: 'Hop 0', radius: radii['Hop 0'] },
+      { kind: 'Hop 1', radius: radii['Hop 1'] },
+      { kind: 'Hop 2', radius: radii['Hop 2'] },
+      { kind: 'Multi-hop', radius: radii['Multi-hop'] },
     ]
 
     const pinnedByKind = new Map<NodeKind, PinnedNode[]>()
@@ -1311,7 +1325,7 @@ export function NodeSphere({
         (() => {
           const hoverIsOwnWallet =
             !!walletAddress && hover.address.toLowerCase() === walletAddress.toLowerCase()
-          const hoverEyebrow = hoverIsOwnWallet ? 'Your wallet' : hover.kind
+          const hoverEyebrow = hoverIsOwnWallet ? 'Your wallet' : nodeKindLabel(hover.kind)
           const hoverTruncated =
             hover.address.length > 12
               ? `${hover.address.slice(0, 6)}…${hover.address.slice(-4)}`
@@ -1335,7 +1349,7 @@ export function NodeSphere({
       {!hideNodePopover && selectedTip?.visible && (() => {
         const isOwnWallet =
           !!walletAddress && selectedTip.address.toLowerCase() === walletAddress.toLowerCase()
-        const eyebrow = isOwnWallet ? 'Your wallet' : selectedTip.kind
+        const eyebrow = isOwnWallet ? 'Your wallet' : nodeKindLabel(selectedTip.kind)
         const truncated =
           selectedTip.address.length > 12
             ? `${selectedTip.address.slice(0, 6)}…${selectedTip.address.slice(-4)}`

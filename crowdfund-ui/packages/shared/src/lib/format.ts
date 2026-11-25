@@ -1,10 +1,21 @@
 // ABOUTME: Formatting utilities for USDC amounts, ARM tokens, addresses, and countdowns. Pure functions, no React or ethers dependency.
 // ABOUTME: parseUsdcInput / formatUsdc / formatUsdcPlain / truncateAddress are kept in LOCKSTEP with apps/armada-interface/src/lib/format.ts — any change must land in both files in the same PR. Tracked for eth-utils extraction in .claude/ARMADA_INTERFACE_POLISH.md.
 
+import { TIER_LABELS, TIER_NOUN } from './constants.js'
+
 /** Format a USDC amount (6 decimals) as a dollar string, e.g. "$1,200,000" */
 export function formatUsdc(amount: bigint): string {
   const dollars = Number(amount) / 1e6
   return `$${dollars.toLocaleString('en-US', { maximumFractionDigits: 2 })}`
+}
+
+/** Short dollar form for headline amounts: "$1.5M", "$250K"; below $1,000 the full formatUsdc form. */
+export function formatUsdcShort(amount: bigint): string {
+  const dollars = Number(amount) / 1e6
+  const trim = (n: number) => n.toFixed(2).replace(/\.?0+$/, '')
+  if (dollars >= 1_000_000) return `$${trim(dollars / 1_000_000)}M`
+  if (dollars >= 1_000) return `$${trim(dollars / 1_000)}K`
+  return formatUsdc(amount)
 }
 
 /** USDC (6 decimals) as a dollar number, cents kept — for display math; round at the label. */
@@ -214,12 +225,23 @@ export function phaseColor(phase: number): string {
   }
 }
 
-/** Get hop label for display */
+/** Get hop label for display: the active profile's tier name (e.g. "Hop-1", or "Team" on the relaunch). */
 export function hopLabel(hop: number): string {
-  switch (hop) {
-    case 0: return 'Hop-0'
-    case 1: return 'Hop-1'
-    case 2: return 'Hop-2'
-    default: return `Hop-${hop}`
-  }
+  return TIER_LABELS[hop] ?? `Hop-${hop}`
+}
+
+/** Upper-case tag form of hopLabel, for chips and pills (e.g. "HOP-1", or "TEAM" on the relaunch). */
+export function hopTagLabel(hop: number): string {
+  return hopLabel(hop).toUpperCase()
+}
+
+/** The profile's word for a hop in running copy: "hop" / "hops", or "tier" / "tiers" on the relaunch. */
+export function tierWord(plural = false): string {
+  const word = TIER_NOUN.toLowerCase()
+  return plural ? `${word}s` : word
+}
+
+/** Tag for a wallet that holds positions at more than one hop: "MULTI-HOP", or "MULTI-TIER". */
+export function multiTierTagLabel(): string {
+  return `MULTI-${TIER_NOUN.toUpperCase()}`
 }

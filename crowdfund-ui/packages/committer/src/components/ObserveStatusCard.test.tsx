@@ -68,3 +68,28 @@ describe('ObserveStatusCard per-hop Fill', () => {
     expect(fillCell(0)).toBe('106%')
   })
 })
+
+describe('ObserveStatusCard progress and sale size', () => {
+  // WHY: FUNDED and LEFT measure progress toward the funding goal (on the mainnet profile the goal
+  // is its $1M minimum), with the goal and minimum as their own stats.
+  it('measures FUNDED and LEFT against the goal and shows the goal and minimum as stats', () => {
+    render(<ObserveStatusCard state={makeState([450_000, 0, 0])} />)
+    expect(screen.getByText('FUNDED').parentElement?.textContent).toBe('45%FUNDED')
+    expect(screen.getByText('LEFT').parentElement?.textContent).toBe('$550,000LEFT')
+    expect(screen.getByText('GOAL').parentElement?.textContent).toBe('$1,000,000GOAL')
+    expect(screen.getByText('MIN').parentElement?.textContent).toBe('$1,000,000MIN')
+  })
+
+  // WHY: commitments can run past the goal, so FUNDED passes 100% and LEFT is hidden.
+  it('lets FUNDED pass 100% and hides LEFT past the goal', () => {
+    render(<ObserveStatusCard state={makeState([2_100_000, 0, 0])} />)
+    expect(screen.getByText('FUNDED').parentElement?.textContent).toBe('210%FUNDED')
+    expect(screen.queryByText('LEFT')).toBeNull()
+  })
+
+  // WHY: Launch 1's sale could expand, so the projected sale size (and BASE / EXPANDED) still informs.
+  it('keeps the projected sale size where the sale can expand', () => {
+    render(<ObserveStatusCard state={makeState([450_000, 0, 0])} />)
+    expect(screen.getByText(/Projected size/)).toBeTruthy()
+  })
+})

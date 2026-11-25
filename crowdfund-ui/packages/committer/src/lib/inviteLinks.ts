@@ -103,22 +103,24 @@ export function decodeInviteUrl(searchParams: URLSearchParams): InviteLinkData |
   return { inviter, fromHop, nonce, deadline, signature }
 }
 
-// IndexedDB helpers. The database is namespaced per chain id so invite links
-// created on one network (e.g. a Sepolia test instance) never surface in the UI on
-// another (e.g. mainnet): an invite's EIP-712 signature carries the chain id in its
-// domain separator and fails validation cross-chain, so a stale link would only
-// confuse. Each chain gets its own isolated database.
+// IndexedDB helpers. The database is namespaced per chain id AND crowdfund contract
+// so invite links created for one sale never surface in the UI of another: an
+// invite's EIP-712 domain separator carries both the chain id and the verifying
+// contract, so a link only validates on the network and crowdfund it was signed for.
+// Without the contract in the name, a relaunch at a new address on the same chain
+// would show the previous sale's links (a stale "redeemed" link occupies a slot).
+// Each (chain, crowdfund) pair gets its own isolated database.
 const DB_NAME_PREFIX = 'armada-invite-links'
 const STORE_NAME = 'links'
 const DB_VERSION = 1
 
-function dbName(): string {
-  return `${DB_NAME_PREFIX}-${getHubChainId()}`
+function dbName(crowdfundAddress: string): string {
+  return `${DB_NAME_PREFIX}-${getHubChainId()}-${crowdfundAddress.toLowerCase()}`
 }
 
-function openDB(): Promise<IDBDatabase> {
+function openDB(crowdfundAddress: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(dbName(), DB_VERSION)
+    const request = indexedDB.open(dbName(crowdfundAddress), DB_VERSION)
     request.onupgradeneeded = () => {
       const db = request.result
       if (!db.objectStoreNames.contains(STORE_NAME)) {
@@ -131,8 +133,8 @@ function openDB(): Promise<IDBDatabase> {
   })
 }
 
-export async function storeInviteLink(link: StoredInviteLink): Promise<void> {
-  const db = await openDB()
+export async function storeInviteLink(link: StoredInviteLink, crowdfundAddress: string): Promise<void> {
+  const db = await openDB(crowdfundAddress)
   // Lowercase the inviter on write so the keyPath + `inviter` index always match
   // the lowercased lookups in getStoredInviteLinks / updateInviteLinkStatus,
   // even if a caller passes a checksummed address.
@@ -145,8 +147,8 @@ export async function storeInviteLink(link: StoredInviteLink): Promise<void> {
   })
 }
 
-export async function getStoredInviteLinks(inviter: string): Promise<StoredInviteLink[]> {
-  const db = await openDB()
+export async function getStoredInviteLinks(inviter: string, crowdfundAddress: string): Promise<StoredInviteLink[]> {
+  const db = await openDB(crowdfundAddress)
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readonly')
     const index = tx.objectStore(STORE_NAME).index('inviter')
@@ -160,8 +162,9 @@ export async function updateInviteLinkStatus(
   inviter: string,
   nonce: number,
   status: StoredInviteLink['status'],
+  crowdfundAddress: string,
 ): Promise<void> {
-  const db = await openDB()
+  const db = await openDB(crowdfundAddress)
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, 'readwrite')
     const store = tx.objectStore(STORE_NAME)

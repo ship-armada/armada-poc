@@ -1,5 +1,5 @@
 // ABOUTME: Observe-page participants table — committer-styled adaptation of the admin ParticipantTable.
-// ABOUTME: Plain-React (no react-table): per-hop / per-address views, hop/status/claim filters, address search, click-to-sort, ENS names, phase-conditional ARM/Refund/Claimed columns. Styled like the hop table.
+// ABOUTME: Plain-React (no react-table): per-hop / per-address views, hop/status/claim filters, address search, click-to-sort, ENS names, phase-conditional ARM/Refund/Claimed columns. Hops are named per profile (tiers on the relaunch).
 
 import { useMemo, useState, type ReactNode } from 'react'
 import type { JsonRpcProvider } from 'ethers'
@@ -10,12 +10,22 @@ import {
   hopLabel,
   heroListHopColor,
   useENS,
+  CROWDFUND_FEATURES,
+  TIER_NOUN,
   type CrowdfundEvent,
 } from '@armada/crowdfund-shared'
 import { useParticipants, type ParticipantRow } from '@/hooks/useParticipants'
 import styles from './ObserveParticipantsTable.module.css'
 
+/** Shown where the invite graph is listed on profiles that hide team inviter wallets: the wallets
+ *  are visible on-chain, so say why the app attributes their invitees to Armada. */
+export const TEAM_WALLET_DISCLOSURE =
+  'Armada issues invite links through team-operated wallets. Those wallets are not listed here; the people they invite appear as invited by Armada.'
+
 type ViewMode = 'per-hop' | 'per-address'
+
+/** Hops offered in the filter: the hidden team-wallet hop (1) is left out where its wallets are hidden. */
+const FILTER_HOPS = [0, 1, 2].filter((h) => !(h === 1 && CROWDFUND_FEATURES.hideTeamWallets))
 type NameFn = (addr: string) => string
 type SortState = { key: string; desc: boolean }
 
@@ -146,7 +156,7 @@ export function ObserveParticipantsTable({ events, phase, provider }: ObservePar
   const perHopColumns: Column<ParticipantRow>[] = useMemo(() => {
     const cols: Column<ParticipantRow>[] = [
       { key: 'address', header: 'Address', align: 'left', sortValue: (r) => r.address, render: (r, n) => addrCell(r.address, n) },
-      { key: 'hop', header: 'Hop', align: 'left', sortValue: (r) => r.hop, render: (r) => hopCell(r.hop) },
+      { key: 'hop', header: TIER_NOUN, align: 'left', sortValue: (r) => r.hop, render: (r) => hopCell(r.hop) },
       { key: 'invitedBy', header: 'Invited by', align: 'left', render: (r, n) => {
         if (r.invitedBy.length === 0) return '—'
         const inv = r.invitedBy[0]
@@ -169,7 +179,7 @@ export function ObserveParticipantsTable({ events, phase, provider }: ObservePar
   const aggColumns: Column<AggregatedRow>[] = useMemo(() => {
     const cols: Column<AggregatedRow>[] = [
       { key: 'address', header: 'Address', align: 'left', sortValue: (r) => r.address, render: (r, n) => addrCell(r.address, n) },
-      { key: 'hops', header: 'Hops', align: 'left', render: (r) => r.hops.map((h) => `H${h}`).join(', ') },
+      { key: 'hops', header: `${TIER_NOUN}s`, align: 'left', render: (r) => r.hops.map((h) => (TIER_NOUN === 'Tier' ? hopLabel(h) : `H${h}`)).join(', ') },
       { key: 'committed', header: 'Committed', align: 'right', sortValue: (r) => r.totalCommitted, render: (r) => formatUsdc(r.totalCommitted) },
       { key: 'totalCap', header: 'Cap', align: 'right', sortValue: (r) => r.totalCap, render: (r) => formatUsdc(r.totalCap) },
       { key: 'invites', header: 'Invites', align: 'right', sortValue: (r) => r.totalInvitesUsed, render: (r) => `${r.totalInvitesUsed} / ${r.totalInvitesTotal}` },
@@ -243,6 +253,9 @@ export function ObserveParticipantsTable({ events, phase, provider }: ObservePar
         <span className={styles.title}>Participants</span>
         <span className={styles.count}>{dataCount} entries</span>
       </div>
+      {CROWDFUND_FEATURES.hideTeamWallets && (
+        <p className={styles.note}>{TEAM_WALLET_DISCLOSURE}</p>
+      )}
 
       <div className={styles.controls}>
         <div className={styles.viewToggle} role="group" aria-label="View mode">
@@ -254,7 +267,7 @@ export function ObserveParticipantsTable({ events, phase, provider }: ObservePar
               setSort({ key: 'committed', desc: true })
             }}
           >
-            Per hop
+            Per {TIER_NOUN.toLowerCase()}
           </button>
           <button
             type="button"
@@ -268,18 +281,21 @@ export function ObserveParticipantsTable({ events, phase, provider }: ObservePar
           </button>
         </div>
 
+        <span className={styles.selectWrap}>
         <select
           className={styles.select}
           value={hopFilter ?? 'all'}
           onChange={(e) => setHopFilter(e.target.value === 'all' ? null : Number(e.target.value))}
-          aria-label="Hop filter"
+          aria-label={`${TIER_NOUN} filter`}
         >
-          <option value="all">All hops</option>
-          <option value="0">Hop-0</option>
-          <option value="1">Hop-1</option>
-          <option value="2">Hop-2</option>
+          <option value="all">All {TIER_NOUN.toLowerCase()}s</option>
+          {FILTER_HOPS.map((h) => (
+            <option key={h} value={String(h)}>{hopLabel(h)}</option>
+          ))}
         </select>
+        </span>
 
+        <span className={styles.selectWrap}>
         <select
           className={styles.select}
           value={statusFilter}
@@ -288,10 +304,12 @@ export function ObserveParticipantsTable({ events, phase, provider }: ObservePar
         >
           <option value="all">All status</option>
           <option value="committed">Committed</option>
-          <option value="invited">Invited only</option>
+          <option value="invited">Not committed</option>
         </select>
+        </span>
 
         {phase >= 1 && (
+          <span className={styles.selectWrap}>
           <select
             className={styles.select}
             value={claimFilter}
@@ -302,6 +320,7 @@ export function ObserveParticipantsTable({ events, phase, provider }: ObservePar
             <option value="claimed">Claimed</option>
             <option value="unclaimed">Unclaimed</option>
           </select>
+          </span>
         )}
 
         <input

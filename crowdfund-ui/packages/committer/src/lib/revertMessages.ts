@@ -1,6 +1,12 @@
 // ABOUTME: Maps contract revert reason strings to human-readable error messages.
 // ABOUTME: Centralized mapping used by useTransactionFlow and InviteLinkRedemption.
 
+import { TIER_NOUN } from '@armada/crowdfund-shared'
+
+/** Hop-level wording in the profile's own term: tiers on the relaunch, hops elsewhere. */
+const TIERED = TIER_NOUN === 'Tier'
+const AT_THIS = TIERED ? 'this tier' : 'this hop'
+
 /** Known contract revert reasons → user-facing messages */
 const REVERT_MAP: [RegExp, string][] = [
   [/user rejected/i, 'Transaction rejected by user'],
@@ -17,8 +23,8 @@ const REVERT_MAP: [RegExp, string][] = [
   [/not active window/i, 'Commitment window is not open.'],
   [/not active/i, 'Crowdfund is not in the active phase.'],
   [/below minimum/i, 'Amount is below the minimum commitment.'],
-  [/not whitelisted/i, 'You are not invited to this hop level.'],
-  [/invalid hop/i, 'You are not invited to this hop level.'],
+  [/not whitelisted/i, TIERED ? 'You are not invited to this tier.' : 'You are not invited to this hop level.'],
+  [/invalid hop/i, TIERED ? 'You are not invited to this tier.' : 'You are not invited to this hop level.'],
   [/already claimed/i, 'You have already claimed this.'],
   [/claim expired/i, 'The 3-year claim deadline has passed.'],
   [/refund mode/i, 'No ARM allocations (refund mode). Use Claim Refund instead.'],
@@ -26,15 +32,17 @@ const REVERT_MAP: [RegExp, string][] = [
   [/nonce already used/i, 'This invite link has already been used.'],
   [/nonce consumed/i, 'This invite link has already been used.'],
   [/nonce revoked/i, 'This invite link has been revoked.'],
-  [/no invites remaining/i, 'The inviter has no remaining invite slots at this hop.'],
+  [/no invites remaining/i, `The inviter has no remaining invite slots at ${AT_THIS}.`],
   [/insufficient balance/i, 'Your USDC balance is insufficient.'],
   // Contract revert strings (ArmadaCrowdfund.sol).
   [/window closed/i, 'The commitment window has closed.'],
   [/invite expired/i, 'This invite link has expired.'],
   [/invite limit reached/i, 'The inviter has no remaining invite slots.'],
   [/already whitelisted/i, 'This address is already invited.'],
-  [/max invites received/i, "You've already accepted the maximum number of invites for this hop."],
-  [/max hop reached/i, 'You are already at the deepest hop level.'],
+  [/max invites received/i, `You've already accepted the maximum number of invites for ${AT_THIS}.`],
+  // On the relaunch, Backer and Community contributors cannot invite at all, so "deepest level" would
+  // not explain the failure.
+  [/max hop reached/i, TIERED ? "Your account can't invite at this tier." : 'You are already at the deepest hop level.'],
   // OpenZeppelin ERC20 (USDC) revert strings.
   [/insufficient allowance/i, 'USDC approval is too low — approve and retry.'],
   [/transfer amount exceeds balance/i, 'Your USDC balance is insufficient.'],

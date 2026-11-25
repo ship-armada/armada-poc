@@ -95,8 +95,9 @@ import type { CrowdfundEvent } from '@armada/crowdfund-shared'
 | Function | Role | Phase | Notes |
 |----------|------|-------|-------|
 | `loadArm()` | Permissionless | Active | Verify ARM pre-load. Idempotent. |
-| `addSeeds(address[])` | Launch team | Active, pre-launch-team-deadline | Batch seeds. Max 180 total. |
-| `launchTeamInvite(address, uint8)` | Launch team | Active, days 1-21 (pre-launch-team-deadline) | Budget-tracked (100/120). |
+| `addSeeds(address[])` | Launch team | Active, pre-launch-team-deadline | Batch seeds; the panel sends at most 180 per transaction. Total cap is the profile's `MAX_SEEDS` (Launch 1: 180, relaunch: 500). |
+| `launchTeamInvite(address, uint8)` | Launch team | Active, pre-launch-team-deadline | Budget-tracked per tier (Launch 1: 100 hop-1 / 120 hop-2; relaunch: 1 team wallet / 500 Community). |
+| `extendWindow(newEnd)` | Launch team | Active, before `windowEnd` | Extend Window panel: a single +5 days preset (the operational step); any other end shows a warning. Capped at `windowStart + MAX_WINDOW_DURATION`. Moves the launch-team deadline too. |
 | `finalize()` | Permissionless | Active, post-window | Compute allocations, transfer proceeds. |
 | `cancel()` | Security council | Active | Emergency cancel. Irreversible. |
 | `withdrawUnallocatedArm()` | Permissionless | Finalized or Cancelled | Sweep ARM to treasury. |

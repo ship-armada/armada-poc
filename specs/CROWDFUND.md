@@ -109,6 +109,8 @@ The team wallet appears in the invite graph with the launch team address as invi
 | 1 | Team inviter wallet (max 1, launch team) | Third (demand is always $0) | $0 | 100 | 1 |
 | 2 | Invited contributors (team-wallet links + up to 500 launch-team placements) | First for the $300,000 reserve; last for anything above it | $10,000 | 0 | Up to 20 |
 
+**Display names.** This spec uses the team brief's terms. The apps label hop 0 **Backer**, hop 1 **Team** and hop 2 **Community** (`TIER_LABELS_BY_PROFILE` in `crowdfund-ui/packages/shared/src/lib/constants.ts`); published terms and participant-facing wording should use the display names.
+
 The launch team's placement budgets (1 hop-1, 500 hop-2) are separate from hop-0 and from the team wallet's invite slots. Launch team placements may be issued at any time during the commitment window.
 
 The allocation, with `S` the sale size, `d_h` each hop's capped demand and `a_h` its allocation:
@@ -526,6 +528,8 @@ See GOVERNANCE.md for full specification: voting mechanics, delegation, quorum, 
 The full invite graph is public throughout the crowdfund — inviter, invitee, and hop level are visible from the moment an invite is issued. There is no post-finalization reveal step.
 
 Participants are joining a trust network, and that network's shape should be legible to everyone in it. Full visibility during the crowdfund also reinforces the governance bootstrapping framing: you can see who you're building the network with before committing.
+
+**App presentation.** The committer app shows a simplified graph: the hop-1 team inviter wallets are an implementation detail of issuing invite links (a link places the redeemer one hop below the signer), so the app omits them and shows the contributors they invite as invited by Armada, the same as direct launch-team placements. A disclosure in the app's Details view says so. The full graph, including the team wallets, is on-chain and visible on any block explorer; the admin app shows it too.
 
 ---
 

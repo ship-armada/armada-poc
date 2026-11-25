@@ -19,6 +19,8 @@ import {
 } from './inviteLinks'
 
 const TEST_INVITER = '0x1111111111111111111111111111111111111111'
+/** The crowdfund the stored links belong to. */
+const CROWDFUND = '0x5555555555555555555555555555555555555555'
 
 function storedLink(
   nonce: number,
@@ -199,8 +201,8 @@ describe('IndexedDB CRUD', () => {
       createdAt: Date.now(),
       status: 'pending',
     }
-    await storeInviteLink(link)
-    const retrieved = await getStoredInviteLinks(inviter)
+    await storeInviteLink(link, CROWDFUND)
+    const retrieved = await getStoredInviteLinks(inviter, CROWDFUND)
     expect(retrieved).toHaveLength(1)
     expect(retrieved[0].nonce).toBe(1)
     expect(retrieved[0].status).toBe('pending')
@@ -217,10 +219,32 @@ describe('IndexedDB CRUD', () => {
       createdAt: Date.now(),
       status: 'pending',
     }
-    await storeInviteLink(link)
-    await updateInviteLinkStatus(inviter, 1, 'revoked')
-    const retrieved = await getStoredInviteLinks(inviter)
+    await storeInviteLink(link, CROWDFUND)
+    await updateInviteLinkStatus(inviter, 1, 'revoked', CROWDFUND)
+    const retrieved = await getStoredInviteLinks(inviter, CROWDFUND)
     expect(retrieved[0].status).toBe('revoked')
+  })
+
+  // WHY: a link's EIP-712 signature names the crowdfund contract, so it only works on that sale.
+  // A relaunch on the same chain must not surface the previous sale's links (a stale "redeemed"
+  // link would occupy an invite slot in the new sale's card).
+  it('keeps each crowdfund\'s links separate on the same chain', async () => {
+    const inviter = uniqueInviter()
+    const otherCrowdfund = '0x6666666666666666666666666666666666666666'
+    const link: StoredInviteLink = {
+      inviter,
+      fromHop: 1,
+      nonce: 9,
+      deadline: 1700000000,
+      signature: '0xabc',
+      createdAt: Date.now(),
+      status: 'redeemed',
+    }
+    await storeInviteLink(link, otherCrowdfund)
+    expect(await getStoredInviteLinks(inviter, CROWDFUND)).toEqual([])
+    expect(await getStoredInviteLinks(inviter, otherCrowdfund)).toHaveLength(1)
+    // The address's case must not split one crowdfund's links across two stores.
+    expect(await getStoredInviteLinks(inviter, otherCrowdfund.toUpperCase().replace('0X', '0x'))).toHaveLength(1)
   })
 })
 
@@ -303,8 +327,8 @@ describe('storeInviteLink inviter normalization', () => {
       signature: '0x' + 'cd'.repeat(65),
       createdAt: 1000,
       status: 'pending',
-    })
-    const found = await getStoredInviteLinks(checksummed.toLowerCase())
+    }, CROWDFUND)
+    const found = await getStoredInviteLinks(checksummed.toLowerCase(), CROWDFUND)
     expect(found.some((l) => l.nonce === 42)).toBe(true)
   })
 })

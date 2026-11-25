@@ -51,7 +51,7 @@ The SC shield pause is **disabled**: `MAX_PAUSE_DURATION` is zero, so a pause ex
 
 ### Security Council Veto
 
-The SC can veto queued governance proposals. Every veto triggers a mandatory community ratification vote:
+The SC can veto queued governance proposals. During the veto bootstrap (the 70 days after the crowdfund finalizes) a veto is final: the proposal is canceled and no ratification vote is created. After that, every veto triggers a mandatory community ratification vote:
 
 - If the community **upholds** the veto, the proposal is permanently canceled
 - If the community **overrides** the veto, the SC is ejected and the original proposal is re-queued
@@ -59,7 +59,7 @@ The SC can veto queued governance proposals. Every veto triggers a mandatory com
 
 ### Governance Wind-Down
 
-An irreversible protocol shutdown mechanism, activated via governance proposal:
+An irreversible protocol shutdown mechanism. Three triggers: an Extended governance proposal; permissionless, once the wind-down deadline has passed with recognized revenue below the threshold; and the launch-team guardian, at any time, as a last resort against a captured governance (GOVERNANCE.md §Wind-Down). The guardian power is permanent until the launch team renounces it. On trigger:
 
 - Disables all new proposals — governance ends permanently
 - Pool enters **withdraw-only mode** — only unshields permitted

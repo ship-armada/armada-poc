@@ -195,7 +195,7 @@ loosens constraints, or increases risk exposure:
 * Bond decreases
 * Quorum floor decreases
 * Steward budget increases (add token, increase per-token limit, extend window)
-* Governance-initiated wind-down trigger (irreversible terminal state transition; the conditional, permissionless trigger path is governance-bypass and not in scope for this classification)
+* Governance-initiated wind-down trigger (irreversible terminal state transition; the conditional, permissionless trigger path and the launch-team guardian trigger are governance-bypass and not in scope for this classification)
 
 A proposal is **standard** if it revokes authority, tightens
 constraints, or reduces risk exposure:
@@ -229,7 +229,7 @@ principle to the full proposal classification system.
 | Setter / action | Extended (loosening) | Standard (tightening) |
 |---|---|---|
 | Fee parameters | Increase | Decrease |
-| Treasury outflow limit | Increase limit or extend window | Decrease limit or shorten window |
+| Treasury outflow limit | Increase limit or extend window | Decrease limit or shorten window (Extended at launch; see the implementation note below) |
 | Quorum | Decrease | Increase |
 | Voting period | Decrease (less scrutiny time) | Increase (more scrutiny time) |
 | Execution delay | Decrease (less veto time) | Increase (more veto time) |
@@ -244,7 +244,7 @@ principle to the full proposal classification system.
 | Contract upgrade | Always extended | — |
 | SC replacement | Always extended | — |
 | Revenue definition expansion | Always extended | — |
-| Wind-down trigger (governance-initiated) | Always extended | — (permissionless conditional trigger is non-governance) |
+| Wind-down trigger (governance-initiated) | Always extended | — (the permissionless conditional trigger and the guardian trigger are non-governance) |
 
 Classification is determined mechanically by calldata and, where
 direction matters, comparison of proposed values against current
@@ -266,7 +266,7 @@ entire proposal is extended.
 
 **Implementation note: outflow setters and `updateStewardBudgetToken`.** Same flat-Extended pattern applies to `setOutflowWindow`, `setOutflowLimitBps`, `setOutflowLimitAbsolute`, and `updateStewardBudgetToken`. Each takes a single directional parameter that the spec table classifies per-direction (tightening = Standard, loosening = Extended), but the current `_classifyProposal` does not decode the calldata to compare proposed-vs-current values for these selectors. They run flat-Extended at launch — conservative for safety but over-gates the tightening direction. **Tightening escape valves at launch:** for steward budgets, `removeStewardBudgetToken` is already Standard, so governance can revoke a budget at the lower bar (and re-add via Extended if needed). For outflow tightening, no escape valve exists at launch — community-driven outflow restriction takes 23 days at the Extended bar, leaving up to a 14-day frontrun window against a 9-day pass-by-default steward cycle. Directional classification for these setters is part of the post-launch governor upgrade scope (see §Future governance upgrades).
 
-**Note: veto ratification votes** (see §Security Council) are a fourth proposal category with distinct parameters — they are triggered automatically when the SC vetoes a queued proposal, have a fixed 14-day voting period, use standard quorum, and carry the unique side effect of SC ejection on AGAINST outcome. The governor contract must implement this as a separate proposal type alongside standard, extended, and signaling.
+**Note: veto ratification votes** (see §Security Council) are a fourth proposal category with distinct parameters — they are triggered automatically when the SC vetoes a queued proposal (except during the veto bootstrap, when a veto is final and no ratification vote is created), have a fixed 14-day voting period, use a fixed 40% quorum (subject to the absolute quorum floor), and carry the unique side effect of SC ejection on AGAINST outcome. The governor contract must implement this as a separate proposal type alongside standard, extended, and signaling.
 
 ### Signaling proposals
 
@@ -293,13 +293,14 @@ A signaling proposal is a non-executable proposal used to measure token-holder p
 |-----------|----------|----------|
 | Proposal threshold | 5,000 ARM | 5,000 ARM |
 | Bond | 1,000 ARM | 1,000 ARM |
-| Quorum | max(20% of circulating voting power, 200,000 ARM) | max(30% of circulating voting power, 200,000 ARM) |
+| Quorum | max(20% of circulating voting power, 100,000 ARM) | max(30% of circulating voting power, 100,000 ARM) |
 | Proposal delay | 48 hours | 48 hours |
 | Voting period | 7 days | 14 days |
 | Execution delay | 3 days | 7 days |
 | Governance quiet period | 10 days post-crowdfund finalization | — (one-time only) |
+| Veto bootstrap (SC vetoes final, no ratification) | 70 days post-crowdfund finalization, quiet period included | — (one-time only) |
 
-**Quorum floor: 200,000 ARM.** Quorum is the greater of the percentage-based threshold and this absolute floor. This prevents governance passing on near-zero turnout regardless of how much ARM has been claimed and delegated at any given time. At the base raise of 1.2M ARM, 200,000 ARM represents ~16.7% of the crowdfund allocation — meaningful coordinated participation. The floor sets quorum until eligible supply exceeds 1,000,000 ARM for Standard proposals (20%) or ~666,667 ARM for Extended (30%). It applies to every vote type, including steward-spend defeat and veto ratification.
+**Quorum floor: 100,000 ARM.** Quorum is the greater of the percentage-based threshold and this absolute floor. This prevents governance passing on near-zero turnout regardless of how much ARM has been claimed and delegated at any given time. At the $250,000 minimum raise, 100,000 ARM is 40% of the crowdfund allocation; at the full $1.8M sale it is ~5.6%. The floor sets quorum until eligible supply exceeds 500,000 ARM for Standard proposals (20%), ~333,333 ARM for Extended (30%), or 250,000 ARM for veto ratification (40%). It applies to every vote type, including steward-spend defeat and veto ratification.
 
 **Mutability:** `QUORUM_FLOOR` is a compile-time `constant` in the current implementation — adjusting it requires a UUPS governor upgrade (Extended proposal), not the directional Standard/Extended path described in the classification table. The post-launch governor upgrade will introduce a setter; until then, the floor is fixed.
 
@@ -327,7 +328,7 @@ Most reusable governance parameters listed above are themselves governable — l
 | **Parameters** | Governance parameters — loosening changes (quorum decrease, voting period decrease, execution delay decrease, proposal delay decrease, proposal threshold decrease, bond decrease, quorum floor decrease) | Extended |
 | **Parameters** | Governance parameters — tightening changes (quorum increase, voting period increase, execution delay increase, proposal delay increase, proposal threshold increase, bond increase, quorum floor increase) | Standard |
 | **Parameters** | Treasury outflow rate limit increases or window extensions (loosening) | Extended |
-| **Parameters** | Treasury outflow rate limit decreases or window reductions (tightening) | Standard |
+| **Parameters** | Treasury outflow rate limit decreases or window reductions (tightening) | Standard (Extended at launch; see §Standard vs. extended classification, implementation note) |
 | **Steward** | Treasury Steward election | Extended |
 | **Steward** | Treasury Steward removal | Standard |
 | **Steward** | Steward budget table — add token, increase limit, extend window (loosening) | Extended |
@@ -413,7 +414,7 @@ The steward operates within a **per-token budget table** — a governance-manage
 
 Treasury Steward proposals **pass by default** unless governance votes them down within a 7-day review window.
 
-**Defeat condition:** Standard quorum (20% of circulating voting power or 200,000 ARM, whichever is greater) is reached AND a simple majority votes AGAINST. If quorum is not met, the proposal passes by default — the community isn't concerned enough to mobilize.
+**Defeat condition:** Standard quorum (20% of circulating voting power or 100,000 ARM, whichever is greater) is reached AND a simple majority votes AGAINST. If quorum is not met, the proposal passes by default — the community isn't concerned enough to mobilize.
 
 This inverts the normal proposal flow for routine operational spending: the steward acts unless the community objects, rather than requiring active support for every payment.
 
@@ -440,7 +441,7 @@ This inverts the normal proposal flow for routine operational spending: the stew
 - Election and re-election: Extended governance proposal
 - Removal: Standard governance proposal, immediate effect
 
-**Launch-window exposure (accepted, #222).** Because the steward and its USDC budget exist from deploy, the steward channel is live before anyone holds voting power. During the sale all ARM sits in the treasury (cannot delegate), the crowdfund (unclaimed) and RevenueLock (locked), so a steward proposal created then cannot be defeated, and no ordinary proposal can be submitted to remove the steward. Queue-time checks compare against the full budget and the outflow limit, not the treasury balance, so such a proposal can be queued against an empty treasury and executes once `finalize()` pushes the proceeds. The bounds are: one budget ($60,000) per 30-day window, the treasury outflow limit, the Security Council veto on each queued proposal, and steward removal (which voids every queued steward proposal at execute time) once claimed ARM gives governance voters after the quiet period. In refund mode or after cancel the treasury receives no USDC, so there is nothing to spend. Mitigations: the steward is a 2-of-3 Safe, the Security Council is required at deploy, steward proposals are monitored (MONITORING.md §12e), and the launch team does not submit steward proposals before the post-finalize quiet period ends.
+**Launch-window exposure (accepted, #222).** Because the steward and its USDC budget exist from deploy, the steward channel is live before anyone holds voting power. During the sale all ARM sits in the treasury (cannot delegate), the crowdfund (unclaimed) and RevenueLock (locked), so a steward proposal created then cannot be defeated, and no ordinary proposal can be submitted to remove the steward. Queue-time checks compare against the full budget and the outflow limit, not the treasury balance, so such a proposal can be queued against an empty treasury and executes once `finalize()` pushes the proceeds. The bounds are: one budget ($60,000) per 30-day window, the treasury outflow limit, the Security Council veto on each queued proposal, and steward removal (which voids every queued steward proposal at execute time) once claimed ARM gives governance voters after the quiet period. In refund mode or after cancel the treasury receives no USDC, so there is nothing to spend; on a successful sale the treasury receives the proceeds less the $250,000 team payment (nothing at the $250,000 minimum). Mitigations: the steward is a 2-of-3 Safe, the Security Council is required at deploy, steward proposals are monitored (MONITORING.md §12e), and the launch team does not submit steward proposals before the post-finalize quiet period ends.
 
 ### Steward compensation
 
@@ -483,7 +484,7 @@ When the Security Council vetoes a queued proposal:
 
 1. **Proposal passes** with quorum during normal voting.
 2. **SC vetoes** during the execution delay window. The proposal is cancelled. SC must publish a written rationale (off-chain, with on-chain hash for verifiability).
-3. **A 14-day veto ratification vote begins automatically.** The question: "Uphold the Security Council's veto?"
+3. **A 14-day veto ratification vote begins automatically** (after the veto bootstrap; see below). The question: "Uphold the Security Council's veto?"
    - **FOR (uphold veto):** The vetoed proposal is permanently cancelled. The SC acted correctly in the community's view.
    - **AGAINST (deny veto):** The original vetoed proposal is
      restored. The current Security Council multisig is ejected
@@ -497,7 +498,9 @@ When the Security Council vetoes a queued proposal:
      No re-submission is required. The community has voted twice
      (once to pass the original proposal, once to deny the veto).
    - **Quorum not met:** Veto stands by default. If the community can't mobilize to override, the SC's security judgment holds.
-4. Ratification uses **standard quorum** (20% of circulating voting power or 200,000 ARM).
+4. Ratification uses a **fixed 40% quorum** (40% of circulating voting power or 100,000 ARM, whichever is greater).
+
+**Veto bootstrap: vetoes are final for 70 days after crowdfund finalization.** For `VETO_BOOTSTRAP_DURATION` (70 days) after the registered crowdfund finalizes — the 10-day quiet period included — a Security Council veto is final: the proposal is cancelled permanently, no ratification vote is created (`ProposalVetoed` emits `ratificationId` 0), and the SC cannot be ejected for that veto. A veto made during the bootstrap does not become challengeable later. From day 70 onward, every veto follows the ratification flow above. The bootstrap starts at finalization: before the registered crowdfund finalizes, and if it never does (a cancelled crowdfund never finalizes), vetoes create ratification votes as normal, so the bootstrap can never leave vetoes final indefinitely. If no crowdfund is registered with the governor, vetoes always create ratification votes. A refund-mode finalization starts the 70 days like a successful one. The bootstrap is a one-time compile-time constant, not a governance parameter. During it, the ejection consequence below does not apply: the SC's bootstrap vetoes are checked only by its composition and the public rationale.
 
 **The ejection consequence is the accountability mechanism.** The SC only vetoes when they're genuinely confident the community will back them — vetoing a proposal the community wanted means losing the seat. This replaces the need for a separate SC bond or punishment mechanism.
 
@@ -524,7 +527,7 @@ Core team (2), external security (2), community (1).
 
 ### Limitations
 
-- All SC actions except crowdfund cancel require retroactive ratification or produce automatic ratification votes (veto path)
+- All SC actions except crowdfund cancel and vetoes during the 70-day veto bootstrap require retroactive ratification or produce automatic ratification votes (veto path)
 - The SC shield pause is disabled (zero duration) and cannot block shields or unshields
 - The SC has no spending authority, no parameter authority, and no upgrade authority
 
@@ -540,9 +543,9 @@ Summary (non-authoritative — `ARM_TOKEN.md` takes precedence):
 
 | Allocation | % | Enforcement | Voting power |
 |---|---|---|---|
-| Crowdfund | 10–15% | Non-transferable until governance unlock; lazy settlement (aggregate finalization, per-user computation at claim time — see CROWDFUND.md) | Active once claimed and delegated |
+| Crowdfund | Up to 15% (1.8M ARM; 2% at the $250k minimum) | Non-transferable until governance unlock; lazy settlement (aggregate finalization, per-user computation at claim time — see CROWDFUND.md) | Active once claimed and delegated |
 | Early network | 20% | Single shared revenue-lock contract with per-beneficiary allocations. Covers launch team, ecosystem contributors, and reserve for future contributors. All subject to revenue-gated unlock. | Proportional to revenue-unlock % |
-| Treasury | 65–70% | Governance-controlled; whitelisted for transfers | None — `delegate()` reverts for treasury address |
+| Treasury | 65% at deploy (7.8M ARM), up to 78% after unsold crowdfund ARM is swept | Governance-controlled; whitelisted for transfers | None — `delegate()` reverts for treasury address |
 
 ### Revenue-Gated Unlocks
 
@@ -673,11 +676,16 @@ Large treasury proposals (especially those approaching outflow limits) should be
 
 ### Trigger
 
-**Two trigger paths:**
+**Three trigger paths:**
 
 1. **Automatic (permissionless):** Anyone can call `triggerWindDown()`. The contract checks: `block.timestamp > windDownDeadline && cumulativeRevenue < revenueThreshold`. If both conditions are true, wind-down activates. If either is false, the call reverts. No privileged caller needed — the conditions are deterministic.
 
 2. **Governance vote:** Governance can trigger wind-down at any time via extended proposal, regardless of revenue or deadline. Wind-down is an irreversible terminal state transition (governance ends, shielded pool enters withdraw-only mode, treasury is committed to redemption); it warrants the higher consensus bar (30% quorum / 14d voting / 7d execution delay) of an extended proposal even though the conditional, permissionless `triggerWindDown()` path remains available without governance involvement.
+
+3. **Launch-team guardian (last resort):** the launch-team Safe (the crowdfund's `launchTeam`) can call `guardianTriggerWindDown()` at any time, regardless of revenue or deadline, outside governance and the Security Council veto. It exists so that a capture proposal governance failed to defeat cannot execute: wind-down freezes the proposal lifecycle, and every holder then redeems their pro-rata share of the treasury instead of losing it.
+   - **Mandate.** A last resort, not a veto: the guardian lets the normal defences run first (the vote, the Security Council veto and, after the veto bootstrap, the ratification vote) and triggers only once those have failed and a capture proposal is queued, inside its timelock delay before it can execute. Triggering on a proposal governance could still defeat, or to settle a policy disagreement, is outside the mandate.
+   - **Permanent unless surrendered.** The power has no expiry. Only the guardian can change it, and only by calling `renounceGuardian()`, which sets the guardian to `address(0)` irreversibly. Governance cannot remove or transfer it, so a captured governance cannot disarm it.
+   - **Trust and conflicts.** Whoever controls the launch-team Safe can end the protocol alone (irreversible: governance ends, treasury ARM stays locked, RevenueLock unlocks freeze). The deploy accepts a 1-of-3 Safe for sale administration; the launch team plans to raise it to 2-of-3 before finalization. The launch team also receives the $250,000 team payment (untouched by wind-down) and its members are RevenueLock beneficiaries, whose locked ARM freezes at wind-down.
 
 | Parameter | Default | Governable |
 |-----------|---------|------------|
@@ -686,7 +694,7 @@ Large treasury proposals (especially those approaching outflow limits) should be
 
 ### Sequence
 
-1. Wind-down triggers (automatic or governance vote)
+1. Wind-down triggers (automatic, governance vote, or the launch-team guardian)
 2. **ARM transfers are enabled (or confirmed already enabled)** — wind-down ensures `transferable == true` on the ARM token as a post-condition. If governance previously enabled transfers via a separate proposal (the spec-expected post-crowdfund unlock), wind-down skips the redundant `setTransferable(true)` call; otherwise wind-down flips it during the trigger transaction. Either way, holders must be able to move ARM to redeem their treasury share.
 3. **Revenue counter and revenue-lock ratchet are frozen.** The wind-down contract calls `freeze()` on the `RevenueCounter` (rejecting further `attestRevenue` and `syncStablecoinRevenue` calls) and `freezeAtWindDown()` on the `RevenueLock` (locking `maxObservedRevenue` after one final ratchet update against the just-frozen counter). The unlock-percentage milestone state at trigger time becomes the permanent fixed point. This stabilizes the redemption denominator: subsequent `release()` calls do not change `lockedAtWindDown()`, so claim/release timing cannot shift the ratio between sequential redemptions.
 4. Shielded pool enters withdraw-only mode immediately — `shield()` and shielded `transfer()` disabled; `unshield()` always available **indefinitely with no deadline**. There is no exit window — users can withdraw at any time, forever.
@@ -781,7 +789,7 @@ Aggregate rolling-window limits on treasury outflows. These are the primary defe
 | Parameter | Value | Governable |
 |---|---|---|
 | Rolling window | 30 days | Yes — extensions require extended proposal; reductions require standard |
-| Limit | 250,000 ARM or 3% of ARM in treasury, **whichever is greater** | Yes — increases require extended proposal; decreases require standard |
+| Limit | 25,000 ARM or 0.02% of ARM in treasury, **whichever is greater** (the absolute amount binds: ≈ 25,000 ARM per 30 days at launch) | Yes — increases require extended proposal; decreases require standard |
 | Minimum floor | None (0) | No — fixed at deploy |
 
 ### ETH outflow
@@ -818,11 +826,11 @@ The 24-day activation delay exceeds the maximum Extended proposal governance cyc
 This structurally prevents two attack patterns:
 
 - **Atomic batch attack:** a single proposal cannot batch a parameter loosening and a treasury drain. The drain executes against the old (tighter) active parameters and reverts.
-- **Pre-execution overlap:** a drain proposal submitted *before* the parameter-loosening proposal executes will complete its own governance cycle before the pending change activates, so it executes against the old parameters and reverts.
+- **Pre-execution overlap:** a drain proposal whose governance cycle completes before the pending change activates executes against the old parameters and reverts. Because a succeeded proposal can be queued up to 14 days after its vote ends (`QUEUE_GRACE_PERIOD`), this covers only drains whose vote ends more than 14 days before activation: with the loosening executing on day 23 and activating on day 47, an Extended drain submitted from about day 17 can wait, queue once the change activates, and execute around day 54 (see the residual gap below).
 
 Under governance capture and current timings, the minimum drain timeline is approximately 47 days across two separate Extended proposals, each with an independent Security Council veto opportunity and 24 days of publicly-visible pending state between them.
 
-**Residual gap:** a drain proposal submitted *after* the parameter-loosening proposal executes but *before* the pending change activates can be timed to execute at or after activation and benefit from the loosened parameters. Closing this gap requires proposal-time snapshotting of outflow parameters, where treasury-spend proposals are evaluated against the parameters active when they were queued rather than when they execute. This is planned as a post-launch governor upgrade and would extend the minimum drain timeline to approximately 70 days across two fully separated governance cycles.
+**Residual gap:** a drain proposal whose queue window reaches the activation (submitted from about day 17, whether before or after the parameter-loosening proposal executes) can be timed to execute at or after activation and benefit from the loosened parameters. Each such drain is still a separate proposal with its own Security Council veto window. Closing this gap requires proposal-time snapshotting of outflow parameters, where treasury-spend proposals are evaluated against the parameters active when they were queued rather than when they execute. This is planned as a post-launch governor upgrade and would extend the minimum drain timeline to approximately 70 days across two fully separated governance cycles.
 
 The pending parameter values are publicly readable from storage at all times. During the 24-day activation window, any token holder or monitoring system can observe that a loosening change is pending. External monitoring infrastructure subscribes to `OutflowLimitIncreaseScheduled`, `OutflowLimitActivated`, and `OutflowLimitDecreased` events for real-time visibility.
 

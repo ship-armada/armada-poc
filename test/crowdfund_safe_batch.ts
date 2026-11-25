@@ -18,6 +18,7 @@ import {
   CANCEL_METHOD,
   EXTEND_METHOD,
   EXTEND_URGENT_SECONDS,
+  EXTENSION_STEP_SECONDS,
   validateExtension,
   extendBatchFile,
   renderExtendSummary,
@@ -155,7 +156,7 @@ describe("Safe batches for launch-team and security-council actions", function (
   });
 
   describe("planLaunchBatches", function () {
-    // WHY: Ethereum caps a transaction at ~16.7M gas; all 220 launch-team invites (~84k each)
+    // WHY: Ethereum caps a transaction at ~16.7M gas; all 501 launch-team invites (~84k each)
     // cannot fit in one. Batches hold one kind only (seeds first), keep file order, and respect
     // the per-batch limits.
     it("puts seeds first, then invites, one kind per batch, in file order", function () {
@@ -288,7 +289,26 @@ describe("Safe batches for launch-team and security-council actions", function (
     it("warns when little time is left before the current deadline", function () {
       const close = target({ now: 10_000 - EXTEND_URGENT_SECONDS + 3_600 });
       expect(validateExtension(close, 15_000).warnings.join()).to.match(/Safe must execute before/);
-      expect(validateExtension(target({ now: 10_000 - EXTEND_URGENT_SECONDS - 1 }), 15_000).warnings).to.deep.equal([]);
+      expect(validateExtension(target({ now: 10_000 - EXTEND_URGENT_SECONDS - 1 }), 15_000).warnings.join())
+        .to.not.match(/Safe must execute before/);
+    });
+
+    // WHY: the contract enforces only the 15-day cap; the +5-day step rule is operational
+    // (CROWDFUND.md, "Extension steps"). An end that is not exactly one step past the current
+    // end is a likely typo, so signers are warned before they sign, though it is still allowed.
+    it("warns when the new end is not exactly one 5-day step past the current end", function () {
+      const DAY = 86_400;
+      expect(EXTENSION_STEP_SECONDS).to.equal(5 * DAY);
+      // A real-length sale: a 5-day base window with the 15-day cap, two days in.
+      const sale = target({ windowStart: 1_000_000, windowEnd: 1_000_000 + 5 * DAY, maxWindowDuration: 15 * DAY, now: 1_000_000 + 2 * DAY });
+      const stepWarning = (newEnd: number) => validateExtension(sale, newEnd).warnings.join();
+
+      expect(validateExtension(sale, sale.windowEnd + 5 * DAY).warnings).to.deep.equal([]);
+      expect(stepWarning(sale.windowEnd + 3 * DAY)).to.match(/3 days after the current end.*\+5 days per extension/);
+      expect(stepWarning(sale.windowEnd + 10 * DAY)).to.match(/10 days after the current end/);
+      expect(stepWarning(sale.windowEnd + 5 * DAY + 3_600)).to.match(/5.04 days after the current end/);
+      // A rejected end gets errors, not a step warning on top.
+      expect(validateExtension(sale, sale.windowEnd + 11 * DAY).warnings).to.deep.equal([]);
     });
 
     // WHY: the builder must encode exactly extendWindow(newEnd) to the crowdfund, from the
@@ -402,13 +422,28 @@ describe("Safe batches for launch-team and security-council actions", function (
 
     // WHY: end to end — the task's files, executed through the 1-of-3 launch-team Safe with one
     // owner's signature exactly as the Safe app bundles them, must add every seed and launch-team
-    // invite (including a deliberate stack) and use the budgets as the summary says. Files are
-    // prepared before the sale opens and executed after, which is the intended launch-day flow.
+    // invite and use the budgets as the summary says. Files are prepared before the sale opens and
+    // executed after, which is the intended launch-day flow. The CSV places the one team inviter
+    // wallet at hop 1 and stacks a hop-2 invite (hop 2 accepts up to 20 invites per address), so
+    // it needs --allow-stack. A hop-1 stack is refused even with --allow-stack (hop 1 accepts 1
+    // invite per address), and nothing is written for a refused CSV.
     it("prepares batches before open that a 1-of-3 Safe executes after open", async function () {
       const { crowdfund, cfAddress, launchSafe, multiSend, launchOwners, seeds, x, y, z } = await fixture();
+      const rows = ["address,hop,label", ...seeds.map((s, i) => `${s.address},0,seed ${i}`),
+        `${x.address},1,X`, `${y.address},2,Y`, `${z.address},2,Z`, `${z.address},2,Z again`];
+
       const csv = path.join(tmp, "launch.csv");
-      fs.writeFileSync(csv, ["address,hop,label", ...seeds.map((s, i) => `${s.address},0,seed ${i}`),
-        `${x.address},1,X`, `${y.address},1,Y`, `${z.address},2,Z`, `${x.address},1,X again`].join("\n"));
+      fs.writeFileSync(csv, rows.join("\n"));
+      await expect(hre.run("cf-safe-batch", {
+        file: csv, crowdfund: cfAddress, out: tmp, maxSeeds: 2, maxInvites: 2, allowStack: false, check: false,
+      })).to.be.rejectedWith(/already invited at hop 2[\s\S]*--allow-stack/);
+
+      const stackedHop1 = path.join(tmp, "stacked-hop1.csv");
+      fs.writeFileSync(stackedHop1, [...rows, `${x.address},1,X again`].join("\n"));
+      await expect(hre.run("cf-safe-batch", {
+        file: stackedHop1, crowdfund: cfAddress, out: tmp, maxSeeds: 2, maxInvites: 2, allowStack: true, check: false,
+      })).to.be.rejectedWith(/would receive 2 hop-1 invites; an address can receive at most 1/);
+      expect(fs.readdirSync(tmp).sort()).to.deep.equal(["launch.csv", "stacked-hop1.csv"]);
 
       const dir: string = await hre.run("cf-safe-batch", {
         file: csv, crowdfund: cfAddress, out: tmp, maxSeeds: 2, maxInvites: 2, allowStack: true, check: false,
@@ -416,7 +451,9 @@ describe("Safe batches for launch-team and security-council actions", function (
       const files = readFiles(dir);
       expect(files.map((f) => f.transactions.length)).to.deep.equal([1, 1, 2, 2]);
       const summary = fs.readFileSync(path.join(dir, "summary.md"), "utf8");
-      expect(summary).to.include("The sale opens at").and.include("stacked").and.include("| Seeds | 0 | 3 | 3 | 180 |");
+      // MAX_SEEDS (500) is read as uint16: a uint8 read ABI would silently truncate it to 244.
+      expect(summary).to.include("The sale opens at").and.include("| Seeds | 0 | 3 | 3 | 500 |");
+      expect(summary).to.include(`| ${z.address} | 2 | 1 | Z again | stacked |`);
       expect(logged.join("\n")).to.include("summary.md");
 
       await time.increaseTo(await crowdfund.windowStart());
@@ -424,16 +461,17 @@ describe("Safe batches for launch-team and security-council actions", function (
 
       expect((await crowdfund.hopStats(0)).whitelistCount).to.equal(3n);
       for (const s of seeds) expect((await crowdfund.participants(s.address, 0)).isWhitelisted).to.equal(true);
-      expect((await crowdfund.participants(x.address, 1)).invitesReceived).to.equal(2n);
-      expect((await crowdfund.participants(y.address, 1)).isWhitelisted).to.equal(true);
-      expect((await crowdfund.participants(z.address, 2)).isWhitelisted).to.equal(true);
-      expect(await crowdfund.launchTeamHop1Used()).to.equal(3n);
-      expect(await crowdfund.launchTeamHop2Used()).to.equal(1n);
+      expect((await crowdfund.participants(x.address, 1)).invitesReceived).to.equal(1n);
+      expect((await crowdfund.participants(y.address, 2)).isWhitelisted).to.equal(true);
+      expect((await crowdfund.participants(z.address, 2)).invitesReceived).to.equal(2n);
+      expect(await crowdfund.launchTeamHop1Used()).to.equal(1n);
+      expect(await crowdfund.launchTeamHop2Used()).to.equal(3n);
     });
 
-    // WHY: re-running a CSV after its batches executed (or with an unintended stack) must refuse
-    // without writing anything, so a duplicate batch can never reach the Safe queue.
-    it("refuses and writes nothing when rows are already done or stack without --allow-stack", async function () {
+    // WHY: re-running a CSV after its batches executed must refuse without writing anything, so a
+    // duplicate batch can never reach the Safe queue. The repeated invite hits the invites-received
+    // cap (1) before the --allow-stack check.
+    it("refuses and writes nothing when rows are already done (seed added, invitee at its cap)", async function () {
       const { crowdfund, cfAddress, launchSafe, multiSend, launchOwners, seeds, x } = await fixture();
       await time.increaseTo(await crowdfund.windowStart());
       const csv = path.join(tmp, "launch.csv");
@@ -443,7 +481,7 @@ describe("Safe batches for launch-team and security-council actions", function (
 
       const before = fs.readdirSync(tmp);
       await expect(hre.run("cf-safe-batch", { file: csv, crowdfund: cfAddress, out: tmp, maxSeeds: 100, maxInvites: 60, allowStack: false, check: false }))
-        .to.be.rejectedWith(/already a seed[\s\S]*--allow-stack/);
+        .to.be.rejectedWith(/already a seed[\s\S]*an address can receive at most 1/);
       expect(fs.readdirSync(tmp)).to.deep.equal(before);
     });
 

@@ -5,6 +5,7 @@
  * - Setup: seed management, phase transitions
  * - Active window: invites, commits, cap enforcement
  * - Allocation: elastic expansion, pro-rata, rollover, cancellation
+ * - Settlement: launch-team payment, treasury proceeds, rounding buffer
  * - Claims & refunds: ARM distribution, USDC refunds, admin withdrawals
  * - View functions & graph privacy
  * - End-to-end flows
@@ -21,8 +22,7 @@ const Phase = { Active: 0, Finalized: 1, Canceled: 2 };
 
 // Time constants
 const ONE_DAY = 86400;
-const LAUNCH_TEAM_WINDOW = 21 * ONE_DAY; // spans the full commitment window
-const THREE_WEEKS = 21 * ONE_DAY;
+const WINDOW = 5 * ONE_DAY; // commitment window; the launch-team window spans it too
 
 // USDC amounts (6 decimals)
 const USDC = (n: number) => ethers.parseUnits(n.toString(), 6);
@@ -65,25 +65,13 @@ describe("Crowdfund Integration", function () {
     await setupWithSeeds(seeds);
   }
 
-  // Add hop-1 demand to avoid refundMode when testing with seeds-only at hop-0.
-  // At BASE_SALE, hop-0 ceiling ($564K) < MIN_SALE ($1M). Adding $436K of
-  // hop-1 demand brings projected allocation to the $1M minimum.
-  async function addHop1ForMinSale(seeds: SignerWithAddress[], hop1Pool: SignerWithAddress[]) {
-    const inviteSlots = 109;
-    const committedSlots = new Map<string, { signer: SignerWithAddress; slots: number }>();
-    for (let i = 0; i < inviteSlots; i++) {
-      const inviter = seeds[i % seeds.length];
-      const signer = hop1Pool[i % hop1Pool.length];
-      await crowdfund.connect(inviter).invite(signer.address, 0);
-      const entry = committedSlots.get(signer.address) ?? { signer, slots: 0 };
-      entry.slots++;
-      committedSlots.set(signer.address, entry);
-    }
-    for (const { signer, slots } of committedSlots.values()) {
-      const amount = USDC(4_000 * slots);
-      await fundAndApprove(signer, amount);
-      await crowdfund.connect(signer).commit(1, amount);
-    }
+  // The launch team places hop-1 team inviter wallets (the only tier that can invite).
+  async function placeTeamWallets(wallets: SignerWithAddress[]) {
+    for (const w of wallets) await crowdfund.launchTeamInvite(w.address, 0);
+  }
+
+  async function warpPastWindow() {
+    await time.increaseTo((await crowdfund.windowEnd()) + 1n);
   }
 
   beforeEach(async function () {
@@ -126,7 +114,7 @@ describe("Crowdfund Integration", function () {
 
     // Fund all potential participants with USDC
     for (const signer of [seed1, seed2, seed3, hop1a, hop1b, hop1c, hop2a, hop2b]) {
-      await fundAndApprove(signer, USDC(20_000));
+      await fundAndApprove(signer, USDC(200_000));
     }
   });
 
@@ -145,26 +133,30 @@ describe("Crowdfund Integration", function () {
       const we = await crowdfund.windowEnd();
       const ltie = await crowdfund.launchTeamInviteEnd();
       expect(ws).to.be.gt(0);
-      expect(we - ws).to.equal(THREE_WEEKS);
-      expect(ltie - ws).to.equal(LAUNCH_TEAM_WINDOW);
+      expect(we - ws).to.equal(WINDOW);
+      expect(ltie - ws).to.equal(WINDOW);
 
-      // Check hop configs (overlapping ceilings: 60/45/0 — hop-2 uses floor+rollover, not BPS).
+      // Check hop configs. ceilingBps is unused by the allocation (hop-2 reserve first, then
+      // hop-0, hop-1, hop-2 extra) and stays 0 on every hop.
       // Tuple order matches struct field order after audit-68 packing reorder:
       // (ceilingBps, maxInvites, maxInvitesReceived, capUsdc).
-      const [ceilingBps0, maxInv0, , cap0] = await crowdfund.hopConfigs(0);
-      expect(ceilingBps0).to.equal(6000);
-      expect(cap0).to.equal(USDC(15_000));
-      expect(maxInv0).to.equal(3);
+      const [ceilingBps0, maxInv0, maxRecv0, cap0] = await crowdfund.hopConfigs(0);
+      expect(ceilingBps0).to.equal(0);
+      expect(cap0).to.equal(USDC(100_000));
+      expect(maxInv0).to.equal(0);
+      expect(maxRecv0).to.equal(1);
 
-      const [ceilingBps1, maxInv1, , cap1] = await crowdfund.hopConfigs(1);
-      expect(ceilingBps1).to.equal(4500);
-      expect(cap1).to.equal(USDC(4_000));
-      expect(maxInv1).to.equal(2);
+      const [ceilingBps1, maxInv1, maxRecv1, cap1] = await crowdfund.hopConfigs(1);
+      expect(ceilingBps1).to.equal(0);
+      expect(cap1).to.equal(0);
+      expect(maxInv1).to.equal(100);
+      expect(maxRecv1).to.equal(1);
 
-      const [ceilingBps2, maxInv2, , cap2] = await crowdfund.hopConfigs(2);
+      const [ceilingBps2, maxInv2, maxRecv2, cap2] = await crowdfund.hopConfigs(2);
       expect(ceilingBps2).to.equal(0);
-      expect(cap2).to.equal(USDC(1_000));
+      expect(cap2).to.equal(USDC(10_000));
       expect(maxInv2).to.equal(0);
+      expect(maxRecv2).to.equal(20); // hop-2 stacks up to 20 invites ($10K of cap each)
     });
 
     it("should allow admin to add a single seed", async function () {
@@ -207,16 +199,16 @@ describe("Crowdfund Integration", function () {
       await crowdfund.addSeed(seed1.address);
 
       // Seeds are allowed during the launch-team invite window.
-      await time.increase(LAUNCH_TEAM_WINDOW + 1);
+      await time.increaseTo((await crowdfund.launchTeamInviteEnd()) + 1n);
       await expect(
         crowdfund.addSeed(seed2.address)
       ).to.be.revertedWith("ArmadaCrowdfund: outside week-1 window");
     });
 
     // WHY: The launch-team window spans the full commitment window, so hop-0 additions
-    // must still succeed late in the final week (days 15-21 were previously closed).
-    it("should allow adding seeds on day 20", async function () {
-      await time.increase(20 * ONE_DAY);
+    // must still succeed on the final day of the 5-day window.
+    it("should allow adding seeds on the final day of the window (4 days in)", async function () {
+      await time.increase(4 * ONE_DAY);
       await crowdfund.addSeed(seed1.address);
       expect(await crowdfund.isWhitelisted(seed1.address, 0)).to.be.true;
     });
@@ -349,10 +341,10 @@ describe("Crowdfund Integration", function () {
       const we = await crowdfund.windowEnd();
       const ltie = await crowdfund.launchTeamInviteEnd();
 
-      // windowEnd = windowStart + 3 weeks
-      expect(we - ws).to.equal(THREE_WEEKS);
-      // launchTeamInviteEnd = windowStart + 21 days (spans the full commitment window)
-      expect(ltie - ws).to.equal(LAUNCH_TEAM_WINDOW);
+      // windowEnd = windowStart + 5 days
+      expect(we - ws).to.equal(WINDOW);
+      // launchTeamInviteEnd = windowStart + 5 days (spans the full commitment window)
+      expect(ltie - ws).to.equal(WINDOW);
       expect(ltie).to.equal(we);
       // windowStart should be the openTimestamp we passed to constructor
       expect(ws).to.be.gt(0);
@@ -365,24 +357,24 @@ describe("Crowdfund Integration", function () {
     });
 
     it("invite() reverts when invitee is zero address", async function () {
-      await setupWithSeeds([seed1]);
+      await placeTeamWallets([hop1a]);
       await expect(
-        crowdfund.connect(seed1).invite(ethers.ZeroAddress, 0)
+        crowdfund.connect(hop1a).invite(ethers.ZeroAddress, 1)
       ).to.be.revertedWith("ArmadaCrowdfund: zero address");
     });
 
-    it("should allow seed to invite at hop 1", async function () {
+    // WHY: known contributors cannot invite (HOP0_MAX_INVITES = 0).
+    it("should not allow a seed to invite at hop 1", async function () {
       await setupWithSeeds([seed1]);
-      await crowdfund.connect(seed1).invite(hop1a.address, 0);
+      await expect(
+        crowdfund.connect(seed1).invite(hop1a.address, 0)
+      ).to.be.revertedWith("ArmadaCrowdfund: invite limit reached");
 
-      expect(await crowdfund.isWhitelisted(hop1a.address, 1)).to.be.true;
-      const committed = await crowdfund.getCommitment(hop1a.address, 1);
-      expect(committed).to.equal(0);
+      expect(await crowdfund.isWhitelisted(hop1a.address, 1)).to.be.false;
     });
 
-    it("should allow hop-1 to invite at hop 2", async function () {
-      await setupWithSeeds([seed1]);
-      await crowdfund.connect(seed1).invite(hop1a.address, 0);
+    it("should allow hop-1 (team wallet) to invite at hop 2", async function () {
+      await placeTeamWallets([hop1a]);
       await crowdfund.connect(hop1a).invite(hop2a.address, 1);
 
       expect(await crowdfund.isWhitelisted(hop2a.address, 2)).to.be.true;
@@ -391,8 +383,7 @@ describe("Crowdfund Integration", function () {
     });
 
     it("should reject hop-2 inviting (maxInvites = 0)", async function () {
-      await setupWithSeeds([seed1]);
-      await crowdfund.connect(seed1).invite(hop1a.address, 0);
+      await placeTeamWallets([hop1a]);
       await crowdfund.connect(hop1a).invite(hop2a.address, 1);
 
       await expect(
@@ -400,36 +391,34 @@ describe("Crowdfund Integration", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: max hop reached");
     });
 
-    it("should enforce invite limits (seed: 3)", async function () {
+    it("should enforce invite limits (seed: 0)", async function () {
       await setupWithSeeds([seed1]);
-      await crowdfund.connect(seed1).invite(hop1a.address, 0);
-      await crowdfund.connect(seed1).invite(hop1b.address, 0);
-      await crowdfund.connect(seed1).invite(hop1c.address, 0);
 
-      // 4th invite should fail
+      // A seed's first invite already fails
       await expect(
         crowdfund.connect(seed1).invite(outsider.address, 0)
       ).to.be.revertedWith("ArmadaCrowdfund: invite limit reached");
     });
 
-    it("should enforce invite limits (hop-1: 2)", async function () {
-      await setupWithSeeds([seed1]);
-      await crowdfund.connect(seed1).invite(hop1a.address, 0);
-      await crowdfund.connect(hop1a).invite(hop2a.address, 1);
-      await crowdfund.connect(hop1a).invite(hop2b.address, 1);
+    it("should enforce invite limits (hop-1: 100)", async function () {
+      await placeTeamWallets([hop1a]);
+      for (let i = 0; i < 100; i++) {
+        await crowdfund.connect(hop1a).invite(allSigners[50 + i].address, 1);
+      }
 
-      // 3rd invite from hop-1 should fail
+      // 101st invite from hop-1 should fail
       await expect(
         crowdfund.connect(hop1a).invite(outsider.address, 1)
       ).to.be.revertedWith("ArmadaCrowdfund: invite limit reached");
     });
 
     it("should allow inviting address already whitelisted at different hop", async function () {
-      await setupWithSeeds([seed1, seed2]);
-      // seed2 is whitelisted at hop-0. seed1 invites seed2 to hop-1 — valid because
-      // (seed2, 1) is a separate node from (seed2, 0).
-      await crowdfund.connect(seed1).invite(seed2.address, 0);
-      expect(await crowdfund.isWhitelisted(seed2.address, 1)).to.be.true;
+      await setupWithSeeds([seed2]);
+      await placeTeamWallets([hop1a]);
+      // seed2 is whitelisted at hop-0. The team wallet invites seed2 to hop-2 — valid because
+      // (seed2, 2) is a separate node from (seed2, 0).
+      await crowdfund.connect(hop1a).invite(seed2.address, 1);
+      expect(await crowdfund.isWhitelisted(seed2.address, 2)).to.be.true;
     });
 
     it("should reject invite from non-whitelisted address", async function () {
@@ -440,44 +429,50 @@ describe("Crowdfund Integration", function () {
     });
 
     it("should reject invites outside active window", async function () {
-      await setupWithSeeds([seed1]);
-      await time.increase(THREE_WEEKS + 1); // past window end
+      await placeTeamWallets([hop1a]);
+      await warpPastWindow(); // past window end
 
       await expect(
-        crowdfund.connect(seed1).invite(hop1a.address, 0)
+        crowdfund.connect(hop1a).invite(hop2a.address, 1)
       ).to.be.revertedWith("ArmadaCrowdfund: window closed");
     });
 
+    // WHY: whitelistCount counts nodes, not invites. Each hop is populated by its own path
+    //      (seeds, the single launch-team hop-1 team wallet, team-wallet and launch-team hop-2
+    //      invites), and a stacked hop-2 invite adds cap to an existing node without adding one.
     it("should track whitelistCount correctly per hop", async function () {
       await setupWithSeeds([seed1, seed2]);
-      await crowdfund.connect(seed1).invite(hop1a.address, 0);
-      await crowdfund.connect(seed1).invite(hop1b.address, 0);
-      await crowdfund.connect(seed2).invite(hop1c.address, 0);
+      await placeTeamWallets([hop1a]);
       await crowdfund.connect(hop1a).invite(hop2a.address, 1);
+      await crowdfund.launchTeamInvite(hop2b.address, 1);
+      await crowdfund.connect(hop1a).invite(hop2a.address, 1); // stacks on hop2a's node
 
       const [, , , wc0] = await crowdfund.getHopStats(0);
       const [, , , wc1] = await crowdfund.getHopStats(1);
       const [, , , wc2] = await crowdfund.getHopStats(2);
       expect(wc0).to.equal(2);
-      expect(wc1).to.equal(3);
-      expect(wc2).to.equal(1);
+      expect(wc1).to.equal(1);
+      expect(wc2).to.equal(2);
+      expect(await crowdfund.getInvitesReceived(hop2a.address, 2)).to.equal(2);
     });
 
     it("should track invites remaining correctly", async function () {
       await setupWithSeeds([seed1]);
-      expect(await crowdfund.getInvitesRemaining(seed1.address, 0)).to.equal(3);
-      await crowdfund.connect(seed1).invite(hop1a.address, 0);
-      expect(await crowdfund.getInvitesRemaining(seed1.address, 0)).to.equal(2);
-      expect(await crowdfund.getInvitesRemaining(hop1a.address, 1)).to.equal(2);
+      await placeTeamWallets([hop1a]);
+      expect(await crowdfund.getInvitesRemaining(seed1.address, 0)).to.equal(0);
+      expect(await crowdfund.getInvitesRemaining(hop1a.address, 1)).to.equal(100);
+      await crowdfund.connect(hop1a).invite(hop2a.address, 1);
+      expect(await crowdfund.getInvitesRemaining(hop1a.address, 1)).to.equal(99);
+      expect(await crowdfund.getInvitesRemaining(hop2a.address, 2)).to.equal(0);
     });
 
     it("invite() increments invitesSent on inviter node", async function () {
-      await setupWithSeeds([seed1]);
-      const before = await crowdfund.participants(seed1.address, 0);
+      await placeTeamWallets([hop1a]);
+      const before = await crowdfund.participants(hop1a.address, 1);
       expect(before.invitesSent).to.equal(0);
 
-      await crowdfund.connect(seed1).invite(hop1a.address, 0);
-      const after = await crowdfund.participants(seed1.address, 0);
+      await crowdfund.connect(hop1a).invite(hop2a.address, 1);
+      const after = await crowdfund.participants(hop1a.address, 1);
       expect(after.invitesSent).to.equal(1);
     });
   });
@@ -504,56 +499,61 @@ describe("Crowdfund Integration", function () {
       expect(await crowdfund.totalCommitted()).to.equal(USDC(5_000));
     });
 
+    // WHY: commits accumulate on the node; two commits reaching exactly the $100K hop-0 cap
+    //      must sum, not overwrite.
     it("should allow multiple commits up to cap", async function () {
       await setupActive([seed1]);
 
-      await crowdfund.connect(seed1).commit(0, USDC(5_000));
-      await crowdfund.connect(seed1).commit(0, USDC(5_000));
-      await crowdfund.connect(seed1).commit(0, USDC(5_000));
+      await crowdfund.connect(seed1).commit(0, USDC(50_000));
+      await crowdfund.connect(seed1).commit(0, USDC(50_000));
 
       const committed = await crowdfund.getCommitment(seed1.address, 0);
-      expect(committed).to.equal(USDC(15_000));
+      expect(committed).to.equal(USDC(100_000));
+      expect(await crowdfund.getEffectiveCap(seed1.address, 0)).to.equal(USDC(100_000));
     });
 
-    it("should accept over-cap commit ($15K for hop 0) for refund at settlement", async function () {
+    // WHY: commit() does not enforce the cap; one unit over the $100K hop-0 cap is escrowed raw
+    //      and the excess is refunded at settlement.
+    it("should accept over-cap commit ($100K for hop 0) for refund at settlement", async function () {
       await setupActive([seed1]);
 
-      await crowdfund.connect(seed1).commit(0, USDC(15_001));
+      await crowdfund.connect(seed1).commit(0, USDC(100_001));
 
       // Over-cap deposits are accepted; totalCommitted includes the raw amount
       const [tc0] = await crowdfund.getHopStats(0);
-      expect(tc0).to.equal(USDC(15_001));
+      expect(tc0).to.equal(USDC(100_001));
 
       // Participant's raw commitment includes the full over-cap amount
       const committed = await crowdfund.getCommitment(seed1.address, 0);
-      expect(committed).to.equal(USDC(15_001));
+      expect(committed).to.equal(USDC(100_001));
     });
 
-    it("should accept over-cap commit ($4K for hop 1) for refund at settlement", async function () {
-      await setupWithSeeds([seed1]);
-      await crowdfund.connect(seed1).invite(hop1a.address, 0);
+    // WHY: hop-1 team wallets have a $0 cap, so any commit there is over-cap: accepted raw and
+    //      refunded in full at settlement.
+    it("should accept over-cap commit at hop 1 (team wallet, $0 cap) for refund at settlement", async function () {
+      await placeTeamWallets([hop1a]);
 
-      await crowdfund.connect(hop1a).commit(1, USDC(4_001));
+      await crowdfund.connect(hop1a).commit(1, USDC(100));
 
       const [tc1] = await crowdfund.getHopStats(1);
-      expect(tc1).to.equal(USDC(4_001));
+      expect(tc1).to.equal(USDC(100));
 
       const committed = await crowdfund.getCommitment(hop1a.address, 1);
-      expect(committed).to.equal(USDC(4_001));
+      expect(committed).to.equal(USDC(100));
+      expect(await crowdfund.getEffectiveCap(hop1a.address, 1)).to.equal(0);
     });
 
-    it("should accept over-cap commit ($1K for hop 2) for refund at settlement", async function () {
-      await setupWithSeeds([seed1]);
-      await crowdfund.connect(seed1).invite(hop1a.address, 0);
+    it("should accept over-cap commit ($10K for hop 2) for refund at settlement", async function () {
+      await placeTeamWallets([hop1a]);
       await crowdfund.connect(hop1a).invite(hop2a.address, 1);
 
-      await crowdfund.connect(hop2a).commit(2, USDC(1_001));
+      await crowdfund.connect(hop2a).commit(2, USDC(10_001));
 
       const [tc2] = await crowdfund.getHopStats(2);
-      expect(tc2).to.equal(USDC(1_001));
+      expect(tc2).to.equal(USDC(10_001));
 
       const committed = await crowdfund.getCommitment(hop2a.address, 2);
-      expect(committed).to.equal(USDC(1_001));
+      expect(committed).to.equal(USDC(10_001));
     });
 
     it("should reject commit from non-whitelisted address", async function () {
@@ -567,17 +567,19 @@ describe("Crowdfund Integration", function () {
 
     it("should reject commit outside active window", async function () {
       await setupWithSeeds([seed1]);
-      await time.increase(THREE_WEEKS + 1); // past window end
+      await warpPastWindow(); // past window end
       await expect(
         crowdfund.connect(seed1).commit(0, USDC(1_000))
       ).to.be.revertedWith("ArmadaCrowdfund: not active window");
     });
 
-    it("should reject commit below $50 USDC minimum", async function () {
+    // WHY: MIN_COMMIT ($100) keeps dust commits from bloating finalize/claim work; one unit
+    //      below it and zero must both revert.
+    it("should reject commit below $100 USDC minimum", async function () {
       await setupActive([seed1]);
 
       await expect(
-        crowdfund.connect(seed1).commit(0, USDC(49))
+        crowdfund.connect(seed1).commit(0, USDC(100) - 1n)
       ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
 
       await expect(
@@ -585,17 +587,18 @@ describe("Crowdfund Integration", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: below minimum commitment");
     });
 
-    it("should accept commit of exactly $50 USDC", async function () {
+    // WHY: the minimum is inclusive; exactly MIN_COMMIT ($100) must be accepted.
+    it("should accept commit of exactly $100 USDC", async function () {
       await setupActive([seed1]);
 
-      await crowdfund.connect(seed1).commit(0, USDC(50));
+      await crowdfund.connect(seed1).commit(0, USDC(100));
       const committed = await crowdfund.getCommitment(seed1.address, 0);
-      expect(committed).to.equal(USDC(50));
+      expect(committed).to.equal(USDC(100));
     });
 
     it("should track aggregate stats correctly", async function () {
       await setupWithSeeds([seed1, seed2]);
-      await crowdfund.connect(seed1).invite(hop1a.address, 0);
+      await placeTeamWallets([hop1a]); // its hop-1 commit is over its $0 cap but counted raw
 
       await crowdfund.connect(seed1).commit(0, USDC(10_000));
       await crowdfund.connect(seed2).commit(0, USDC(8_000));
@@ -658,7 +661,7 @@ describe("Crowdfund Integration", function () {
       }
       expect(await crowdfund.phase()).to.equal(Phase.Active);
 
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow();
       await crowdfund.finalize();
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
     });
@@ -669,82 +672,72 @@ describe("Crowdfund Integration", function () {
   // ============================================================
 
   describe("Allocation Algorithm", function () {
+    // WHY: a successful sale below the $1.8M trigger settles at BASE_SALE. Three known
+    //      contributors at the $100K hop-0 cap ($300K) clear MIN_SALE ($250K) without reaching
+    //      the trigger.
     it("should use BASE_SALE when demand < elastic trigger", async function () {
-      await setupActive([seed1]);
+      await setupActive([seed1, seed2, seed3]);
 
-      // Commit well below elastic trigger ($1.5M)
-      await crowdfund.connect(seed1).commit(0, USDC(15_000));
-      // Need to reach minimum ($1M), so fund many more seeds
-      // For this test, let's just check elastic trigger logic with a known total
-      await time.increase(THREE_WEEKS + 1);
+      await crowdfund.connect(seed1).commit(0, USDC(100_000));
+      await crowdfund.connect(seed2).commit(0, USDC(100_000));
+      await crowdfund.connect(seed3).commit(0, USDC(100_000));
+      await warpPastWindow();
+      await crowdfund.finalize();
 
-      // totalCommitted = $15K, below min → will cancel
-      // We need a different approach to test elastic: use enough signers
-      // Skip: tested in end-to-end flows below
+      expect(await crowdfund.refundMode()).to.be.false;
+      expect(await crowdfund.saleSize()).to.equal(await crowdfund.BASE_SALE());
     });
 
-    it("should allocate fully when demand <= reserve", async function () {
-      // Setup: 68 seeds at $15K = $1.02M demand.
-      // Hop-0 ceiling = 60% of the $1.14M base pool minus $120K = $564K.
-      // Need to reach MIN_SALE first — use many seeds
+    // WHY: an under-subscribed sale must fill every capped commit in full. With no hop-2 demand,
+    //      the unused $300K hop-2 reserve rolls to hop-0, so hop-0 can take the whole sale.
+    it("should allocate fully when demand <= sale size", async function () {
+      // 68 seeds at $15K = $1.02M demand, under the $1.8M sale.
       const seeds = allSigners.slice(1, 80);
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
       }
       await crowdfund.addSeeds(seeds.map(s => s.address));
 
-
-      // Each seed commits $15K, 80 seeds = $1.2M (above minimum, at base trigger)
       for (const s of seeds.slice(0, 68)) {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      // Total: 68 × $15K = $1,020,000 — above MIN_SALE
 
-      // Wait, that's only $1.02M. Need 67 more to hit $1M. Let's do 67 × $15K = $1,005,000
-      // Actually 68 × 15000 = 1,020,000 which is above MIN_SALE of 1,000,000. Good.
-
-      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 200));
-
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow();
       await crowdfund.finalize();
 
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
-      expect(await crowdfund.saleSize()).to.equal(USDC(1_200_000)); // BASE_SALE
+      expect(await crowdfund.saleSize()).to.equal(USDC(1_800_000)); // BASE_SALE
 
-      // Hop-0 ceiling is $564K. Demand = $1,020,000, so it is pro-rata.
+      // Under-subscribed → full allocation, no refund.
       const [alloc, refund] = await crowdfund.computeAllocation(seeds[0].address);
-      // Pro-rata: alloc = (15000 * 564000) / 1020000 ≈ 8294.12 USDC worth
-      expect(alloc).to.be.gt(0);
-      expect(refund).to.be.gt(0); // some refund because oversubscribed
+      expect(alloc).to.equal(ARM(15_000));
+      expect(refund).to.equal(0n);
     });
 
-    it("should pro-rata scale when demand > reserve", async function () {
-      // 3 seeds each committing $15K = $45K total hop-0 demand
-      // But we need to reach MIN_SALE ($1M). Need many more seeds.
+    // WHY: when hop-0 capped demand exceeds the sale, every hop-0 commit is scaled by the same
+    //      ratio (sale / demand) and the excess is refunded. With no hop-2 demand, hop-0's
+    //      allocation is the whole $1.8M sale.
+    it("should pro-rata scale when demand > sale size", async function () {
+      // 76 seeds × $25K = $1.9M hop-0 demand against the $1.8M sale.
       const seeds = allSigners.slice(1, 80);
       for (const s of seeds) {
-        await fundAndApprove(s, USDC(15_000));
+        await fundAndApprove(s, USDC(25_000));
       }
       await crowdfund.addSeeds(seeds.map(s => s.address));
 
-
-      // 70 seeds × $15K = $1,050,000 total committed (above min, below elastic trigger)
-      for (const s of seeds.slice(0, 70)) {
-        await crowdfund.connect(s).commit(0, USDC(15_000));
+      for (const s of seeds.slice(0, 76)) {
+        await crowdfund.connect(s).commit(0, USDC(25_000));
       }
 
-      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 200));
-
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow();
       await crowdfund.finalize();
 
-      // saleSize = BASE_SALE = $1.2M
-      // Hop-2 floor = 15% of $1.2M = $180K; H0 ceiling = $564K.
-      // Hop-0 demand = $1,050,000, so each $15K commit receives about $8,057.14.
+      // Each $25K commit receives floor($25K × $1.8M / $1.9M) ≈ $23,684.21.
+      expect(await crowdfund.finalCeilings(0)).to.equal(USDC(1_800_000));
       const [alloc, refund] = await crowdfund.computeAllocation(seeds[0].address);
-      const allocArm = Number(alloc) / 1e18; // ARM allocation in whole tokens
-      expect(allocArm).to.be.closeTo(8_057, 1);
-      expect(refund).to.be.closeTo(USDC(6_943), USDC(1));
+      const accepted = (USDC(25_000) * USDC(1_800_000)) / USDC(1_900_000);
+      expect(alloc).to.equal(accepted * 10n ** 12n);
+      expect(refund).to.equal(USDC(25_000) - accepted);
     });
   });
 
@@ -765,9 +758,8 @@ describe("Crowdfund Integration", function () {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
 
-      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 200));
 
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow();
       await crowdfund.finalize();
 
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
@@ -793,21 +785,20 @@ describe("Crowdfund Integration", function () {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
 
-      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 200));
 
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow();
       await crowdfund.finalize();
 
-      // Hop-0 demand ($1.02M) exceeds the $564K ceiling.
+      // Hop-0 demand ($1.02M) is below the $1.8M sale, leaving $780K unallocated.
       const saleSizeVal = await crowdfund.saleSize();
       const totalAllocUsdcVal = await crowdfund.totalAllocatedUsdc();
       const leftover = saleSizeVal - totalAllocUsdcVal;
-      expect(leftover).to.be.gt(0);
+      expect(leftover).to.equal(USDC(780_000));
     });
 
     it("should reject finalize before window ends", async function () {
       await setupWithSeeds([seed1]);
-      // Still within the 3-week active window
+      // Still within the 5-day active window
 
       await expect(
         crowdfund.finalize()
@@ -824,7 +815,7 @@ describe("Crowdfund Integration", function () {
       for (const s of seeds) {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow();
       await crowdfund.finalize();
 
       await expect(
@@ -834,15 +825,22 @@ describe("Crowdfund Integration", function () {
 
     // WHY: Below-minimum demand causes finalize() to enter refundMode (not revert).
     // The phase must transition to Finalized so ARM is recoverable via withdrawUnallocatedArm().
+    // A failed sale pays nobody: the launch team gets no team payment and the treasury no
+    // proceeds; every committed dollar stays in the contract for claimRefund().
     it("should enter refundMode when finalized below minimum raise", async function () {
       await setupActive([seed1]);
-      await crowdfund.connect(seed1).commit(0, USDC(15_000)); // way below $1M min
+      await crowdfund.connect(seed1).commit(0, USDC(15_000)); // way below $250K min
 
-      await time.increase(THREE_WEEKS + 1);
-      await crowdfund.finalize();
+      await warpPastWindow();
+      const teamBefore = await usdc.balanceOf(deployer.address); // deployer is launchTeam
+      const treasuryBefore = await usdc.balanceOf(treasury.address);
+      await expect(crowdfund.finalize()).not.to.emit(crowdfund, "LaunchTeamPaid");
 
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
       expect(await crowdfund.refundMode()).to.be.true;
+      expect(await usdc.balanceOf(deployer.address)).to.equal(teamBefore);
+      expect(await usdc.balanceOf(treasury.address)).to.equal(treasuryBefore);
+      expect(await usdc.balanceOf(await crowdfund.getAddress())).to.equal(USDC(15_000));
     });
 
     it("should require ARM pre-load before seeds can be added", async function () {
@@ -877,7 +875,7 @@ describe("Crowdfund Integration", function () {
 
   describe("Claims & Refunds", function () {
     it("should allow claim after finalization (ARM only, no USDC)", async function () {
-      // Setup with oversubscribed hop-0
+      // 70 × $15K = $1.05M: under the sale, so the claim is ARM with no refund
       const seeds = allSigners.slice(1, 80);
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
@@ -887,8 +885,7 @@ describe("Crowdfund Integration", function () {
       for (const s of seeds.slice(0, 70)) {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 200));
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow();
       await crowdfund.finalize();
 
       const armBefore = await armToken.balanceOf(seeds[0].address);
@@ -913,8 +910,7 @@ describe("Crowdfund Integration", function () {
       for (const s of seeds.slice(0, 68)) {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 200));
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow();
       await crowdfund.finalize();
 
       await crowdfund.connect(seeds[0]).claim(seeds[0].address);
@@ -929,7 +925,7 @@ describe("Crowdfund Integration", function () {
       await setupActive([seed1]);
       await crowdfund.connect(seed1).commit(0, USDC(10_000));
 
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow();
       // finalize enters refundMode (below MIN_SALE)
       await crowdfund.finalize();
       expect(await crowdfund.refundMode()).to.be.true;
@@ -949,7 +945,11 @@ describe("Crowdfund Integration", function () {
       ).to.be.revertedWith("ArmadaCrowdfund: refund not available");
     });
 
-    it("should push USDC proceeds to treasury at finalization", async function () {
+    // WHY: on success, finalize() pays TEAM_PAYMENT_USDC ($250K) to the launch team and pushes
+    //      the rest of the net proceeds to the treasury atomically. No hop is pro-rated here
+    //      ($1.02M < $1.8M), so no rounding buffer is held and the split is exact: the contract
+    //      keeps only what claims will refund.
+    it("should pay the launch team and push the remaining USDC proceeds to treasury at finalization", async function () {
       const seeds = allSigners.slice(1, 80);
       const committers = seeds.slice(0, 68);
       for (const s of seeds) {
@@ -960,25 +960,62 @@ describe("Crowdfund Integration", function () {
       for (const s of committers) {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 200));
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow();
 
+      const teamPayment = await crowdfund.TEAM_PAYMENT_USDC();
+      expect(teamPayment).to.equal(USDC(250_000));
+      const teamBefore = await usdc.balanceOf(deployer.address); // deployer is launchTeam
       const treasuryBefore = await usdc.balanceOf(treasury.address);
-      await crowdfund.finalize();
+      await expect(crowdfund.finalize())
+        .to.emit(crowdfund, "LaunchTeamPaid")
+        .withArgs(deployer.address, teamPayment);
       const treasuryAfter = await usdc.balanceOf(treasury.address);
 
-      // Proceeds pushed atomically at finalization (minus small rounding buffer)
+      // Launch team receives exactly the team payment; treasury receives the rest
       const totalAllocUsdc = await crowdfund.totalAllocatedUsdc();
-      const pushed = treasuryAfter - treasuryBefore;
-      expect(totalAllocUsdc).to.be.gt(0);
-      expect(pushed).to.be.lte(totalAllocUsdc);
-      expect(pushed).to.be.gte(totalAllocUsdc - 500n);
+      expect(totalAllocUsdc).to.equal(USDC(1_020_000));
+      expect(await usdc.balanceOf(deployer.address) - teamBefore).to.equal(teamPayment);
+      expect(treasuryAfter - treasuryBefore).to.equal(totalAllocUsdc - teamPayment);
 
-      // Contract retains refund USDC (plus rounding buffer)
+      // Contract retains exactly the refund USDC (no buffer without pro-rating)
       const contractUsdc = await usdc.balanceOf(await crowdfund.getAddress());
       const totalCommitted = await crowdfund.totalCommitted();
-      expect(contractUsdc).to.be.gte(totalCommitted - totalAllocUsdc);
-      expect(contractUsdc).to.be.lte(totalCommitted - totalAllocUsdc + 500n);
+      expect(contractUsdc).to.equal(totalCommitted - totalAllocUsdc);
+    });
+
+    // WHY: when a hop is pro-rated, lazy per-participant floor divisions can sum to slightly
+    //      less than totalAllocatedUsdc, so finalize() holds back one USDC unit per participant
+    //      node as a rounding buffer before paying out. The team payment is still exactly $250K
+    //      and the treasury gets totalAllocatedUsdc - buffer - $250K.
+    it("should hold a rounding buffer and still pay the launch team $250K when a hop is pro-rated", async function () {
+      // 76 seeds × $25K = $1.9M hop-0 demand against the $1.8M sale; 79 seed nodes registered
+      const seeds = allSigners.slice(1, 80);
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(25_000));
+      }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+      for (const s of seeds.slice(0, 76)) {
+        await crowdfund.connect(s).commit(0, USDC(25_000));
+      }
+      await warpPastWindow();
+
+      const teamPayment = await crowdfund.TEAM_PAYMENT_USDC();
+      const teamBefore = await usdc.balanceOf(deployer.address); // deployer is launchTeam
+      const treasuryBefore = await usdc.balanceOf(treasury.address);
+      await crowdfund.finalize();
+
+      const totalAllocUsdc = await crowdfund.totalAllocatedUsdc();
+      const buffer = await crowdfund.getParticipantCount();
+      expect(totalAllocUsdc).to.equal(USDC(1_800_000));
+      expect(buffer).to.equal(79n);
+      expect(await usdc.balanceOf(deployer.address) - teamBefore).to.equal(teamPayment);
+      expect(await usdc.balanceOf(treasury.address) - treasuryBefore)
+        .to.equal(totalAllocUsdc - buffer - teamPayment);
+
+      // Contract retains the aggregate refund plus the buffer
+      const totalCommitted = await crowdfund.totalCommitted();
+      expect(await usdc.balanceOf(await crowdfund.getAddress()))
+        .to.equal(totalCommitted - totalAllocUsdc + buffer);
     });
 
     it("should allow anyone to sweep unallocated ARM", async function () {
@@ -992,8 +1029,7 @@ describe("Crowdfund Integration", function () {
       for (const s of committers) {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 200));
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow();
       await crowdfund.finalize();
 
       // totalAllocated is hop-level upper bound, totalArmClaimed tracks claims
@@ -1016,19 +1052,18 @@ describe("Crowdfund Integration", function () {
   // ============================================================
 
   describe("Claim Separation", function () {
-    // Shared setup: oversubscribed hop-0 so there's a meaningful refund
+    // Shared setup: oversubscribed hop-0 (76 × $25K = $1.9M > $1.8M) so there's a meaningful refund
     async function setupOversubscribed() {
       const seeds = allSigners.slice(1, 80);
       for (const s of seeds) {
-        await fundAndApprove(s, USDC(15_000));
+        await fundAndApprove(s, USDC(25_000));
       }
       await crowdfund.addSeeds(seeds.map(s => s.address));
 
-      for (const s of seeds.slice(0, 70)) {
-        await crowdfund.connect(s).commit(0, USDC(15_000));
+      for (const s of seeds.slice(0, 76)) {
+        await crowdfund.connect(s).commit(0, USDC(25_000));
       }
-      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 200));
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow();
       await crowdfund.finalize();
       return seeds;
     }
@@ -1054,8 +1089,8 @@ describe("Crowdfund Integration", function () {
     });
 
     it("claim() reverts in refundMode", async function () {
-      // 80 seeds, all hop-0 only → refundMode
-      const seeds = allSigners.slice(1, 81);
+      // 16 seeds × $15K = $240K < MIN_SALE → refundMode
+      const seeds = allSigners.slice(1, 17);
       for (const s of seeds) {
         await fundAndApprove(s, USDC(15_000));
       }
@@ -1064,7 +1099,7 @@ describe("Crowdfund Integration", function () {
       for (const s of seeds) {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow();
       await crowdfund.finalize();
       expect(await crowdfund.refundMode()).to.be.true;
 
@@ -1084,14 +1119,14 @@ describe("Crowdfund Integration", function () {
         await armToken.transfer(await cf.getAddress(), ARM(1_800_000));
         await cf.loadArm();
         await time.increaseTo(await cf.windowStart());
-        const s = allSigners.slice(1, 81);
+        const s = allSigners.slice(1, 17); // 16 × $15K = $240K < MIN_SALE
         await cf.addSeeds(s.map(a => a.address));
         for (const a of s) {
           await fundAndApprove(a, USDC(15_000));
           await usdc.connect(a).approve(await cf.getAddress(), USDC(15_000));
           await cf.connect(a).commit(0, USDC(15_000));
         }
-        await time.increase(THREE_WEEKS + 1);
+        await time.increaseTo((await cf.windowEnd()) + 1n);
         await cf.finalize();
         expect(await cf.refundMode()).to.be.true;
 
@@ -1187,7 +1222,7 @@ describe("Crowdfund Integration", function () {
   describe("View Functions & Graph Privacy", function () {
     it("should return correct aggregate stats during sale", async function () {
       await setupWithSeeds([seed1, seed2]);
-      await crowdfund.connect(seed1).invite(hop1a.address, 0);
+      await placeTeamWallets([hop1a]);
       await crowdfund.connect(seed1).commit(0, USDC(10_000));
 
       const [tc, phase_, ws, we] = await crowdfund.getSaleStats();
@@ -1197,11 +1232,11 @@ describe("Crowdfund Integration", function () {
     });
 
     it("should expose invite graph during sale (no phase restriction)", async function () {
-      await setupWithSeeds([seed1]);
-      await crowdfund.connect(seed1).invite(hop1a.address, 0);
+      await placeTeamWallets([hop1a]);
+      await crowdfund.connect(hop1a).invite(hop2a.address, 1);
 
-      const inviter = await crowdfund.getInviteEdge(hop1a.address, 1);
-      expect(inviter).to.equal(seed1.address);
+      expect(await crowdfund.getInviteEdge(hop1a.address, 1)).to.equal(deployer.address); // launch team
+      expect(await crowdfund.getInviteEdge(hop2a.address, 2)).to.equal(hop1a.address);
     });
 
     it("should reveal invite graph after finalization", async function () {
@@ -1214,7 +1249,7 @@ describe("Crowdfund Integration", function () {
       for (const s of seeds.slice(0, 68)) {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow();
       await crowdfund.finalize();
 
       // Seeds have invitedBy = address(0)
@@ -1232,8 +1267,7 @@ describe("Crowdfund Integration", function () {
       for (const s of seeds.slice(0, 68)) {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 200));
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow();
       await crowdfund.finalize();
 
       const [alloc, refund] = await crowdfund.computeAllocation(seeds[0].address);
@@ -1259,17 +1293,16 @@ describe("Crowdfund Integration", function () {
       for (const s of seeds) {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      // 70 × $15K = $1,050,000 > MIN_SALE, < ELASTIC_TRIGGER ($1.5M)
+      // 70 × $15K = $1,050,000 > MIN_SALE, < the $1.8M sale
 
-      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 200));
 
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow();
       await crowdfund.finalize();
 
       expect(await crowdfund.phase()).to.equal(Phase.Finalized);
-      expect(await crowdfund.saleSize()).to.equal(USDC(1_200_000)); // BASE
+      expect(await crowdfund.saleSize()).to.equal(USDC(1_800_000)); // BASE
 
-      // Hop-0 demand = $1,050,000, ceiling = $564,000, so it is pro-rata.
+      // Hop-0 demand = $1,050,000 < $1.8M, so every seed is allocated in full.
 
       // Claim first seed
       const armBefore = await armToken.balanceOf(seeds[0].address);
@@ -1281,12 +1314,31 @@ describe("Crowdfund Integration", function () {
       expect(alloc).to.be.gt(0);
     });
 
-    it("elastic expansion triggered", async function () {
-      // Need totalCommitted >= $1.5M (ELASTIC_TRIGGER)
-      // 100 seeds × $15K = $1.5M. Need 100+ signers.
-      // With default 20 signers this isn't enough. Tested in adversarial suite
-      // which uses 200 signers (hardhat.config.ts accounts count).
-      this.skip(); // Requires more than 20 Hardhat default signers
+    // WHY: BASE_SALE == MAX_SALE == ELASTIC_TRIGGER ($1.8M), so elastic expansion cannot change
+    //      the sale size. Demand at and above the trigger (19 seeds at the $100K hop-0 cap =
+    //      $1.9M) must still settle at $1.8M, with the excess refunded pro-rata.
+    it("elastic expansion is a no-op (sale size stays $1.8M at the trigger)", async function () {
+      expect(await crowdfund.BASE_SALE()).to.equal(USDC(1_800_000));
+      expect(await crowdfund.MAX_SALE()).to.equal(USDC(1_800_000));
+      expect(await crowdfund.ELASTIC_TRIGGER()).to.equal(USDC(1_800_000));
+
+      const seeds = allSigners.slice(1, 20);
+      for (const s of seeds) {
+        await fundAndApprove(s, USDC(100_000));
+      }
+      await crowdfund.addSeeds(seeds.map(s => s.address));
+      for (const s of seeds) {
+        await crowdfund.connect(s).commit(0, USDC(100_000));
+      }
+
+      await warpPastWindow();
+      await crowdfund.finalize();
+
+      expect(await crowdfund.saleSize()).to.equal(USDC(1_800_000));
+      const [alloc, refund] = await crowdfund.computeAllocation(seeds[0].address);
+      const accepted = (USDC(100_000) * USDC(1_800_000)) / USDC(1_900_000);
+      expect(alloc).to.equal(accepted * 10n ** 12n);
+      expect(refund).to.equal(USDC(100_000) - accepted);
     });
 
     // WHY: Below-minimum demand triggers refundMode on finalize(). Both participants
@@ -1295,9 +1347,9 @@ describe("Crowdfund Integration", function () {
       await setupActive([seed1, seed2]);
       await crowdfund.connect(seed1).commit(0, USDC(15_000));
       await crowdfund.connect(seed2).commit(0, USDC(10_000));
-      // Total: $25K << $1M minimum
+      // Total: $25K << $250K minimum
 
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow();
       // finalize enters refundMode (below MIN_SALE)
       await crowdfund.finalize();
       expect(await crowdfund.refundMode()).to.be.true;
@@ -1329,8 +1381,7 @@ describe("Crowdfund Integration", function () {
       for (const s of seeds) {
         await crowdfund.connect(s).commit(0, USDC(15_000));
       }
-      await addHop1ForMinSale(seeds.slice(0, 51), allSigners.slice(140, 200));
-      await time.increase(THREE_WEEKS + 1);
+      await warpPastWindow();
       await crowdfund.finalize();
 
       // Claim ARM

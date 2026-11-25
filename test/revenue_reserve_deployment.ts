@@ -40,7 +40,7 @@ describe("Reserve deployment funding gate", function () {
     const windDownDeadline = (await time.latest()) + 365 * 24 * 60 * 60;
     const windDown = await (await ethers.getContractFactory("ArmadaWindDown")).deploy(tokenAddress,
       treasury.address, governorAddress, await redemption.getAddress(), pause.address,
-      await counter.getAddress(), lockAddress, deployer.address, ethers.parseEther("10000"), windDownDeadline);
+      await counter.getAddress(), lockAddress, deployer.address, deployer.address, ethers.parseEther("10000"), windDownDeadline);
     const windDownAddress = await windDown.getAddress();
     await redemption.setWindDown(windDownAddress);
     await lock.setWindDownContract(windDownAddress);

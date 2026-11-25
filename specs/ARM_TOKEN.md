@@ -35,7 +35,7 @@ ARM is minted to an initial bootstrap holder (the deployer address — a single 
 
 | Allocation | Amount | Recipient | Notes |
 |---|---|---|---|
-| Crowdfund contract | 1,800,000 (MAX_SALE) | Crowdfund contract address | Always 1.8M regardless of elastic expansion. Verified by `loadArm()`. |
+| Crowdfund contract | 1,800,000 (MAX_SALE) | Crowdfund contract address | Exactly MAX_SALE (there is no elastic expansion). Verified by `loadArm()`. |
 | Treasury | 7,800,000 | Treasury address (governance-controlled) | |
 | Early network | 2,400,000 | Shared revenue-lock contract | See Revenue-lock architecture below. |
 
@@ -77,7 +77,7 @@ A single shared revenue-lock contract holds all early network ARM (2,400,000 tot
 - **Token permissions:** RevenueLock and the reserve distributor are whitelisted by one-time initialization. RevenueLock is an authorized delegator; the distributor is not and must remain able to undelegate itself. No per-recipient whitelisting is needed. The allocator is neither quorum-excluded nor in `noDelegation`.
 - **Airdrop:** the separate Merkle-distribution path is not replaced with individual lock entries. Its funding, release/delegation, and wind-down integration require a separately reviewed entry in the final launch schedule. See REVENUE_RESERVE_DISTRIBUTOR.md.
 
-**Post-finalization treasury growth:** The crowdfund contract always receives 1,800,000 ARM at deployment. If the sale stays at base size (1,200,000 ARM allocated), the remaining 600,000 ARM becomes unsold and sweepable to treasury via `withdrawUnallocatedArm()` after finalization. The treasury's total ARM holding post-finalization is therefore 7,800,000 + unsold amount.
+**Post-finalization treasury growth:** The crowdfund contract receives 1,800,000 ARM at deployment. Any ARM not sold (the sale succeeds anywhere from $250,000 to $1,800,000) becomes sweepable to treasury via `withdrawUnallocatedArm()` after finalization. The treasury's total ARM holding post-finalization is therefore 7,800,000 + unsold amount (at most 9,350,000).
 
 ---
 

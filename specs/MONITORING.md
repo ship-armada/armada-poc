@@ -66,12 +66,13 @@ Monitoring must consume the following events. No monitoring logic may assume sta
 | `Committed` | `address participant, uint8 hop, uint256 amount` |
 | `InviteNonceRevoked` | `address inviter, uint256 nonce` |
 | `Finalized` | `uint256 saleSize, uint256 allocatedArm, uint256 netProceeds, bool refundMode` |
+| `LaunchTeamPaid` | `address indexed recipient, uint256 amount` |
 | `Allocated` | `address indexed participant, uint256 armTransferred, uint256 refundUsdc, address delegate` |
 | `AllocatedHop` | `address indexed participant, uint8 indexed hop, uint256 acceptedUsdc` |
 | `RefundClaimed` | `address participant, uint256 usdcAmount` |
 | `Cancelled` | — |
 
-**Treasury transfer note:** The `Finalized` event's `netProceeds` field reflects the theoretical allocated USDC (`totalAllocatedUsdc`), not the exact treasury transfer amount. The actual transfer is reduced by a rounding buffer (`participantNodes.length × NUM_HOPS` USDC units) to ensure the contract never runs short on refund payouts. For treasury verification, use the actual USDC balance delta of the treasury address around the `Finalized` transaction, not the event field alone.
+**Treasury transfer note:** The `Finalized` event's `netProceeds` field reflects the total allocated USDC (`totalAllocatedUsdc`), not the treasury transfer amount. On the success path the launch team is paid first (`LaunchTeamPaid`, $250,000), and when any hop is pro-rated a rounding buffer (`participantNodes.length` USDC units) is also held back to ensure the contract never runs short on refund payouts. Expected treasury delta = `netProceeds − LaunchTeamPaid.amount − buffer` (buffer 0 without pro-rating; the delta is 0 at exactly the $250,000 minimum). For treasury verification, use the actual USDC balance delta of the treasury address around the `Finalized` transaction, not the event field alone.
 
 Any monitoring that requires additional contract state reads (e.g. `finalized`, `refundMode`, `cancelled` flags; balance reads for treasury verification) must document those reads explicitly.
 
@@ -85,7 +86,7 @@ Monitoring derives the current lifecycle phase from events and timestamps.
 |---|---|
 | **PRE-ARMED** | No `ArmLoaded` emitted |
 | **ARMED / PRE-OPEN** | `ArmLoaded` emitted; `now < openTimestamp` |
-| **OPEN (days 1-21)** | `ArmLoaded`; `openTimestamp ≤ now ≤ commitmentDeadline`. The launch-team window spans this whole phase: `week1Deadline` equals `commitmentDeadline`, and launch-team actions close strictly before it. |
+| **OPEN (days 1-5, plus any extension)** | `ArmLoaded`; `openTimestamp ≤ now ≤ commitmentDeadline`. The launch-team window spans this whole phase: `week1Deadline` equals `commitmentDeadline`, and launch-team actions close strictly before it. |
 | **DEADLINE PASSED / NOT FINALIZED** | `now > commitmentDeadline`; no `Finalized`; no `Cancelled` |
 | **FINALIZED / SUCCESS / CLAIMS OPEN** | `Finalized(refundMode=false)`; `Allocated` + `AllocatedHop` events emitted individually at each participant's `claim()` time (lazy settlement). |
 | **FINALIZED / REFUND MODE** | `Finalized(refundMode=true)` |
@@ -184,10 +185,10 @@ off-chain alert covers that condition.
 | Field | Value |
 |---|---|
 | **Signal** | Derived seed count from `SeedAdded` |
-| **Condition** | Seed count reaches 80%, 90%, 100% of configured budget (180) |
+| **Condition** | Seed count reaches 80%, 90%, 100% of configured budget (500) |
 | **Severity** | P2 at 80%/90%; P1 at 100% |
 | **Meaning** | Launch-team-window hop-0 expansion capacity running low |
-| **Runbook** | `OPERATIONS.md` §4 Day-14 launch-team checkpoint; §10 decision log |
+| **Runbook** | `OPERATIONS.md` §4 Day-3 launch-team checkpoint; §10 decision log |
 
 ---
 
@@ -196,23 +197,23 @@ off-chain alert covers that condition.
 | Field | Value |
 |---|---|
 | **Signal** | COUNT of ROOT-issued `Invited` events, filtered by `hop` field (where `hop` in the `Invited` event is the invitee's hop level, not `fromHop` — so `hop == 1` counts hop-1 placements and `hop == 2` counts hop-2 placements) |
-| **Condition** | Hop-1 or hop-2 placement count reaches 80%, 90%, 100% of budget (100 and 120 respectively) |
+| **Condition** | Hop-1 or hop-2 placement count reaches 80%, 90%, 100% of budget (1 and 500 respectively; hop-2 placements that stack onto an existing address still count) |
 | **Severity** | P2 at 80%/90%; P1 at 100% |
 | **Meaning** | Launch-team discretionary placement capacity running low |
 | **Runbook** | `OPERATIONS.md` §4 Launch-team operating cadence; §10 decision log |
 
 ---
 
-### A6 — Duplicate same-hop slot growth
+### A6 — Same-hop slot stacking
 
 | Field | Value |
 |---|---|
 | **Signal** | Derived count of `(address, hop)` pairs where `participation_slots > 1` |
 | **Condition** | Count exceeds configured watch threshold, or grows materially faster than expected baseline |
 | **Severity** | P2 |
-| **Meaning** | Expected under the design — each invite creates a new slot. Alert is for awareness only. |
-| **Runbook** | `OPERATIONS.md` §4/§5 monitoring; no automatic intervention |
-| **Note** | See §9.1. Do not treat as exploit. |
+| **Meaning** | Awareness only. Hop-2 stacking is valid: the stacking cap (`maxInvitesReceived`) is 20 at hop 2, so each repeat invite to a hop-2 address adds a $10,000 slot (up to $200,000), which concentrates allocation; watch for one address collecting many team-wallet links. The cap is 1 at hop 0 and hop 1, so a stacked hop-0 or hop-1 node (or a hop-2 node above 20) means the deployed constants differ from the spec. |
+| **Runbook** | `OPERATIONS.md` §4/§5 monitoring; verify the deployed `hopConfigs` against PARAMETER_MANIFEST.md |
+| **Note** | See §9.1. |
 
 ---
 
@@ -221,9 +222,9 @@ off-chain alert covers that condition.
 | Field | Value |
 |---|---|
 | **Signal** | Derived `capped_demand` |
-| **Condition** | Reaches 80%, 90%, 95%, 100% of `EXPANSION_TRIGGER` ($1,500,000) |
+| **Condition** | Reaches 80%, 90%, 95%, 100% of `EXPANSION_TRIGGER` ($1,800,000) |
 | **Severity** | P2 |
-| **Meaning** | Sale may expand to MAX_SALE (1.8M ARM); allocation model shifts |
+| **Meaning** | The sale is approaching full subscription. `MAX_SALE == BASE_SALE` ($1.8M), so there is no expansion; past 100%, hops are pro-rated (hop 2 keeps at least `min(hop-2 demand, $300k)`; hop 0 takes up to the rest) |
 | **Runbook** | `OPERATIONS.md` §5 pre-finalization checkpoint |
 
 ---
@@ -232,11 +233,11 @@ off-chain alert covers that condition.
 
 | Field | Value |
 |---|---|
-| **Signal** | Projected post-waterfall allocated USDC (derived per-hop `capped_demand` run through the finalize waterfall) vs `MINIMUM_RAISE` ($1,000,000) |
+| **Signal** | Projected allocated USDC (derived per-hop `capped_demand` run through the finalize allocation, which equals `min(capped_demand, $1.8M)`) vs `MINIMUM_RAISE` ($250,000) |
 | **Condition** | `projected_allocation < MINIMUM_RAISE` with <72h remaining; then <24h remaining |
 | **Severity** | P2 |
-| **Meaning** | RefundMode risk increasing. Fires even when `capped_demand ≥ MINIMUM_RAISE` if demand is concentrated at hop-0 (its ceiling is below the minimum at both sale sizes) — the remedy is more hop-1/hop-2 participation before the deadline. Note: demand often concentrates near deadline. |
-| **Runbook** | `OPERATIONS.md` §5 Final-week operating cadence; §11 Checkpoint 3 |
+| **Meaning** | RefundMode risk increasing. Because allocation equals `min(capped_demand, $1.8M)`, this fires exactly when `capped_demand < MINIMUM_RAISE`; the remedy is more participation before the deadline (or a window extension). Note: demand often concentrates near deadline. |
+| **Runbook** | `OPERATIONS.md` §5 Final-days operating cadence; §11 Checkpoint 3 |
 
 ---
 
@@ -245,7 +246,7 @@ off-chain alert covers that condition.
 | Field | Value |
 |---|---|
 | **Signal** | Absence of `Finalized` and `Cancelled` |
-| **Condition** | `now > commitmentDeadline` AND projected post-waterfall allocation `≥ MINIMUM_RAISE` |
+| **Condition** | `now > commitmentDeadline` AND projected allocation `≥ MINIMUM_RAISE` |
 | **Severity** | P1 initially; P0 if unresolved beyond configured grace window (e.g. 2 hours) |
 | **Meaning** | Sale qualified — finalization action required. Someone must call `finalize()`. |
 | **Runbook** | `OPERATIONS.md` §11 Checkpoint 3; §6 Finalization procedure |
@@ -257,7 +258,7 @@ off-chain alert covers that condition.
 | Field | Value |
 |---|---|
 | **Signal** | Absence of `Finalized` and `Cancelled` |
-| **Condition** | `now > commitmentDeadline` AND projected post-waterfall allocation `< MINIMUM_RAISE` (includes `capped_demand < MINIMUM_RAISE`) |
+| **Condition** | `now > commitmentDeadline` AND projected allocation `< MINIMUM_RAISE` (includes `capped_demand < MINIMUM_RAISE`) |
 | **Severity** | P1 |
 | **Meaning** | Sale did not qualify. Someone must call `finalize()` (permissionless) to activate refunds. `finalize()` sets `refundMode = true`, after which participants call `claimRefund()` to withdraw their full deposited USDC. There is no auto-refund path without `finalize()`. |
 | **Runbook** | `OPERATIONS.md` §5 pre-finalization checkpoint (sub-minimum branch) |
@@ -292,7 +293,7 @@ off-chain alert covers that condition.
 |---|---|
 | **Signal** | `Finalized(refundMode=false)` |
 | **Severity** | P3 |
-| **Meaning** | Sale settled successfully |
+| **Meaning** | Sale settled successfully. Expect a `LaunchTeamPaid` event ($250,000 to the launch team) in the same transaction |
 | **Runbook** | `OPERATIONS.md` §6 post-finalization verification; §8 |
 
 ---
@@ -301,10 +302,10 @@ off-chain alert covers that condition.
 
 | Field | Value |
 |---|---|
-| **Signal** | `Finalized(refundMode=false)` plus `USDC.balanceOf(treasury)` read |
-| **Condition** | Treasury USDC balance increase differs from `Finalized.netProceeds` by more than the rounding buffer (`participantNodes.length × NUM_HOPS` USDC units). The event's `netProceeds` field is the theoretical allocated USDC; the actual transfer is reduced by the rounding buffer. A difference within the buffer is expected; a difference exceeding it indicates a real mismatch. |
+| **Signal** | `Finalized(refundMode=false)` and `LaunchTeamPaid` plus `USDC.balanceOf(treasury)` and `USDC.balanceOf(launchTeam)` reads |
+| **Condition** | `LaunchTeamPaid` is missing, its `recipient` is not the configured launch team, or its `amount` is not $250,000 (`TEAM_PAYMENT_USDC`; it can be lower only if the distributable proceeds are); or the treasury USDC balance increase differs from `Finalized.netProceeds − LaunchTeamPaid.amount` by more than the rounding buffer (`participantNodes.length` USDC units, held back only when a hop is pro-rated; 0 otherwise). The event's `netProceeds` field is the total allocated USDC; the actual treasury transfer is reduced by the team payment and the buffer. A difference within the buffer is expected; a difference exceeding it indicates a real mismatch. |
 | **Severity** | P0 |
-| **Meaning** | Accounting mismatch or integration failure (after accounting for rounding buffer) |
+| **Meaning** | Accounting mismatch or integration failure (after accounting for the team payment and rounding buffer) |
 | **Runbook** | `OPERATIONS.md` §8 proceeds verification |
 
 ---
@@ -393,13 +394,13 @@ simply has not been ingested). AH1 covers the resulting blind spot.
 
 ### 9.1 Duplicate same-hop invites are not an exploit
 
-Under the `participation_slots[(address, hop)] × HOP_CAP[hop]` model, each invite to a given hop from any inviter creates a new participation slot. Multiple inviters — or the same inviter issuing multiple invites — each increase the invitee's effective cap at that hop. This is specified behavior, not misuse.
+Under the `participation_slots[(address, hop)] × HOP_CAP[hop]` model, each invite to a given hop creates a participation slot, up to the stacking cap. The cap is 1 at hop 0 and hop 1, so a duplicate invite there reverts; it is 20 at hop 2, so repeat invites to a hop-2 address (repeat launch-team placements, or one address redeeming several team-wallet links) each add a $10,000 slot. Stacked hop-2 slots and reverted attempts beyond the cap are expected behaviour, not misuse.
 
-Alert A6 exists for operator **awareness**, not for automatic escalation or remediation. The appropriate question when duplicate slots appear is: "is this consistent with expected seed behavior?" not "is this an attack?"
+Alert A6 is therefore an awareness watch on hop-2 stacking; a stacked hop-0 or hop-1 node can only appear if the deployed constants differ from the spec.
 
 ### 9.2 `refundMode` is not a security incident
 
-`refundMode` is a defined crowdfund outcome that occurs when `capped_demand ≥ MINIMUM_RAISE` but `net_proceeds < MINIMUM_RAISE` after allocation — typically when hop-0 is oversubscribed and later-hop demand doesn't close the gap. It can occur at both base and expanded sale sizes, because hop-0's expanded ceiling is only $846,000.
+`refundMode` is a defined crowdfund outcome that occurs when capped demand is below `MINIMUM_RAISE` ($250k). (The post-allocation check on `net_proceeds` cannot trigger on its own under the current constants: allocation equals min(capped demand, $1.8M).)
 
 Alert A10 is P1 (not P0) because operators must shift participant guidance immediately, but there is no security threat. Alert text and participant communications must avoid exploit-like framing.
 
@@ -431,21 +432,23 @@ Operators must have read access to the following views before and throughout the
 
 ### 10.2 Budget view
 
-- Hop-0 count used / 180 total
-- Launch-team hop-1 placements used / 100 total
-- Launch-team hop-2 placements used / 120 total
+- Hop-0 count used / 500 total
+- Launch-team hop-1 placements (team wallet) used / 1 total
+- Launch-team hop-2 placements used / 500 total
 - Inviter slot consumption per active seed node (where reconstructable from events)
 
 ### 10.3 Demand view
 
 - Raw committed USDC (per hop and total)
 - Derived `capped_demand` (slot-capped, per hop and total)
-- % of `MINIMUM_RAISE` ($1M)
-- % of `EXPANSION_TRIGGER` ($1.5M)
+- % of `MINIMUM_RAISE` ($250k)
+- % of `EXPANSION_TRIGGER` ($1.8M)
+- Hop-2 capped demand vs its $300k reserve
 
 ### 10.4 Settlement view
 
 - Finalized: success / refundMode / cancelled
+- `LaunchTeamPaid` amount and recipient; treasury USDC delta vs `netProceeds − team payment`
 - `Allocated` event count vs expected participant count
 - `AllocatedHop` event count
 - Claim progress: `Allocated` events received vs expected participant count
@@ -487,9 +490,9 @@ Each alert must include:
 | A1, A2 | §3 Deployment sequence (Steps 4–8) |
 | A4, A5 | §4 Launch-team operating cadence; §10 Decision log; §11 Checkpoint 2 |
 | A6 | §4/§5 Monitoring; no automatic action |
-| A7, A8 | §5 Final-week operating cadence; §11 Checkpoint 3 |
+| A7, A8 | §5 Final-days operating cadence; §11 Checkpoint 3 |
 | A9a | `OPERATIONS.md` §11 Checkpoint 3; §6 Finalization procedure |
-| A9b | `OPERATIONS.md` §5 Final-week operating cadence (sub-minimum branch) |
+| A9b | `OPERATIONS.md` §5 Final-days operating cadence (sub-minimum branch) |
 | A10 | §6 Path C (refundMode); §9.7 |
 | A11 | §7 Cancel procedure |
 | A12 | §6 post-finalization verification; §8 |
@@ -587,8 +590,32 @@ Each alert must include:
 
 **Response:**
 - Match the proposal against the steward's published spend plan (recipients, amounts, description).
-- If not recognized: the steward Safe can `cancel()` its own proposal while it is Active (7-day review). Once it is Queued, the Security Council calls `veto(proposalId, rationaleHash)` before the timelock delay (2 days) elapses — or, for a sale-window proposal, before `finalize()` funds the treasury.
+- If not recognized: the steward Safe can `cancel()` its own proposal while it is Active (7-day review). Once it is Queued, the Security Council calls `veto(proposalId, rationaleHash)` before the timelock delay (2 days) elapses — or, for a sale-window proposal, before `finalize()` funds the treasury. Until 70 days after finalization (the veto bootstrap) the veto is final: no ratification vote is created (`ProposalVetoed` ratificationId 0).
 - Once governance has voters, a Standard `removeSteward()` proposal voids every queued steward proposal at execute time.
+
+## 12f. Security Council Proposal Watchlist
+
+**What:** Decode the calldata of every queued proposal and flag any call that can weaken the Security Council's veto protection or take over governance.
+
+**Why:** No path changes funds, upgrades, parameters or the Security Council without a governor proposal and the timelock queue, so the veto is the backstop for every one of them. Each call below can itself be vetoed, but only if the Security Council recognizes it during the timelock delay (at least 2 days). They are all classified Extended (explicitly or by the fail-closed default), but the classification does not say which ones remove protections.
+
+**Signal:** `ProposalQueued(proposalId, …)`; decode each target + calldata from `ProposalCreated` / `getProposalActions`. Flag any of:
+
+| Call | Target | Why it matters |
+|---|---|---|
+| `grantRole` | Timelock | A new proposer, executor or admin could schedule or run operations outside the governor; an admin could then revoke the governor's CANCELLER, which `veto()` needs (proposals that revoke the governor's roles directly are rejected at proposal time) |
+| `updateDelay` | Timelock | Changes the timelock delay (capped at 2 days at proposal time; the veto window stays at least the proposal's execution delay) |
+| `upgradeTo` / `upgradeToAndCall` | Governor, RevenueCounter | Replaces the logic, including the veto, bootstrap and classification rules |
+| `setSecurityCouncil` | Governor | Replaces or removes the Security Council |
+| `removeExtendedSelector` + `addStandardSelector` | Governor | Together downgrade a call (e.g. `setSecurityCouncil`) to Standard |
+| `addAuthorizedDelegator` | ARM token | An authorized delegator can re-delegate any holder's votes: a governance takeover |
+| `addExcludedAddress` | Governor | Shrinks the eligible supply, lowering the quorum every later proposal needs |
+| `setFeeCollector` / `attestRevenue` | RevenueCounter | Changes recognized revenue, which unlocks RevenueLock voting power and moves the wind-down condition |
+| `setTransferable(true)` / `addToWhitelist` | ARM token | Irreversible transfer policy changes |
+
+**Severity:** P1.
+
+**Response:** Confirm the call against a published rationale and expected parameters. If it is not recognized or would remove veto protection without an agreed reason, the Security Council calls `veto(proposalId, rationaleHash)` before the timelock delay elapses. During the 70-day veto bootstrap the veto is final; afterwards it opens a ratification vote (GOVERNANCE.md §Veto mechanism). If a ratification vote then fails and a capture proposal is re-queued, the launch-team guardian calls `ArmadaWindDown.guardianTriggerWindDown()` inside its timelock delay, before it can execute (the last-resort mandate, GOVERNANCE.md §Wind-Down). Also alert on `GuardianRenounced` and on any `WindDownTriggered` (P0).
 
 ---
 
@@ -598,7 +625,7 @@ The following thresholds are marked `[TBD]` and must be set before monitoring is
 
 | Alert | Threshold | Default suggestion |
 |---|---|---|
-| A6 | Duplicate-slot watch threshold | `[TBD]` — start at 10% of occupied hop-1/2 nodes |
+| A6 | Stacked-slot watch threshold | `[TBD]` — start at 10% of occupied hop-1/2 nodes |
 | A9a | Grace window after deadline before P0 escalation | `[TBD]` — 2 hours suggested |
 | A18 | ARM claim participation floor | 50% of allocated participants after 14 days |
 | A19 | Refund claim lag threshold | >10% unclaimed after 30 days |
@@ -612,7 +639,7 @@ This monitoring spec is implementation-ready when:
 - Every alert rule maps to a real signal from the canonical event surface or an explicit contract state read
 - Every P0/P1 alert maps to a concrete section of `OPERATIONS.md`
 - Lazy settlement claim flow is documented and tested — `Allocated`/`AllocatedHop` events emitted at individual `claim()` time
-- Duplicate same-hop slot growth is explicitly treated as valid-but-watchworthy (A6)
+- Hop-2 slot stacking is explicitly treated as valid-but-watchworthy (A6)
 - `refundMode`, cancel, and 3-year sweep windows are all covered
 - No alert assumes frontend-local state unavailable to operators
 - All `[TBD]` thresholds in §13 have been resolved

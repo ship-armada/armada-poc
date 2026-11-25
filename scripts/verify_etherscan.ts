@@ -162,6 +162,9 @@ async function buildGovernanceCrowdfundTasks(): Promise<VerifyTask[]> {
   const windDown = await ethers.getContractAt("ArmadaWindDown", c.windDown);
   const windDownDeadline = await windDown.windDownDeadline();
   const revenueThreshold = await windDown.revenueThreshold();
+  // The guardian is renounceable, so read the constructor value from the crowdfund's immutable
+  // launch team (the deploy passes the same address to both).
+  const windDownGuardian = await (await ethers.getContractAt("ArmadaCrowdfund", cf.contracts.crowdfund)).launchTeam();
 
   // Verify the lock's recorded constructor schedule rather than whichever beneficiary
   // file the current env selects.
@@ -257,6 +260,7 @@ async function buildGovernanceCrowdfundTasks(): Promise<VerifyTask[]> {
         c.revenueCounter,
         c.revenueLock,
         c.timelockController,
+        windDownGuardian,    // crowdfund launch team
         revenueThreshold,    // read from on-chain
         windDownDeadline,    // read from on-chain
       ],

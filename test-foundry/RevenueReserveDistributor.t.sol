@@ -98,6 +98,7 @@ abstract contract RevenueReserveDistributorFixture is Test {
             address(counter),
             address(lock),
             address(this),
+            address(0x6A2D), // guardian (unused here)
             10_000e18,
             block.timestamp + 365 days
         );

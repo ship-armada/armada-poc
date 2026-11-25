@@ -512,8 +512,8 @@ export function getNetworkConfig(): NetworkConfig {
     },
     arm: {
       windowDuration: numEnv("OUTFLOW_ARM_WINDOW", 2592000),                          // 30 days
-      limitBps: numEnv("OUTFLOW_ARM_BPS", 300),                                       // 3%
-      limitAbsolute: optionalEnv("OUTFLOW_ARM_ABSOLUTE", "250000000000000000000000"), // 250,000 ARM (18dp)
+      limitBps: numEnv("OUTFLOW_ARM_BPS", 2),                                         // 0.02%
+      limitAbsolute: optionalEnv("OUTFLOW_ARM_ABSOLUTE", "25000000000000000000000"),  // 25,000 ARM (18dp)
       floorAbsolute: optionalEnv("OUTFLOW_ARM_FLOOR", "0"),                           // none
     },
     eth: {

@@ -222,15 +222,20 @@ contract CrowdfundExtendWindowTest is Test {
     }
 
     // WHY: participant invites use the same windowEnd check and must follow the extension too.
+    //      Only hop-1 (team inviter wallets) can invite, so the inviter is placed there.
     function test_participant_invite_allowed_during_extension() public {
+        address inviter = address(0x1111);
+        vm.prank(launchTeam);
+        cf.launchTeamInvite(inviter, 0);
+
         uint256 oldEnd = cf.windowEnd();
         _extend(oldEnd + 2 days);
         vm.warp(oldEnd + 1 days);
 
         address invitee = address(0x2222);
-        vm.prank(seed);
-        cf.invite(invitee, 0);
-        assertTrue(cf.isWhitelisted(invitee, 1), "invite during extension failed");
+        vm.prank(inviter);
+        cf.invite(invitee, 1);
+        assertTrue(cf.isWhitelisted(invitee, 2), "invite during extension failed");
     }
 
     // WHY: finalize must respect the extended end. Finalizing at the original end would cut

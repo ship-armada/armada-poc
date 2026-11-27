@@ -1,0 +1,12 @@
+{
+  "chainId": 1,
+  "domain": 0,
+  "deployer": "0x11C65F9C241a7C4d894cFEfC49Fdf7bb055B53Ac",
+  "cctpMode": "real",
+  "contracts": {
+    "usdc": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "messageTransmitter": "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+    "tokenMessenger": "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d"
+  },
+  "timestamp": "2026-11-27T16:33:01.186Z"
+}

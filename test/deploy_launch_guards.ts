@@ -238,6 +238,33 @@ describe("Mainnet launch deploy guards", function () {
       });
     }
 
+    // The relaunch's mainnet manifests are committed (deployments/*-mainnet*.json), so the
+    // orchestrator's re-run guard sees an earlier launch in every run from this repo.
+    const launchManifests = ["governance-hub-mainnet.json", "crowdfund-hub-mainnet.json"]
+      .map((f) => path.join(__dirname, "..", "deployments", f));
+
+    // WHY: a dry run sends nothing, so refusing to preview gains no safety; it must still print
+    // the plan, with the re-run guard shown as a warning so a leftover manifest is noticed.
+    it("warns about existing launch manifests in a dry run and still prints the plan", function () {
+      expect(launchManifests.every((f) => fs.existsSync(f)), "committed mainnet manifests").to.equal(true);
+      const result = dryRun({});
+      expect(result.status, result.stderr).to.equal(0);
+      expect(result.stderr).to.match(/WARNING \(dry run\): Existing launch manifest\(s\) found/);
+      expect(result.stdout).to.include("CROWDFUND-LAUNCH DEPLOYMENT");
+    });
+
+    // WHY: an existing manifest means transactions were already sent; a live run must stop before
+    // compiling or signing anything and send the operator to the recovery runbook.
+    it("refuses a live run when launch manifests exist", function () {
+      expect(launchManifests.every((f) => fs.existsSync(f)), "committed mainnet manifests").to.equal(true);
+      const result = spawnSync("npx", ["ts-node", "scripts/deploy_mainnet.ts", "--confirm-mainnet"], {
+        cwd: path.join(__dirname, ".."), env: mainnetDryRunEnv({}), encoding: "utf8",
+      });
+      expect(result.status).to.not.equal(0);
+      expect(result.stderr).to.match(/Existing launch manifest\(s\) found[\s\S]*Do not re-run/);
+      expect(result.stdout).to.not.include("CROWDFUND-LAUNCH DEPLOYMENT");
+    });
+
     // WHY: control case — the committed mainnet template (plus launch-time inputs) must reach
     // the dry-run plan, so the refusal below is attributable to TREASURY_ADDRESS alone.
     it("prints the launch plan when TREASURY_ADDRESS is unset", function () {

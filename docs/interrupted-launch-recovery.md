@@ -1,8 +1,8 @@
 # Interrupted crowdfund deployment recovery
 
-`npm run setup:mainnet` (`scripts/deploy_mainnet.ts`) is not re-runnable. On mainnet it
-refuses to start while `deployments/governance-hub-mainnet.json` or
-`deployments/crowdfund-hub-mainnet.json` exists. If recovery concludes that a clean
+`npm run setup:mainnet` (`scripts/deploy_mainnet.ts`) is not re-runnable. On mainnet a live
+run refuses to start while `deployments/governance-hub-mainnet.json` or
+`deployments/crowdfund-hub-mainnet.json` exists (a `--dry-run` only warns). If recovery concludes that a clean
 redeployment is needed, record the abandoned stack (addresses, receipts, any roles the
 deployer still holds on it) and move both manifests into an archive folder before
 starting the fresh run.

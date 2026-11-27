@@ -25,8 +25,8 @@
  * HEAD is that commit and the working tree is clean (assertDeployCommit).
  *
  * Not re-runnable: the crowdfund step consumes one-shot setters and distributes ARM. On
- * mainnet the orchestrator refuses to start while governance/crowdfund manifests from an
- * earlier run exist. A run that stops part-way is an interrupted launch — recover it by
+ * mainnet a live run refuses to start while governance/crowdfund manifests from an earlier
+ * run exist (a --dry-run only warns). A run that stops part-way is an interrupted launch — recover it by
  * hand per docs/interrupted-launch-recovery.md.
  *
  * Signer: DEPLOYER_PRIVATE_KEY, or a Ledger via DEPLOYER_LEDGER_ADDRESS (docs/ledger-deploy.md).
@@ -131,13 +131,17 @@ async function main() {
     process.exit(1);
   }
   // Re-run guard: manifests from an earlier mainnet run mean transactions were already
-  // sent. Sepolia dry-runs are disposable and may be re-run freely.
+  // sent. A live run refuses to start. A dry run sends nothing, so it warns and still prints
+  // the plan. Sepolia dry-runs are disposable and may be re-run freely.
   if (config.env === "mainnet") {
     try {
       assertNoPriorLaunch([getGovernanceDeploymentFile(), getCrowdfundDeploymentFile()]);
     } catch (e) {
-      console.error(`Error: ${(e as Error).message}`);
-      process.exit(1);
+      if (!DRY_RUN) {
+        console.error(`Error: ${(e as Error).message}`);
+        process.exit(1);
+      }
+      console.warn(`WARNING (dry run): ${(e as Error).message} A live run would refuse to start.\n`);
     }
   }
 
